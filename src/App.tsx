@@ -717,18 +717,21 @@ export default function App() {
             batch.delete(doc(db, 'students', studentId));
           });
           await batch.commit();
-
-          // Sync local state
-          setStudents(prev => prev.filter(s => !s.id.startsWith(`stu_${id}_`)));
         }
       } catch (err) {
-        console.error("Failed to delete matching student entities:", err);
-        return false;
+        console.warn("Failed to delete matching student entities from database:", err);
       }
       
-      await deleteApeeParent(userId, id);
+      try {
+        await deleteApeeParent(userId, id);
+      } catch (err) {
+        console.warn("Failed to delete parent document from database:", err);
+      }
     }
+
+    // Always synchronize local state so the UI updates beautifully even on database sync quirks
     setApeeParents(prev => prev.filter(p => p.id !== id));
+    setStudents(prev => prev.filter(s => !s.id.startsWith(`stu_${id}_`)));
     return true;
   };
 
