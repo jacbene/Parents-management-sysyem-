@@ -702,6 +702,8 @@ export default function App() {
   };
 
   const handleDeleteApeeParentInPlace = async (id: string): Promise<boolean> => {
+    // EXCLUSIVE DB TRIGGER COUPLING: This method performs critical Firestore document deletions (deleteDoc / batch.delete)
+    // exclusively after the user confirms the deletion inside the custom confirmation dialog (resolving with true).
     if (!await checkApeeAuthorization()) return false;
     if (activeParentToEdit?.id === id) {
       setActiveParentToEdit(null);

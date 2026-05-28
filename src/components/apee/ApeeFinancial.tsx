@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, CheckCircle2, DollarSign, Wallet2, FileText, ArrowDownLeft, ArrowUpRight, Check, AlertCircle, TrendingUp, Download } from 'lucide-react';
+import { Plus, Trash2, CheckCircle2, DollarSign, Wallet2, FileText, ArrowDownLeft, ArrowUpRight, Check, AlertCircle, TrendingUp, Download, AlertTriangle } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { ApeeExpense, ApeeSettings } from '../../types';
 
@@ -21,6 +21,7 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [description, setDescription] = useState('');
   const [budgetLineId, setBudgetLineId] = useState<string>('');
+  const [expenseToDeleteId, setExpenseToDeleteId] = useState<string | null>(null);
 
   // Active filter tab
   const [activeFilter, setActiveFilter] = useState<string>('all'); // 'all' | 'command' | 'payment-order' | 'refund'
@@ -87,9 +88,7 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
   };
 
   const handleDelete = (id: string) => {
-    if (confirm("Voulez-vous vraiment supprimer cette ligne de dépense financière ?")) {
-      onDeleteExpense(id);
-    }
+    setExpenseToDeleteId(id);
   };
 
   // Filter expenses list
@@ -842,6 +841,101 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
           </tbody>
         </table>
       </div>
+
+      {/* Custom Confirmation Modal for Expenses */}
+      {expenseToDeleteId && (() => {
+        const expToDeleteObj = expenses.find(e => e.id === expenseToDeleteId);
+        return (
+          <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-[9999] no-print animate-fade-in">
+            <div className="bg-white rounded-3xl shadow-2xl border border-slate-150 w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden text-slate-800 animate-in fade-in zoom-in duration-200">
+              {/* Header warning zone */}
+              <div className="bg-red-50 p-6 flex flex-col items-center gap-3 text-center border-b border-red-100 shrink-0">
+                <div className="p-3 bg-red-100 text-red-655 rounded-full animate-bounce">
+                  <AlertTriangle className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-red-900 tracking-tight">Supprimer la Dépense</h3>
+                  <p className="text-xs text-red-600 mt-1">Cette opération aura un impact direct sur le solde de la caisse.</p>
+                </div>
+              </div>
+              
+              {/* Body details info */}
+              <div className="p-6 overflow-y-auto flex-1 min-h-0">
+                <p className="text-sm text-slate-655 leading-relaxed mb-4">
+                  Voulez-vous vraiment supprimer définitivement cette écriture de d'épenses ?
+                </p>
+                
+                <div className="bg-slate-50 border border-slate-150 rounded-xl p-4 mb-4">
+                  <div className="flex justify-between items-start gap-2">
+                    <span className="font-bold text-sm text-slate-900 break-words">{expToDeleteObj?.title}</span>
+                    <span className="font-mono font-extrabold text-sm text-red-600 shrink-0 bg-red-50 px-2 py-0.5 rounded">
+                      {expToDeleteObj?.amount.toLocaleString()} FCFA
+                    </span>
+                  </div>
+                  
+                  <div className="text-xs text-slate-500 mt-2 space-y-1.5 pt-2.5 border-t border-slate-200/60">
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-slate-400">Date d'opération :</span>
+                      <span className="font-medium text-slate-700">{expToDeleteObj?.date}</span>
+                    </div>
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-slate-400">Type :</span>
+                      <span className="font-semibold text-slate-700 uppercase text-[10px]">
+                        {expToDeleteObj?.type === 'command' ? 'Bon de Commande' : (expToDeleteObj?.type === 'payment-order' ? 'Ordre de Paiement' : 'Remboursement')}
+                      </span>
+                    </div>
+                    {expToDeleteObj?.budgetLineId && (
+                      <div className="flex justify-between text-[11px]">
+                        <span className="text-slate-400">Rubrique Budgétaire :</span>
+                        <span className="font-medium text-slate-650 truncate max-w-[200px]">
+                          {budgetLines.find(l => l.id === expToDeleteObj.budgetLineId)?.name || 'Rubrique générale'}
+                        </span>
+                      </div>
+                    )}
+                    {expToDeleteObj?.description && (
+                      <div className="text-[11px] pt-1.5 border-t border-dashed border-slate-200 text-slate-650">
+                        <strong className="text-slate-450 font-normal">Description:</strong> {expToDeleteObj.description}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="text-xs text-slate-655 flex items-start gap-2 bg-amber-50 text-amber-850 p-3.5 rounded-xl border border-amber-200">
+                  <span className="shrink-0 mt-0.5 font-bold">⚠️ Impact Solde :</span>
+                  <span>
+                    La suppression réajustera immédiatement les calculs de budget décaissé et le solde dynamique de la caisse d'association (APEE).
+                  </span>
+                </div>
+              </div>
+              
+              {/* Footer action buttons */}
+              <div className="px-6 py-4.5 bg-slate-50 border-t border-slate-150 flex justify-end gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setExpenseToDeleteId(null)}
+                  className="px-4 py-2.5 text-xs font-semibold text-slate-700 bg-white border border-slate-250 hover:bg-slate-50 rounded-xl cursor-pointer transition select-none"
+                >
+                  Conserver la ligne
+                </button>
+                
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (expenseToDeleteId) {
+                      onDeleteExpense(expenseToDeleteId);
+                      setExpenseToDeleteId(null);
+                    }
+                  }}
+                  className="px-4 py-2.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl cursor-pointer transition select-none flex items-center justify-center gap-1.5 shadow-xs min-w-[130px]"
+                >
+                  <Trash2 className="h-3.5 w-3.5 text-white shrink-0" />
+                  Confirmer la suppression
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Save, HelpCircle, Shield, Settings, Info, CheckCircle2, Plus, Trash2, Edit2, X, TrendingUp, Lock, Unlock, UserCheck, User, Phone, Mail, GraduationCap } from 'lucide-react';
+import { Save, HelpCircle, Shield, Settings, Info, CheckCircle2, Plus, Trash2, Edit2, X, TrendingUp, Lock, Unlock, UserCheck, User, Phone, Mail, GraduationCap, AlertTriangle } from 'lucide-react';
 import { ApeeSettings, ApeeBudgetLine } from '../../types';
 
 interface ApeeSettingsProps {
@@ -70,6 +70,11 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
   const [lineAmount, setLineAmount] = useState<number>(0);
   const [lineDescription, setLineDescription] = useState('');
   const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false);
+
+  // Deletion confirmation state
+  const [lineToDelete, setLineToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [classToDeleteIdx, setClassToDeleteIdx] = useState<number | null>(null);
+  const [classToDeleteRoom, setClassToDeleteRoom] = useState<string>('');
 
   // Success indicators
   const [newClassName, setNewClassName] = useState('');
@@ -176,9 +181,12 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
   };
 
   const handleDeleteLine = (id: string, name: string) => {
-    const confirm = window.confirm(`Voulez-vous vraiment supprimer la ligne budgétaire "${name}" ?`);
-    if (!confirm) return;
+    setLineToDelete({ id, name });
+  };
 
+  const handleConfirmDeleteLine = () => {
+    if (!lineToDelete) return;
+    const { id } = lineToDelete;
     const currentLines = settings.budgetLines || [];
     const updatedLines = currentLines.filter(l => l.id !== id);
 
@@ -186,7 +194,15 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
 
     setSuccessMessage("Ligne budgétaire supprimée de la planification annuelle.");
     setShowSuccess(true);
+    setLineToDelete(null);
     setTimeout(() => setShowSuccess(false), 3500);
+  };
+
+  const handleConfirmDeleteClass = () => {
+    if (classToDeleteIdx === null) return;
+    setClassTeachers(classTeachers.filter((_, idxFilter) => idxFilter !== classToDeleteIdx));
+    setClassToDeleteIdx(null);
+    setClassToDeleteRoom('');
   };
 
   // Calculations for budget consumption status
@@ -764,9 +780,8 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
                     <button
                       type="button"
                       onClick={() => {
-                        if (confirm(`Voulez-vous vraiment supprimer la configuration pour la classe ${teach.classRoom} ?`)) {
-                          setClassTeachers(classTeachers.filter((_, idxFilter) => idxFilter !== idx));
-                        }
+                        setClassToDeleteIdx(idx);
+                        setClassToDeleteRoom(teach.classRoom);
                       }}
                       className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-md transition cursor-pointer"
                       title={`Supprimer la classe ${teach.classRoom}`}
@@ -1058,7 +1073,22 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
                 />
               </div>
 
-              <div className="flex gap-2.5 pt-3 border-t border-slate-100 mt-4 h-12">
+              <div className="flex gap-2 p-3 mt-4 border-t border-slate-100 shrink-0">
+                {editingLineId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (editingLineId) {
+                        handleDeleteLine(editingLineId, lineName);
+                        setIsBudgetModalOpen(false);
+                      }
+                    }}
+                    className="px-3.5 py-2 bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold rounded-xl transition uppercase tracking-wide cursor-pointer text-center flex items-center justify-center gap-1.5 shrink-0"
+                    title="Supprimer cette rubrique budgétaire"
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-red-600 shrink-0" /> Supprimer
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleCancelEditLine}
@@ -1074,6 +1104,117 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Confirmation Modal for Budget Line */}
+      {lineToDelete && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-[9999] no-print animate-fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-150 w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden text-slate-800 animate-in fade-in zoom-in duration-200">
+            {/* Header warning zone */}
+            <div className="bg-red-50 p-6 flex flex-col items-center gap-3 text-center border-b border-red-100 shrink-0">
+              <div className="p-3 bg-red-100 text-red-655 rounded-full animate-pulse">
+                <AlertTriangle className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-red-900 tracking-tight">Supprimer la Rubrique</h3>
+              </div>
+            </div>
+            
+            {/* Body details info */}
+            <div className="p-6 overflow-y-auto flex-1 min-h-0 text-center sm:text-left">
+              <p className="text-sm text-slate-655 leading-relaxed mb-4">
+                Voulez-vous vraiment supprimer définitivement cette rubrique budgétaire ?
+              </p>
+              
+              <div className="bg-slate-50 border border-slate-150 rounded-xl p-4 mb-4 text-left">
+                <div className="text-[10px] font-bold text-slate-400 uppercase select-none">Rubrique</div>
+                <div className="text-sm font-bold text-slate-800 tracking-tight mt-0.5">{lineToDelete.name}</div>
+              </div>
+
+              <div className="text-xs text-slate-655 flex items-start gap-2 bg-amber-50 text-amber-850 p-3.5 rounded-xl border border-amber-200 text-left">
+                <span className="shrink-0 mt-0.5 font-bold">⚠️ Important:</span>
+                <span>Les dépenses et les écritures comptables déjà exécutées sous cette rubrique perdront leur étiquette d'imputation budgétaire (affectation au budget).</span>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="bg-slate-50 border-t border-slate-100 p-4 flex gap-2.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => setLineToDelete(null)}
+                className="flex-1 px-4 py-2.5 text-xs font-semibold text-slate-705 bg-white border border-slate-250 hover:bg-slate-50 rounded-xl cursor-pointer transition select-none"
+              >
+                Conserver la rubrique
+              </button>
+              
+              <button
+                type="button"
+                onClick={handleConfirmDeleteLine}
+                className="flex-1 px-4 py-2.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl cursor-pointer transition select-none flex items-center justify-center gap-1.5 shadow-xs min-w-[130px]"
+              >
+                <Trash2 className="h-3.5 w-3.5 text-white shrink-0" />
+                Confirmer la suppression
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Confirmation Modal for Classroom configuration */}
+      {classToDeleteIdx !== null && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-[9999] no-print animate-fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-150 w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden text-slate-800 animate-in fade-in zoom-in duration-200">
+            {/* Header warning zone */}
+            <div className="bg-red-50 p-6 flex flex-col items-center gap-3 text-center border-b border-red-100 shrink-0">
+              <div className="p-3 bg-red-100 text-red-655 rounded-full animate-bounce">
+                <AlertTriangle className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-red-900 tracking-tight">Supprimer la Configuration</h3>
+              </div>
+            </div>
+            
+            {/* Body details info */}
+            <div className="p-6 overflow-y-auto flex-1 min-h-0 text-center sm:text-left">
+              <p className="text-sm text-slate-655 leading-relaxed mb-4">
+                Voulez-vous vraiment supprimer la configuration de l'enseignant titulaire pour cette classe ?
+              </p>
+              
+              <div className="bg-slate-50 border border-slate-150 rounded-xl p-4 mb-4 text-left">
+                <div className="text-[10px] font-bold text-slate-400 uppercase select-none">Classe</div>
+                <div className="text-sm font-bold text-slate-800 tracking-tight mt-0.5">{classToDeleteRoom}</div>
+              </div>
+
+              <div className="text-xs text-slate-655 flex items-start gap-2 bg-slate-50 text-slate-705 p-3.5 rounded-xl border border-slate-200 text-left">
+                <span className="shrink-0 mt-0.5 font-bold">💡 Information:</span>
+                <span>Cette action va réinitialiser le nom, le téléphone et l'e-mail de l'enseignant de cette division. Aucun bulletin existant ne sera détruit. Pratique pour repartir à zéro.</span>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="bg-slate-50 border-t border-slate-100 p-4 flex gap-2.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setClassToDeleteIdx(null);
+                  setClassToDeleteRoom('');
+                }}
+                className="flex-1 px-4 py-2.5 text-xs font-semibold text-slate-705 bg-white border border-slate-250 hover:bg-slate-50 rounded-xl cursor-pointer transition select-none"
+              >
+                Conserver la classe
+              </button>
+              
+              <button
+                type="button"
+                onClick={handleConfirmDeleteClass}
+                className="flex-1 px-4 py-2.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl cursor-pointer transition select-none flex items-center justify-center gap-1.5 shadow-xs min-w-[130px]"
+              >
+                <Trash2 className="h-3.5 w-3.5 text-white shrink-0" />
+                Confirmer la suppression
+              </button>
+            </div>
           </div>
         </div>
       )}

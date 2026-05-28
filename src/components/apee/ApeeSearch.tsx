@@ -18,6 +18,7 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
   // Active detail modal/card selection
   const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [parentToDeleteId, setParentToDeleteId] = useState<string | null>(null);
 
   // Filter list of parents
   const filteredParents = parents.filter(p => {
@@ -39,22 +40,8 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
 
   const selectedParent = parents.find(p => p.id === selectedParentId);
 
-  const handleDeleteClick = async (id: string) => {
-    if (confirm("Êtes-vous sûr de vouloir supprimer définitivement ce parent d'élève ainsi que l'ensemble de ses cotisations ? Cette action est irréversible.")) {
-      setIsDeleting(true);
-      try {
-        const success = await onDeleteParent(id);
-        if (success !== false) {
-          if (selectedParentId === id) {
-            setSelectedParentId(null);
-          }
-        }
-      } catch (err) {
-        console.error("Erreur de suppression du parent d'élève:", err);
-      } finally {
-        setIsDeleting(false);
-      }
-    }
+  const handleDeleteClick = (id: string) => {
+    setParentToDeleteId(id);
   };
 
   const handleTriggerPrint = () => {
@@ -643,6 +630,109 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
         </div>
 
       </div>
+
+      {/* Custom Confirmation Modal */}
+      {parentToDeleteId && (() => {
+        const parentToDeleteObj = parents.find(p => p.id === parentToDeleteId);
+        return (
+          <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-[9999] no-print">
+            <div className="bg-white rounded-3xl shadow-2xl border border-slate-150 w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden text-slate-800 animate-in fade-in zoom-in duration-200">
+              {/* Header warning zone */}
+              <div className="bg-red-50 p-6 flex flex-col items-center gap-3 text-center border-b border-red-100 shrink-0">
+                <div className="p-3 bg-red-100 text-red-655 rounded-full animate-pulse">
+                  <AlertTriangle className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-red-900 tracking-tight">Suppression Définitive</h3>
+                  <p className="text-xs text-red-600 mt-1">Cette action est irréversible et effacera toutes les données liées.</p>
+                </div>
+              </div>
+              
+              {/* Body details info */}
+              <div className="p-6 overflow-y-auto flex-1 min-h-0">
+                <p className="text-sm text-slate-650 leading-relaxed mb-4">
+                  Vous êtes sur le point de supprimer de manière permanente le parent d'élève suivant :
+                </p>
+                
+                <div className="bg-slate-50 border border-slate-150 rounded-xl p-4 mb-4">
+                  <div className="font-bold text-sm text-slate-900">{parentToDeleteObj?.name}</div>
+                  <div className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
+                    <Phone className="h-3 w-3" /> {parentToDeleteObj?.phone || 'Téléphone non indiqué'}
+                  </div>
+                  {parentToDeleteObj?.students && parentToDeleteObj.students.length > 0 && (
+                    <div className="mt-4 pt-3.5 border-t border-slate-200">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Élèves associés :</div>
+                      <div className="space-y-1.5">
+                        {parentToDeleteObj.students.map((s, idx) => (
+                          <div key={idx} className="text-xs text-slate-700 flex justify-between items-center">
+                            <span className="font-medium">• {s.name}</span>
+                            <span className="text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full font-semibold">{s.classRoom}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                <div className="text-xs text-slate-655 flex items-start gap-2 bg-amber-50 text-amber-850 p-3.5 rounded-xl border border-amber-200">
+                  <span className="shrink-0 mt-0.5 font-bold">⚠️ Important:</span>
+                  <span>L'historique des cotisations correspondantes, les reçus d'impressions PDF et toutes les traces financières de ce compte seront supprimés.</span>
+                </div>
+              </div>
+              
+              {/* Footer action buttons */}
+              <div className="px-6 py-4.5 bg-slate-50 border-t border-slate-150 flex justify-end gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setParentToDeleteId(null)}
+                  disabled={isDeleting}
+                  className="px-4 py-2.5 text-xs font-semibold text-slate-700 bg-white border border-slate-250 hover:bg-slate-50 rounded-xl cursor-pointer transition select-none"
+                >
+                  Annuler la suppression
+                </button>
+                
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!parentToDeleteId) return;
+                    setIsDeleting(true);
+                    try {
+                      // CRITICAL REFACTOR: The deleteDoc / batch.delete operations in App.tsx / apeeDb.ts
+                      // are triggered exclusively here, only after this custom confirmation dialog resolves to true
+                      // (when the user explicitly clicks this 'Confirmer la suppression' button).
+                      const success = await onDeleteParent(parentToDeleteId);
+                      if (success !== false) {
+                        if (selectedParentId === parentToDeleteId) {
+                          setSelectedParentId(null);
+                        }
+                        setParentToDeleteId(null);
+                      }
+                    } catch (err) {
+                      console.error("Erreur de suppression du parent d'élève:", err);
+                    } finally {
+                      setIsDeleting(false);
+                    }
+                  }}
+                  disabled={isDeleting}
+                  className="px-4 py-2.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 disabled:bg-red-300 rounded-xl cursor-pointer transition select-none flex items-center justify-center gap-1.5 min-w-[130px]"
+                >
+                  {isDeleting ? (
+                    <>
+                      <span className="animate-spin inline-block h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full" />
+                      Suppression...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="h-3.5 w-3.5 text-white shrink-0" />
+                      Confirmer la suppression
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );
