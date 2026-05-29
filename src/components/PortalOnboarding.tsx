@@ -3,23 +3,8 @@ import { collection, doc, getDocs, query, setDoc, writeBatch } from 'firebase/fi
 import { db } from '../firebase';
 import { Landmark, Plus, CheckCircle, AlertOctagon, UserCheck, Phone, ShieldCheck, ArrowRight, X, Sparkles, User, HelpCircle, Mail, Smartphone, Key, RotateCw, Bell, Share2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ApeeSettings, ApeeParent, Student, Grade, Homework, Attendance, Invoice } from '../types';
+import { ApeeSettings, ApeeParent, Student, Grade, Homework, Attendance, Invoice, Establishment } from '../types';
 
-export interface Establishment {
-  id: string;
-  name: string;
-  cotisationAmount: number;
-  financialGoal: number;
-  finManagerName: string;
-  finManagerPhone: string;
-  finManagerPassword?: string;
-  pedManagerName?: string;
-  pedManagerPhone?: string;
-  pedManagerPassword?: string;
-  schoolYear: string;
-  ownerId: string;
-  logoUrl?: string;
-}
 
 interface PortalOnboardingProps {
   onSelectSchool: (schoolId: string, role: 'manager' | 'parent', parentDetails?: { name: string; phone: string; studentSubsetNames?: string[] }) => void;
@@ -1275,77 +1260,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
 
         {/* Right Side: Demo Helper Controls / Guidance */}
         <div className="bg-slate-50 border border-slate-200/80 p-5 rounded-3xl space-y-5">
-          <div className="flex items-center gap-1 text-[10px] font-black text-amber-800 uppercase bg-amber-100/70 px-2.5 py-1 rounded-md w-fit">
-            <Sparkles className="h-3.5 w-3.5 shrink-0" /> Guide de Test Rapide & Démonstration
-          </div>
 
-          <div className="space-y-4 text-xs text-slate-600 leading-relaxed">
-            <p>
-              Pour expérimenter les deux cas de figure imposés par les exigences d'inscription d'acompte :
-            </p>
-
-            <div className="space-y-3.5 pt-1">
-              <div className="p-3 bg-white border border-emerald-150 rounded-2xl space-y-1.5 hover:border-emerald-300 transition shadow-3xs cursor-pointer"
-                   onClick={() => handleQuickPreset('demo_school_ekali')}>
-                <div className="flex items-center justify-between">
-                  <span className="font-extrabold text-emerald-800 text-[10px] uppercase bg-emerald-50 px-2 py-0.5 rounded-md">
-                    👍 Cas Accepté (Acompte Versé)
-                  </span>
-                  <span className="text-[10px] text-indigo-600 font-bold underline">Appliquer</span>
-                </div>
-                <p className="font-medium text-slate-800 leading-tight">
-                  Entrez avec un parent qui a versé au moins un acompte à l'APEE.
-                </p>
-                <div className="text-[10.5px] font-mono text-slate-500 bg-slate-50/50 p-1.5 rounded-lg border border-slate-100">
-                  <div>👤 Nom : <span className="font-extrabold text-slate-800 select-all">Martin</span></div>
-                  <div>📞 Tél : <span className="font-extrabold text-slate-800 select-all">677112233</span></div>
-                  <div className="text-[9.5px] mt-1 text-slate-400">Total Versé : 15 000 FCFA</div>
-                </div>
-              </div>
-
-              <div className="p-3 bg-white border border-red-150 rounded-2xl space-y-1.5 hover:border-red-300 transition shadow-3xs cursor-pointer"
-                   onClick={() => {
-                     setOnboardingRole('parent');
-                     setSelectedSchoolId('demo_school_ekali');
-                     setParentName('Diallo');
-                     setParentPhone('699445566');
-                   }}>
-                <div className="flex items-center justify-between">
-                  <span className="font-extrabold text-red-800 text-[10px] uppercase bg-red-50 px-2 py-0.5 rounded-md">
-                    ❌ Cas Rejeté (Aucun Acompte)
-                  </span>
-                  <span className="text-[10px] text-indigo-600 font-bold underline">Appliquer</span>
-                </div>
-                <p className="font-medium text-slate-800 leading-tight">
-                  Tentez de connecter un parent enregistré ayant 0 FCFA versé.
-                </p>
-                <div className="text-[10.5px] font-mono text-slate-500 bg-slate-50/50 p-1.5 rounded-lg border border-slate-100">
-                  <div>👤 Nom : <span className="font-extrabold text-slate-800 select-all">Diallo</span></div>
-                  <div>📞 Tél : <span className="font-extrabold text-slate-800 select-all">699445566</span></div>
-                  <div className="text-[9.5px] mt-1 text-slate-400">Total Versé : 0 FCFA (Retard)</div>
-                </div>
-              </div>
-
-              <div className="p-3 bg-white border border-indigo-150 rounded-2xl space-y-1.5 hover:border-indigo-300 transition shadow-3xs cursor-pointer"
-                   onClick={() => {
-                     setOnboardingRole('manager');
-                     setSelectedSchoolId('demo_school_ekali');
-                     setManagerPassword('1234');
-                   }}>
-                <div className="flex items-center justify-between">
-                  <span className="font-extrabold text-indigo-800 text-[10px] uppercase bg-indigo-50 px-2 py-0.5 rounded-md">
-                    ⚙️ Accès Administrateur / Gérant
-                  </span>
-                  <span className="text-[10px] text-indigo-600 font-bold underline">Appliquer</span>
-                </div>
-                <p className="font-medium text-slate-800 leading-tight">
-                  Accédez aux configurations / paramètres, bilans et gestion complète de l'école.
-                </p>
-                <div className="text-[10.5px] font-mono text-slate-500 bg-slate-50/50 p-1.5 rounded-lg border border-slate-100">
-                  <div>🔑 Code secret : <span className="font-extrabold text-slate-800 select-all">1234</span></div>
-                </div>
-              </div>
-            </div>
 
             <div className="p-3.5 bg-indigo-50 text-indigo-950 rounded-2xl border border-indigo-100 space-y-1.5">
               <span className="font-black text-indigo-900 text-[10px] uppercase tracking-wider flex items-center gap-1">
@@ -1413,7 +1328,6 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
             </div>
           </div>
         </div>
-      </div>
 
       {/* Dynamic Simulated Cameroonian smartphone message panel absolute overlay */}
       {otpSimulatedMessage && otpSimulatedMessage.isOpen && (

@@ -41,6 +41,8 @@ import MessageInbox from './components/MessageInbox';
 import StudentPrintModal from './components/StudentPrintModal';
 import PortalOnboarding from './components/PortalOnboarding';
 import InstallPWA from './components/InstallPWA';
+import SuperAdminDashboard from './components/SuperAdminDashboard';
+
 
 // Icons
 import {
@@ -93,6 +95,8 @@ export default function App() {
   const [seeding, setSeeding] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [isIframe, setIsIframe] = useState(false);
+  const [showSuperAdmin, setShowSuperAdmin] = useState(false);
+
 
   // Establishment and role-based access state (with persistence)
   const [selectedSchoolId, setSelectedSchoolId] = useState<string | null>(() => localStorage.getItem('portal_selected_school_id'));
@@ -844,7 +848,24 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50/50 flex flex-col text-slate-900 selection:bg-indigo-100 selection:text-indigo-900">
       <AnimatePresence mode="wait">
-        {!selectedSchoolId ? (
+        {showSuperAdmin ? (
+          <motion.div
+            key="super_admin"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            className="flex-grow flex flex-col"
+          >
+            <SuperAdminDashboard
+              onBackToPortal={() => setShowSuperAdmin(false)}
+              onSelectSchool={(schoolId, role) => {
+                handleSelectSchool(schoolId, role);
+                setShowSuperAdmin(false);
+              }}
+              currentUserUid={user?.uid || null}
+            />
+          </motion.div>
+        ) : !selectedSchoolId ? (
           /* School Selection or Account Creation Portal (1ère Visite) */
           <motion.div
             key="onboarding"
@@ -853,7 +874,7 @@ export default function App() {
             exit={{ opacity: 0, y: -15 }}
             className="flex-1 flex items-center justify-center p-4 min-h-screen bg-slate-100/40"
           >
-            <div className="w-full max-w-4xl">
+            <div className="w-full max-w-4xl space-y-4">
               <PortalOnboarding
                 currentUserUid={user?.uid || null}
                 onSelectSchool={handleSelectSchool}
@@ -863,8 +884,26 @@ export default function App() {
                   return guestUser.uid;
                 }}
               />
+
+              {/* Discrete, elegant super-admin entrance bar */}
+              <div className="flex flex-col sm:flex-row justify-between items-center bg-slate-950 text-slate-300 px-6 py-3.5 rounded-2xl border border-slate-800 shadow-md gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
+                  <p className="text-[11px] font-semibold text-slate-200">
+                    Compte Administrateur Principal : <strong className="text-white">jacquesbene301@gmail.com</strong>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowSuperAdmin(true)}
+                  className="px-4 py-1.5 bg-amber-400 hover:bg-amber-500 text-slate-950 text-xs font-black rounded-lg transition shrink-0 cursor-pointer shadow-xs"
+                >
+                  ⚙️ Ouvrir l'Espace Super-Admin (Jacques)
+                </button>
+              </div>
             </div>
           </motion.div>
+
         ) : !user ? (
           /* Landing Screen / Login */
           <motion.div
@@ -1012,6 +1051,15 @@ export default function App() {
                   </div>
                 </div>
                 
+                <button
+                  type="button"
+                  onClick={() => setShowSuperAdmin(true)}
+                  className="px-3 py-1.5 bg-amber-400 hover:bg-amber-500 text-slate-950 text-[10.5px] font-extrabold rounded-xl transition flex items-center gap-1 cursor-pointer border border-amber-300 shadow-2xs shrink-0"
+                  title="Retourner à la Console de Supervision Globale"
+                >
+                  ⚙️ Super-Admin
+                </button>
+
                 <button
                   onClick={handleExitSchool}
                   className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[10.5px] font-bold rounded-xl transition flex items-center gap-1 border border-slate-200 cursor-pointer"

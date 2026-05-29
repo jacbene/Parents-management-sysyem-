@@ -204,3 +204,31 @@ export interface ApeeSettings {
   classTeachers?: Array<{ classRoom: string; teacherName: string; teacherPhone: string; teacherEmail: string }>;
 }
 
+export interface Establishment {
+  id: string;
+  name: string;
+  cotisationAmount: number;
+  financialGoal: number;
+  finManagerName: string;
+  finManagerPhone: string;
+  finManagerPassword?: string;
+  pedManagerName?: string;
+  pedManagerPhone?: string;
+  pedManagerPassword?: string;
+  schoolYear: string;
+  ownerId: string;
+  logoUrl?: string;
+}
+
+export interface SystemLog {
+  id: string;
+  parentId: string; // schoolId or system administrator id
+  title: string; // description
+  amount: number;
+  dueDate: string; // type: 'CREATE_SCHOOL' | 'DELETE_SCHOOL' | 'PAYMENT' | 'SETTINGS_CHANGE'
+  status: 'Paid';
+  paymentDate: string; // timestamp isolation
+  provider: string; // operatorName
+}
+
+
