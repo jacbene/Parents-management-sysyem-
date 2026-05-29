@@ -40,6 +40,7 @@ import AppointmentsScheduler from './components/AppointmentsScheduler';
 import MessageInbox from './components/MessageInbox';
 import StudentPrintModal from './components/StudentPrintModal';
 import PortalOnboarding from './components/PortalOnboarding';
+import InstallPWA from './components/InstallPWA';
 
 // Icons
 import {
@@ -874,10 +875,12 @@ export default function App() {
             className="flex-1 flex items-center justify-center p-4 min-h-screen"
           >
             <div className="w-full max-w-lg bg-white rounded-3xl border border-gray-150 shadow-xl overflow-hidden flex flex-col justify-between">
-              <div className="p-8 space-y-2 text-center bg-slate-900 text-white">
-                <div className="inline-flex p-3 bg-indigo-600 rounded-2xl mb-1 text-2xl font-black">
-                  🏫
-                </div>
+              <div className="p-8 space-y-2 text-center bg-slate-900 text-white flex flex-col items-center">
+                <img
+                  src="/icon-512.png"
+                  alt="Logo"
+                  className="h-16 w-16 object-contain rounded-2xl mb-1 bg-white p-1 border border-slate-700 shadow-sm"
+                />
                 <h1 className="text-2xl font-extrabold tracking-tight">Pasma-sys</h1>
                 <p className="text-xs text-indigo-200">Parents Management System (Système de gestion parentale)</p>
               </div>
@@ -982,7 +985,11 @@ export default function App() {
                     referrerPolicy="no-referrer"
                   />
                 ) : (
-                  <span className="text-2xl bg-indigo-55 p-2 rounded-xl shrink-0">🏫</span>
+                  <img
+                    src="/icon-512.png"
+                    alt="Logo"
+                    className="h-10 w-10 object-contain rounded-xl p-0.5 bg-indigo-50 border border-indigo-100 shrink-0"
+                  />
                 )}
                 <div>
                   <h1 className="text-base font-black tracking-tight text-gray-950 flex items-center gap-1">
@@ -994,6 +1001,8 @@ export default function App() {
 
               {/* User Profil card & logout */}
               <div className="flex items-center gap-3.5">
+                <InstallPWA />
+                
                 <div className="text-right hidden sm:block">
                   <div className="text-xs font-black text-indigo-950">
                     {portalUserRole === 'parent' ? `Espace Parent : ${portalParentDetails?.name}` : "Administration Établissement"}

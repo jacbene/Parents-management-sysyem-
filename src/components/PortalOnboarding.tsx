@@ -675,9 +675,13 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
 
   return (
     <div className="w-full max-w-4xl mx-auto px-4 py-8">
-      <div className="text-center space-y-3 mb-8">
-        <span className="p-3 bg-indigo-600/10 text-indigo-600 rounded-3xl inline-flex text-3xl font-bold">🏫</span>
-        <h1 className="text-3xl font-black tracking-tight text-slate-950 font-sans">Portail Scolaire Pasma-sys</h1>
+      <div className="text-center space-y-3 mb-8 flex flex-col items-center">
+        <img
+          src="/icon-512.png"
+          alt="Logo"
+          className="h-16 w-16 object-contain rounded-2xl bg-white p-1.5 border border-indigo-100 shadow-xs"
+        />
+        <h1 className="text-3xl font-black tracking-tight text-slate-950 font-sans mt-2">Portail Scolaire Pasma-sys</h1>
         <p className="text-sm text-slate-500 max-w-lg mx-auto">
           Bienvenue sur le portail de suivi et de gestion parentale des établissements scolaires.
         </p>
