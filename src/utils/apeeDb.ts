@@ -210,6 +210,8 @@ export async function fetchApeeData(parentId: string) {
           censeurName: data.censeurName || '',
           censeurPhone: data.censeurPhone || '',
           classTeachers: teachers,
+          honoraryContributions: data.honoraryContributions || 0,
+          subventionsAndAids: data.subventionsAndAids || 0,
         };
       }
     });
@@ -296,6 +298,8 @@ export async function saveApeeSettings(parentId: string, settings: ApeeSettings)
       censeurName: settings.censeurName || '',
       censeurPhone: settings.censeurPhone || '',
       classTeachersList: JSON.stringify(settings.classTeachers || []),
+      honoraryContributions: settings.honoraryContributions || 0,
+      subventionsAndAids: settings.subventionsAndAids || 0,
     });
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `invoices/${parentId}_settings`);
@@ -445,6 +449,8 @@ export async function importFullBackup(
       pedManagerName: finalSettings.pedManagerName || '',
       pedManagerPhone: finalSettings.pedManagerPhone || '',
       pedManagerPassword: finalSettings.pedManagerPassword || '',
+      honoraryContributions: finalSettings.honoraryContributions || 0,
+      subventionsAndAids: finalSettings.subventionsAndAids || 0,
     });
 
     // Write parents

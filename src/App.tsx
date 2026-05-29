@@ -1459,7 +1459,7 @@ export default function App() {
                           expenses={apeeExpenses}
                           onSaveExpense={handleSaveApeeExpenseInPlace}
                           onDeleteExpense={handleDeleteApeeExpenseInPlace}
-                          totalRevenue={apeeParents.reduce((sum, p) => sum + p.totalPaid, 0)}
+                          totalRevenue={apeeParents.reduce((sum, p) => sum + p.totalPaid, 0) + (apeeSettings.honoraryContributions || 0) + (apeeSettings.subventionsAndAids || 0)}
                           settings={apeeSettings}
                         />
                       </motion.div>

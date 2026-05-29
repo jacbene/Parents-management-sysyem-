@@ -13,6 +13,8 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
   const [cotisationAmount, setCotisationAmount] = useState<number>(settings.cotisationAmount);
   const [financialGoal, setFinancialGoal] = useState<number>(settings.financialGoal);
   const [logoUrl, setLogoUrl] = useState(settings.logoUrl || '');
+  const [honoraryContributions, setHonoraryContributions] = useState<number>(settings.honoraryContributions || 0);
+  const [subventionsAndAids, setSubventionsAndAids] = useState<number>(settings.subventionsAndAids || 0);
 
   // Financial Manager credentials states
   const [finManagerName, setFinManagerName] = useState(settings.finManagerName || '');
@@ -103,6 +105,8 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
       censeurName: censeurName.trim(),
       censeurPhone: censeurPhone.trim(),
       classTeachers,
+      honoraryContributions,
+      subventionsAndAids,
       ...extra
     });
   };
@@ -339,6 +343,44 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
                 className="w-full px-3 py-1.5 text-xs border rounded-lg focus:outline-indigo-550 font-mono text-right"
               />
               <p className="text-[9px] text-gray-400">Ce montant sert de base de calcul pour la gauge de progression et l'allocation des lignes de dépenses.</p>
+            </div>
+
+            {/* Other Revenue streams */}
+            <div className="border-t border-slate-100 pt-4 mt-4 space-y-4">
+              <div className="flex items-center gap-2 select-none">
+                <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wider block">Autres Sources de Recettes (Prévues)</span>
+                <span className="h-px bg-slate-100 flex-1" />
+              </div>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-600 uppercase">Contributions Membres d'Honneur (FCFA)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={honoraryContributions || ''}
+                    onChange={(e) => setHonoraryContributions(Number(e.target.value))}
+                    placeholder="Ex: 500000"
+                    className="w-full px-3 py-1.5 text-xs border rounded-lg focus:outline-indigo-550 font-mono text-right"
+                  />
+                  <p className="text-[8.5px] text-gray-400 leading-tight">Contributions financières exceptionnelles des parents d'honneur et conseillers.</p>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-600 uppercase">Aides, Dons et Subventions (FCFA)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={subventionsAndAids || ''}
+                    onChange={(e) => setSubventionsAndAids(Number(e.target.value))}
+                    placeholder="Ex: 1000000"
+                    className="w-full px-3 py-1.5 text-xs border rounded-lg focus:outline-indigo-550 font-mono text-right"
+                  />
+                  <p className="text-[8.5px] text-gray-400 leading-tight">Subventions ministérielles, dons des municipalités ou financements d'urgence.</p>
+                </div>
+
+              </div>
             </div>
 
           </div>

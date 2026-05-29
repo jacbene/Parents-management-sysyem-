@@ -22,14 +22,16 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate 
   const pupilsCount = parents.reduce((sum, p) => sum + p.students.length, 0);
   
   const totalDueAmount = parents.reduce((sum, p) => sum + p.totalDue, 0);
-  const totalPaidRevenue = parents.reduce((sum, p) => sum + p.totalPaid, 0);
+  const honorary = settings.honoraryContributions || 0;
+  const subventions = settings.subventionsAndAids || 0;
+  const totalPaidRevenue = parents.reduce((sum, p) => sum + p.totalPaid, 0) + honorary + subventions;
   
-  const totalDeficit = Math.max(0, totalDueAmount - totalPaidRevenue);
-  const realizationRate = totalDueAmount > 0 ? (totalPaidRevenue / totalDueAmount) * 100 : 0;
+  const totalDeficit = Math.max(0, totalDueAmount - parents.reduce((sum, p) => sum + p.totalPaid, 0));
+  const realizationRate = totalDueAmount > 0 ? (parents.reduce((sum, p) => sum + p.totalPaid, 0) / totalDueAmount) * 100 : 0;
   
   // Progress against the APEE General Financial Goal Target
-  const goalPercent = Math.min(100, (totalPaidRevenue / settings.financialGoal) * 100);
-  const averagePayment = parentsCount > 0 ? totalPaidRevenue / parentsCount : 0;
+  const goalPercent = settings.financialGoal > 0 ? Math.min(100, (totalPaidRevenue / settings.financialGoal) * 100) : 0;
+  const averagePayment = parentsCount > 0 ? parents.reduce((sum, p) => sum + p.totalPaid, 0) / parentsCount : 0;
 
   // Expenses summary
   const totalExecutedExpenses = expenses
@@ -185,7 +187,7 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate 
       id: 'stat_revenue',
       title: 'Dépôts APEE Enregistrés',
       value: `${totalPaidRevenue.toLocaleString()} FCFA`,
-      description: `Reste à recouvrir: ${totalDeficit.toLocaleString()} FCFA`,
+      description: `Cotis: ${parents.reduce((sum, p) => sum + p.totalPaid, 0).toLocaleString()} F | Hors-Cotis: ${(honorary + subventions).toLocaleString()} F`,
       icon: Landmark,
       colorClass: 'text-emerald-600 bg-emerald-50 border-emerald-100',
     },

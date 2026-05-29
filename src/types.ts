@@ -124,6 +124,8 @@ export interface Invoice {
   censeurName?: string;
   censeurPhone?: string;
   classTeachersList?: string;
+  honoraryContributions?: number;
+  subventionsAndAids?: number;
 }
 
 export interface ApeeStudentLink {
@@ -183,6 +185,8 @@ export interface ApeeSettings {
   cotisationAmount: number;
   financialGoal: number;
   budgetLines?: ApeeBudgetLine[];
+  honoraryContributions?: number;
+  subventionsAndAids?: number;
   finManagerName?: string;
   finManagerPhone?: string;
   finManagerPassword?: string;

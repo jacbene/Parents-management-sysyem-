@@ -367,6 +367,62 @@ export default function ApeeFinancialOverview({ parents, expenses, settings }: A
         </div>
       </div>
 
+      {/* Visualiser le récapitulatif toutes recettes confondues */}
+      <div className="border-t border-slate-100 pt-5 mt-4 space-y-3.5">
+        <h4 className="text-[11px] font-bold text-slate-700 tracking-wider uppercase font-mono">
+          📁 Ventilation Consolidée des Recettes (Cotisations Parents & Configurations Actives)
+        </h4>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 select-none text-xs">
+          
+          <div className="bg-slate-50/50 hover:bg-slate-50 border border-slate-150 p-3.5 rounded-xl flex items-center justify-between gap-3 transition">
+            <div className="space-y-0.5">
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Cotisations Générales (Parents)</span>
+              <span className="text-[10px] font-medium text-slate-400">Fonds récoltés directement</span>
+            </div>
+            <div className="text-right">
+              <p className="font-mono font-bold text-slate-900">
+                {parents.reduce((sum, p) => sum + p.totalPaid, 0).toLocaleString()} FCFA
+              </p>
+              <span className="text-[9px] text-indigo-650 font-bold font-sans bg-indigo-50 border border-indigo-100/60 px-1.5 py-0.5 rounded">
+                Versement parents
+              </span>
+            </div>
+          </div>
+
+          <div className="bg-slate-50/50 hover:bg-slate-50 border border-slate-150 p-3.5 rounded-xl flex items-center justify-between gap-3 transition">
+            <div className="space-y-0.5">
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Contributions Membres d'Honneur</span>
+              <span className="text-[10px] font-medium text-slate-400">Configurations administratives</span>
+            </div>
+            <div className="text-right">
+              <p className="font-mono font-bold text-slate-900">
+                {(settings.honoraryContributions || 0).toLocaleString()} FCFA
+              </p>
+              <span className="text-[9px] text-sky-650 font-bold font-sans bg-sky-50 border border-sky-100/60 px-1.5 py-0.5 rounded">
+                Comité d'Honneur
+              </span>
+            </div>
+          </div>
+
+          <div className="bg-slate-50/50 hover:bg-slate-50 border border-slate-150 p-3.5 rounded-xl flex items-center justify-between gap-3 transition">
+            <div className="space-y-0.5">
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Aides, Dons et Subventions</span>
+              <span className="text-[10px] font-medium text-slate-400">Financements externes</span>
+            </div>
+            <div className="text-right">
+              <p className="font-mono font-bold text-slate-900">
+                {(settings.subventionsAndAids || 0).toLocaleString()} FCFA
+              </p>
+              <span className="text-[9px] text-amber-650 font-bold font-sans bg-amber-50 border border-amber-100/60 px-1.5 py-0.5 rounded">
+                Aides/Subventions
+              </span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
     </div>
   );
 }
