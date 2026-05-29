@@ -9,7 +9,6 @@ export const db = initializeFirestore(app, {
     tabManager: persistentMultipleTabManager()
   }),
   experimentalForceLongPolling: true,
-  experimentalAutoDetectLongPolling: true
 }, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();

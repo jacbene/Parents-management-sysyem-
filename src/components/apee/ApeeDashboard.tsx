@@ -2,6 +2,7 @@ import React from 'react';
 import { Landmark, TrendingUp, Users, GraduationCap, Percent, AlertCircle, Coins, ArrowRight, Sparkles } from 'lucide-react';
 import { ComposedChart, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend, Cell, Line, ReferenceLine, PieChart, Pie } from 'recharts';
 import { ApeeParent, ApeeExpense, ApeeSettings } from '../../types';
+import ApeeFinancialOverview from './ApeeFinancialOverview';
 
 interface ApeeDashboardProps {
   parents: ApeeParent[];
@@ -378,6 +379,9 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate 
           </div>
         </div>
       )}
+
+      {/* Financial Overview (Recharts totalExecutedExpenses vs totalRevenue over last 6 months) */}
+      <ApeeFinancialOverview parents={parents} expenses={expenses} settings={settings} />
 
       {/* Visual Analytics Block (Charts) */}
       <h3 className="text-xs font-bold text-slate-700 tracking-wider uppercase pt-2">Graphiques et Indicateurs de Collecte</h3>
