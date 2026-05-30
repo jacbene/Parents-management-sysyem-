@@ -172,6 +172,17 @@ export interface ApeeExpense {
   budgetLineId?: string; // Optional budget line association
 }
 
+export interface ApeeActivityLog {
+  id: string;
+  parentId: string;
+  timestamp: string;
+  parentName: string;
+  actionType: 'CREATE_PARENT' | 'UPDATE_PARENT' | 'ADD_PAYMENT' | 'REMOVE_PAYMENT' | 'DELETE_PARENT' | 'MANUAL_ENTRY';
+  description: string;
+  amount: number;
+  operatorName: string;
+}
+
 export interface ApeeBudgetLine {
   id: string;
   name: string; // Nom de la ligne budgétaire, e.g. "Fournitures scolaires"

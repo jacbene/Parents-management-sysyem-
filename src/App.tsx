@@ -4,7 +4,7 @@ import { collection, query, where, getDocs, doc, setDoc, deleteDoc, writeBatch }
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, loginWithGoogle, logout, db, handleFirestoreError, OperationType, loginAnonymously } from './firebase';
 import { isDatabaseSeeded, seedUserData } from './seeder';
-import { Student, Grade, Attendance, Homework, Appointment, Message, Invoice, ApeeParent, ApeeExpense, ApeeSettings, Announcement, AnnouncementCategory } from './types';
+import { Student, Grade, Attendance, Homework, Appointment, Message, Invoice, ApeeParent, ApeeExpense, ApeeSettings, Announcement, AnnouncementCategory, ApeeActivityLog } from './types';
 
 // APEE Utilities and Components
 import {
@@ -16,6 +16,7 @@ import {
   deleteApeeExpense,
   importFullBackup,
   resetApeeData,
+  saveApeeLog,
   DEFAULT_SETTINGS
 } from './utils/apeeDb';
 
@@ -150,6 +151,7 @@ export default function App() {
   const [apeeSettings, setApeeSettings] = useState<ApeeSettings>(DEFAULT_SETTINGS);
   const [apeeParents, setApeeParents] = useState<ApeeParent[]>([]);
   const [apeeExpenses, setApeeExpenses] = useState<ApeeExpense[]>([]);
+  const [apeeLogs, setApeeLogs] = useState<ApeeActivityLog[]>([]);
   const [activeParentToEdit, setActiveParentToEdit] = useState<ApeeParent | null>(null);
 
   const [isApeeAuthorized, setIsApeeAuthorized] = useState(false);
@@ -406,6 +408,7 @@ export default function App() {
         if (apeeData.settings) setApeeSettings(apeeData.settings);
         if (apeeData.parents) setApeeParents(apeeData.parents);
         if (apeeData.expenses) setApeeExpenses(apeeData.expenses);
+        if (apeeData.logs) setApeeLogs(apeeData.logs);
       } catch (err) {
         console.error("Initiation payload failure:", err);
       } finally {
@@ -631,12 +634,37 @@ export default function App() {
   };
 
   // APEE State Action Handlers
-  const handleSaveApeeSettings = async (newSettings: ApeeSettings) => {
-    if (!await checkApeeAuthorization()) return;
+  const handleSaveApeeSettings = async (newSettings: ApeeSettings): Promise<boolean> => {
+    // Determine if this is a financial or budget modification.
+    const hasFinancialChanges = 
+      newSettings.cotisationAmount !== apeeSettings.cotisationAmount ||
+      newSettings.financialGoal !== apeeSettings.financialGoal ||
+      (newSettings.honoraryContributions || 0) !== (apeeSettings.honoraryContributions || 0) ||
+      (newSettings.subventionsAndAids || 0) !== (apeeSettings.subventionsAndAids || 0) ||
+      JSON.stringify(newSettings.budgetLines || []) !== JSON.stringify(apeeSettings.budgetLines || []) ||
+      newSettings.finManagerPassword !== apeeSettings.finManagerPassword ||
+      newSettings.associationName !== apeeSettings.associationName;
+
+    if (hasFinancialChanges) {
+      if (!await checkApeeAuthorization()) return false;
+    } else {
+      // Purely administrative or academic updates
+      if (isApeeAuthorized || isPedAuthorized) {
+        // Already authorized under one of the roles
+      } else {
+        // Try APEE Fin manager first since this is the APEE workspace, fall back to Academic check
+        const unlockedApee = await checkApeeAuthorization();
+        if (!unlockedApee) {
+          if (!await checkPedAuthorization()) return false;
+        }
+      }
+    }
+
     setApeeSettings(newSettings);
     if (userId) {
       await saveApeeSettings(userId, newSettings);
     }
+    return true;
   };
 
   const handleSaveApeeParentInPlace = async (parent: ApeeParent): Promise<boolean> => {
@@ -650,6 +678,106 @@ export default function App() {
     });
     if (userId) {
       try {
+        // Automatic Logging System for Financial Modifications
+        try {
+          const isNew = !apeeParents.some(p => p.id === parent.id);
+          const oldParent = apeeParents.find(p => p.id === parent.id);
+          const operator = apeeSettings.finManagerName || "Gérant Financier";
+
+          if (isNew) {
+            const logId = 'log_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+            const description = `Création du dossier de ${parent.name}. Cotisation exigible : ${parent.totalDue.toLocaleString()} FCFA pour ${parent.students.length} élève(s). Statut de base : ${parent.status.toUpperCase()}`;
+            const logObj: ApeeActivityLog = {
+              id: logId,
+              parentId: userId,
+              timestamp: new Date().toISOString(),
+              parentName: parent.name,
+              actionType: 'CREATE_PARENT',
+              description,
+              amount: parent.totalDue,
+              operatorName: operator
+            };
+            await saveApeeLog(userId, logObj);
+            setApeeLogs(prev => [logObj, ...prev]);
+
+            if (parent.payments && parent.payments.length > 0) {
+              for (const pay of parent.payments) {
+                const payLogId = 'log_' + Date.now() + '_pay_' + Math.random().toString(36).substr(2, 4);
+                const payDesc = `Versement de ${pay.amount.toLocaleString()} FCFA enregistré par ${pay.method} pour ${parent.name} (Réf : ${pay.transactionId || 'N/A'}${pay.note ? ' - Note : ' + pay.note : ''})`;
+                const payLogObj: ApeeActivityLog = {
+                  id: payLogId,
+                  parentId: userId,
+                  timestamp: new Date().toISOString(),
+                  parentName: parent.name,
+                  actionType: 'ADD_PAYMENT',
+                  description: payDesc,
+                  amount: pay.amount,
+                  operatorName: operator
+                };
+                await saveApeeLog(userId, payLogObj);
+                setApeeLogs(prev => [payLogObj, ...prev]);
+              }
+            }
+          } else if (oldParent) {
+            if (oldParent.totalDue !== parent.totalDue || oldParent.name !== parent.name || oldParent.students.length !== parent.students.length) {
+              const logId = 'log_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+              const description = `Mise à jour de la fiche parent de ${parent.name}. Dues totales exigibles ajustées : de ${oldParent.totalDue.toLocaleString()} à ${parent.totalDue.toLocaleString()} FCFA (${parent.students.length} élève(s)).`;
+              const logObj: ApeeActivityLog = {
+                id: logId,
+                parentId: userId,
+                timestamp: new Date().toISOString(),
+                parentName: parent.name,
+                actionType: 'UPDATE_PARENT',
+                description,
+                amount: Math.abs(parent.totalDue - oldParent.totalDue),
+                operatorName: operator
+              };
+              await saveApeeLog(userId, logObj);
+              setApeeLogs(prev => [logObj, ...prev]);
+            }
+
+            const oldPaymentIds = new Set((oldParent.payments || []).map(p => p.id));
+            const addedPayments = (parent.payments || []).filter(p => !oldPaymentIds.has(p.id));
+            for (const pay of addedPayments) {
+              const payLogId = 'log_' + Date.now() + '_pay_' + Math.random().toString(36).substr(2, 4);
+              const payDesc = `Nouveau versement de ${pay.amount.toLocaleString()} FCFA enregistré par ${pay.method} pour les les redevances de ${parent.name} (Réf : ${pay.transactionId || 'N/A'}${pay.note ? ' - Note : ' + pay.note : ''}).`;
+              const payLogObj: ApeeActivityLog = {
+                id: payLogId,
+                parentId: userId,
+                timestamp: new Date().toISOString(),
+                parentName: parent.name,
+                actionType: 'ADD_PAYMENT',
+                description: payDesc,
+                amount: pay.amount,
+                operatorName: operator
+              };
+              await saveApeeLog(userId, payLogObj);
+              setApeeLogs(prev => [payLogObj, ...prev]);
+            }
+
+            const currentPaymentIds = new Set((parent.payments || []).map(p => p.id));
+            const deletedPayments = (oldParent.payments || []).filter(p => !currentPaymentIds.has(p.id));
+            for (const pay of deletedPayments) {
+              const payLogId = 'log_' + Date.now() + '_del_' + Math.random().toString(36).substr(2, 4);
+              const payDesc = `Le versement de ${pay.amount.toLocaleString()} FCFA effectué par ${pay.method} pour ${parent.name} a été annulé de l'historique financier.`;
+              const payLogObj: ApeeActivityLog = {
+                id: payLogId,
+                parentId: userId,
+                timestamp: new Date().toISOString(),
+                parentName: parent.name,
+                actionType: 'REMOVE_PAYMENT',
+                description: payDesc,
+                amount: pay.amount,
+                operatorName: operator
+              };
+              await saveApeeLog(userId, payLogObj);
+              setApeeLogs(prev => [payLogObj, ...prev]);
+            }
+          }
+        } catch (e) {
+          console.error("Failed to generate financial logs:", e);
+        }
+
         await saveApeeParent(userId, parent);
 
         // Synchronize registered students into the main 'students' database!
@@ -715,6 +843,29 @@ export default function App() {
     }
     
     if (userId) {
+      try {
+        const deletedParent = apeeParents.find(p => p.id === id);
+        if (deletedParent) {
+          const operator = apeeSettings.finManagerName || "Gérant Financier";
+          const logId = 'log_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+          const description = `Suppression définitive du dossier de ${deletedParent.name} (Attente de redevance perdue : -${deletedParent.totalDue.toLocaleString()} FCFA, Versements annulés : -${deletedParent.totalPaid.toLocaleString()} FCFA).`;
+          const logObj: ApeeActivityLog = {
+            id: logId,
+            parentId: userId,
+            timestamp: new Date().toISOString(),
+            parentName: deletedParent.name,
+            actionType: 'DELETE_PARENT',
+            description,
+            amount: deletedParent.totalDue,
+            operatorName: operator
+          };
+          await saveApeeLog(userId, logObj);
+          setApeeLogs(prev => [logObj, ...prev]);
+        }
+      } catch (err) {
+        console.warn("Failed to write log for parent deletion:", err);
+      }
+
       try {
         const deletedParent = apeeParents.find(p => p.id === id);
         if (deletedParent && deletedParent.students) {
@@ -1467,6 +1618,7 @@ export default function App() {
                           parents={apeeParents}
                           expenses={apeeExpenses}
                           settings={apeeSettings}
+                          logs={apeeLogs}
                           onNavigate={(tab) => {
                             if (tab === 'recording') setActiveTab('apee_recording');
                             else if (tab === 'search') setActiveTab('apee_search');

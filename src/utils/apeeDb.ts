@@ -1,11 +1,12 @@
 import { collection, doc, setDoc, deleteDoc, getDocs, query, where, writeBatch } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { ApeeParent, ApeeExpense, ApeeSettings, Invoice } from '../types';
+import { ApeeParent, ApeeExpense, ApeeSettings, Invoice, ApeeActivityLog } from '../types';
 
 // Base cache keys
 const CACHE_SETTINGS = 'apee_settings_cache';
 const CACHE_PARENTS = 'apee_parents_cache';
 const CACHE_EXPENSES = 'apee_expenses_cache';
+const CACHE_LOGS = 'apee_logs_cache';
 
 // Load default settings if none exist
 export const DEFAULT_SETTINGS: ApeeSettings = {
@@ -131,6 +132,40 @@ function normalizeToApeeExpense(inv: Invoice): ApeeExpense {
 }
 
 /**
+ * Normalizes ApeeActivityLog to Firestore Invoice shape
+ */
+function normalizeLogToInvoice(log: ApeeActivityLog, parentId: string): Invoice {
+  return {
+    id: log.id,
+    studentId: 'apee_log',
+    parentId,
+    title: log.parentName,
+    amount: log.amount,
+    dueDate: log.actionType,
+    status: 'Paid',
+    paymentDate: log.timestamp,
+    provider: log.operatorName,
+    note: log.description,
+  };
+}
+
+/**
+ * Normalizes Firestore Invoice shape to ApeeActivityLog
+ */
+function normalizeToApeeLog(inv: Invoice): ApeeActivityLog {
+  return {
+    id: inv.id,
+    parentId: inv.parentId,
+    timestamp: inv.paymentDate || new Date().toISOString(),
+    parentName: inv.title || '',
+    actionType: (inv.dueDate || 'MANUAL_ENTRY') as any,
+    description: inv.note || '',
+    amount: inv.amount || 0,
+    operatorName: inv.provider || 'Gérant de Caisse',
+  };
+}
+
+/**
  * Loads entire workspace data, matching with offline storage cache
  */
 export async function fetchApeeData(parentId: string) {
@@ -138,6 +173,7 @@ export async function fetchApeeData(parentId: string) {
   let cachedSettings: ApeeSettings = DEFAULT_SETTINGS;
   let cachedParents: ApeeParent[] = [];
   let cachedExpenses: ApeeExpense[] = [];
+  let cachedLogs: ApeeActivityLog[] = [];
 
   try {
     const s = localStorage.getItem(`${CACHE_SETTINGS}_${parentId}`);
@@ -148,13 +184,16 @@ export async function fetchApeeData(parentId: string) {
 
     const e = localStorage.getItem(`${CACHE_EXPENSES}_${parentId}`);
     if (e) cachedExpenses = JSON.parse(e);
+
+    const l = localStorage.getItem(`${CACHE_LOGS}_${parentId}`);
+    if (l) cachedLogs = JSON.parse(l);
   } catch (err) {
     console.error('LocalStorage load failed', err);
   }
 
   // If parentId is missing (not authenticated yet), return cache fallback
   if (!parentId) {
-    return { settings: cachedSettings, parents: cachedParents, expenses: cachedExpenses };
+    return { settings: cachedSettings, parents: cachedParents, expenses: cachedExpenses, logs: cachedLogs };
   }
 
   try {
@@ -164,6 +203,7 @@ export async function fetchApeeData(parentId: string) {
     
     const dbParents: ApeeParent[] = [];
     const dbExpenses: ApeeExpense[] = [];
+    const dbLogs: ApeeActivityLog[] = [];
     let dbSettings: ApeeSettings | null = null;
 
     snapshot.forEach((docSnap) => {
@@ -172,6 +212,8 @@ export async function fetchApeeData(parentId: string) {
         dbParents.push(normalizeToApeeParent(data));
       } else if (data.studentId === 'apee_expense') {
         dbExpenses.push(normalizeToApeeExpense(data));
+      } else if (data.studentId === 'apee_log') {
+        dbLogs.push(normalizeToApeeLog(data));
       } else if (data.id === 'apee_settings') {
         let lines = DEFAULT_SETTINGS.budgetLines;
         try {
@@ -220,6 +262,8 @@ export async function fetchApeeData(parentId: string) {
     const finalSettings = dbSettings || cachedSettings;
     const finalParents = dbParents.length > 0 ? dbParents : cachedParents;
     const finalExpenses = dbExpenses.length > 0 ? dbExpenses : cachedExpenses;
+    const finalLogs = dbLogs.length > 0 ? dbLogs : cachedLogs;
+    finalLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
     // Automatic self-healing: copy local-only parents back to Firestore
     if (parentId && dbParents.length === 0 && cachedParents.length > 0) {
@@ -252,15 +296,17 @@ export async function fetchApeeData(parentId: string) {
     localStorage.setItem(`${CACHE_SETTINGS}_${parentId}`, JSON.stringify(finalSettings));
     localStorage.setItem(`${CACHE_PARENTS}_${parentId}`, JSON.stringify(finalParents));
     localStorage.setItem(`${CACHE_EXPENSES}_${parentId}`, JSON.stringify(finalExpenses));
+    localStorage.setItem(`${CACHE_LOGS}_${parentId}`, JSON.stringify(finalLogs));
 
     return {
       settings: finalSettings,
       parents: finalParents,
       expenses: finalExpenses,
+      logs: finalLogs,
     };
   } catch (err) {
     console.warn('Firestore fetch failed, staying offline/local first mode because of', err);
-    return { settings: cachedSettings, parents: cachedParents, expenses: cachedExpenses };
+    return { settings: cachedSettings, parents: cachedParents, expenses: cachedExpenses, logs: cachedLogs };
   }
 }
 
@@ -412,19 +458,54 @@ export async function deleteApeeExpense(parentId: string, id: string) {
 }
 
 /**
+ * Save Apee Activity log in Firestore and Local Cache
+ */
+export async function saveApeeLog(parentId: string, log: ApeeActivityLog) {
+  try {
+    const s = localStorage.getItem(`${CACHE_LOGS}_${parentId}`);
+    let logs: ApeeActivityLog[] = s ? JSON.parse(s) : [];
+    
+    // De-duplicate if ID already exists, or append
+    const index = logs.findIndex((l) => l.id === log.id);
+    if (index !== -1) {
+      logs[index] = log;
+    } else {
+      logs.push(log);
+    }
+    
+    // Sort descending by timestamp
+    logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    localStorage.setItem(`${CACHE_LOGS}_${parentId}`, JSON.stringify(logs));
+  } catch (e) {
+    console.error('Failed to save log in cache:', e);
+  }
+
+  if (!parentId) return;
+
+  try {
+    const invoiceData = normalizeLogToInvoice(log, parentId);
+    await setDoc(doc(db, 'invoices', log.id), invoiceData);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `invoices/${log.id}`);
+  }
+}
+
+/**
  * Import a full JSON backup (overwriting previous contents)
  */
 export async function importFullBackup(
   parentId: string,
-  data: { parents?: ApeeParent[]; expenses?: ApeeExpense[]; settings?: ApeeSettings }
+  data: { parents?: ApeeParent[]; expenses?: ApeeExpense[]; settings?: ApeeSettings; logs?: ApeeActivityLog[] }
 ) {
   const finalParents = data.parents || [];
   const finalExpenses = data.expenses || [];
   const finalSettings = data.settings || DEFAULT_SETTINGS;
+  const finalLogs = data.logs || [];
 
   localStorage.setItem(`${CACHE_SETTINGS}_${parentId}`, JSON.stringify(finalSettings));
   localStorage.setItem(`${CACHE_PARENTS}_${parentId}`, JSON.stringify(finalParents));
   localStorage.setItem(`${CACHE_EXPENSES}_${parentId}`, JSON.stringify(finalExpenses));
+  localStorage.setItem(`${CACHE_LOGS}_${parentId}`, JSON.stringify(finalLogs));
 
   if (!parentId) return;
 
@@ -465,6 +546,12 @@ export async function importFullBackup(
       batch.set(doc(db, 'invoices', exp.id), expInvoice);
     });
 
+    // Write logs
+    finalLogs.forEach((log) => {
+      const logInvoice = normalizeLogToInvoice(log, parentId);
+      batch.set(doc(db, 'invoices', log.id), logInvoice);
+    });
+
     await batch.commit();
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, 'import_backup_batch');
@@ -478,6 +565,7 @@ export async function resetApeeData(parentId: string) {
   localStorage.removeItem(`${CACHE_SETTINGS}_${parentId}`);
   localStorage.removeItem(`${CACHE_PARENTS}_${parentId}`);
   localStorage.removeItem(`${CACHE_EXPENSES}_${parentId}`);
+  localStorage.removeItem(`${CACHE_LOGS}_${parentId}`);
 
   if (!parentId) return;
 

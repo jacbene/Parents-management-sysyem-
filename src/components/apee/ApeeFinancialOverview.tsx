@@ -92,14 +92,17 @@ export default function ApeeFinancialOverview({ parents, expenses, settings }: A
   const hasActualData = originalChartData.some(d => d['Revenus (Recettes)'] > 0 || d['Dépenses Exécutées'] > 0);
 
   // Beautiful fallback stats for presentation if there aren't many records (avoids empty blank screens)
-  const displayChartData = hasActualData ? originalChartData : [
-    { monthKey: '2025-12', name: 'Déc 2025', 'Revenus (Recettes)': 1850000, 'Dépenses Exécutées': 890000, 'Marge de Trésorerie': 960000 },
-    { monthKey: '2026-01', name: 'Jan 2026', 'Revenus (Recettes)': 3200000, 'Dépenses Exécutées': 1450000, 'Marge de Trésorerie': 1750000 },
-    { monthKey: '2026-02', name: 'Fév 2026', 'Revenus (Recettes)': 2450000, 'Dépenses Exécutées': 1900000, 'Marge de Trésorerie': 550000 },
-    { monthKey: '2026-03', name: 'Mar 2026', 'Revenus (Recettes)': 4100000, 'Dépenses Exécutées': 2200000, 'Marge de Trésorerie': 1900000 },
-    { monthKey: '2026-04', name: 'Avr 2026', 'Revenus (Recettes)': 1500000, 'Dépenses Exécutées': 2400000, 'Marge de Trésorerie': -900000 },
-    { monthKey: '2026-05', name: 'Mai 2026', 'Revenus (Recettes)': 5200000, 'Dépenses Exécutées': 3100000, 'Marge de Trésorerie': 2100000 }
-  ];
+  const displayChartData = hasActualData ? originalChartData : sortedAllMonths.map(mKey => {
+    const [year, month] = mKey.split('-');
+    const label = `${monthNamesFR[month] || month} ${year}`;
+    return {
+      monthKey: mKey,
+      name: label,
+      'Revenus (Recettes)': 0,
+      'Dépenses Exécutées': 0,
+      'Marge de Trésorerie': 0,
+    };
+  });
 
   // 4. Cumulative calculations for the specific 6-month subset
   const total6MonthRevenue = displayChartData.reduce((sum, d) => sum + d['Revenus (Recettes)'], 0);
@@ -373,7 +376,7 @@ export default function ApeeFinancialOverview({ parents, expenses, settings }: A
           📁 Ventilation Consolidée des Recettes (Cotisations Parents & Configurations Actives)
         </h4>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 select-none text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 select-none text-xs">
           
           <div className="bg-slate-50/50 hover:bg-slate-50 border border-slate-150 p-3.5 rounded-xl flex items-center justify-between gap-3 transition">
             <div className="space-y-0.5">
@@ -416,6 +419,21 @@ export default function ApeeFinancialOverview({ parents, expenses, settings }: A
               </p>
               <span className="text-[9px] text-amber-650 font-bold font-sans bg-amber-50 border border-amber-100/60 px-1.5 py-0.5 rounded">
                 Aides/Subventions
+              </span>
+            </div>
+          </div>
+
+          <div className="bg-emerald-50/40 hover:bg-emerald-50 border border-emerald-150 p-3.5 rounded-xl flex items-center justify-between gap-3 transition">
+            <div className="space-y-0.5">
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">DÉPÔTS APEE ENREGISTRÉS</span>
+              <span className="text-[10px] font-medium text-emerald-650">Cotisations effectivement encaissées</span>
+            </div>
+            <div className="text-right">
+              <p className="font-mono font-black text-emerald-900">
+                {parents.reduce((sum, p) => sum + p.totalPaid, 0).toLocaleString()} FCFA
+              </p>
+              <span className="text-[9px] text-emerald-700 font-bold font-sans bg-emerald-100 border border-emerald-250/60 px-1.5 py-0.5 rounded">
+                Recettes Réelles
               </span>
             </div>
           </div>

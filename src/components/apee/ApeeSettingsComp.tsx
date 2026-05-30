@@ -4,14 +4,14 @@ import { ApeeSettings, ApeeBudgetLine, ApeeParent } from '../../types';
 
 interface ApeeSettingsProps {
   settings: ApeeSettings;
-  onSaveSettings: (settings: ApeeSettings) => void;
+  onSaveSettings: (settings: ApeeSettings) => Promise<boolean> | void;
   parents?: ApeeParent[];
 }
 
 export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [] }: ApeeSettingsProps) {
-  const [associationName, setAssociationName] = useState(settings.associationName);
-  const [schoolYear, setSchoolYear] = useState(settings.schoolYear);
-  const [cotisationAmount, setCotisationAmount] = useState<number>(settings.cotisationAmount);
+  const [associationName, setAssociationName] = useState(settings.associationName || '');
+  const [schoolYear, setSchoolYear] = useState(settings.schoolYear || '');
+  const [cotisationAmount, setCotisationAmount] = useState<number>(settings.cotisationAmount || 0);
   const [logoUrl, setLogoUrl] = useState(settings.logoUrl || '');
   const [honoraryContributions, setHonoraryContributions] = useState<number>(settings.honoraryContributions || 0);
   const [subventionsAndAids, setSubventionsAndAids] = useState<number>(settings.subventionsAndAids || 0);
@@ -74,6 +74,55 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
     return [...savedMapped, ...missingPredefined];
   });
 
+  // Synchronize local states with settings props when they load/change
+  React.useEffect(() => {
+    if (settings) {
+      setAssociationName(settings.associationName || '');
+      setSchoolYear(settings.schoolYear || '');
+      setCotisationAmount(settings.cotisationAmount || 0);
+      setLogoUrl(settings.logoUrl || '');
+      setHonoraryContributions(settings.honoraryContributions || 0);
+      setSubventionsAndAids(settings.subventionsAndAids || 0);
+      setFinManagerName(settings.finManagerName || '');
+      setFinManagerPhone(settings.finManagerPhone || '');
+      setFinManagerPassword(settings.finManagerPassword || '');
+      setPedManagerName(settings.pedManagerName || '');
+      setPedManagerPhone(settings.pedManagerPhone || '');
+      setPedManagerPassword(settings.pedManagerPassword || '');
+      setDirectorName(settings.directorName || '');
+      setDirectorPhone(settings.directorPhone || '');
+      setDirectorEmail(settings.directorEmail || '');
+      setSurveillantName(settings.surveillantName || '');
+      setSurveillantPhone(settings.surveillantPhone || '');
+      setCenseurName(settings.censeurName || '');
+      setCenseurPhone(settings.censeurPhone || '');
+      if (settings.classTeachers && settings.classTeachers.length > 0) {
+        const defaultClassrooms = [
+          { classRoom: '6ème', teacherName: '', teacherPhone: '', teacherEmail: '' },
+          { classRoom: '5ème', teacherName: '', teacherPhone: '', teacherEmail: '' },
+          { classRoom: '4ème ALL', teacherName: '', teacherPhone: '', teacherEmail: '' },
+          { classRoom: '4ème ESP', teacherName: '', teacherPhone: '', teacherEmail: '' },
+          { classRoom: '3ème ALL', teacherName: '', teacherPhone: '', teacherEmail: '' },
+          { classRoom: '3ème ESP', teacherName: '', teacherPhone: '', teacherEmail: '' },
+          { classRoom: '2nde', teacherName: '', teacherPhone: '', teacherEmail: '' },
+          { classRoom: '1ère', teacherName: '', teacherPhone: '', teacherEmail: '' },
+          { classRoom: 'Tle', teacherName: '', teacherPhone: '', teacherEmail: '' },
+          { classRoom: 'CM2-A', teacherName: '', teacherPhone: '', teacherEmail: '' },
+          { classRoom: 'CE2-B', teacherName: '', teacherPhone: '', teacherEmail: '' },
+          { classRoom: 'CM1-A', teacherName: '', teacherPhone: '', teacherEmail: '' },
+        ];
+        const savedMapped = settings.classTeachers.map(s => ({
+          classRoom: s.classRoom,
+          teacherName: s.teacherName || '',
+          teacherPhone: s.teacherPhone || '',
+          teacherEmail: s.teacherEmail || '',
+        }));
+        const missingPredefined = defaultClassrooms.filter(d => !settings.classTeachers!.some(s => s.classRoom === d.classRoom));
+        setClassTeachers([...savedMapped, ...missingPredefined]);
+      }
+    }
+  }, [settings]);
+
   // Budget lines states
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [lineName, setLineName] = useState('');
@@ -91,48 +140,54 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
   const [showSuccess, setShowSuccess] = useState(false);
   const [successMessage, setSuccessMessage] = useState('Paramètres enregistrés avec succès !');
 
-  const handleSaveWithExtra = (extra: Partial<ApeeSettings> = {}) => {
-    onSaveSettings({
-      associationName: associationName.trim(),
-      schoolYear: schoolYear.trim(),
-      cotisationAmount,
-      financialGoal: calculatedFinancialGoal,
-      budgetLines: settings.budgetLines || [],
-      finManagerName: finManagerName.trim(),
-      finManagerPhone: finManagerPhone.trim(),
-      finManagerPassword: finManagerPassword.trim(),
-      pedManagerName: pedManagerName.trim(),
-      pedManagerPhone: pedManagerPhone.trim(),
-      pedManagerPassword: pedManagerPassword.trim(),
-      logoUrl,
-      directorName: directorName.trim(),
-      directorPhone: directorPhone.trim(),
-      directorEmail: directorEmail.trim(),
-      surveillantName: surveillantName.trim(),
-      surveillantPhone: surveillantPhone.trim(),
-      censeurName: censeurName.trim(),
-      censeurPhone: censeurPhone.trim(),
-      classTeachers,
-      honoraryContributions,
-      subventionsAndAids,
-      ...extra
-    });
+  const handleSaveWithExtra = async (extra: Partial<ApeeSettings> = {}, successMsg = "Paramètres enregistrés avec succès !") => {
+    try {
+      const result = await onSaveSettings({
+        associationName: (associationName || '').trim(),
+        schoolYear: (schoolYear || '').trim(),
+        cotisationAmount: cotisationAmount || 0,
+        financialGoal: calculatedFinancialGoal,
+        budgetLines: settings.budgetLines || [],
+        finManagerName: (finManagerName || '').trim(),
+        finManagerPhone: (finManagerPhone || '').trim(),
+        finManagerPassword: (finManagerPassword || '').trim(),
+        pedManagerName: (pedManagerName || '').trim(),
+        pedManagerPhone: (pedManagerPhone || '').trim(),
+        pedManagerPassword: (pedManagerPassword || '').trim(),
+        logoUrl: logoUrl || '',
+        directorName: (directorName || '').trim(),
+        directorPhone: (directorPhone || '').trim(),
+        directorEmail: (directorEmail || '').trim(),
+        surveillantName: (surveillantName || '').trim(),
+        surveillantPhone: (surveillantPhone || '').trim(),
+        censeurName: (censeurName || '').trim(),
+        censeurPhone: (censeurPhone || '').trim(),
+        classTeachers: classTeachers || [],
+        honoraryContributions: honoraryContributions || 0,
+        subventionsAndAids: subventionsAndAids || 0,
+        ...extra
+      });
+
+      if (result !== false) {
+        setSuccessMessage(successMsg);
+        setShowSuccess(true);
+        setTimeout(() => {
+          setShowSuccess(false);
+        }, 3500);
+      }
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!associationName.trim() || !schoolYear.trim() || cotisationAmount <= 0 || calculatedFinancialGoal <= 0) {
+    if (!(associationName || '').trim() || !(schoolYear || '').trim() || cotisationAmount <= 0 || calculatedFinancialGoal <= 0) {
       alert("Veuillez renseigner correctement l'ensemble des champs obligatoires.");
       return;
     }
 
-    handleSaveWithExtra();
-
-    setSuccessMessage("Paramètres généraux d'administration sauvegardés avec succès !");
-    setShowSuccess(true);
-    setTimeout(() => {
-      setShowSuccess(false);
-    }, 3500);
+    handleSaveWithExtra({}, "Paramètres généraux d'administration sauvegardés avec succès !");
   };
 
   const handleSaveBudgetLine = (e: React.FormEvent) => {
@@ -540,10 +595,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
                     finManagerName: finManagerName.trim(),
                     finManagerPhone: finManagerPhone.trim(),
                     finManagerPassword: finManagerPassword.trim(),
-                  });
-                  setSuccessMessage("Accès du Responsable Financier enregistrés avec succès !");
-                  setShowSuccess(true);
-                  setTimeout(() => setShowSuccess(false), 3500);
+                  }, "Accès du Responsable Financier enregistrés avec succès !");
                 }}
                 className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-1 cursor-pointer transition shadow-2xs"
               >
@@ -653,10 +705,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
                     pedManagerName: pedManagerName.trim(),
                     pedManagerPhone: pedManagerPhone.trim(),
                     pedManagerPassword: pedManagerPassword.trim(),
-                  });
-                  setSuccessMessage("Accès du Responsable Pédagogique enregistrés avec succès !");
-                  setShowSuccess(true);
-                  setTimeout(() => setShowSuccess(false), 3500);
+                  }, "Accès du Responsable Pédagogique enregistrés avec succès !");
                 }}
                 className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-1 cursor-pointer transition shadow-2xs"
               >
@@ -806,10 +855,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
                   surveillantPhone: surveillantPhone.trim(),
                   censeurName: censeurName.trim(),
                   censeurPhone: censeurPhone.trim(),
-                });
-                setSuccessMessage("Responsables administratifs enregistrés avec succès !");
-                setShowSuccess(true);
-                setTimeout(() => setShowSuccess(false), 3500);
+                }, "Responsables administratifs enregistrés avec succès !");
               }}
               className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-1.5 cursor-pointer transition shadow-2xs mt-2"
             >
@@ -867,8 +913,9 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
                         placeholder="Ex: M. Jean Picard"
                         value={teach.teacherName}
                         onChange={(e) => {
-                          const updated = [...classTeachers];
-                          updated[idx].teacherName = e.target.value;
+                          const updated = classTeachers.map((t, i) =>
+                            i === idx ? { ...t, teacherName: e.target.value } : t
+                          );
                           setClassTeachers(updated);
                         }}
                       />
@@ -881,8 +928,9 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
                         placeholder="Ex: +237 6xx..."
                         value={teach.teacherPhone || ''}
                         onChange={(e) => {
-                          const updated = [...classTeachers];
-                          updated[idx].teacherPhone = e.target.value;
+                          const updated = classTeachers.map((t, i) =>
+                            i === idx ? { ...t, teacherPhone: e.target.value } : t
+                          );
                           setClassTeachers(updated);
                         }}
                       />
@@ -895,8 +943,9 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
                         placeholder="Ex: jean.picard@ecole..."
                         value={teach.teacherEmail || ''}
                         onChange={(e) => {
-                          const updated = [...classTeachers];
-                          updated[idx].teacherEmail = e.target.value;
+                          const updated = classTeachers.map((t, i) =>
+                            i === idx ? { ...t, teacherEmail: e.target.value } : t
+                          );
                           setClassTeachers(updated);
                         }}
                       />
@@ -946,10 +995,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
               onClick={() => {
                 handleSaveWithExtra({
                   classTeachers: classTeachers,
-                });
-                setSuccessMessage("Liste des professeurs titulaires mise à jour !");
-                setShowSuccess(true);
-                setTimeout(() => setShowSuccess(false), 3500);
+                }, "Liste des professeurs titulaires mise à jour !");
               }}
               className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-1.5 cursor-pointer transition shadow-2xs mt-2"
             >
