@@ -1,20 +1,28 @@
 import React, { useState } from 'react';
 import { Save, HelpCircle, Shield, Settings, Info, CheckCircle2, Plus, Trash2, Edit2, X, TrendingUp, Lock, Unlock, UserCheck, User, Phone, Mail, GraduationCap, AlertTriangle } from 'lucide-react';
-import { ApeeSettings, ApeeBudgetLine } from '../../types';
+import { ApeeSettings, ApeeBudgetLine, ApeeParent } from '../../types';
 
 interface ApeeSettingsProps {
   settings: ApeeSettings;
   onSaveSettings: (settings: ApeeSettings) => void;
+  parents?: ApeeParent[];
 }
 
-export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSettingsProps) {
+export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [] }: ApeeSettingsProps) {
   const [associationName, setAssociationName] = useState(settings.associationName);
   const [schoolYear, setSchoolYear] = useState(settings.schoolYear);
   const [cotisationAmount, setCotisationAmount] = useState<number>(settings.cotisationAmount);
-  const [financialGoal, setFinancialGoal] = useState<number>(settings.financialGoal);
   const [logoUrl, setLogoUrl] = useState(settings.logoUrl || '');
   const [honoraryContributions, setHonoraryContributions] = useState<number>(settings.honoraryContributions || 0);
   const [subventionsAndAids, setSubventionsAndAids] = useState<number>(settings.subventionsAndAids || 0);
+
+  // Dynamic calculations according to client instructions:
+  // Budget prévisionnel total (objectif) = cotisations des parents + contributions des membres d'honneur + subventions et autres aides.
+  const parentCotisations = parents.length > 0
+    ? parents.reduce((sum, p) => sum + p.totalDue, 0)
+    : (settings.financialGoal - (settings.honoraryContributions || 0) - (settings.subventionsAndAids || 0)) || 0;
+
+  const calculatedFinancialGoal = parentCotisations + honoraryContributions + subventionsAndAids;
 
   // Financial Manager credentials states
   const [finManagerName, setFinManagerName] = useState(settings.finManagerName || '');
@@ -88,7 +96,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
       associationName: associationName.trim(),
       schoolYear: schoolYear.trim(),
       cotisationAmount,
-      financialGoal,
+      financialGoal: calculatedFinancialGoal,
       budgetLines: settings.budgetLines || [],
       finManagerName: finManagerName.trim(),
       finManagerPhone: finManagerPhone.trim(),
@@ -113,7 +121,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!associationName.trim() || !schoolYear.trim() || cotisationAmount <= 0 || financialGoal <= 0) {
+    if (!associationName.trim() || !schoolYear.trim() || cotisationAmount <= 0 || calculatedFinancialGoal <= 0) {
       alert("Veuillez renseigner correctement l'ensemble des champs obligatoires.");
       return;
     }
@@ -212,7 +220,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
   // Calculations for budget consumption status
   const budgetLinesList = settings.budgetLines || [];
   const totalAllocated = budgetLinesList.reduce((acc, curr) => acc + curr.allocatedAmount, 0);
-  const percentAllocated = Math.min(100, Math.round((totalAllocated / financialGoal) * 100)) || 0;
+  const percentAllocated = Math.min(100, Math.round((totalAllocated / calculatedFinancialGoal) * 100)) || 0;
 
   return (
     <div id="content_apee_settings" className="space-y-6">
@@ -331,18 +339,36 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
 
             </div>
 
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-600 uppercase">Objectif prévisionnel du budget APEE (FCFA) <span className="text-red-500">*</span></label>
-              <input
-                type="number"
-                min="10000"
-                required
-                value={financialGoal || ''}
-                onChange={(e) => setFinancialGoal(Number(e.target.value))}
-                placeholder="Ex: 5000000"
-                className="w-full px-3 py-1.5 text-xs border rounded-lg focus:outline-indigo-550 font-mono text-right"
-              />
-              <p className="text-[9px] text-gray-400">Ce montant sert de base de calcul pour la gauge de progression et l'allocation des lignes de dépenses.</p>
+            {/* SECTION: Calculated Annual Budget Goal Breakdowns */}
+            <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-4.5 space-y-3 shadow-3xs">
+              <span className="text-[10px] text-indigo-950 font-extrabold uppercase tracking-wider block">
+                📐 Syntèse & Total du Budget Prévisionnel (Objectif)
+              </span>
+              
+              <div className="space-y-2 text-xs">
+                <div className="flex justify-between items-center bg-white/70 px-3 py-2 rounded-xl border border-indigo-100/40">
+                  <span className="text-slate-600 font-bold">1. Cotisations des parents (attendues) :</span>
+                  <span className="font-mono font-bold text-slate-800">{parentCotisations.toLocaleString()} FCFA</span>
+                </div>
+                
+                <div className="flex justify-between items-center bg-white/70 px-3 py-2 rounded-xl border border-indigo-100/40">
+                  <span className="text-slate-600 font-bold">2. Contributions des membres d'honneur :</span>
+                  <span className="font-mono font-bold text-slate-800">{honoraryContributions.toLocaleString()} FCFA</span>
+                </div>
+                
+                <div className="flex justify-between items-center bg-white/70 px-3 py-2 rounded-xl border border-indigo-100/40">
+                  <span className="text-slate-600 font-bold">3. Subventions & autres aides (A.D.S) :</span>
+                  <span className="font-mono font-bold text-slate-800">{subventionsAndAids.toLocaleString()} FCFA</span>
+                </div>
+                
+                <div className="border-t border-indigo-200/60 my-2 pt-2 flex justify-between items-center">
+                  <span className="text-indigo-950 font-black uppercase text-[10px]">Total du Budget Prévisionnel :</span>
+                  <span className="font-mono font-black text-sm text-indigo-700">{calculatedFinancialGoal.toLocaleString()} FCFA</span>
+                </div>
+              </div>
+              <p className="text-[8.5px] text-indigo-700/80 leading-normal font-medium">
+                * Note : Ce montant prévisionnel total sert de base de calcul pour les gauges de recouvrement, les statistiques et le découpage de vos lignes d'allocations de dépenses.
+              </p>
             </div>
 
             {/* Other Revenue streams */}
@@ -947,7 +973,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
             <div className="bg-slate-50 border border-slate-100 px-3 py-1.5 rounded-lg text-right">
               <div className="text-[9px] font-bold text-slate-500">Allocation Budgétaire Totale</div>
               <div className="font-mono text-xs font-black text-slate-800">
-                {totalAllocated.toLocaleString()} FCFA <span className="text-[10px] font-medium text-gray-400">/ {financialGoal.toLocaleString()} FCFA</span>
+                {totalAllocated.toLocaleString()} FCFA <span className="text-[10px] font-medium text-gray-400">/ {calculatedFinancialGoal.toLocaleString()} FCFA</span>
               </div>
             </div>
 
@@ -997,7 +1023,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {budgetLinesList.map((line) => {
-                const percentOfTotal = Math.round((line.allocatedAmount / financialGoal) * 100) || 0;
+                const percentOfTotal = Math.round((line.allocatedAmount / calculatedFinancialGoal) * 100) || 0;
                 return (
                   <div 
                     key={line.id} 

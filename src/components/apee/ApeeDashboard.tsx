@@ -24,7 +24,7 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate 
   const totalDueAmount = parents.reduce((sum, p) => sum + p.totalDue, 0);
   const honorary = settings.honoraryContributions || 0;
   const subventions = settings.subventionsAndAids || 0;
-  const totalPaidRevenue = parents.reduce((sum, p) => sum + p.totalPaid, 0) + honorary + subventions;
+  const totalPaidRevenue = parents.reduce((sum, p) => sum + p.totalPaid, 0);
   
   const totalDeficit = Math.max(0, totalDueAmount - parents.reduce((sum, p) => sum + p.totalPaid, 0));
   const realizationRate = totalDueAmount > 0 ? (parents.reduce((sum, p) => sum + p.totalPaid, 0) / totalDueAmount) * 100 : 0;
@@ -185,9 +185,9 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate 
   const statCards = [
     {
       id: 'stat_revenue',
-      title: 'Dépôts APEE Enregistrés',
+      title: 'Recettes Cotisations Parents',
       value: `${totalPaidRevenue.toLocaleString()} FCFA`,
-      description: `Cotis: ${parents.reduce((sum, p) => sum + p.totalPaid, 0).toLocaleString()} F | Hors-Cotis: ${(honorary + subventions).toLocaleString()} F`,
+      description: `Membres d'honneur & Subventions (Prévus) : ${(honorary + subventions).toLocaleString()} F`,
       icon: Landmark,
       colorClass: 'text-emerald-600 bg-emerald-50 border-emerald-100',
     },
