@@ -396,20 +396,26 @@ export default function App() {
       setDataLoading(true);
       try {
         // A. Verify if database has seeded profiles for this account space (demo schools pre-seeded dynamically if empty)
-        let seeded = false;
-        try {
-          // Check seeding status with a timeout of 2.5 seconds
-          seeded = await Promise.race([
-            isDatabaseSeeded(userId),
-            new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('Timeout checking seeded state')), 2500))
-          ]);
-          if (!seeded) {
-            setSeeding(true);
-            await seedUserData(userId);
-            setSeeding(false);
+        let seeded = true; // Default to true for simulated guests to bypass seeding attempts
+        const isSimulatedUser = !auth.currentUser || userId.startsWith('sandboxed_guest_');
+
+        if (!isSimulatedUser) {
+          try {
+            // Check seeding status with a timeout of 2.5 seconds
+            seeded = await Promise.race([
+              isDatabaseSeeded(userId),
+              new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('Timeout checking seeded state')), 2500))
+            ]);
+            if (!seeded) {
+              setSeeding(true);
+              await seedUserData(userId);
+              setSeeding(false);
+            }
+          } catch (e) {
+            console.warn("Seeding verification failed or timed out. Moving to local/offline loading mode.", e);
           }
-        } catch (e) {
-          console.warn("Seeding verification failed or timed out. Moving to local/offline loading mode.", e);
+        } else {
+          console.log("Local simulated workspace session (or unauthenticated state) detected. Bypassing remote database seeding.");
         }
 
         // B. Fetch all related collections under parentId
