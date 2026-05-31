@@ -1,7 +1,7 @@
 import React from 'react';
-import { Landmark, TrendingUp, Users, GraduationCap, Percent, AlertCircle, Coins, ArrowRight, Sparkles, Search, Activity, History, Plus } from 'lucide-react';
+import { Landmark, TrendingUp, Users, GraduationCap, Percent, AlertCircle, Coins, ArrowRight, Sparkles, Search, Activity, History, Plus, Wallet2 } from 'lucide-react';
 import { ComposedChart, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend, Cell, Line, ReferenceLine, PieChart, Pie } from 'recharts';
-import { ApeeParent, ApeeExpense, ApeeSettings, ApeeActivityLog } from '../../types';
+import { ApeeParent, ApeeExpense, ApeeSettings, ApeeActivityLog, ApeeOtherRevenue } from '../../types';
 import ApeeFinancialOverview from './ApeeFinancialOverview';
 
 interface ApeeDashboardProps {
@@ -10,9 +10,10 @@ interface ApeeDashboardProps {
   settings: ApeeSettings;
   onNavigate: (tab: string) => void;
   logs?: ApeeActivityLog[];
+  otherRevenues?: ApeeOtherRevenue[];
 }
 
-export default function ApeeDashboard({ parents, expenses, settings, onNavigate, logs = [] }: ApeeDashboardProps) {
+export default function ApeeDashboard({ parents, expenses, settings, onNavigate, logs = [], otherRevenues = [] }: ApeeDashboardProps) {
   const [isMounted, setIsMounted] = React.useState(false);
   const [searchLogQuery, setSearchLogQuery] = React.useState('');
   const [selectedActionFilter, setSelectedActionFilter] = React.useState('all');
@@ -25,18 +26,29 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate,
   // Calculations
   const parentsCount = parents.length;
   const pupilsCount = parents.reduce((sum, p) => sum + p.students.length, 0);
+  const expectedStudents = settings.expectedStudents || 100;
+  const expectedParentCotisations = expectedStudents * (settings.cotisationAmount || 12500);
   
-  const totalDueAmount = parents.reduce((sum, p) => sum + p.totalDue, 0);
+  const totalDueAmount = expectedParentCotisations;
   const honorary = settings.honoraryContributions || 0;
   const subventions = settings.subventionsAndAids || 0;
-  const totalPaidRevenue = parents.reduce((sum, p) => sum + p.totalPaid, 0);
+  const financialGoal = settings.financialGoal || (expectedParentCotisations + honorary + subventions);
+
+  const actualParentsPaid = parents.reduce((sum, p) => sum + p.totalPaid, 0);
+  const actualHonorary = otherRevenues && otherRevenues.length > 0
+    ? otherRevenues.filter(r => r.status === 'membre_honneur').reduce((sum, r) => sum + r.amount, 0)
+    : (settings.actualHonoraryContributions || 0);
+  const actualSubventions = otherRevenues && otherRevenues.length > 0
+    ? otherRevenues.filter(r => r.status === 'institution' || r.status === 'autre').reduce((sum, r) => sum + r.amount, 0)
+    : (settings.actualSubventionsAndAids || 0);
+  const totalPaidRevenue = actualParentsPaid + actualHonorary + actualSubventions;
   
-  const totalDeficit = Math.max(0, totalDueAmount - parents.reduce((sum, p) => sum + p.totalPaid, 0));
-  const realizationRate = totalDueAmount > 0 ? (parents.reduce((sum, p) => sum + p.totalPaid, 0) / totalDueAmount) * 100 : 0;
+  const totalDeficit = Math.max(0, financialGoal - totalPaidRevenue);
+  const realizationRate = financialGoal > 0 ? (totalPaidRevenue / financialGoal) * 100 : 0;
   
   // Progress against the APEE General Financial Goal Target
-  const goalPercent = settings.financialGoal > 0 ? Math.min(100, (totalPaidRevenue / settings.financialGoal) * 100) : 0;
-  const averagePayment = parentsCount > 0 ? parents.reduce((sum, p) => sum + p.totalPaid, 0) / parentsCount : 0;
+  const goalPercent = financialGoal > 0 ? Math.min(100, (totalPaidRevenue / financialGoal) * 100) : 0;
+  const averagePayment = parentsCount > 0 ? actualParentsPaid / parentsCount : 0;
 
   // Expenses summary
   const totalExecutedExpenses = expenses
@@ -191,10 +203,18 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate,
     {
       id: 'stat_revenue',
       title: 'Recettes Cotisations Parents',
-      value: `${totalPaidRevenue.toLocaleString()} FCFA`,
+      value: `${actualParentsPaid.toLocaleString()} FCFA`,
       description: `Objectif Parent: ${totalDueAmount.toLocaleString()} FCFA`,
       icon: Landmark,
-      colorClass: 'text-emerald-600 bg-emerald-50 border-emerald-100',
+      colorClass: 'text-emerald-650 bg-emerald-50 border-emerald-100',
+    },
+    {
+      id: 'stat_other_revenue',
+      title: 'Autres Recettes',
+      value: `${(actualHonorary + actualSubventions).toLocaleString()} FCFA`,
+      description: `Honneur: ${actualHonorary.toLocaleString()} F | Aides: ${actualSubventions.toLocaleString()} F`,
+      icon: Wallet2,
+      colorClass: 'text-cyan-600 bg-cyan-50 border-cyan-100/80',
     },
     {
       id: 'stat_parents',
@@ -259,7 +279,7 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate,
       </div>
 
       {/* Grid of Key Numerical Metrics */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         {statCards.map((card) => {
           const Icon = card.icon;
           return (
@@ -388,7 +408,7 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate,
       )}
 
       {/* Financial Overview (Recharts totalExecutedExpenses vs totalRevenue over last 6 months) */}
-      <ApeeFinancialOverview parents={parents} expenses={expenses} settings={settings} />
+      <ApeeFinancialOverview parents={parents} expenses={expenses} settings={settings} otherRevenues={otherRevenues} />
 
       {/* Journal d'Audit Financier Automatique (Temps Réel) */}
       <div id="financial_logs_audit_trail" className="bg-white border border-slate-150 rounded-2xl p-5 space-y-4 shadow-3xs">

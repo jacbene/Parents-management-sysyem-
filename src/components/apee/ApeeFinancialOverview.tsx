@@ -1,15 +1,16 @@
 import React from 'react';
 import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { TrendingUp, ArrowUpRight, ArrowDownLeft, Landmark, Percent, Receipt, Sparkles, Download } from 'lucide-react';
-import { ApeeParent, ApeeExpense, ApeeSettings } from '../../types';
+import { ApeeParent, ApeeExpense, ApeeSettings, ApeeOtherRevenue } from '../../types';
 
 interface ApeeFinancialOverviewProps {
   parents: ApeeParent[];
   expenses: ApeeExpense[];
   settings: ApeeSettings;
+  otherRevenues?: ApeeOtherRevenue[];
 }
 
-export default function ApeeFinancialOverview({ parents, expenses, settings }: ApeeFinancialOverviewProps) {
+export default function ApeeFinancialOverview({ parents, expenses, settings, otherRevenues = [] }: ApeeFinancialOverviewProps) {
   const [isMounted, setIsMounted] = React.useState(false);
   
   React.useEffect(() => {
@@ -25,6 +26,12 @@ export default function ApeeFinancialOverview({ parents, expenses, settings }: A
         allMonthsSet.add(pay.date.slice(0, 7)); // "YYYY-MM"
       }
     });
+  });
+
+  otherRevenues.forEach(r => {
+    if (r.date) {
+      allMonthsSet.add(r.date.slice(0, 7)); // "YYYY-MM"
+    }
   });
 
   expenses.forEach(e => {
@@ -71,6 +78,12 @@ export default function ApeeFinancialOverview({ parents, expenses, settings }: A
       });
     });
 
+    otherRevenues.forEach(r => {
+      if (r.date && r.date.startsWith(mKey)) {
+        revenue += r.amount;
+      }
+    });
+
     expenses.forEach(e => {
       if (e.status === 'Executed' && e.date && e.date.startsWith(mKey)) {
         expense += e.amount;
@@ -109,6 +122,15 @@ export default function ApeeFinancialOverview({ parents, expenses, settings }: A
   const total6MonthExpenses = displayChartData.reduce((sum, d) => sum + d['Dépenses Exécutées'], 0);
   const net6MonthCashFlow = total6MonthRevenue - total6MonthExpenses;
   const realizationRate = total6MonthRevenue > 0 ? (total6MonthRevenue / settings.financialGoal) * 100 : 0;
+
+  const actualParentsPaid = parents.reduce((sum, p) => sum + p.totalPaid, 0);
+  const actualHonorary = otherRevenues && otherRevenues.length > 0
+    ? otherRevenues.filter(r => r.status === 'membre_honneur').reduce((sum, r) => sum + r.amount, 0)
+    : (settings.actualHonoraryContributions || 0);
+  const actualSubventions = otherRevenues && otherRevenues.length > 0
+    ? otherRevenues.filter(r => r.status === 'institution' || r.status === 'autre').reduce((sum, r) => sum + r.amount, 0)
+    : (settings.actualSubventionsAndAids || 0);
+  const totalPaidRevenue = actualParentsPaid + actualHonorary + actualSubventions;
 
   const handleExportCSV = () => {
     // Columns headers
@@ -385,7 +407,7 @@ export default function ApeeFinancialOverview({ parents, expenses, settings }: A
             </div>
             <div className="text-right">
               <p className="font-mono font-bold text-slate-900">
-                {parents.reduce((sum, p) => sum + p.totalPaid, 0).toLocaleString()} FCFA
+                {actualParentsPaid.toLocaleString()} FCFA
               </p>
               <span className="text-[9px] text-indigo-650 font-bold font-sans bg-indigo-50 border border-indigo-100/60 px-1.5 py-0.5 rounded">
                 Versement parents
@@ -396,14 +418,14 @@ export default function ApeeFinancialOverview({ parents, expenses, settings }: A
           <div className="bg-slate-50/50 hover:bg-slate-50 border border-slate-150 p-3.5 rounded-xl flex items-center justify-between gap-3 transition">
             <div className="space-y-0.5">
               <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Contributions Membres d'Honneur</span>
-              <span className="text-[10px] font-medium text-slate-400">Configurations administratives</span>
+              <span className="text-[9px] text-slate-400 block font-medium">Prévu: {(settings.honoraryContributions || 0).toLocaleString()} F</span>
             </div>
             <div className="text-right">
               <p className="font-mono font-bold text-slate-900">
-                {(settings.honoraryContributions || 0).toLocaleString()} FCFA
+                {actualHonorary.toLocaleString()} FCFA
               </p>
               <span className="text-[9px] text-sky-650 font-bold font-sans bg-sky-50 border border-sky-100/60 px-1.5 py-0.5 rounded">
-                Comité d'Honneur
+                Reçu Effectif
               </span>
             </div>
           </div>
@@ -411,14 +433,14 @@ export default function ApeeFinancialOverview({ parents, expenses, settings }: A
           <div className="bg-slate-50/50 hover:bg-slate-50 border border-slate-150 p-3.5 rounded-xl flex items-center justify-between gap-3 transition">
             <div className="space-y-0.5">
               <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Aides, Dons et Subventions</span>
-              <span className="text-[10px] font-medium text-slate-400">Financements externes</span>
+              <span className="text-[9px] text-slate-400 block font-medium">Prévu: {(settings.subventionsAndAids || 0).toLocaleString()} F</span>
             </div>
             <div className="text-right">
               <p className="font-mono font-bold text-slate-900">
-                {(settings.subventionsAndAids || 0).toLocaleString()} FCFA
+                {actualSubventions.toLocaleString()} FCFA
               </p>
               <span className="text-[9px] text-amber-650 font-bold font-sans bg-amber-50 border border-amber-100/60 px-1.5 py-0.5 rounded">
-                Aides/Subventions
+                Reçu Effectif
               </span>
             </div>
           </div>
@@ -426,11 +448,11 @@ export default function ApeeFinancialOverview({ parents, expenses, settings }: A
           <div className="bg-emerald-50/40 hover:bg-emerald-50 border border-emerald-150 p-3.5 rounded-xl flex items-center justify-between gap-3 transition">
             <div className="space-y-0.5">
               <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">DÉPÔTS APEE ENREGISTRÉS</span>
-              <span className="text-[10px] font-medium text-emerald-650">Cotisations effectivement encaissées</span>
+              <span className="text-[9px] text-emerald-600 font-medium block">Cumul de tous les encaissements réels</span>
             </div>
             <div className="text-right">
-              <p className="font-mono font-black text-emerald-900">
-                {parents.reduce((sum, p) => sum + p.totalPaid, 0).toLocaleString()} FCFA
+              <p className="font-mono font-black text-emerald-950">
+                {totalPaidRevenue.toLocaleString()} FCFA
               </p>
               <span className="text-[9px] text-emerald-700 font-bold font-sans bg-emerald-100 border border-emerald-250/60 px-1.5 py-0.5 rounded">
                 Recettes Réelles

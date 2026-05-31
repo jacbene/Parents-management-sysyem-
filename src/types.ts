@@ -126,12 +126,16 @@ export interface Invoice {
   classTeachersList?: string;
   honoraryContributions?: number;
   subventionsAndAids?: number;
+  actualHonoraryContributions?: number;
+  actualSubventionsAndAids?: number;
+  expectedStudents?: number;
 }
 
 export interface ApeeStudentLink {
   name: string;
   classRoom: string;
   dob?: string;
+  dateOperation?: string;
 }
 
 export interface ApeePaymentItem {
@@ -172,6 +176,19 @@ export interface ApeeExpense {
   budgetLineId?: string; // Optional budget line association
 }
 
+export interface ApeeOtherRevenue {
+  id: string;
+  payerName: string;
+  status: 'membre_honneur' | 'institution' | 'autre';
+  statusDetails?: string; // Institution Details e.g. "Ministère"
+  amount: number;
+  paymentMethod: string;
+  date: string;
+  transactionId?: string;
+  notes?: string;
+  createdAt: string;
+}
+
 export interface ApeeActivityLog {
   id: string;
   parentId: string;
@@ -198,6 +215,9 @@ export interface ApeeSettings {
   budgetLines?: ApeeBudgetLine[];
   honoraryContributions?: number;
   subventionsAndAids?: number;
+  actualHonoraryContributions?: number;
+  actualSubventionsAndAids?: number;
+  expectedStudents?: number;
   finManagerName?: string;
   finManagerPhone?: string;
   finManagerPassword?: string;

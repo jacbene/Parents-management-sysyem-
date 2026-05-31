@@ -1,25 +1,30 @@
 import { collection, doc, setDoc, deleteDoc, getDocs, query, where, writeBatch } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { ApeeParent, ApeeExpense, ApeeSettings, Invoice, ApeeActivityLog } from '../types';
+import { ApeeParent, ApeeExpense, ApeeSettings, Invoice, ApeeActivityLog, ApeeOtherRevenue } from '../types';
 
 // Base cache keys
 const CACHE_SETTINGS = 'apee_settings_cache';
 const CACHE_PARENTS = 'apee_parents_cache';
 const CACHE_EXPENSES = 'apee_expenses_cache';
 const CACHE_LOGS = 'apee_logs_cache';
+const CACHE_OTHER_REVENUES = 'apee_other_revenues_cache';
 
 // Load default settings if none exist
 export const DEFAULT_SETTINGS: ApeeSettings = {
   associationName: "APEE CES d'Ekali 1 - MFOU",
   schoolYear: '2025/2026',
-  cotisationAmount: 25000,
-  financialGoal: 5000000,
+  cotisationAmount: 12500,
+  financialGoal: 2750000,
+  honoraryContributions: 500000,
+  subventionsAndAids: 1000000,
+  actualHonoraryContributions: 0,
+  actualSubventionsAndAids: 0,
   budgetLines: [
-    { id: 'bl_1', name: 'Soutien Pédagogique et Matériel Didactique', allocatedAmount: 1500000, description: 'Achat de craies, livres, cahiers de préparation, et soutien aux enseignants vacataires' },
-    { id: 'bl_2', name: 'Aménagement et Réparations des Salles', allocatedAmount: 1200000, description: 'Réparation des tables-bancs, entretien des toitures et peinture' },
-    { id: 'bl_3', name: 'Fournitures de Bureau et Administration', allocatedAmount: 850000, description: 'Rames de papier, encre d\'imprimante, frais administratifs' },
-    { id: 'bl_4', name: 'Santé, Hygiène et Eau potable', allocatedAmount: 650000, description: 'Boîte à pharmacie d\'urgence, eau potable, entretien des sanitaires' },
-    { id: 'bl_5', name: 'Activités Post et Périscolaires (FENASSCO)', allocatedAmount: 800000, description: 'Fêtes scolaires, compétitions sportives et récompenses de fin d\'année' }
+    { id: 'bl_1', name: 'Soutien Pédagogique et Matériel Didactique', allocatedAmount: 900000, description: 'Achat de craies, livres, cahiers de préparation, et soutien aux enseignants vacataires' },
+    { id: 'bl_2', name: 'Aménagement et Réparations des Salles', allocatedAmount: 650000, description: 'Réparation des tables-bancs, entretien des toitures et peinture' },
+    { id: 'bl_3', name: 'Fournitures de Bureau et Administration', allocatedAmount: 450000, description: 'Rames de papier, encre d\'imprimante, frais administratifs' },
+    { id: 'bl_4', name: 'Santé, Hygiène et Eau potable', allocatedAmount: 350000, description: 'Boîte à pharmacie d\'urgence, eau potable, entretien des sanitaires' },
+    { id: 'bl_5', name: 'Activités Post et Périscolaires (FENASSCO)', allocatedAmount: 400000, description: 'Fêtes scolaires, compétitions sportives et récompenses de fin d\'année' }
   ],
   finManagerName: '',
   finManagerPhone: '',
@@ -166,6 +171,45 @@ function normalizeToApeeLog(inv: Invoice): ApeeActivityLog {
 }
 
 /**
+ * Normalizes Firestore Invoice shape to ApeeOtherRevenue
+ */
+function normalizeToOtherRevenue(inv: Invoice): ApeeOtherRevenue {
+  return {
+    id: inv.id,
+    payerName: inv.title || '',
+    status: (inv.address || 'autre') as 'membre_honneur' | 'institution' | 'autre',
+    statusDetails: inv.phone || '',
+    amount: inv.amount || 0,
+    paymentMethod: inv.provider || 'Espèces',
+    date: inv.dueDate || new Date().toISOString().slice(0, 10),
+    transactionId: inv.transactionId || '',
+    notes: inv.note || '',
+    createdAt: inv.paymentDate || new Date().toISOString(),
+  };
+}
+
+/**
+ * Normalizes ApeeOtherRevenue to Firestore Invoice shape
+ */
+function normalizeOtherRevenueToInvoice(rev: ApeeOtherRevenue, parentId: string): Invoice {
+  return {
+    id: rev.id,
+    studentId: 'apee_other_revenue',
+    parentId,
+    title: rev.payerName,
+    amount: rev.amount,
+    dueDate: rev.date,
+    status: 'Paid',
+    paymentDate: rev.createdAt || new Date().toISOString(),
+    address: rev.status,
+    phone: rev.statusDetails || '',
+    provider: rev.paymentMethod,
+    transactionId: rev.transactionId || '',
+    note: rev.notes || '',
+  };
+}
+
+/**
  * Loads entire workspace data, matching with offline storage cache
  */
 export async function fetchApeeData(parentId: string) {
@@ -174,6 +218,7 @@ export async function fetchApeeData(parentId: string) {
   let cachedParents: ApeeParent[] = [];
   let cachedExpenses: ApeeExpense[] = [];
   let cachedLogs: ApeeActivityLog[] = [];
+  let cachedOtherRevenues: ApeeOtherRevenue[] = [];
 
   try {
     const s = localStorage.getItem(`${CACHE_SETTINGS}_${parentId}`);
@@ -187,23 +232,36 @@ export async function fetchApeeData(parentId: string) {
 
     const l = localStorage.getItem(`${CACHE_LOGS}_${parentId}`);
     if (l) cachedLogs = JSON.parse(l);
+
+    const r = localStorage.getItem(`${CACHE_OTHER_REVENUES}_${parentId}`);
+    if (r) cachedOtherRevenues = JSON.parse(r);
   } catch (err) {
     console.error('LocalStorage load failed', err);
   }
 
   // If parentId is missing (not authenticated yet), return cache fallback
   if (!parentId) {
-    return { settings: cachedSettings, parents: cachedParents, expenses: cachedExpenses, logs: cachedLogs };
+    return { 
+      settings: cachedSettings, 
+      parents: cachedParents, 
+      expenses: cachedExpenses, 
+      logs: cachedLogs,
+      otherRevenues: cachedOtherRevenues 
+    };
   }
 
   try {
     // Read from Firestore invoices collection for this parentId
     const qInvoices = query(collection(db, 'invoices'), where('parentId', '==', parentId));
-    const snapshot = await getDocs(qInvoices);
+    const snapshot = await Promise.race([
+      getDocs(qInvoices),
+      new Promise<any>((_, reject) => setTimeout(() => reject(new Error('Timeout fetching APEE data')), 3000))
+    ]);
     
     const dbParents: ApeeParent[] = [];
     const dbExpenses: ApeeExpense[] = [];
     const dbLogs: ApeeActivityLog[] = [];
+    const dbOtherRevenues: ApeeOtherRevenue[] = [];
     let dbSettings: ApeeSettings | null = null;
 
     snapshot.forEach((docSnap) => {
@@ -214,6 +272,8 @@ export async function fetchApeeData(parentId: string) {
         dbExpenses.push(normalizeToApeeExpense(data));
       } else if (data.studentId === 'apee_log') {
         dbLogs.push(normalizeToApeeLog(data));
+      } else if (data.studentId === 'apee_other_revenue') {
+        dbOtherRevenues.push(normalizeToOtherRevenue(data));
       } else if (data.id === 'apee_settings') {
         let lines = DEFAULT_SETTINGS.budgetLines;
         try {
@@ -254,6 +314,9 @@ export async function fetchApeeData(parentId: string) {
           classTeachers: teachers,
           honoraryContributions: data.honoraryContributions || 0,
           subventionsAndAids: data.subventionsAndAids || 0,
+          actualHonoraryContributions: data.actualHonoraryContributions || 0,
+          actualSubventionsAndAids: data.actualSubventionsAndAids || 0,
+          expectedStudents: data.expectedStudents || 100,
         };
       }
     });
@@ -263,6 +326,7 @@ export async function fetchApeeData(parentId: string) {
     const finalParents = dbParents.length > 0 ? dbParents : cachedParents;
     const finalExpenses = dbExpenses.length > 0 ? dbExpenses : cachedExpenses;
     const finalLogs = dbLogs.length > 0 ? dbLogs : cachedLogs;
+    const finalOtherRevenues = dbOtherRevenues.length > 0 ? dbOtherRevenues : cachedOtherRevenues;
     finalLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
     // Automatic self-healing: copy local-only parents back to Firestore
@@ -297,16 +361,76 @@ export async function fetchApeeData(parentId: string) {
     localStorage.setItem(`${CACHE_PARENTS}_${parentId}`, JSON.stringify(finalParents));
     localStorage.setItem(`${CACHE_EXPENSES}_${parentId}`, JSON.stringify(finalExpenses));
     localStorage.setItem(`${CACHE_LOGS}_${parentId}`, JSON.stringify(finalLogs));
+    localStorage.setItem(`${CACHE_OTHER_REVENUES}_${parentId}`, JSON.stringify(finalOtherRevenues));
 
     return {
       settings: finalSettings,
       parents: finalParents,
       expenses: finalExpenses,
       logs: finalLogs,
+      otherRevenues: finalOtherRevenues,
     };
   } catch (err) {
     console.warn('Firestore fetch failed, staying offline/local first mode because of', err);
-    return { settings: cachedSettings, parents: cachedParents, expenses: cachedExpenses, logs: cachedLogs };
+    return { 
+      settings: cachedSettings, 
+      parents: cachedParents, 
+      expenses: cachedExpenses, 
+      logs: cachedLogs,
+      otherRevenues: cachedOtherRevenues
+    };
+  }
+}
+
+/**
+ * Save Apee Other Revenue
+ */
+export async function saveApeeOtherRevenue(parentId: string, revenue: ApeeOtherRevenue) {
+  try {
+    const s = localStorage.getItem(`${CACHE_OTHER_REVENUES}_${parentId}`);
+    let revenues: ApeeOtherRevenue[] = s ? JSON.parse(s) : [];
+    const index = revenues.findIndex((r) => r.id === revenue.id);
+    if (index !== -1) {
+      revenues[index] = revenue;
+    } else {
+      revenues.push(revenue);
+    }
+    localStorage.setItem(`${CACHE_OTHER_REVENUES}_${parentId}`, JSON.stringify(revenues));
+  } catch (e) {
+    console.error(e);
+  }
+
+  if (!parentId) return;
+
+  try {
+    const invoiceData = normalizeOtherRevenueToInvoice(revenue, parentId);
+    await setDoc(doc(db, 'invoices', revenue.id), invoiceData);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `invoices/${revenue.id}`);
+  }
+}
+
+/**
+ * Delete Apee Other Revenue
+ */
+export async function deleteApeeOtherRevenue(parentId: string, id: string) {
+  try {
+    const s = localStorage.getItem(`${CACHE_OTHER_REVENUES}_${parentId}`);
+    if (s) {
+      let revenues: ApeeOtherRevenue[] = JSON.parse(s);
+      revenues = revenues.filter((r) => r.id !== id);
+      localStorage.setItem(`${CACHE_OTHER_REVENUES}_${parentId}`, JSON.stringify(revenues));
+    }
+  } catch (e) {
+    console.error(e);
+  }
+
+  if (!parentId) return;
+
+  try {
+    await deleteDoc(doc(db, 'invoices', id));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `invoices/${id}`);
   }
 }
 
@@ -346,6 +470,9 @@ export async function saveApeeSettings(parentId: string, settings: ApeeSettings)
       classTeachersList: JSON.stringify(settings.classTeachers || []),
       honoraryContributions: settings.honoraryContributions || 0,
       subventionsAndAids: settings.subventionsAndAids || 0,
+      actualHonoraryContributions: settings.actualHonoraryContributions || 0,
+      actualSubventionsAndAids: settings.actualSubventionsAndAids || 0,
+      expectedStudents: settings.expectedStudents || 100,
     });
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `invoices/${parentId}_settings`);
@@ -566,6 +693,7 @@ export async function resetApeeData(parentId: string) {
   localStorage.removeItem(`${CACHE_PARENTS}_${parentId}`);
   localStorage.removeItem(`${CACHE_EXPENSES}_${parentId}`);
   localStorage.removeItem(`${CACHE_LOGS}_${parentId}`);
+  localStorage.removeItem(`${CACHE_OTHER_REVENUES}_${parentId}`);
 
   if (!parentId) return;
 

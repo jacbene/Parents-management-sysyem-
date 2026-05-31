@@ -221,7 +221,8 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
       doc.setTextColor(100, 116, 139);
       doc.text("N°", margin + 4, y + 4.5);
       doc.text("Nom de l'élève", margin + 15, y + 4.5);
-      doc.text("Classe assignée", margin + 120, y + 4.5);
+      doc.text("Classe assignée", margin + 105, y + 4.5);
+      doc.text("Date de l'opération", margin + 140, y + 4.5);
 
       y += 6.5;
 
@@ -234,7 +235,9 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
         doc.setFont('helvetica', 'bold');
         doc.text(kid.name.toUpperCase(), margin + 15, y + 4.5);
         doc.setFont('helvetica', 'normal');
-        doc.text(kid.classRoom, margin + 120, y + 4.5);
+        doc.text(kid.classRoom, margin + 105, y + 4.5);
+        const opDateStr = kid.dateOperation ? new Date(kid.dateOperation).toLocaleDateString('fr-FR') : '-';
+        doc.text(opDateStr, margin + 140, y + 4.5);
 
         y += 6.5;
 
@@ -513,7 +516,14 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
                 <div className="space-y-1.5">
                   {selectedParent.students.map((student, idx) => (
                     <div key={idx} className="bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100 text-xs flex justify-between items-center font-medium text-slate-800">
-                      <span>{student.name}</span>
+                      <div className="flex flex-col">
+                        <span className="font-bold">{student.name}</span>
+                        {student.dateOperation && (
+                          <span className="text-[10px] text-gray-500 mt-0.5">
+                            📅 Opération : {new Date(student.dateOperation).toLocaleDateString('fr-FR', { dateStyle: 'medium' })}
+                          </span>
+                        )}
+                      </div>
                       <span className="bg-indigo-50 text-indigo-700 text-[10px] font-bold px-1.5 py-0.5 rounded-md font-mono">{student.classRoom}</span>
                     </div>
                   ))}

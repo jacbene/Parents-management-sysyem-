@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
 import { Download, FileSpreadsheet, Printer, Calendar, RefreshCw, BarChart2, DollarSign, Percent, TrendingUp, CheckCircle } from 'lucide-react';
-import { ApeeParent, ApeeSettings } from '../../types';
+import { ApeeParent, ApeeSettings, ApeeOtherRevenue } from '../../types';
 import { jsPDF } from 'jspdf';
 
 interface ApeeReportingProps {
   parents: ApeeParent[];
   settings: ApeeSettings;
+  otherRevenues?: ApeeOtherRevenue[];
 }
 
-export default function ApeeReporting({ parents, settings }: ApeeReportingProps) {
+export default function ApeeReporting({ parents, settings, otherRevenues = [] }: ApeeReportingProps) {
   const [filterPeriod, setFilterPeriod] = useState<string>('all'); // 'all' | 'today' | 'month' | 'custom'
+  const [activeSegment, setActiveSegment] = useState<'parents' | 'others'>('parents');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   
@@ -54,8 +56,30 @@ export default function ApeeReporting({ parents, settings }: ApeeReportingProps)
     return list.sort((a, b) => b.date.localeCompare(a.date));
   };
 
+  const getFilteredOtherRevenues = () => {
+    return otherRevenues.filter(r => {
+      const dateStr = r.date;
+      let include = true;
+      
+      if (filterPeriod === 'today') {
+        const todayStr = new Date().toISOString().slice(0, 10);
+        include = (dateStr === todayStr);
+      } else if (filterPeriod === 'month') {
+        const activeMonth = new Date().toISOString().slice(0, 7);
+        include = dateStr.startsWith(activeMonth);
+      } else if (filterPeriod === 'custom') {
+        if (startDate && dateStr < startDate) include = false;
+        if (endDate && dateStr > endDate) include = false;
+      }
+      return include;
+    }).sort((a, b) => b.date.localeCompare(a.date));
+  };
+
   const filteredPayments = getFilteredPayments();
-  const totalCollectedInPeriod = filteredPayments.reduce((sum, p) => sum + p.amount, 0);
+  const filteredOtherRevenues = getFilteredOtherRevenues();
+  const totalCollectedInPeriod = activeSegment === 'parents'
+    ? filteredPayments.reduce((sum, p) => sum + p.amount, 0)
+    : filteredOtherRevenues.reduce((sum, r) => sum + r.amount, 0);
 
   // Global calculations
   const totalExpectedAmount = parents.reduce((sum, p) => sum + p.totalDue, 0);
@@ -88,10 +112,11 @@ export default function ApeeReporting({ parents, settings }: ApeeReportingProps)
 
   // Export JSON function
   const handleExportJson = () => {
-    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(filteredPayments, null, 2));
+    const listToExport = activeSegment === 'parents' ? filteredPayments : filteredOtherRevenues;
+    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(listToExport, null, 2));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute('href', dataStr);
-    downloadAnchor.setAttribute('download', `bilan_APEE_periodique_${filterPeriod}.json`);
+    downloadAnchor.setAttribute('download', `bilan_APEE_${activeSegment === 'parents' ? 'cotisations_parents' : 'autres_recettes'}_${filterPeriod}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
@@ -102,10 +127,21 @@ export default function ApeeReporting({ parents, settings }: ApeeReportingProps)
 
   // Copy values as tab-separated values ready for Excel/Spreadsheets
   const handleCopyTsv = () => {
-    let tsv = 'Date\tNom Parent\tTéléphone\tMoyen de paiement\tMontant Versé (FCFA)\tObservations\n';
-    filteredPayments.forEach(p => {
-      tsv += `${p.date}\t${p.parentName}\t${p.parentPhone}\t${p.method || 'Espèces'}\t${p.amount}\t${p.note || ''}\n`;
-    });
+    let tsv = '';
+    if (activeSegment === 'parents') {
+      tsv = 'Date\tNom Parent\tTéléphone\tMoyen de paiement\tMontant Versé (FCFA)\tObservations\n';
+      filteredPayments.forEach(p => {
+        tsv += `${p.date}\t${p.parentName}\t${p.parentPhone}\t${p.method || 'Espèces'}\t${p.amount}\t${p.note || ''}\n`;
+      });
+    } else {
+      tsv = 'Date\tNom Donneur / Payeur\tQualité / Statut\tMoyen de paiement\tMontant Versé (FCFA)\tObservations / Réf\n';
+      filteredOtherRevenues.forEach(r => {
+        let statLabel = "Autre tiers";
+        if (r.status === 'membre_honneur') statLabel = "Membre d'Honneur";
+        else if (r.status === 'institution') statLabel = `Institution (${r.statusDetails || ''})`;
+        tsv += `${r.date}\t${r.payerName}\t${statLabel}\t${r.paymentMethod}\t${r.amount}\t${(r.notes || '') + (r.transactionId ? ' - Réf : ' + r.transactionId : '')}\n`;
+      });
+    }
 
     navigator.clipboard.writeText(tsv).then(() => {
       setSuccessMsg('Tableau copié ! Vous pouvez maintenant le coller directement dans Excel ou Google Sheets.');
@@ -331,6 +367,75 @@ export default function ApeeReporting({ parents, settings }: ApeeReportingProps)
       });
     }
 
+    // Section IV: Detailed other revenues logs
+    const filterOthersList = getFilteredOtherRevenues();
+    if (filterOthersList.length > 0) {
+      if (y > pageHeight - 35) {
+        doc.addPage();
+        pageCount++;
+        drawPageHeaderFooter(pageCount);
+        y = 25;
+      } else {
+        y += 10;
+      }
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text(`IV. AUTRES RECETTES ENCAISSÉES DE LA PÉRIODE (${filterPeriod.toUpperCase()})`, margin, y);
+      y += 4;
+      
+      doc.setDrawColor(226, 232, 240);
+      doc.line(margin, y, margin + contentWidth, y);
+      y += 5;
+
+      // Other Receipts Headers
+      doc.setFillColor(241, 245, 249);
+      doc.rect(margin, y, contentWidth, 6.5, 'F');
+      
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.setTextColor(100, 116, 139);
+      doc.text("Date", margin + 3, y + 4.5);
+      doc.text("Nom du Donneur / Payeur", margin + 30, y + 4.5);
+      doc.text("Qualité/Statut", margin + 95, y + 4.5);
+      doc.text("Mode Paiement", margin + 140, y + 4.5);
+      doc.text("Montant Saisi", margin + 175, y + 4.5, { align: 'right' });
+
+      y += 6.5;
+
+      filterOthersList.forEach((rev) => {
+        if (y > pageHeight - 20) {
+          doc.addPage();
+          pageCount++;
+          drawPageHeaderFooter(pageCount);
+          y = 25;
+        }
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(71, 85, 105);
+
+        doc.text(new Date(rev.date).toLocaleDateString('fr-FR'), margin + 3, y + 4.5);
+        doc.text(rev.payerName.toUpperCase(), margin + 30, y + 4.5);
+
+        let statLabel = "Autre tiers";
+        if (rev.status === 'membre_honneur') statLabel = "Membre d'Honneur";
+        else if (rev.status === 'institution') statLabel = `Institution (${rev.statusDetails || ''})`;
+        doc.text(statLabel, margin + 95, y + 4.5);
+
+        doc.text(rev.paymentMethod, margin + 140, y + 4.5);
+        
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${rev.amount.toLocaleString()} F`, margin + 175, y + 4.5, { align: 'right' });
+
+        y += 6.5;
+
+        doc.setDrawColor(241, 245, 249);
+        doc.line(margin, y, margin + contentWidth, y);
+      });
+    }
+
     doc.save(`bilan_financier_apee_${settings.schoolYear.replace(/\//g, '_')}_${filterPeriod}.pdf`);
     setSuccessMsg('Bilan financier exporté avec succès sous format PDF !');
     setTimeout(() => setSuccessMsg(null), 4000);
@@ -459,48 +564,119 @@ export default function ApeeReporting({ parents, settings }: ApeeReportingProps)
         
         {/* Tabular payment log */}
         <div className="lg:col-span-7 bg-white border border-slate-150 rounded-2xl p-4 space-y-3.5">
-          <div className="flex justify-between items-center border-b pb-2">
-            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-              <TrendingUp className="h-4 w-4 text-emerald-500" /> Journal Général de Recettes
-            </h3>
-            <span className="text-[10px] font-mono text-gray-400">Total : {filteredPayments.length} transactions</span>
+          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b pb-2">
+            <div>
+              <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <TrendingUp className="h-4 w-4 text-emerald-500" /> Journal de Trésorerie Découpé
+              </h3>
+              <p className="text-[10px] text-gray-400 font-sans mt-0.5">Cliquez sur un onglet pour basculer la liste active.</p>
+            </div>
+            <span className="text-[10px] font-mono text-gray-450 font-bold bg-slate-100 hover:bg-slate-150 rounded-md px-2 py-0.5">
+              Total : {activeSegment === 'parents' ? filteredPayments.length : filteredOtherRevenues.length} lignes
+            </span>
+          </div>
+
+          {/* Segment selection tabs switcher */}
+          <div className="flex bg-slate-100/80 border border-slate-205 rounded-xl p-0.75 font-bold text-[11px] max-w-xs select-none">
+            <button
+              onClick={() => setActiveSegment('parents')}
+              className={`flex-1 py-1.5 px-3 rounded-lg transition-all duration-155 cursor-pointer flex justify-center items-center gap-1 ${
+                activeSegment === 'parents' ? 'bg-white text-slate-900 shadow-3xs border border-slate-200/50' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              👨‍👩‍👧‍👦 Cotisations Parents
+            </button>
+            <button
+              onClick={() => setActiveSegment('others')}
+              className={`flex-1 py-1.5 px-3 rounded-lg transition-all duration-155 cursor-pointer flex justify-center items-center gap-1 ${
+                activeSegment === 'others' ? 'bg-white text-slate-900 shadow-3xs border border-slate-200/50' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              💸 Autres Recettes
+            </button>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-100 text-gray-505 font-bold uppercase text-[9px] tracking-wider select-none">
-                  <th className="py-2 px-2">Date</th>
-                  <th className="py-2 px-2">Parent d'Élève</th>
-                  <th className="py-2 px-2">Moyen</th>
-                  <th className="py-2 px-2 text-right">Montant</th>
-                  <th className="py-2 px-2">Observations</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredPayments.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="py-6 text-center text-gray-400 text-[11px] font-medium leading-relaxed">
-                      Aucune transaction financière n'a été enregistrée durant cette période.
-                    </td>
+            {activeSegment === 'parents' ? (
+              <table className="w-full text-xs text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-100 text-gray-505 font-bold uppercase text-[9px] tracking-wider select-none">
+                    <th className="py-2 px-2">Date</th>
+                    <th className="py-2 px-2">Parent d'Élève</th>
+                    <th className="py-2 px-2">Moyen</th>
+                    <th className="py-2 px-2 text-right">Montant</th>
+                    <th className="py-2 px-2">Observations</th>
                   </tr>
-                ) : (
-                  filteredPayments.map((p, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                      <td className="py-2 px-2 font-mono text-gray-450">{p.date}</td>
-                      <td className="py-2 px-2 font-semibold text-slate-800">{p.parentName}</td>
-                      <td className="py-2 px-2">
-                        <span className="text-[9px] font-sans font-extrabold bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded uppercase tracking-wider">
-                          {p.method || 'Espèces'}
-                        </span>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredPayments.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-6 text-center text-gray-400 text-[11px] font-medium leading-relaxed">
+                        Aucune transaction financière n'a été enregistrée pour les parents durant cette période.
                       </td>
-                      <td className="py-2 px-2 text-right font-mono font-bold text-emerald-600">{p.amount.toLocaleString()} FCFA</td>
-                      <td className="py-2 px-2 text-gray-500 text-[10px] truncate max-w-[150px]">{p.note || '-'}</td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    filteredPayments.map((p, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                        <td className="py-2 px-2 font-mono text-gray-450">{p.date}</td>
+                        <td className="py-2 px-2 font-semibold text-slate-800">{p.parentName}</td>
+                        <td className="py-2 px-2">
+                          <span className="text-[9px] font-sans font-extrabold bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                            {p.method || 'Espèces'}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2 text-right font-mono font-bold text-emerald-600">{p.amount.toLocaleString()} FCFA</td>
+                        <td className="py-2 px-2 text-gray-500 text-[10px] truncate max-w-[150px]">{p.note || '-'}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            ) : (
+              <table className="w-full text-xs text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-100 text-gray-505 font-bold uppercase text-[9px] tracking-wider select-none">
+                    <th className="py-2 px-2">Date</th>
+                    <th className="py-2 px-2">Nom Donneur / Payeur</th>
+                    <th className="py-2 px-2">Qualité/Statut</th>
+                    <th className="py-2 px-2">Moyen</th>
+                    <th className="py-2 px-2 text-right">Montant</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredOtherRevenues.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-6 text-center text-gray-400 text-[11px] font-medium leading-relaxed">
+                        Aucune autre recette n'a été encaissée durant cette période.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredOtherRevenues.map((rev) => {
+                      let statLabel = "Autre tiers";
+                      if (rev.status === 'membre_honneur') statLabel = "Membre d'Honneur";
+                      else if (rev.status === 'institution') statLabel = `Institution (${rev.statusDetails || ''})`;
+
+                      return (
+                        <tr key={rev.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="py-2 px-2 font-mono text-gray-450">{rev.date}</td>
+                          <td className="py-2 px-2 font-semibold text-slate-800">
+                            <div>{rev.payerName}</div>
+                            {rev.notes && <span className="text-[9px] text-[indigo-600]/70 font-sans tracking-wide leading-none select-none italic block mt-0.5">Note: {rev.notes}</span>}
+                          </td>
+                          <td className="py-2 px-2 font-medium text-slate-655 font-mono text-[10px]">{statLabel}</td>
+                          <td className="py-2 px-2">
+                            <span className="text-[9px] font-sans font-extrabold bg-emerald-50 text-emerald-750 px-1.5 py-0.5 rounded uppercase tracking-wider border border-emerald-100/50">
+                              {rev.paymentMethod}
+                            </span>
+                          </td>
+                          <td className="py-2 px-2 text-right font-mono font-bold text-emerald-600">{rev.amount.toLocaleString()} FCFA</td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
 

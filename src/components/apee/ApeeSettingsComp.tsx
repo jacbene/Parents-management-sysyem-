@@ -13,14 +13,15 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
   const [schoolYear, setSchoolYear] = useState(settings.schoolYear || '');
   const [cotisationAmount, setCotisationAmount] = useState<number>(settings.cotisationAmount || 0);
   const [logoUrl, setLogoUrl] = useState(settings.logoUrl || '');
+  const [expectedStudents, setExpectedStudents] = useState<number>(settings.expectedStudents || 100);
   const [honoraryContributions, setHonoraryContributions] = useState<number>(settings.honoraryContributions || 0);
   const [subventionsAndAids, setSubventionsAndAids] = useState<number>(settings.subventionsAndAids || 0);
+  const [actualHonoraryContributions, setActualHonoraryContributions] = useState<number>(settings.actualHonoraryContributions || 0);
+  const [actualSubventionsAndAids, setActualSubventionsAndAids] = useState<number>(settings.actualSubventionsAndAids || 0);
 
   // Dynamic calculations according to client instructions:
   // Budget prévisionnel total (objectif) = cotisations des parents + contributions des membres d'honneur + subventions et autres aides.
-  const parentCotisations = parents.length > 0
-    ? parents.reduce((sum, p) => sum + p.totalDue, 0)
-    : (settings.financialGoal - (settings.honoraryContributions || 0) - (settings.subventionsAndAids || 0)) || 0;
+  const parentCotisations = expectedStudents * cotisationAmount;
 
   const calculatedFinancialGoal = parentCotisations + honoraryContributions + subventionsAndAids;
 
@@ -81,8 +82,11 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
       setSchoolYear(settings.schoolYear || '');
       setCotisationAmount(settings.cotisationAmount || 0);
       setLogoUrl(settings.logoUrl || '');
+      setExpectedStudents(settings.expectedStudents || 100);
       setHonoraryContributions(settings.honoraryContributions || 0);
       setSubventionsAndAids(settings.subventionsAndAids || 0);
+      setActualHonoraryContributions(settings.actualHonoraryContributions || 0);
+      setActualSubventionsAndAids(settings.actualSubventionsAndAids || 0);
       setFinManagerName(settings.finManagerName || '');
       setFinManagerPhone(settings.finManagerPhone || '');
       setFinManagerPassword(settings.finManagerPassword || '');
@@ -165,6 +169,9 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
         classTeachers: classTeachers || [],
         honoraryContributions: honoraryContributions || 0,
         subventionsAndAids: subventionsAndAids || 0,
+        actualHonoraryContributions: actualHonoraryContributions || 0,
+        actualSubventionsAndAids: actualSubventionsAndAids || 0,
+        expectedStudents: expectedStudents || 100,
         ...extra
       });
 
@@ -365,7 +372,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-slate-600 uppercase">Année Scolaire Active <span className="text-red-500">*</span></label>
@@ -387,7 +394,20 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
                   required
                   value={cotisationAmount || ''}
                   onChange={(e) => setCotisationAmount(Number(e.target.value))}
-                  placeholder="Ex: 25000"
+                  placeholder="Ex: 12500"
+                  className="w-full px-3 py-1.5 text-xs border rounded-lg focus:outline-indigo-550 font-mono text-right"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-600 uppercase">Nombre d'Élèves Attendus <span className="text-red-500">*</span></label>
+                <input
+                  type="number"
+                  min="1"
+                  required
+                  value={expectedStudents || ''}
+                  onChange={(e) => setExpectedStudents(Number(e.target.value))}
+                  placeholder="Ex: 100"
                   className="w-full px-3 py-1.5 text-xs border rounded-lg focus:outline-indigo-550 font-mono text-right"
                 />
               </div>
@@ -397,13 +417,16 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
             {/* SECTION: Calculated Annual Budget Goal Breakdowns */}
             <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-4.5 space-y-3 shadow-3xs">
               <span className="text-[10px] text-indigo-950 font-extrabold uppercase tracking-wider block">
-                📐 Syntèse & Total du Budget Prévisionnel (Objectif)
+                📐 Synthèse & Total du Budget Prévisionnel (Objectif)
               </span>
               
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between items-center bg-white/70 px-3 py-2 rounded-xl border border-indigo-100/40">
                   <span className="text-slate-600 font-bold">1. Cotisations des parents (attendues) :</span>
-                  <span className="font-mono font-bold text-slate-800">{parentCotisations.toLocaleString()} FCFA</span>
+                  <div className="text-right">
+                    <span className="font-mono font-bold text-slate-800block">{parentCotisations.toLocaleString()} FCFA</span>
+                    <span className="text-[9px] text-slate-500 block">({expectedStudents} élèves attendus × {cotisationAmount.toLocaleString()} F)</span>
+                  </div>
                 </div>
                 
                 <div className="flex justify-between items-center bg-white/70 px-3 py-2 rounded-xl border border-indigo-100/40">
@@ -422,14 +445,14 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
                 </div>
               </div>
               <p className="text-[8.5px] text-indigo-700/80 leading-normal font-medium">
-                * Note : Ce montant prévisionnel total sert de base de calcul pour les gauges de recouvrement, les statistiques et le découpage de vos lignes d'allocations de dépenses.
+                * Note : Ce montant prévisionnel total sert de base de calcul pour les jauges de recouvrement, les statistiques et le découpage de vos lignes d'allocations de dépenses. Le budget est équilibré en recettes et en dépenses à {calculatedFinancialGoal.toLocaleString()} FCFA.
               </p>
             </div>
 
             {/* Other Revenue streams */}
             <div className="border-t border-slate-100 pt-4 mt-4 space-y-4">
               <div className="flex items-center gap-2 select-none">
-                <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wider block">Autres Sources de Recettes (Prévues)</span>
+                <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wider block">1. Autres Sources de Recettes (Prévues/Budget)</span>
                 <span className="h-px bg-slate-100 flex-1" />
               </div>
               
@@ -445,7 +468,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
                     placeholder="Ex: 500000"
                     className="w-full px-3 py-1.5 text-xs border rounded-lg focus:outline-indigo-550 font-mono text-right"
                   />
-                  <p className="text-[8.5px] text-gray-400 leading-tight">Contributions financières exceptionnelles des parents d'honneur et conseillers.</p>
+                  <p className="text-[8.5px] text-gray-400 leading-tight">Contributions financières prévues pour les parents d'honneur et conseillers.</p>
                 </div>
 
                 <div className="space-y-1">
@@ -458,7 +481,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
                     placeholder="Ex: 1000000"
                     className="w-full px-3 py-1.5 text-xs border rounded-lg focus:outline-indigo-550 font-mono text-right"
                   />
-                  <p className="text-[8.5px] text-gray-400 leading-tight">Subventions ministérielles, dons des municipalités ou financements d'urgence.</p>
+                  <p className="text-[8.5px] text-gray-400 leading-tight">Subventions ministérielles ou dons de municipalités prévus.</p>
                 </div>
 
               </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Printer, CheckCircle, Smartphone, Tag, User, Hash, MapPin, Notebook, DollarSign, Calendar, Mail, X, Download } from 'lucide-react';
-import { ApeeParent, ApeeStudentLink, ApeePaymentItem, ApeeSettings } from '../../types';
+import { ApeeParent, ApeeStudentLink, ApeePaymentItem, ApeeSettings, ApeeOtherRevenue } from '../../types';
 import { jsPDF } from 'jspdf';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -9,9 +9,10 @@ interface ApeeFormProps {
   onSaveParent: (parent: ApeeParent) => Promise<boolean>;
   activeParentToEdit?: ApeeParent | null;
   onCancelEdit?: () => void;
+  onSaveOtherRevenue: (revenue: ApeeOtherRevenue) => Promise<boolean>;
 }
 
-export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, onCancelEdit }: ApeeFormProps) {
+export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, onCancelEdit, onSaveOtherRevenue }: ApeeFormProps) {
   // Get dynamic classrooms configured in settings or fall back to standard high-school levels
   const configuredClassrooms = settings?.classTeachers && settings.classTeachers.length > 0
     ? settings.classTeachers.map(tc => tc.classRoom)
@@ -35,7 +36,7 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
   const [parentPhone, setParentPhone] = useState('');
   const [parentAddress, setParentAddress] = useState('');
   const [parentEmail, setParentEmail] = useState('');
-  const [students, setStudents] = useState<ApeeStudentLink[]>([{ name: '', classRoom: defaultClassroom }]);
+  const [students, setStudents] = useState<ApeeStudentLink[]>([{ name: '', classRoom: defaultClassroom, dateOperation: new Date().toISOString().slice(0, 10) }]);
   const [showPrintToast, setShowPrintToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [note, setNote] = useState('');
@@ -54,6 +55,260 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [isSavedJustNow, setIsSavedJustNow] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Other revenues states
+  const [formMode, setFormMode] = useState<'parent' | 'other_revenue'>('parent');
+  const [otherPayerName, setOtherPayerName] = useState('');
+  const [otherStatus, setOtherStatus] = useState<'membre_honneur' | 'institution' | 'autre'>('membre_honneur');
+  const [otherStatusDetails, setOtherStatusDetails] = useState('');
+  const [otherAmount, setOtherAmount] = useState<number>(0);
+  const [otherPaymentMethod, setOtherPaymentMethod] = useState('Espèces');
+  const [otherTransactionId, setOtherTransactionId] = useState('');
+  const [otherDate, setOtherDate] = useState(new Date().toISOString().slice(0, 10));
+  const [otherNotes, setOtherNotes] = useState('');
+
+  const clearOtherForm = () => {
+    setOtherPayerName('');
+    setOtherStatus('membre_honneur');
+    setOtherStatusDetails('');
+    setOtherAmount(0);
+    setOtherPaymentMethod('Espèces');
+    setOtherTransactionId('');
+    setOtherDate(new Date().toISOString().slice(0, 10));
+    setOtherNotes('');
+  };
+
+  const handleDownloadOtherRevenueReceiptPDF = (revenueToPrint: ApeeOtherRevenue) => {
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    let y = 15;
+    const margin = 15;
+    const pageWidth = 210;
+    const pageHeight = 297;
+    const contentWidth = pageWidth - (2 * margin); // 180mm
+
+    const drawPageHeaderFooter = () => {
+      // Header line
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.3);
+      doc.line(margin, 12, margin + contentWidth, 12);
+      
+      // Header text
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184); // Slate 400
+      doc.text(`Reçu APEE CES Ekali 1 • Autres Recettes • Année : ${settings.schoolYear || ""}`, margin, 9);
+      
+      // Footer line
+      doc.line(margin, pageHeight - 12, margin + contentWidth, pageHeight - 12);
+      
+      // Footer text
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(148, 163, 184);
+      doc.text(`Édité par PASMA-ENT ANALYTICS (Génération de pièces comptables)`, margin, pageHeight - 8);
+      doc.text(`Reçu Officiel Autre Recette`, margin + contentWidth - 40, pageHeight - 8);
+    };
+
+    drawPageHeaderFooter();
+
+    // Top Cameroonian Official Ribbon
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(71, 85, 105); // Slate 600
+    doc.text("RÉPUBLIQUE DU CAMEROUN", margin, y + 4);
+    doc.text("REPUBLIC OF CAMEROON", margin + contentWidth, y + 4, { align: 'right' });
+
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(6.5);
+    doc.setTextColor(148, 163, 184); // Slate 400
+    doc.text("Paix - Travail - Patrie", margin, y + 8);
+    doc.text("Peace - Work - Fatherland", margin + contentWidth, y + 8, { align: 'right' });
+
+    y += 15;
+
+    // Left accent bar (Green for Other Receipts)
+    doc.setFillColor(16, 185, 129); // Emerald-500
+    doc.rect(margin, y, 4, 18, 'F');
+
+    // Brand and Title
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(16, 124, 65); // Emerald hex
+    doc.text(`${(settings.associationName || "APEE CES EKALI 1").toUpperCase()}`, margin + 6, y + 4);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.setTextColor(15, 23, 42); // Slate 900
+    doc.text("REÇU OFFICIEL DE CO-OPÉRATION ET AUTRES RECETTES", margin + 6, y + 12);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139); // Slate 500
+    doc.text(`Année Scolaire : ${settings.schoolYear || "N/A"} • Saisi le : ${new Date().toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' })}`, margin + 6, y + 17);
+
+    y += 24;
+
+    // Summary Card Box style (Green layout)
+    doc.setFillColor(240, 253, 250); // Emerald 50
+    doc.setDrawColor(209, 250, 229); // Emerald 200
+    doc.setLineWidth(0.3);
+    doc.rect(margin, y, contentWidth, 24, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(5, 150, 105); // Emerald-600
+    doc.text("MONTANT DÉPOSÉ (RÉGIE)", margin + 6, y + 7);
+    doc.text("CATÉGORIE PAYEUR", margin + 75, y + 7);
+    doc.text("DATE DE L'OPÉRATION", margin + 135, y + 7);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(15, 23, 42); // Black
+    doc.text(`${revenueToPrint.amount.toLocaleString()} FCFA`, margin + 6, y + 15);
+
+    let catLabel = "Autre Tiers / Donateur";
+    if (revenueToPrint.status === 'membre_honneur') catLabel = "Membre d'Honneur";
+    else if (revenueToPrint.status === 'institution') catLabel = `${revenueToPrint.statusDetails || 'Institution'}`;
+
+    doc.setTextColor(16, 124, 65);
+    doc.text(catLabel, margin + 75, y + 15);
+
+    doc.setTextColor(15, 23, 42);
+    doc.text(new Date(revenueToPrint.date).toLocaleDateString('fr-FR', { dateStyle: 'medium' }), margin + 135, y + 15);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Pris en compte comptable`, margin + 6, y + 20);
+    doc.text(`Mode de paiement: ${revenueToPrint.paymentMethod}`, margin + 75, y + 20);
+    doc.text(`Enregistré par régie d'APEE`, margin + 135, y + 20);
+
+    y += 32;
+
+    // Payer details section
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(15, 23, 42); // Slate 900
+    doc.text("COORDONNÉES DU DÉPOSANT / PAYEUR", margin, y);
+    y += 4;
+    
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.35);
+    doc.line(margin, y, margin + contentWidth, y);
+    y += 6;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(71, 85, 105);
+
+    doc.setFont('helvetica', 'bold');
+    doc.text("Nom / Raison Sociale :", margin + 4, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(revenueToPrint.payerName || 'Non désigné', margin + 45, y);
+    y += 6;
+
+    doc.setFont('helvetica', 'bold');
+    doc.text("Statut du Tiers :", margin + 4, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(revenueToPrint.status === 'membre_honneur' ? "Membre d'Honneur (Mécène)" : revenueToPrint.status === 'institution' ? "Institution publique / privée" : "Autre donateur tiers", margin + 45, y);
+    y += 6;
+
+    if (revenueToPrint.statusDetails) {
+      doc.setFont('helvetica', 'bold');
+      doc.text("Précisions :", margin + 4, y);
+      doc.setFont('helvetica', 'normal');
+      doc.text(revenueToPrint.statusDetails, margin + 45, y);
+      y += 6;
+    }
+
+    if (revenueToPrint.transactionId) {
+      doc.setFont('helvetica', 'bold');
+      doc.text("Réf. Transaction / Pièce :", margin + 4, y);
+      doc.setFont('helvetica', 'normal');
+      doc.text(revenueToPrint.transactionId, margin + 45, y);
+      y += 6;
+    }
+
+    if (revenueToPrint.notes) {
+      doc.setFont('helvetica', 'bold');
+      doc.text("Observations / Objet :", margin + 4, y);
+      doc.setFont('helvetica', 'normal');
+      doc.text(revenueToPrint.notes, margin + 45, y);
+      y += 6;
+    }
+
+    y += 10;
+
+    // Signature boxes
+    y += 10;
+    doc.setDrawColor(226, 232, 240);
+    doc.line(margin, y, margin + contentWidth, y);
+    y += 6;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(51, 65, 85);
+
+    doc.text("Signature du Donateur / Déposant", margin + 10, y);
+    doc.text("Le Trésorier de l'APEE (CES Ekali 1)", margin + contentWidth - 75, y);
+
+    y += 18;
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(7);
+    doc.setTextColor(148, 163, 184);
+    doc.text("Cette pièce justificative vaut reçu pour comptabilité.", margin + 10, y);
+    doc.text("Sceau et cachet officiel de régie financière.", margin + contentWidth - 75, y);
+
+    const safeFilename = `recu_recette_${(revenueToPrint.payerName || 'autre').toLowerCase().replace(/[^a-z0-9]/g, '_')}.pdf`;
+    doc.save(safeFilename);
+  };
+
+  const handleOtherFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otherPayerName.trim()) {
+      alert("Le nom du payeur est obligatoire.");
+      return;
+    }
+    if (otherAmount <= 0) {
+      alert("Le montant doit être supérieur à 0.");
+      return;
+    }
+
+    const payload: ApeeOtherRevenue = {
+      id: 'rev_' + Date.now().toString(36),
+      payerName: otherPayerName.trim(),
+      status: otherStatus,
+      statusDetails: otherStatus === 'institution' ? otherStatusDetails.trim() : undefined,
+      amount: otherAmount,
+      paymentMethod: otherPaymentMethod,
+      date: otherDate,
+      transactionId: otherTransactionId.trim() || undefined,
+      notes: otherNotes.trim() || undefined,
+      createdAt: new Date().toISOString(),
+    };
+
+    setIsSaving(true);
+    try {
+      const savedSuccessfully = await onSaveOtherRevenue(payload);
+      if (savedSuccessfully) {
+        setSuccessMsg('Recette enregistrée et reçu de caisse édité avec succès !');
+        // Instantly download PDF
+        handleDownloadOtherRevenueReceiptPDF(payload);
+        clearOtherForm();
+        setTimeout(() => setSuccessMsg(null), 5000);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Erreur lors de l'enregistrement de l'opération.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   // Sync provider selection when payment method changes
   useEffect(() => {
@@ -91,7 +346,7 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
     setParentPhone('');
     setParentAddress('');
     setParentEmail('');
-    setStudents([{ name: '', classRoom: defaultClassroom, dob: '' }]);
+    setStudents([{ name: '', classRoom: defaultClassroom, dateOperation: new Date().toISOString().slice(0, 10) }]);
     setNote('');
     setPayments([]);
     setPayAmount(0);
@@ -102,7 +357,7 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
   };
 
   const handleAddStudent = () => {
-    setStudents([...students, { name: '', classRoom: defaultClassroom, dob: '' }]);
+    setStudents([...students, { name: '', classRoom: defaultClassroom, dateOperation: new Date().toISOString().slice(0, 10) }]);
   };
 
   const handleRemoveStudent = (index: number) => {
@@ -419,7 +674,8 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
       doc.setTextColor(71, 85, 105); // Slate 600
       doc.text("N°", margin + 4, y + 4.5);
       doc.text("Nom complet de l'élève", margin + 15, y + 4.5);
-      doc.text("Classe assignée", margin + 120, y + 4.5);
+      doc.text("Classe assignée", margin + 105, y + 4.5);
+      doc.text("Date de l'opération", margin + 140, y + 4.5);
 
       y += 6.5;
 
@@ -432,7 +688,9 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
         doc.setFont('helvetica', 'bold');
         doc.text(kid.name.toUpperCase(), margin + 15, y + 4.5);
         doc.setFont('helvetica', 'normal');
-        doc.text(kid.classRoom, margin + 120, y + 4.5);
+        doc.text(kid.classRoom, margin + 105, y + 4.5);
+        const opDateStr = kid.dateOperation ? new Date(kid.dateOperation).toLocaleDateString('fr-FR') : '-';
+        doc.text(opDateStr, margin + 140, y + 4.5);
 
         y += 6.5;
 
@@ -488,10 +746,10 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-150 pb-4">
         <div>
           <h2 className="text-xl font-bold text-slate-900 tracking-tight">
-            {activeParentToEdit ? '🖊️ Modifier la Cotisation' : '📝 Enregistrement d\'une Cotisation'}
+            {activeParentToEdit ? '🖊️ Modifier la Cotisation' : '📝 Enregistrement d\'une Opération de Caisse'}
           </h2>
           <p className="text-xs text-gray-500 font-medium">
-            Associer un parent d'élève à une ou plusieurs classes et enregistrer son acompte.
+            Enregistrer les cotisations scolaires des parents ou d\'autres types de recettes de l\'association.
           </p>
         </div>
         {activeParentToEdit && (
@@ -504,6 +762,34 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
         )}
       </div>
 
+      {/* Tab switcher for parents vs other arbitrary revenues */}
+      {!activeParentToEdit && (
+        <div className="flex gap-2 p-1 bg-slate-100 rounded-xl w-fit">
+          <button
+            type="button"
+            onClick={() => { setFormMode('parent'); setSuccessMsg(null); }}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+              formMode === 'parent'
+                ? 'bg-white text-slate-950 shadow-xs border border-slate-200'
+                : 'text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            👨‍👩‍👧‍👦 Cotisations de Parents
+          </button>
+          <button
+            type="button"
+            onClick={() => { setFormMode('other_revenue'); setSuccessMsg(null); }}
+            className={`px-4 py-2 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+              formMode === 'other_revenue'
+                ? 'bg-white text-emerald-950 shadow-xs border border-emerald-200'
+                : 'text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            💸 Autres Recettes (Membres d'honneur, Dons...)
+          </button>
+        </div>
+      )}
+
       {successMsg && (
         <div className="bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs px-4 py-3 rounded-xl flex items-center gap-2 font-semibold">
           <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0" />
@@ -511,9 +797,159 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
         </div>
       )}
 
-      <form onSubmit={handleFormSubmit} className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
-        {/* Left half: Parent and Students */}
+      {formMode === 'other_revenue' ? (
+        <form onSubmit={handleOtherFormSubmit} className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Left half: Other Revenue details */}
+          <div className="lg:col-span-7 space-y-6">
+            <div className="bg-slate-50/50 border border-slate-100 rounded-2xl p-4 md:p-5 space-y-4">
+              <h3 className="text-sm font-semibold text-emerald-800 flex items-center gap-2 border-b border-emerald-100/50 pb-2">
+                <User className="h-4 w-4 text-emerald-600 shrink-0" /> Coordonnées du Tiers / Organisme Payeur
+              </h3>
+              
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-700 tracking-wide uppercase">Nom complet / Raison sociale <span className="text-red-500">*</span></label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                    <input
+                      type="text"
+                      required
+                      value={otherPayerName}
+                      onChange={(e) => setOtherPayerName(e.target.value)}
+                      placeholder="Ex: M. Jean Elanga ou Fondation Orange"
+                      className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 bg-white rounded-xl focus:outline-emerald-500 font-medium"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-700 tracking-wide uppercase">Statut / Catégorie <span className="text-red-500">*</span></label>
+                    <select
+                      value={otherStatus}
+                      onChange={(e) => setOtherStatus(e.target.value as any)}
+                      className="w-full px-3 py-2 text-xs border border-slate-200 bg-white rounded-xl focus:outline-emerald-500 font-bold text-slate-800 cursor-pointer"
+                    >
+                      <option value="membre_honneur">🌟 Membre d'Honneur (Mécène)</option>
+                      <option value="institution">🏢 Institution (À préciser ci-contre)</option>
+                      <option value="autre">🤝 Autre donateur tiers</option>
+                    </select>
+                  </div>
+
+                  {otherStatus === 'institution' && (
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-emerald-800 tracking-wide uppercase">Détails Institution <span className="text-red-500">*</span></label>
+                      <input
+                        type="text"
+                        required
+                        value={otherStatusDetails}
+                        onChange={(e) => setOtherStatusDetails(e.target.value)}
+                        placeholder="Ex: Mairie, Ministère d'Éducation, etc."
+                        className="w-full px-3 py-2 text-xs border border-slate-200 bg-white rounded-xl focus:outline-emerald-550 font-bold"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-slate-50/50 border border-slate-100 rounded-2xl p-4 md:p-5 space-y-4">
+              <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-2">
+                <Calendar className="h-4 w-4 text-emerald-600 shrink-0" /> Date et Référence d'Opération
+              </h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-700 tracking-wide uppercase">Date de l'opération</label>
+                  <input
+                    type="date"
+                    required
+                    value={otherDate}
+                    onChange={(e) => setOtherDate(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 bg-white rounded-xl focus:outline-emerald-500 font-semibold font-mono text-center cursor-pointer"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-700 tracking-wide uppercase">N° Reçu / Réf. Transaction (Optionnel)</label>
+                  <input
+                    type="text"
+                    value={otherTransactionId}
+                    onChange={(e) => setOtherTransactionId(e.target.value)}
+                    placeholder="Ex: CHQ-84920 ou Ref-MOMO"
+                    className="w-full px-3 py-2 text-xs border border-slate-200 bg-white rounded-xl focus:outline-emerald-500 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-700 tracking-wide uppercase">Observations / Descriptif du Don (Optionnel)</label>
+                <textarea
+                  value={otherNotes}
+                  onChange={(e) => setOtherNotes(e.target.value)}
+                  placeholder="Inscrivez toutes les remarques (Ex: Don de rentrée pour matériel d'aménagement public)"
+                  rows={3}
+                  className="w-full px-3 py-2 text-xs border border-slate-200 bg-white rounded-xl focus:outline-emerald-500 font-medium"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Right half: Financial amounts */}
+          <div className="lg:col-span-5 space-y-6">
+            <div className="bg-emerald-50/40 border border-emerald-150 rounded-2xl p-5 md:p-6 space-y-6">
+              <h3 className="text-sm font-bold text-emerald-950 uppercase tracking-wide border-b border-emerald-100 pb-2 flex items-center gap-1.5 leading-none select-none">
+                🤝 Validation Financière
+              </h3>
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-extrabold text-emerald-900 uppercase">Montant Déposé (FCFA) <span className="text-red-500">*</span></label>
+                <div className="relative">
+                  <DollarSign className="absolute left-3 top-2.5 h-4 w-4 text-emerald-600" />
+                  <input
+                    type="number"
+                    min="100"
+                    required
+                    value={otherAmount || ''}
+                    onChange={(e) => setOtherAmount(Number(e.target.value))}
+                    placeholder="Ex: 500000"
+                    className="w-full pl-9 pr-3 py-2.5 text-sm font-black text-emerald-950 border border-emerald-300 bg-white rounded-xl focus:outline-emerald-500 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-extrabold text-emerald-900 uppercase">Mode de Paiement <span className="text-red-500">*</span></label>
+                <select
+                  value={otherPaymentMethod}
+                  onChange={(e) => setOtherPaymentMethod(e.target.value)}
+                  className="w-full px-3 py-2.5 text-xs font-bold text-slate-800 border border-emerald-250 bg-white rounded-xl focus:outline-emerald-500 cursor-pointer"
+                >
+                  <option value="Espèces">💵 Espèces (Cash)</option>
+                  <option value="Chèque">✍️ Chèque de Banque</option>
+                  <option value="Orange Money">🍊 Orange Money</option>
+                  <option value="MTN Mobile Money">📲 MTN MoMo</option>
+                  <option value="Wave">🌊 Wave Mobile</option>
+                  <option value="Virement Bancaire">🏛️ Virement Bancaire</option>
+                </select>
+              </div>
+
+              <div className="pt-4 border-t border-emerald-100">
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition cursor-pointer disabled:opacity-50 select-none shadow-sm flex items-center justify-center gap-1.5"
+                >
+                  {isSaving ? 'Enregistrement...' : '📥 Enregistrer la Recette & Délivrer Reçu'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </form>
+      ) : (
+        <form onSubmit={handleFormSubmit} className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          
+          {/* Left half: Parent and Students */}
         <div className="lg:col-span-7 space-y-6">
           <div className="bg-slate-50/50 border border-slate-100 rounded-2xl p-4 md:p-5 space-y-4">
             <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-2">
@@ -632,12 +1068,12 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
                   </div>
                   <div className="sm:w-36 space-y-1">
                     <label className="text-[9px] font-bold text-slate-500 uppercase flex items-center gap-1">
-                      <Calendar className="h-2.5 w-2.5 text-indigo-500" /> Naissance
+                      <Calendar className="h-2.5 w-2.5 text-indigo-500" /> Date d'opération
                     </label>
                     <input
                       type="date"
-                      value={student.dob || ''}
-                      onChange={(e) => handleStudentChange(idx, 'dob', e.target.value)}
+                      value={student.dateOperation || ''}
+                      onChange={(e) => handleStudentChange(idx, 'dateOperation', e.target.value)}
                       className="w-full px-2 py-1 text-xs border border-slate-200 rounded-lg focus:outline-indigo-500 bg-slate-50 text-slate-800"
                     />
                   </div>
@@ -907,6 +1343,7 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
         </div>
 
       </form>
+      )}
 
       {/* Receipt Preview Modal */}
       {showReceiptModal && (
@@ -1026,7 +1463,8 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
                           <tr className="bg-slate-50 border-b border-slate-200">
                             <th className="py-2 px-3 border-r border-slate-200 font-extrabold text-[#111827]">N°</th>
                             <th className="py-2 px-3 border-r border-slate-200 font-extrabold text-[#111827]">Nom complet</th>
-                            <th className="py-2 px-3 font-extrabold text-[#111827]">Classe assignée</th>
+                            <th className="py-2 px-3 border-r border-slate-200 font-extrabold text-[#111827]">Classe assignée</th>
+                            <th className="py-2 px-3 font-extrabold text-[#111827]">Date d'opération</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1034,7 +1472,10 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
                             <tr key={idx} className="border-b border-slate-150 hover:bg-slate-50/50">
                               <td className="py-1.5 px-3 border-r border-slate-200 font-medium text-slate-500">{idx + 1}</td>
                               <td className="py-1.5 px-3 border-r border-slate-200 font-mono text-[11px] font-extrabold text-slate-900 uppercase tracking-wide">{s.name}</td>
-                              <td className="py-1.5 px-3 font-semibold text-slate-700">{s.classRoom}</td>
+                              <td className="py-1.5 px-3 border-r border-slate-200 font-semibold text-slate-700">{s.classRoom}</td>
+                              <td className="py-1.5 px-3 font-mono font-bold text-gray-600 text-[11px]">
+                                {s.dateOperation ? new Date(s.dateOperation).toLocaleDateString('fr-FR') : '-'}
+                              </td>
                             </tr>
                           ))}
                         </tbody>
