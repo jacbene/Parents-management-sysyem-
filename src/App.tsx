@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, query, where, getDocs, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
-import { auth, loginWithGoogle, logout, db, handleFirestoreError, OperationType, loginAnonymously } from './firebase';
+import { auth, loginWithGoogle, logout, db, handleFirestoreError, OperationType, loginAnonymously, goOffline, goOnline } from './firebase';
 import { isDatabaseSeeded, seedUserData, getOfflineMockData } from './seeder';
 import { Student, Grade, Attendance, Homework, Appointment, Message, Invoice, ApeeParent, ApeeExpense, ApeeSettings, Announcement, AnnouncementCategory, ApeeActivityLog, ApeeOtherRevenue } from './types';
 
@@ -123,12 +123,37 @@ export default function App() {
   });
   
   const [showCookieBanner, setShowCookieBanner] = useState(false);
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
   useEffect(() => {
     const decision = localStorage.getItem('cookie_consent_decision');
     if (!decision) {
       setShowCookieBanner(true);
     }
+  }, []);
+
+  useEffect(() => {
+    const handleOnline = async () => {
+      setIsOffline(false);
+      await goOnline();
+    };
+    const handleOffline = async () => {
+      setIsOffline(true);
+      await goOffline();
+    };
+    
+    if (navigator.onLine) {
+      goOnline();
+    } else {
+      goOffline();
+    }
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, []);
 
   const handleSelectSchool = (schoolId: string, role: 'manager' | 'parent', parentDetails?: { name: string; phone: string; studentSubsetNames?: string[] }) => {
@@ -466,6 +491,8 @@ export default function App() {
             }
           } catch (e) {
             console.warn("Seeding verification failed or timed out. Moving to local/offline loading mode.", e);
+            await goOffline();
+            setIsOffline(true);
           }
         } else {
           console.log("Local simulated workspace session (or unauthenticated state) detected. Bypassing remote database seeding.");
@@ -476,6 +503,8 @@ export default function App() {
           await fetchAllData(userId);
         } catch (e) {
           console.warn("Failure fetching related collections from Firestore:", e);
+          await goOffline();
+          setIsOffline(true);
         }
 
         // C. Fetch APEE data (sync local cache and Firestore)
@@ -488,6 +517,8 @@ export default function App() {
           if (apeeData.otherRevenues) setApeeOtherRevenues(apeeData.otherRevenues);
         } catch (e) {
           console.warn("APEE data fetch encountered errors:", e);
+          await goOffline();
+          setIsOffline(true);
         }
       } catch (err) {
         console.error("Initiation payload failure:", err);
@@ -1386,8 +1417,17 @@ export default function App() {
                   />
                 )}
                 <div>
-                  <h1 className="text-base font-black tracking-tight text-gray-950 flex items-center gap-1">
+                  <h1 className="text-base font-black tracking-tight text-gray-950 flex items-center gap-1.5 flex-wrap">
                     Pasma-sys <span className="text-[10px] bg-slate-900 text-white font-mono px-1.5 py-0.5 rounded-full uppercase scale-90">ENT</span>
+                    {isOffline ? (
+                      <span className="text-[9px] bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition" title="Le serveur Firestore n'est pas joignable. Vos modifications sont conservées localement dans la cacher.">
+                        <span className="h-1.5 w-1.5 bg-amber-500 rounded-full animate-pulse shrink-0" /> Mode Local / Hors-ligne
+                      </span>
+                    ) : (
+                      <span className="text-[9px] bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-250 font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition" title="Données synchronisées avec le Cloud Firestore.">
+                        <span className="h-1.5 w-1.5 bg-emerald-500 rounded-full shrink-0" /> Cloud Sync
+                      </span>
+                    )}
                   </h1>
                   <p className="text-[10px] text-gray-400 font-medium">Portail de Suivi Éducatif</p>
                 </div>
@@ -1481,22 +1521,28 @@ export default function App() {
                     /* APEE General Cash Status Panel */
                     <div className="bg-gradient-to-br from-indigo-950 to-slate-900 text-white rounded-2xl p-4.5 border border-indigo-900 shadow-md space-y-3 font-mono">
                       <div>
-                        <h4 className="text-[9px] font-bold text-indigo-300 uppercase tracking-wider">État Général Caisse APEE</h4>
+                        <h4 className="text-[9px] font-bold text-indigo-300 uppercase tracking-wider">État Caisse {getApeeShortName(apeeSettings).toUpperCase()}</h4>
                         <p className="text-lg font-bold text-emerald-300 mt-0.5">
-                          {(apeeParents.reduce((sum, p) => sum + p.totalPaid, 0) - apeeExpenses.filter(e => e.status === 'Executed').reduce((sum, e) => sum + e.amount, 0)).toLocaleString()} FCFA
+                          {((apeeParents.reduce((sum, p) => sum + p.totalPaid, 0) + 
+                             (apeeOtherRevenues ? apeeOtherRevenues.reduce((sum, r) => sum + r.amount, 0) : 0)) - 
+                            apeeExpenses.filter(e => e.status === 'Executed').reduce((sum, e) => sum + e.amount, 0)).toLocaleString()} FCFA
                         </p>
                       </div>
                       <div className="text-[10px] text-slate-300 space-y-1 font-sans font-medium">
                         <div className="flex justify-between">
-                          <span>Revenus :</span>
+                          <span>Cotisations Parents :</span>
                           <span className="font-semibold text-white font-mono">{apeeParents.reduce((sum, p) => sum + p.totalPaid, 0).toLocaleString()} FCFA</span>
                         </div>
                         <div className="flex justify-between">
-                          <span>Dépenses :</span>
+                          <span>Autres Recettes :</span>
+                          <span className="font-semibold text-white font-mono">{(apeeOtherRevenues ? apeeOtherRevenues.reduce((sum, r) => sum + r.amount, 0) : 0).toLocaleString()} FCFA</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Dépenses Réglées :</span>
                           <span className="font-semibold text-white font-mono">{apeeExpenses.filter(e => e.status === 'Executed').reduce((sum, e) => sum + e.amount, 0).toLocaleString()} FCFA</span>
                         </div>
                         <div className="flex justify-between border-t border-indigo-900/55 pt-1 mt-1 text-xs">
-                          <span>Recouvrement :</span>
+                          <span>Recouvrement Parents :</span>
                           <span className="font-bold text-emerald-400 font-mono">
                             {(apeeParents.reduce((sum, p) => sum + p.totalDue, 0) > 0 
                               ? (apeeParents.reduce((sum, p) => sum + p.totalPaid, 0) / apeeParents.reduce((sum, p) => sum + p.totalDue, 0)) * 100 
@@ -1867,6 +1913,7 @@ export default function App() {
                           parents={apeeParents}
                           settings={apeeSettings}
                           otherRevenues={apeeOtherRevenues}
+                          expenses={apeeExpenses}
                         />
                       </motion.div>
                     )}

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Download, FileSpreadsheet, Printer, Calendar, RefreshCw, BarChart2, DollarSign, Percent, TrendingUp, CheckCircle } from 'lucide-react';
-import { ApeeParent, ApeeSettings, ApeeOtherRevenue } from '../../types';
+import { ApeeParent, ApeeSettings, ApeeOtherRevenue, ApeeExpense } from '../../types';
 import { getApeeShortName } from '../../utils/apeeDb';
 import { jsPDF } from 'jspdf';
 
@@ -8,9 +8,10 @@ interface ApeeReportingProps {
   parents: ApeeParent[];
   settings: ApeeSettings;
   otherRevenues?: ApeeOtherRevenue[];
+  expenses?: ApeeExpense[];
 }
 
-export default function ApeeReporting({ parents, settings, otherRevenues = [] }: ApeeReportingProps) {
+export default function ApeeReporting({ parents, settings, otherRevenues = [], expenses = [] }: ApeeReportingProps) {
   const [filterPeriod, setFilterPeriod] = useState<string>('all'); // 'all' | 'today' | 'month' | 'custom'
   const [activeSegment, setActiveSegment] = useState<'parents' | 'others'>('parents');
   const [startDate, setStartDate] = useState<string>('');
@@ -442,6 +443,309 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [] }:
     setTimeout(() => setSuccessMsg(null), 4000);
   };
 
+  const handlePrintMonthlyReport = () => {
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    const now = new Date();
+    const currentMonth = now.toISOString().slice(0, 7); // "YYYY-MM"
+    const monthNames = [
+      "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+      "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"
+    ];
+    const currentMonthName = monthNames[now.getMonth()];
+    const currentYear = now.getFullYear();
+
+    let y = 15;
+    const margin = 15;
+    const pageWidth = 210;
+    const pageHeight = 297;
+    const contentWidth = pageWidth - (2 * margin); // 180mm
+    let pageCount = 1;
+
+    const drawPageHeaderFooter = (num: number) => {
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.3);
+      doc.line(margin, 12, margin + contentWidth, 12);
+      
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184); // Slate 400
+      doc.text(`Bilan Mensuel Consolidé - ${getApeeShortName(settings)} • Période : ${currentMonthName} ${currentYear}`, margin, 9);
+      
+      doc.line(margin, pageHeight - 12, margin + contentWidth, pageHeight - 12);
+      doc.text(`Page ${num}`, margin + contentWidth - 12, pageHeight - 8);
+      doc.text(`Généré par PASMA-SYS Secrétariat • Date d'édition : ${now.toLocaleDateString('fr-FR')} ${now.toLocaleTimeString('fr-FR')}`, margin, pageHeight - 8);
+    };
+
+    drawPageHeaderFooter(pageCount);
+
+    // Cameroon Official Top Headers
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text("RÉPUBLIQUE DU CAMEROUN", margin, y + 4);
+    doc.text("REPUBLIC OF CAMEROON", margin + contentWidth, y + 4, { align: 'right' });
+
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(6.5);
+    doc.setTextColor(148, 163, 184);
+    doc.text("Paix - Travail - Patrie", margin, y + 8);
+    doc.text("Peace - Work - Fatherland", margin + contentWidth, y + 8, { align: 'right' });
+
+    y += 15;
+
+    // Title Block
+    doc.setFillColor(30, 41, 59); // Slate 800
+    doc.rect(margin, y, contentWidth, 14, 'F');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(255, 255, 255);
+    doc.text(`BILAN MENSUEL CONSOLIDÉ : ${currentMonthName.toUpperCase()} ${currentYear}`, margin + 5, y + 9);
+
+    y += 20;
+
+    // Filter payments, other revenues, and expenses for the current month
+    const monthlyPayments: { parentName: string; parentPhone: string; amount: number; date: string; method?: string; note?: string }[] = [];
+    parents.forEach(p => {
+      p.payments.forEach(pay => {
+        if (pay.date && pay.date.startsWith(currentMonth)) {
+          monthlyPayments.push({
+            parentName: p.name,
+            parentPhone: p.phone,
+            amount: pay.amount,
+            date: pay.date,
+            method: pay.method,
+            note: pay.note,
+          });
+        }
+      });
+    });
+    monthlyPayments.sort((a, b) => b.date.localeCompare(a.date));
+
+    const monthlyOtherRevenues = (otherRevenues || []).filter(r => r.date && r.date.startsWith(currentMonth));
+    monthlyOtherRevenues.sort((a, b) => b.date.localeCompare(a.date));
+
+    const monthlyExpenses = (expenses || []).filter(e => e.status === 'Executed' && e.date && e.date.startsWith(currentMonth));
+    monthlyExpenses.sort((a, b) => b.date.localeCompare(a.date));
+
+    const totalMonthlyParents = monthlyPayments.reduce((sum, p) => sum + p.amount, 0);
+    const totalMonthlyOthers = monthlyOtherRevenues.reduce((sum, r) => sum + r.amount, 0);
+    const totalMonthlyIncome = totalMonthlyParents + totalMonthlyOthers;
+    const totalMonthlyExpenses = monthlyExpenses.reduce((sum, e) => sum + e.amount, 0);
+    const monthlyNetBalance = totalMonthlyIncome - totalMonthlyExpenses;
+
+    // Section I: Financial summary table
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text("I. COMPTE SECONDAIRE DU RÉSULTAT MENSUEL", margin, y);
+    y += 4;
+    
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.35);
+    doc.line(margin, y, margin + contentWidth, y);
+    y += 5;
+
+    // Compte de Résultat Card
+    doc.setFillColor(248, 250, 252);
+    doc.rect(margin, y, contentWidth, 32, 'F');
+    doc.setDrawColor(226, 232, 240);
+    doc.rect(margin, y, contentWidth, 32, 'D');
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text("Recettes des cotisations de parents d'élèves :", margin + 6, y + 7);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.text(`${totalMonthlyParents.toLocaleString()} FCFA`, margin + 115, y + 7);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(71, 85, 105);
+    doc.text("Autres entrées financières d'appoint :", margin + 6, y + 14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.text(`${totalMonthlyOthers.toLocaleString()} FCFA`, margin + 115, y + 14);
+
+    doc.line(margin + 6, y + 17, margin + contentWidth - 6, y + 17);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(100, 116, 139);
+    doc.text("TOTAL DES REVENUS ET APPORTS MENSUELS (+)", margin + 6, y + 23);
+    doc.setTextColor(16, 185, 129); // Green
+    doc.text(`${totalMonthlyIncome.toLocaleString()} FCFA`, margin + 115, y + 23);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(100, 116, 139);
+    doc.text("DÉPENSES DE FONCTIONNEMENT EXÉCUTÉES (-)", margin + 6, y + 28);
+    doc.setTextColor(239, 68, 68); // Red
+    doc.text(`${totalMonthlyExpenses.toLocaleString()} FCFA`, margin + 115, y + 28);
+
+    y += 37;
+
+    // Ending Cash Box
+    doc.setFillColor(240, 253, 244); // light green
+    doc.rect(margin, y, contentWidth, 12, 'F');
+    doc.setDrawColor(187, 247, 208);
+    doc.rect(margin, y, contentWidth, 12, 'D');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(21, 128, 61); // emerald 700
+    doc.text("SOLDE FINANCIER NET DU MOIS (EXCÉDENT / TRÉSORERIE) :", margin + 6, y + 7.5);
+    doc.setFontSize(10.5);
+    doc.text(`${monthlyNetBalance >= 0 ? '+' : ''}${monthlyNetBalance.toLocaleString()} FCFA`, margin + contentWidth - 60, y + 8);
+
+    y += 18;
+
+    // Section II: Detail of payments/revenues
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text("II. DÉTAIL DES RECETTES ET APPORTS PERÇUS CE MOIS", margin, y);
+    y += 4;
+    doc.line(margin, y, margin + contentWidth, y);
+    y += 5;
+
+    // Headers
+    doc.setFillColor(241, 245, 249);
+    doc.rect(margin, y, contentWidth, 6.5, 'F');
+    doc.setFontSize(7);
+    doc.setTextColor(100, 116, 139);
+    doc.text("Date", margin + 3, y + 4.5);
+    doc.text("Nom du Parent ou Donateur", margin + 25, y + 4.5);
+    doc.text("Qualité/Description", margin + 85, y + 4.5);
+    doc.text("Moyen", margin + 140, y + 4.5);
+    doc.text("Montant (FCFA)", margin + 175, y + 4.5, { align: 'right' });
+    y += 6.5;
+
+    const allIncomesList = [
+      ...monthlyPayments.map(p => ({
+        date: p.date,
+        name: p.parentName,
+        desc: "Cotisation Parent",
+        method: p.method || "Espèces",
+        amount: p.amount
+      })),
+      ...monthlyOtherRevenues.map(r => {
+        let statLabel = "Autre tiers";
+        if (r.status === 'membre_honneur') statLabel = "Membre d'Honneur";
+        else if (r.status === 'institution') statLabel = `Institution (${r.statusDetails || ''})`;
+        return {
+          date: r.date,
+          name: r.payerName,
+          desc: `Donateur : ${statLabel}`,
+          method: r.paymentMethod,
+          amount: r.amount
+        };
+      })
+    ].sort((a, b) => b.date.localeCompare(a.date));
+
+    if (allIncomesList.length === 0) {
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text("Aucun encaissement enregistré pour ce mois.", margin + 3, y + 5);
+      y += 8;
+    } else {
+      allIncomesList.forEach(inc => {
+        if (y > pageHeight - 20) {
+          doc.addPage();
+          pageCount++;
+          drawPageHeaderFooter(pageCount);
+          y = 25;
+        }
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(71, 85, 105);
+        doc.text(new Date(inc.date).toLocaleDateString('fr-FR'), margin + 3, y + 4.5);
+        doc.text(inc.name.toUpperCase(), margin + 25, y + 4.5);
+        doc.text(inc.desc, margin + 85, y + 4.5);
+        doc.text(inc.method, margin + 140, y + 4.5);
+        
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${inc.amount.toLocaleString()} F`, margin + 175, y + 4.5, { align: 'right' });
+        y += 6.5;
+
+        doc.setDrawColor(241, 245, 249);
+        doc.line(margin, y, margin + contentWidth, y);
+      });
+    }
+
+    y += 8;
+
+    // Section III: Executed expenses detail
+    if (y > pageHeight - 35) {
+      doc.addPage();
+      pageCount++;
+      drawPageHeaderFooter(pageCount);
+      y = 25;
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text("III. DÉTAIL DES DÉPENSES EXÉCUTÉES DU MOIS", margin, y);
+    y += 4;
+    doc.line(margin, y, margin + contentWidth, y);
+    y += 5;
+
+    // Expenses Table Headers
+    doc.setFillColor(241, 245, 249);
+    doc.rect(margin, y, contentWidth, 6.5, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor(100, 116, 139);
+    doc.text("Date Saisie", margin + 3, y + 4.5);
+    doc.text("Libellé de la Dépense", margin + 30, y + 4.5);
+    doc.text("Nature", margin + 95, y + 4.5);
+    doc.text("Statut", margin + 140, y + 4.5);
+    doc.text("Montant (FCFA)", margin + 175, y + 4.5, { align: 'right' });
+    y += 6.5;
+
+    if (monthlyExpenses.length === 0) {
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text("Aucune dépense exécutée ce mois.", margin + 3, y + 5);
+      y += 8;
+    } else {
+      monthlyExpenses.forEach(exp => {
+        if (y > pageHeight - 20) {
+          doc.addPage();
+          pageCount++;
+          drawPageHeaderFooter(pageCount);
+          y = 25;
+        }
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(71, 85, 105);
+        doc.text(new Date(exp.date).toLocaleDateString('fr-FR'), margin + 3, y + 4.5);
+        doc.text(exp.title, margin + 30, y + 4.5);
+        doc.text(exp.type === 'payment-order' ? 'Ordre de paiement' : (exp.type === 'command' ? 'Bon de commande' : 'Remboursement'), margin + 95, y + 4.5);
+        doc.text('Payé', margin + 140, y + 4.5);
+
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${exp.amount.toLocaleString()} F`, margin + 175, y + 4.5, { align: 'right' });
+        y += 6.5;
+
+        doc.setDrawColor(241, 245, 249);
+        doc.line(margin, y, margin + contentWidth, y);
+      });
+    }
+
+    doc.save(`bilan_mensuel_consolide_${getApeeShortName(settings).toLowerCase()}_${currentMonth}.pdf`);
+    setSuccessMsg('Bilan mensuel consolidé exporté avec succès sous format PDF !');
+    setTimeout(() => setSuccessMsg(null), 4000);
+  };
+
   return (
     <div id="content_apee_report" className="space-y-6">
 
@@ -469,6 +773,15 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [] }:
             title="Télécharger fichier JSON"
           >
             <Download className="h-3.5 w-3.5 text-indigo-600" /> Export JSON
+          </button>
+
+          <button
+            onClick={handlePrintMonthlyReport}
+            className="px-3.5 py-2 text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl flex items-center gap-1.5 cursor-pointer transition shadow-md active:scale-97"
+            title="Télécharger le bilan mensuel consolidé du mois en cours contenant revenus et dépenses exécutées"
+            type="button"
+          >
+            <Printer className="h-4 w-4 text-emerald-300" /> Télécharger Bilan Mensuel
           </button>
 
           <button

@@ -734,3 +734,62 @@ export async function resetApeeData(parentId: string) {
     handleFirestoreError(err, OperationType.DELETE, 'reset_apee_data');
   }
 }
+
+/**
+ * Génère un message de relance pré-formaté (SMS ou E-mail) pour un parent.
+ * Retourne le message formaté si le solde restant est supérieur à 0, sinon retourne null.
+ */
+export function generateApeeReminderMessage(
+  parent: ApeeParent,
+  settings: ApeeSettings,
+  type: 'sms' | 'email',
+  customTemplates?: {
+    smsTemplate?: string;
+    emailTemplate?: string;
+    emailSubject?: string;
+  }
+): { message: string; subject?: string } | null {
+  const remaining = parent.totalDue - parent.totalPaid;
+  if (remaining <= 0) {
+    return null;
+  }
+
+  const shortName = getApeeShortName(settings);
+  const schoolYear = settings?.schoolYear || "";
+  const associationName = settings?.associationName || "Établissement";
+  const kidsList = parent.students && parent.students.length > 0 
+    ? parent.students.map(s => `${s.name} (${s.classRoom})`).join(', ')
+    : "votre enfant";
+
+  const defaultSmsTemplate = "Chers parents. Rappel {short_name} {school_year} de {association_name} pour votre pupille ({student_names}). Le solde restant dû est de {remaining_amount} FCFA. Veuillez régulariser au plus vite par versement ou virement. Merci pour votre collaboration.";
+  
+  const defaultEmailSubject = "Rappel de Paiement Cotisation {short_name} - {association_name}";
+
+  const defaultEmailTemplate = "Bonjour {parent_name},\n\nNous vous contactons au sujet de la cotisation {short_name} ({school_year}) pour l'établissement {association_name} quant à la scolarisation de votre/vos enfant(s) : {student_names}.\n\nÀ ce jour, votre compte présente un solde restant de {remaining_amount} FCFA (sur un montant exigible de {total_due_amount} FCFA).\n\nNous vous prions de bien vouloir régulariser cette situation auprès de l'intendante.\n\nSi vous avez déjà procédé au versement, veuillez ignorer ce message.\n\nCordialement,\nLe Bureau de la régie de {short_name}\n{association_name}";
+
+  const smsTpl = customTemplates?.smsTemplate || defaultSmsTemplate;
+  const emailTpl = customTemplates?.emailTemplate || defaultEmailTemplate;
+  const emailSub = customTemplates?.emailSubject || defaultEmailSubject;
+
+  const replacePlaceholders = (text: string) => {
+    return text
+      .replace(/{parent_name}/g, parent.name)
+      .replace(/{association_name}/g, associationName)
+      .replace(/{short_name}/g, shortName)
+      .replace(/{school_year}/g, schoolYear)
+      .replace(/{student_names}/g, kidsList)
+      .replace(/{remaining_amount}/g, remaining.toLocaleString())
+      .replace(/{total_due_amount}/g, parent.totalDue.toLocaleString());
+  };
+
+  if (type === 'sms') {
+    return {
+      message: replacePlaceholders(smsTpl)
+    };
+  } else {
+    return {
+      message: replacePlaceholders(emailTpl),
+      subject: replacePlaceholders(emailSub)
+    };
+  }
+}

@@ -19,7 +19,7 @@ import {
   Settings
 } from 'lucide-react';
 import { ApeeParent, ApeeSettings } from '../../types';
-import { getApeeShortName } from '../../utils/apeeDb';
+import { getApeeShortName, generateApeeReminderMessage } from '../../utils/apeeDb';
 
 interface ApeeRemindersProps {
   parents: ApeeParent[];
@@ -96,9 +96,15 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
     }
   };
 
-  // Helper replacing tags
+  // Helper replacing tags using our global utility helper
   const formatText = (text: string, parent?: ApeeParent) => {
     if (!parent) return text;
+    const generated = generateApeeReminderMessage(parent, settings, 'sms', { smsTemplate: text });
+    if (generated) {
+      return generated.message;
+    }
+
+    // Fallback if balance is not > 0 but we still want to display preview
     const remaining = Math.max(0, parent.totalDue - parent.totalPaid);
     const kidsList = parent.students.map(s => `${s.name} (${s.classRoom})`).join(', ');
     

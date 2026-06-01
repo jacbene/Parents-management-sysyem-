@@ -26,7 +26,8 @@ import {
   Send,
   Sparkles,
   UserCheck,
-  ShieldCheck
+  ShieldCheck,
+  Download
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -425,6 +426,53 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
     } catch (e: any) {
       alert(e.message);
     }
+  };
+
+  const handleExportLogsCSV = () => {
+    // CSV Header row
+    const headers = [
+      "ID DU LOG",
+      "DATE ET HEURE",
+      "TYPE D'EVENEMENT",
+      "DESCRIPTION",
+      "ETABLISSEMENT CONCERNE",
+      "MONTANT (FCFA)",
+      "AUTEUR / INITIATEUR"
+    ];
+
+    // Map system logs to CSV array of arrays
+    const rows = systemLogs.map(log => {
+      const schoolName = schools.find(s => s.id === log.parentId)?.name || (log.parentId === 'system' ? 'Système Global' : log.parentId);
+      const formattedDate = new Date(log.paymentDate).toLocaleString('fr-FR');
+      const escapeCsvVal = (val: string | number) => {
+        const str = String(val ?? '');
+        return `"${str.replace(/"/g, '""')}"`;
+      };
+
+      return [
+        escapeCsvVal(log.id),
+        escapeCsvVal(formattedDate),
+        escapeCsvVal(log.dueDate),
+        escapeCsvVal(log.title),
+        escapeCsvVal(schoolName),
+        log.amount,
+        escapeCsvVal(log.provider)
+      ];
+    });
+
+    const csvContent = [
+      headers.join(';'),
+      ...rows.map(r => r.join(';'))
+    ].join('\n');
+
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `journal_audit_systeme_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   // Computations
@@ -1056,9 +1104,19 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                   <Activity className="h-4 w-4 text-indigo-600 animate-pulse" />
                   <h3 className="text-sm font-black text-slate-950">Historique d'Actions / Audit</h3>
                 </div>
-                <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full font-mono">
-                  {systemLogs.length} événements
-                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleExportLogsCSV}
+                    className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 hover:text-indigo-900 border border-indigo-200 rounded-lg text-[10px] font-extrabold flex items-center gap-1 transition cursor-pointer shrink-0 shadow-2xs"
+                    title="Exporter tous les événements financiers et administratifs au format CSV"
+                    type="button"
+                  >
+                    <Download className="h-3 w-3" /> Exporter les Logs
+                  </button>
+                  <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg font-mono">
+                    {systemLogs.length} événements
+                  </span>
+                </div>
               </div>
 
               {/* Logger Form */}

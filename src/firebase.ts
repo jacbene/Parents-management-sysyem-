@@ -1,15 +1,33 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, signInAnonymously } from 'firebase/auth';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, disableNetwork, enableNetwork } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({
     tabManager: persistentMultipleTabManager()
-  }),
-  experimentalForceLongPolling: true,
+  })
 }, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
+
+export async function goOffline() {
+  try {
+    await disableNetwork(db);
+    console.log("Firestore network disabled successfully (going offline).");
+  } catch (err) {
+    console.warn("Failed to deactivate Firestore network:", err);
+  }
+}
+
+export async function goOnline() {
+  try {
+    await enableNetwork(db);
+    console.log("Firestore network enabled successfully (going online).");
+  } catch (err) {
+    console.warn("Failed to activate Firestore network:", err);
+  }
+}
+
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 

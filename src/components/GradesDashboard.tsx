@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Grade, Student } from '../types';
-import { Award, BookOpen, TrendingUp, Sparkles, Filter, Plus, Trash2, Lock, Unlock, CheckCircle, Printer } from 'lucide-react';
+import { Award, BookOpen, TrendingUp, Sparkles, Filter, Plus, Trash2, Lock, Unlock, CheckCircle, Printer, Download } from 'lucide-react';
+import { jsPDF } from 'jspdf';
 import { motion, AnimatePresence } from 'motion/react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine } from 'recharts';
 
@@ -198,6 +199,304 @@ export default function GradesDashboard({
     }
   };
 
+  const handleExportGradesPDF = () => {
+    if (!activeStudent) return;
+
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    const now = new Date();
+    let y = 15;
+    const margin = 15;
+    const pageWidth = 210;
+    const pageHeight = 297;
+    const contentWidth = pageWidth - (2 * margin); // 180mm
+    let pageCount = 1;
+
+    const drawPageHeaderFooter = (num: number) => {
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.3);
+      doc.line(margin, 12, margin + contentWidth, 12);
+      
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184); // Slate 400
+      doc.text(`Relevé de Notes Officiel - ${activeStudent.name} • Classe : ${activeStudent.grade} ${activeStudent.classRoom}`, margin, 9);
+      
+      doc.line(margin, pageHeight - 12, margin + contentWidth, pageHeight - 12);
+      doc.text(`Page ${num}`, margin + contentWidth - 12, pageHeight - 8);
+      doc.text(`Généré par PASMA-SYS Éducatif • Date d'édition : ${now.toLocaleDateString('fr-FR')} ${now.toLocaleTimeString('fr-FR')}`, margin, pageHeight - 8);
+    };
+
+    drawPageHeaderFooter(pageCount);
+
+    // Cameroon Official Top Headers
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text("RÉPUBLIQUE DU CAMEROUN", margin, y + 4);
+    doc.text("REPUBLIC OF CAMEROON", margin + contentWidth, y + 4, { align: 'right' });
+
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(6.5);
+    doc.setTextColor(148, 163, 184);
+    doc.text("Paix - Travail - Patrie", margin, y + 8);
+    doc.text("Peace - Work - Fatherland", margin + contentWidth, y + 8, { align: 'right' });
+
+    y += 15;
+
+    // Title Block
+    doc.setFillColor(30, 41, 59); // Slate 800
+    doc.rect(margin, y, contentWidth, 14, 'F');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(255, 255, 255);
+    doc.text(`RELEVÉ DE NOTES INDIVIDUEL - BULLETIN ACADÉMIQUE`, margin + 5, y + 9);
+
+    y += 20;
+
+    // Student Information Block
+    doc.setFillColor(248, 250, 252);
+    doc.rect(margin, y, contentWidth, 32, 'F');
+    doc.setDrawColor(226, 232, 240);
+    doc.rect(margin, y, contentWidth, 32, 'D');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42); // Slate 900
+    doc.text(activeStudent.name.toUpperCase(), margin + 6, y + 7);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Date de naissance : ${activeStudent.dob ? new Date(activeStudent.dob).toLocaleDateString('fr-FR') : 'Non renseignée'}`, margin + 6, y + 14);
+    doc.text(`Classe / Niveau : ${activeStudent.grade} • ${activeStudent.classRoom}`, margin + 6, y + 19);
+    doc.text(`Statut Administratif : ÉLÈVE INSCRIT ET EN RÈGLE`, margin + 6, y + 24);
+
+    // Vertical Divider Line
+    doc.setDrawColor(226, 232, 240);
+    doc.line(margin + 92, y + 4, margin + 92, y + 28);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139);
+    doc.text("CORPS ENSEIGNANT", margin + 97, y + 7);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Professeur principal : ${activeStudent.teacherName || 'Non assigné'}`, margin + 97, y + 14);
+    doc.text(`Courriel de contact : ${activeStudent.teacherEmail || 'Non disponible'}`, margin + 97, y + 19);
+    
+    // Status Badge
+    doc.setFillColor(238, 242, 255); // Indigo 50
+    doc.rect(margin + 97, y + 22.5, 45, 5, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(79, 70, 229); // Indigo 700
+    doc.text("Scolarisation active", margin + 100, y + 26);
+
+    y += 37;
+
+    // Key stats
+    const totalTestsNum = grades.length;
+    const avgBase20Val = totalTestsNum > 0
+      ? (grades.reduce((sum, g) => sum + (g.score / g.maxScore) * 20, 0) / totalTestsNum)
+      : 0;
+
+    const getApprecText = (avg: number) => {
+      if (avg >= 16) return 'Très Bien (Excellent)';
+      if (avg >= 14) return 'Bien';
+      if (avg >= 12) return 'Assez Bien';
+      if (avg >= 10) return 'Passable';
+      return 'Insuffisant';
+    };
+
+    const appText = getApprecText(avgBase20Val);
+
+    // KPI Cards Block (Two side by side)
+    const kpiWidth = (contentWidth - 6) / 2; // 87mm each
+
+    // KPI Left: Average score
+    doc.setFillColor(245, 247, 255); // Indigo light background
+    doc.setDrawColor(199, 210, 254);
+    doc.rect(margin, y, kpiWidth, 24, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(79, 70, 229);
+    doc.text("MOYENNE ACADÉMIQUE GÉNÉRALE", margin + 5, y + 5.5);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.setTextColor(15, 23, 42);
+    const textAvgString = totalTestsNum > 0 ? `${avgBase20Val.toFixed(2)} / 20` : "-- / 20";
+    doc.text(textAvgString, margin + 5, y + 14);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Mention globale : ${totalTestsNum > 0 ? appText : 'Non évalué'}`, margin + 5, y + 20);
+
+    // KPI Right: Total tests
+    doc.setFillColor(240, 253, 244); // Green light background
+    doc.setDrawColor(187, 247, 208);
+    doc.rect(margin + kpiWidth + 6, y, kpiWidth, 24, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(21, 128, 61);
+    doc.text("ÉVALUATIONS ET EXAMENS TERMINÉS", margin + kpiWidth + 11, y + 5.5);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`${totalTestsNum} éval.`, margin + kpiWidth + 11, y + 14);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    const bestGrade = totalTestsNum > 0
+      ? Math.max(...grades.map(g => (g.score / g.maxScore) * 20)).toFixed(1)
+      : '0.0';
+    doc.text(`Meilleure performance : ${bestGrade} / 20`, margin + kpiWidth + 11, y + 20);
+
+    y += 30;
+
+    // Grades Table Block
+    const checkPageBreak = (heightNeeded: number) => {
+      if (y + heightNeeded > pageHeight - 20) {
+        doc.addPage();
+        pageCount++;
+        drawPageHeaderFooter(pageCount);
+        y = 25; // Reset y to top margin on new page
+      }
+    };
+
+    checkPageBreak(15);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text("DÉTAIL DES MOYENNES ET RELEVÉ DE NOTES", margin, y + 4);
+    y += 8;
+
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.35);
+    doc.line(margin, y, margin + contentWidth, y);
+    y += 4;
+
+    // Header of Table
+    doc.setFillColor(79, 70, 229); // Primary Indigo header
+    doc.rect(margin, y, contentWidth, 7.5, 'F');
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(255, 255, 255);
+    doc.text("Discipline / Matière", margin + 3.5, y + 5);
+    doc.text("Nom de l'évaluation", margin + 48, y + 5);
+    doc.text("Date", margin + 92, y + 5);
+    doc.text("Note brute", margin + 112, y + 5);
+    doc.text("Météo (/20)", margin + 130, y + 5);
+    doc.text("Appréciation d'enseignant", margin + 148, y + 5);
+
+    y += 7.5;
+
+    const truncate = (text: string, count: number) => {
+      if (!text) return '';
+      return text.length > count ? text.substring(0, count - 3) + "..." : text;
+    };
+
+    if (grades.length === 0) {
+      checkPageBreak(10);
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8.5);
+      doc.setTextColor(148, 163, 184); // Slate 400
+      doc.text("Aucun relevé de note n'a été inséré ou validé pour cet élève.", margin + 4, y + 6);
+      y += 10;
+    } else {
+      // Sort grades descending or chronological
+      const sortedGrades = [...grades].sort((a, b) => b.date.localeCompare(a.date));
+
+      sortedGrades.forEach((g, gIdx) => {
+        checkPageBreak(8);
+
+        if (gIdx % 2 === 0) {
+          doc.setFillColor(248, 250, 252); // Soft zebra
+          doc.rect(margin, y, contentWidth, 7, 'F');
+        }
+
+        doc.setDrawColor(241, 245, 249);
+        doc.setLineWidth(0.15);
+        doc.line(margin, y + 7, margin + contentWidth, y + 7);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(15, 23, 42); // Slate 900
+        doc.text(truncate(g.subject, 18), margin + 3.5, y + 4.5);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(71, 85, 105);
+        doc.text(truncate(g.examName, 20), margin + 48, y + 4.5);
+
+        doc.text(new Date(g.date).toLocaleDateString('fr-FR'), margin + 92, y + 4.5);
+
+        doc.setFont('helvetica', 'semibold');
+        doc.text(`${g.score} / ${g.maxScore}`, margin + 112, y + 4.5);
+
+        const relativeScore = (g.score / g.maxScore) * 20;
+        if (relativeScore >= 10) {
+          doc.setTextColor(16, 185, 129); // Green 500
+          doc.setFont('helvetica', 'bold');
+        } else {
+          doc.setTextColor(239, 68, 68); // Red 500
+          doc.setFont('helvetica', 'bold');
+        }
+        doc.text(`${relativeScore.toFixed(1)} / 20`, margin + 130, y + 4.5);
+
+        doc.setFont('helvetica', 'italic');
+        doc.setFontSize(7.5);
+        doc.setTextColor(100, 116, 139);
+        doc.text(truncate(g.teacherRemarks || 'Aucun commentaire.', 20), margin + 148, y + 4.5);
+
+        y += 7;
+      });
+    }
+
+    y += 10;
+
+    // Signature Area
+    checkPageBreak(35);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.2);
+    doc.line(margin, y, margin + contentWidth, y);
+    y += 8;
+
+    const signatureColWidth = contentWidth / 3;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text("LE PROFESSEUR PRINCIPAL", margin + 5, y);
+    doc.text("LE DIRECTEUR DES ÉTUDES", margin + signatureColWidth + 5, y);
+    doc.text("SIGNATURE DES PARENTS", margin + (signatureColWidth * 2) + 5, y);
+
+    y += 4;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(148, 163, 184);
+    doc.text("(Sceau et émargement)", margin + 5, y);
+    doc.text("(Cachet de l'institution)", margin + signatureColWidth + 5, y);
+    doc.text("(Lu et approuvé)", margin + (signatureColWidth * 2) + 5, y);
+
+    // Save PDF file
+    doc.save(`bulletin_${activeStudent.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}.pdf`);
+  };
+
   return (
     <div className="space-y-6">
       <div className="bg-white border border-gray-150 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -211,11 +510,22 @@ export default function GradesDashboard({
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {activeStudent && (
+            <button
+              onClick={handleExportGradesPDF}
+              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md active:scale-97"
+              title="Exporter le relevé de notes au format PDF pour l'impression"
+              type="button"
+            >
+              <Download className="h-4 w-4 text-indigo-200" /> Exporter PDF
+            </button>
+          )}
+
           {onPrintReport && (
             <button
               onClick={onPrintReport}
-              className="px-4 py-2 bg-white text-gray-700 border border-gray-250 hover:bg-gray-50 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs"
+              className="px-3.5 py-2 bg-white text-gray-700 border border-gray-250 hover:bg-gray-50 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs"
             >
               <Printer className="h-4 w-4" /> Imprimer le Bulletin
             </button>
