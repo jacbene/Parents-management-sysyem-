@@ -223,6 +223,11 @@ service cloud.firestore {
       allow delete: if isSignedIn() && (isSuperAdmin() || isOwner(resource.data.parentId) || isSchoolManagerOrDemo(resource.data.parentId));
     }
 
+    // --- Reading Logs Collection ---
+    match /reading_logs/{logId} {
+      allow read, write: if isSignedIn();
+    }
+
     // --- Super Admins Collection ---
     match /super_admins/{adminId} {
       allow get, list: if isSignedIn();
