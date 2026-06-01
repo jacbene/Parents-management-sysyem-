@@ -16,7 +16,8 @@ import {
   Loader2,
   Trash2,
   Plus,
-  BookOpenCheck
+  BookOpenCheck,
+  Award
 } from 'lucide-react';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, deleteDoc, onSnapshot } from 'firebase/firestore';
 import { db, auth } from '../firebase';
@@ -867,6 +868,79 @@ export default function LibraryDashboard({ activeStudent, filteredStudents }: Li
                       </div>
                     )}
 
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* HISTORIQUE DE LECTURE (LIVRES TERMINÉS) */}
+          <div id="reading-history-section" className="p-6 bg-white border border-slate-100 rounded-3xl shadow-xs space-y-5">
+            <div className="border-b border-slate-100 pb-3 flex justify-between items-center flex-wrap gap-2">
+              <div>
+                <h3 className="text-base font-sans font-black text-gray-900 flex items-center gap-2">
+                  <Award className="h-5 w-5 text-emerald-600 animate-pulse" />
+                  Historique de Lecture
+                </h3>
+                <p className="text-xs text-gray-400">Livres terminés par {selectedStudent?.name} durant l&apos;année scolaire en cours.</p>
+              </div>
+              <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-xl text-[10px] font-sans font-extrabold uppercase tracking-wider border border-emerald-100/60">
+                Année Scolaire 2025-2026
+              </span>
+            </div>
+
+            {readingLogs.filter(l => l.status === 'completed').length === 0 ? (
+              <div className="py-10 border-2 border-dashed border-slate-150 bg-slate-50/50 rounded-2xl text-center space-y-3 max-w-lg mx-auto">
+                <Trophy className="h-8 w-8 text-slate-300 mx-auto" />
+                <h4 className="text-xs font-black text-slate-700">Aucun livre terminé pour le moment</h4>
+                <p className="text-[11px] text-gray-500 leading-relaxed px-5">
+                  Une fois qu&apos;un livre atteint 100% de progression ou est mis à jour vers le statut &quot;Fini&quot;, il apparaîtra ici dans l&apos;historique de réussite de l&apos;élève.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {readingLogs.filter(l => l.status === 'completed').map((log) => (
+                  <div 
+                    key={log.id} 
+                    className="p-4 border border-emerald-100 rounded-2xl bg-gradient-to-br from-emerald-50/10 to-white space-y-3.5 hover:shadow-xs hover:border-emerald-200 transition relative overflow-hidden"
+                  >
+                    {/* Tiny green decoration for reward */}
+                    <div className="absolute right-0 top-0 w-8 h-8 bg-emerald-500/10 rounded-bl-3xl flex items-center justify-center pointer-events-none">
+                      <Trophy className="h-3 w-3 text-emerald-600" />
+                    </div>
+
+                    <div className="flex gap-3">
+                      {/* Stylized visual Book Cover representation */}
+                      <div className={`w-12 h-18 rounded-lg shrink-0 border bg-gradient-to-br ${getBookStyle(log.genre)} p-1.5 flex flex-col justify-between shadow-xs select-none font-sans`}>
+                        <div className="text-[5px] font-black tracking-widest uppercase truncate opacity-85">{log.genre}</div>
+                        <div className="text-[7px] font-black leading-tight line-clamp-3 leading-2">{log.bookTitle}</div>
+                        <div className="text-[5px] italic font-semibold truncate opacity-80">{log.bookAuthor}</div>
+                      </div>
+
+                      <div className="min-w-0 space-y-0.5">
+                        <span className="inline-block px-1.5 py-0.5 bg-emerald-100/70 text-emerald-850 rounded-md text-[8px] font-bold uppercase tracking-wider">
+                          Acquis &amp; Validé
+                        </span>
+                        <h4 className="text-xs font-black text-slate-900 truncate leading-tight">{log.bookTitle}</h4>
+                        <p className="text-[10px] text-slate-500 font-semibold truncate font-medium">de {log.bookAuthor}</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1 bg-white p-2.5 rounded-xl border border-emerald-100/40 text-[11px] leading-relaxed">
+                      <p className="text-[10px] font-bold text-emerald-850 flex items-center gap-1">
+                        <CheckSquare className="h-3 w-3 text-emerald-600" /> Notes d&apos;apprentissage :
+                      </p>
+                      <p className="text-slate-600 italic">
+                        &ldquo;{log.parentNotes || "Ce livre a été lu avec diligence et validé par les parents."}&rdquo;
+                      </p>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100/40 flex justify-between items-center text-[10px] text-slate-400 font-mono">
+                      <span>Renseigné : {new Date(log.addedAt).toLocaleDateString('fr-FR')}</span>
+                      <span className="flex items-center gap-1 text-emerald-700 font-bold px-1.5 py-0.5 bg-emerald-50 border border-emerald-100 rounded-md">
+                        100% Assimilé
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>
