@@ -35,6 +35,31 @@ export const DEFAULT_SETTINGS: ApeeSettings = {
 };
 
 /**
+ * Dynamically computes or retrieves the short name of the institution/association in French- Cameroon context.
+ */
+export function getApeeShortName(settings?: { associationName?: string; shortName?: string }): string {
+  if (settings?.shortName && settings.shortName.trim()) {
+    return settings.shortName.trim();
+  }
+  const name = settings?.associationName || '';
+  if (!name.trim()) return "APEE";
+
+  // Stop words to remove from acronym generation
+  const stopWords = ['de', 'du', 'la', 'le', 'les', 'des', 'et', 'en', 'dans', 'pour', 'par', 'sur', 'aux', 'au', 'un', 'une', 'd', 'l', 's', 'c', 'j'];
+  const normalized = name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9\s]/g, ' ');
+  const words = normalized.split(/\s+/).filter(w => {
+    const lw = w.toLowerCase();
+    return lw.length > 0 && !stopWords.includes(lw);
+  });
+
+  if (words.length === 0) return "APEE";
+
+  // If the first word is already APEE or similar acronym, or if words has initials
+  const initials = words.map(w => w[0].toUpperCase()).join('');
+  return initials.substring(0, 15) || "APEE";
+}
+
+/**
  * Normalizes Firestore Invoice document to ApeeParent
  */
 function normalizeToApeeParent(inv: Invoice): ApeeParent {

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Save, HelpCircle, Shield, Settings, Info, CheckCircle2, Plus, Trash2, Edit2, X, TrendingUp, Lock, Unlock, UserCheck, User, Phone, Mail, GraduationCap, AlertTriangle } from 'lucide-react';
 import { ApeeSettings, ApeeBudgetLine, ApeeParent } from '../../types';
+import { getApeeShortName } from '../../utils/apeeDb';
 
 interface ApeeSettingsProps {
   settings: ApeeSettings;
@@ -10,6 +11,7 @@ interface ApeeSettingsProps {
 
 export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [] }: ApeeSettingsProps) {
   const [associationName, setAssociationName] = useState(settings.associationName || '');
+  const [shortName, setShortName] = useState(settings.shortName || '');
   const [schoolYear, setSchoolYear] = useState(settings.schoolYear || '');
   const [cotisationAmount, setCotisationAmount] = useState<number>(settings.cotisationAmount || 0);
   const [logoUrl, setLogoUrl] = useState(settings.logoUrl || '');
@@ -79,6 +81,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
   React.useEffect(() => {
     if (settings) {
       setAssociationName(settings.associationName || '');
+      setShortName(settings.shortName || '');
       setSchoolYear(settings.schoolYear || '');
       setCotisationAmount(settings.cotisationAmount || 0);
       setLogoUrl(settings.logoUrl || '');
@@ -148,6 +151,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
     try {
       const result = await onSaveSettings({
         associationName: (associationName || '').trim(),
+        shortName: (shortName || '').trim(),
         schoolYear: (schoolYear || '').trim(),
         cotisationAmount: cotisationAmount || 0,
         financialGoal: calculatedFinancialGoal,
@@ -312,7 +316,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
           <div className="space-y-4">
             
             <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-600 uppercase">Nom Officiel de l'Association <span className="text-red-500">*</span></label>
+              <label className="text-[10px] font-bold text-slate-600 uppercase">Nom Officiel de l'Institution <span className="text-red-500">*</span></label>
               <input
                 type="text"
                 required
@@ -321,6 +325,19 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
                 placeholder="Ex: APEE CES d'Ekali 1 - MFOU"
                 className="w-full px-3 py-1.5 text-xs border rounded-lg focus:outline-indigo-505 font-medium"
               />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-600 uppercase">Nom Court de l'Institution</label>
+              <input
+                type="text"
+                value={shortName}
+                onChange={(e) => setShortName(e.target.value.substring(0, 15))}
+                maxLength={15}
+                placeholder="Ex: APEE"
+                className="w-full px-3 py-1.5 text-xs border rounded-lg focus:outline-indigo-505 font-medium"
+              />
+              <p className="text-[9.5px] text-slate-450 italic">Nom abrégé réduit (max. 15 lettres - e.g. APEE, AGE, etc.). Si non spécifié, il sera auto-généré à partir du nom officiel.</p>
             </div>
 
             {/* Logo de l'établissement */}

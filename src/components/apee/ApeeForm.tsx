@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Printer, CheckCircle, Smartphone, Tag, User, Hash, MapPin, Notebook, DollarSign, Calendar, Mail, X, Download } from 'lucide-react';
 import { ApeeParent, ApeeStudentLink, ApeePaymentItem, ApeeSettings, ApeeOtherRevenue } from '../../types';
+import { getApeeShortName } from '../../utils/apeeDb';
 import { jsPDF } from 'jspdf';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -101,7 +102,7 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(8);
       doc.setTextColor(148, 163, 184); // Slate 400
-      doc.text(`Reçu APEE CES Ekali 1 • Autres Recettes • Année : ${settings.schoolYear || ""}`, margin, 9);
+      doc.text(`Reçu ${getApeeShortName(settings)} • Autres Recettes • Année : ${settings.schoolYear || ""}`, margin, 9);
       
       // Footer line
       doc.line(margin, pageHeight - 12, margin + contentWidth, pageHeight - 12);
@@ -186,7 +187,7 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
     doc.setTextColor(100, 116, 139);
     doc.text(`Pris en compte comptable`, margin + 6, y + 20);
     doc.text(`Mode de paiement: ${revenueToPrint.paymentMethod}`, margin + 75, y + 20);
-    doc.text(`Enregistré par régie d'APEE`, margin + 135, y + 20);
+    doc.text(`Enregistré par régie de ${getApeeShortName(settings)}`, margin + 135, y + 20);
 
     y += 32;
 
@@ -255,7 +256,7 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
     doc.setTextColor(51, 65, 85);
 
     doc.text("Signature du Donateur / Déposant", margin + 10, y);
-    doc.text("Le Trésorier de l'APEE (CES Ekali 1)", margin + contentWidth - 75, y);
+    doc.text(`Le Trésorier de la régie (${getApeeShortName(settings)})`, margin + contentWidth - 75, y);
 
     y += 18;
     doc.setFont('helvetica', 'italic');
@@ -489,7 +490,7 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
     }
     const finalPaid = payments.reduce((sum, p) => sum + p.amount, 0) + payAmount;
     const kidsStr = students.filter(s => s.name.trim() !== '').map(s => s.name).join(', ');
-    const msg = `APEE CES Ekali 1: Bonjour M./Mme ${parentName}. Nous confirmons la réception de ${finalPaid.toLocaleString()} FCFA pour la cotisation APEE de (${kidsStr}). Solde restant: ${Math.max(0, totalDueAmount - finalPaid).toLocaleString()} FCFA. Merci pour votre contribution active! Applet-CES.`;
+    const msg = `${getApeeShortName(settings)}: Bonjour M./Mme ${parentName}. Nous confirmons la réception de ${finalPaid.toLocaleString()} FCFA pour la cotisation ${getApeeShortName(settings)} de (${kidsStr}). Solde restant: ${Math.max(0, totalDueAmount - finalPaid).toLocaleString()} FCFA. Merci pour votre contribution active!`;
     setSmsMockMsg(msg);
   };
 
@@ -516,7 +517,7 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(8);
       doc.setTextColor(148, 163, 184); // Slate 400
-      doc.text(`Reçu APEE CES Ekali 1 • Année : ${settings.schoolYear || ""}`, margin, 9);
+      doc.text(`Reçu ${getApeeShortName(settings)} • Année : ${settings.schoolYear || ""}`, margin, 9);
       
       // Footer line
       doc.line(margin, pageHeight - 12, margin + contentWidth, pageHeight - 12);
@@ -559,7 +560,7 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
     doc.setTextColor(15, 23, 42); // Slate 900
-    doc.text("REÇU OFFICIEL DE COTISATION APEE", margin + 6, y + 12);
+    doc.text(`REÇU OFFICIEL DE COTISATION ${getApeeShortName(settings).toUpperCase()}`, margin + 6, y + 12);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
@@ -712,7 +713,7 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
     doc.setTextColor(51, 65, 85);
 
     doc.text("Signature du Parent d'Élève", margin + 10, y);
-    doc.text("Le Trésorier de l'APEE (CES Ekali 1)", margin + contentWidth - 75, y);
+    doc.text(`Le Trésorier du bureau (${getApeeShortName(settings)})`, margin + contentWidth - 75, y);
 
     y += 18;
     doc.setFont('helvetica', 'italic');
@@ -721,7 +722,7 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
     doc.text("Le parent s'engage à respecter les délais de versement.", margin + 10, y);
     doc.text("Sceau et cachet officiel de régie financière.", margin + contentWidth - 75, y);
 
-    const safeFilename = `recu_apee_${(parentName || 'parent').toLowerCase().replace(/[^a-z0-9]/g, '_')}.pdf`;
+    const safeFilename = `recu_${getApeeShortName(settings).toLowerCase()}_${(parentName || 'parent').toLowerCase().replace(/[^a-z0-9]/g, '_')}.pdf`;
     doc.save(safeFilename);
   };
 
@@ -1116,7 +1117,7 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
                 <span className="font-bold text-white">{validStudentsCount}</span>
               </div>
               <div className="flex justify-between text-xs font-medium text-slate-350">
-                <span>Tarif unitaire de l'APEE :</span>
+                <span>Tarif unitaire de l'{getApeeShortName(settings)} :</span>
                 <span>{settings.cotisationAmount.toLocaleString()} FCFA</span>
               </div>
               <hr className="border-slate-800 my-1" />
@@ -1421,7 +1422,7 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
                     <p className="text-[10px] uppercase font-black text-slate-600 tracking-wide">REPUBLIQUE DU CAMEROUN - PAIX-TRAVAIL-PATRIE</p>
                     <p className="text-[10px] font-mono text-slate-500 font-semibold">Année Scolaire : {settings.schoolYear || "2025/2026"}</p>
                     <div className="text-xs font-black bg-slate-100 border border-slate-200 py-1.5 uppercase rounded-lg tracking-wider max-w-sm mx-auto my-2 text-slate-800">
-                      REÇU OFFICIEL DE COTISATION APEE
+                      REÇU OFFICIEL DE COTISATION {getApeeShortName(settings).toUpperCase()}
                     </div>
                   </div>
 
@@ -1514,14 +1515,14 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
                       <div className="h-14 border border-dashed border-slate-200 rounded-lg mt-2 flex items-center justify-center text-[10px] text-slate-300 font-mono">Signer ici</div>
                     </div>
                     <div>
-                      <p className="font-extrabold text-slate-800">Le Trésorier de l'APEE</p>
+                      <p className="font-extrabold text-slate-800">Le Trésorier de l'{getApeeShortName(settings)}</p>
                       <p className="text-[9px] text-slate-400 mt-1">Cachet et Signature réglementaire</p>
                       <div className="h-14 border border-dashed border-slate-200 rounded-lg mt-2 flex items-center justify-center text-[10px] text-slate-300 font-mono font-semibold">Cachet de régie</div>
                     </div>
                   </div>
 
                   <div className="text-center text-[9px] text-slate-400 font-mono border-t border-slate-150 pt-2">
-                    CES Ekali 1 de MFOU - Système Informatisé d'Émargement des Recettes APEE • {settings.schoolYear}
+                    {settings.associationName || "Établissement"} - Système Informatisé d'Émargement des Recettes {getApeeShortName(settings)} • {settings.schoolYear}
                   </div>
                 </div>
 

@@ -19,6 +19,7 @@ import {
   importFullBackup,
   resetApeeData,
   saveApeeLog,
+  getApeeShortName,
   DEFAULT_SETTINGS
 } from './utils/apeeDb';
 
@@ -93,6 +94,12 @@ type TabType =
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
+  const [secondaryAdmins, setSecondaryAdmins] = useState<{ id: string; email: string; name: string; createdAt: string; addedBy: string }[]>([]);
+  
+  const isPrimarySuperAdmin = user?.email === 'jacquesbene301@gmail.com';
+  const isSecondarySuperAdmin = !!user && secondaryAdmins.some(admin => admin.email?.toLowerCase().trim() === user.email?.toLowerCase().trim());
+  const showSuperAdminButton = isPrimarySuperAdmin || isSecondarySuperAdmin;
+
   const [loading, setLoading] = useState(true);
   const [dataLoading, setDataLoading] = useState(false);
   const [seeding, setSeeding] = useState(false);
@@ -368,6 +375,52 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  // Fetch secondary super admins
+  useEffect(() => {
+    if (!user) {
+      setSecondaryAdmins([]);
+      return;
+    }
+    const fetchAdmins = async () => {
+      try {
+        const q = query(collection(db, 'super_admins'));
+        const snap = await getDocs(q);
+        const list: any[] = [];
+        snap.forEach((doc) => {
+          list.push({ id: doc.id, ...doc.data() });
+        });
+        if (list.length > 0) {
+          setSecondaryAdmins(list);
+          localStorage.setItem('pasma_secondary_admins', JSON.stringify(list));
+        } else {
+          const cached = localStorage.getItem('pasma_secondary_admins');
+          if (cached) {
+            setSecondaryAdmins(JSON.parse(cached));
+          } else {
+            const defaultAdmins = [
+              { id: 'admin_sec_1', email: 'adjoint@pasma.sys', name: 'Alain Ndzie', createdAt: new Date().toISOString(), addedBy: 'jacquesbene301@gmail.com' }
+            ];
+            setSecondaryAdmins(defaultAdmins);
+            localStorage.setItem('pasma_secondary_admins', JSON.stringify(defaultAdmins));
+          }
+        }
+      } catch (e) {
+        console.warn("Could not retrieve collection 'super_admins' from Firestore. Checking local cache.", e);
+        const cached = localStorage.getItem('pasma_secondary_admins');
+        if (cached) {
+          setSecondaryAdmins(JSON.parse(cached));
+        } else {
+          const defaultAdmins = [
+            { id: 'admin_sec_1', email: 'adjoint@pasma.sys', name: 'Alain Ndzie', createdAt: new Date().toISOString(), addedBy: 'jacquesbene301@gmail.com' }
+          ];
+          setSecondaryAdmins(defaultAdmins);
+          localStorage.setItem('pasma_secondary_admins', JSON.stringify(defaultAdmins));
+        }
+      }
+    };
+    fetchAdmins();
+  }, [user]);
 
   // 2. Fetch and seed database state based on Selected School or logged-in account (Unified ID space)
   const userId = selectedSchoolId || user?.uid;
@@ -1186,21 +1239,23 @@ export default function App() {
               />
 
               {/* Discrete, elegant super-admin entrance bar */}
-              <div className="flex flex-col sm:flex-row justify-between items-center bg-slate-950 text-slate-300 px-6 py-3.5 rounded-2xl border border-slate-800 shadow-md gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
-                  <p className="text-[11px] font-semibold text-slate-200">
-                    Compte Administrateur Principal : <strong className="text-white">jacquesbene301@gmail.com</strong>
-                  </p>
+              {isPrimarySuperAdmin && (
+                <div className="flex flex-col sm:flex-row justify-between items-center bg-slate-950 text-slate-300 px-6 py-3.5 rounded-2xl border border-slate-800 shadow-md gap-3 mt-4">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
+                    <p className="text-[11px] font-semibold text-slate-200">
+                      Compte Administrateur Principal : <strong className="text-white">jacquesbene301@gmail.com</strong>
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowSuperAdmin(true)}
+                    className="px-4 py-1.5 bg-amber-400 hover:bg-amber-500 text-slate-950 text-xs font-black rounded-lg transition shrink-0 cursor-pointer shadow-xs"
+                  >
+                    ⚙️ Ouvrir l'Espace Super-Admin (Jacques)
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setShowSuperAdmin(true)}
-                  className="px-4 py-1.5 bg-amber-400 hover:bg-amber-500 text-slate-950 text-xs font-black rounded-lg transition shrink-0 cursor-pointer shadow-xs"
-                >
-                  ⚙️ Ouvrir l'Espace Super-Admin (Jacques)
-                </button>
-              </div>
+              )}
             </div>
           </motion.div>
 
@@ -1351,14 +1406,16 @@ export default function App() {
                   </div>
                 </div>
                 
-                <button
-                  type="button"
-                  onClick={() => setShowSuperAdmin(true)}
-                  className="px-3 py-1.5 bg-amber-400 hover:bg-amber-500 text-slate-950 text-[10.5px] font-extrabold rounded-xl transition flex items-center gap-1 cursor-pointer border border-amber-300 shadow-2xs shrink-0"
-                  title="Retourner à la Console de Supervision Globale"
-                >
-                  ⚙️ Super-Admin
-                </button>
+                {showSuperAdminButton && (
+                  <button
+                    type="button"
+                    onClick={() => setShowSuperAdmin(true)}
+                    className="px-3 py-1.5 bg-amber-400 hover:bg-amber-500 text-slate-950 text-[10.5px] font-extrabold rounded-xl transition flex items-center gap-1 cursor-pointer border border-amber-300 shadow-2xs shrink-0"
+                    title={isPrimarySuperAdmin ? "Retourner à la Console de Supervision Globale (Principal)" : "Retourner à la Console de Supervision Globale (Adjoint)"}
+                  >
+                    ⚙️ {isPrimarySuperAdmin ? "Super-Admin Principal" : "Superviseur Adjoint"}
+                  </button>
+                )}
 
                 <button
                   onClick={handleExitSchool}
@@ -1549,7 +1606,7 @@ export default function App() {
                       <>
                         {/* SECTION 1: GESTION TRÉSORERIE APEE */}
                         <h3 className="text-[10px] font-black text-indigo-650 uppercase tracking-widest mb-2 pl-1 flex items-center gap-1">
-                          💼 TRÉSORERIE APEE
+                          💼 TRÉSORERIE {getApeeShortName(apeeSettings)}
                         </h3>
                         
                         <button

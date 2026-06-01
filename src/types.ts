@@ -209,6 +209,7 @@ export interface ApeeBudgetLine {
 
 export interface ApeeSettings {
   associationName: string;
+  shortName?: string;
   schoolYear: string;
   cotisationAmount: number;
   financialGoal: number;

@@ -19,6 +19,7 @@ import {
   Settings
 } from 'lucide-react';
 import { ApeeParent, ApeeSettings } from '../../types';
+import { getApeeShortName } from '../../utils/apeeDb';
 
 interface ApeeRemindersProps {
   parents: ApeeParent[];
@@ -36,15 +37,15 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
   
   // Custom templates
   const [smsTemplate, setSmsTemplate] = useState<string>(
-    "Chers parents. Rappel APEE {school_year} de {association_name} pour votre pupille ({student_names}). Le solde restant dû est de {remaining_amount} FCFA. Veuillez régulariser au plus vite par versement ou virement. Merci pour votre collaboration."
+    "Chers parents. Rappel {short_name} {school_year} de {association_name} pour votre pupille ({student_names}). Le solde restant dû est de {remaining_amount} FCFA. Veuillez régulariser au plus vite par versement ou virement. Merci pour votre collaboration."
   );
   
   const [emailSubject, setEmailSubject] = useState<string>(
-    "Rappel de Paiement Cotisation APEE - {association_name}"
+    "Rappel de Paiement Cotisation {short_name} - {association_name}"
   );
   
   const [emailTemplate, setEmailTemplate] = useState<string>(
-    "Bonjour {parent_name},\n\nNous vous contactons au sujet de la cotisation APEE ({school_year}) pour l'établissement {association_name} quant à la scolarisation de votre/vos enfant(s) : {student_names}.\n\nÀ ce jour, votre compte présente un solde restant de {remaining_amount} FCFA (sur un montant exigible de {total_due_amount} FCFA).\n\nNous vous prions de bien vouloir régulariser cette situation auprès de l'intendante.\n\nSi vous avez déjà procédé au versement, veuillez ignorer ce message.\n\nCordialement,\nLe Bureau de l'APEE\n{association_name}"
+    "Bonjour {parent_name},\n\nNous vous contactons au sujet de la cotisation {short_name} ({school_year}) pour l'établissement {association_name} quant à la scolarisation de votre/vos enfant(s) : {student_names}.\n\nÀ ce jour, votre compte présente un solde restant de {remaining_amount} FCFA (sur un montant exigible de {total_due_amount} FCFA).\n\nNous vous prions de bien vouloir régulariser cette situation auprès de l'intendante.\n\nSi vous avez déjà procédé au versement, veuillez ignorer ce message.\n\nCordialement,\nLe Bureau de la régie de {short_name}\n{association_name}"
   );
 
   // Focus parent state
@@ -103,8 +104,9 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
     
     return text
       .replace(/{parent_name}/g, parent.name)
-      .replace(/{association_name}/g, settings.associationName)
-      .replace(/{school_year}/g, settings.schoolYear)
+      .replace(/{association_name}/g, settings?.associationName || "Établissement")
+      .replace(/{short_name}/g, getApeeShortName(settings))
+      .replace(/{school_year}/g, settings?.schoolYear || "")
       .replace(/{student_names}/g, kidsList)
       .replace(/{remaining_amount}/g, remaining.toLocaleString())
       .replace(/{total_due_amount}/g, parent.totalDue.toLocaleString());
@@ -721,7 +723,7 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
             </div>
           ) : (
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-8 text-center text-xs text-slate-400 font-sans">
-              Tous les parents ont réglé leur cotisation APEE ! Aucune relance n'est nécessaire pour le moment.
+              Tous les parents ont réglé leur cotisation {getApeeShortName(settings)} ! Aucune relance n'est nécessaire pour le moment.
             </div>
           )}
 

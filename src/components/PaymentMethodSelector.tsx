@@ -105,7 +105,7 @@ export default function PaymentMethodSelector({
         setStepMessage(`Attente de confirmation et de détection par le scanner mobile...`);
         await new Promise(resolve => setTimeout(resolve, 1500));
 
-        setStepMessage(`Règlement reçu par le Trésor de l'APEE de l'établissement...`);
+        setStepMessage(`Règlement reçu par le Trésor de l'institution...`);
         await new Promise(resolve => setTimeout(resolve, 1000));
       } else {
         // Card payment

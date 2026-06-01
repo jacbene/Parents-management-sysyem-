@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Search, UserCheck, MessageSquare, Edit2, Trash2, Printer, X, Phone, MapPin, Tag, Calendar, AlertTriangle, ChevronRight, Notebook, Download } from 'lucide-react';
 import { ApeeParent, ApeeStudentLink } from '../../types';
+import { getApeeShortName } from '../../utils/apeeDb';
 import { jsPDF } from 'jspdf';
 
 interface ApeeSearchProps {
@@ -67,7 +68,7 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(8);
       doc.setTextColor(148, 163, 184); // Slate 400
-      doc.text(`Aperçu Reçu APEE • Année : ${settings?.schoolYear || "2025/2026"}`, margin, 9);
+      doc.text(`Aperçu Reçu ${getApeeShortName(settings)} • Année : ${settings?.schoolYear || "2025/2026"}`, margin, 9);
       
       doc.line(margin, pageHeight - 12, margin + contentWidth, pageHeight - 12);
       
@@ -107,7 +108,7 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
     doc.setTextColor(15, 23, 42); // Slate 900
-    doc.text("REÇU OFFICIEL DE COTISATION APEE", margin + 6, y + 12);
+    doc.text(`REÇU OFFICIEL DE COTISATION ${getApeeShortName(settings).toUpperCase()}`, margin + 6, y + 12);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
@@ -311,9 +312,9 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
     doc.setFontSize(8);
     doc.setTextColor(51, 65, 85);
     doc.text("Émargement Parent d'Élève", margin + 10, y);
-    doc.text("Trésorier de l'Association APEE", margin + contentWidth - 70, y);
+    doc.text(`Trésorier de la régie (${getApeeShortName(settings)})`, margin + contentWidth - 70, y);
 
-    const safeFilename = `bulletin_apee_${selectedParent.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}.pdf`;
+    const safeFilename = `bulletin_${getApeeShortName(settings).toLowerCase()}_${selectedParent.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}.pdf`;
     doc.save(safeFilename);
   };
 
@@ -630,7 +631,7 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
               <button
                 onClick={handleTriggerPrint}
                 className="w-full mt-2 bg-indigo-650 hover:bg-indigo-700 text-white font-bold rounded-xl py-2.5 text-xs uppercase tracking-wide flex items-center justify-center gap-2 cursor-pointer transition shadow-xs"
-                title="Générer et télécharger un reçu de cotisation APEE officiel au format PDF"
+                title={`Générer et télécharger un reçu de cotisation ${getApeeShortName(settings)} officiel au format PDF`}
               >
                 <Download className="h-4 w-4 text-amber-300" /> Télécharger Reçu (PDF)
               </button>

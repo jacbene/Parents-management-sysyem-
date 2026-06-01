@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { collection, doc, getDocs, setDoc, deleteDoc, query, where, writeBatch } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, auth } from '../firebase';
 import { Establishment, Student, Invoice, SystemLog } from '../types';
 import { 
   Building2, 
@@ -24,7 +24,9 @@ import {
   Globe,
   RefreshCw,
   Send,
-  Sparkles
+  Sparkles,
+  UserCheck,
+  ShieldCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -40,6 +42,11 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
   const [allInvoices, setAllInvoices] = useState<Invoice[]>([]);
   const [systemLogs, setSystemLogs] = useState<SystemLog[]>([]);
   
+  // Custom states
+  const [activeSubTab, setActiveSubTab] = useState<'schools' | 'admins'>('schools');
+  const [secondaryAdmins, setSecondaryAdmins] = useState<any[]>([]);
+  const isPrimarySuperAdmin = auth.currentUser?.email === 'jacquesbene301@gmail.com' || currentUserUid === 'sys_admin_jacques';
+
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -202,6 +209,34 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
         ];
 
         setSystemLogs([...logs, ...fallbackSystemLogs]);
+
+        // 5. Fetch secondary super admins from Firestore
+        const adminsList: any[] = [];
+        try {
+          const adminsSnap = await getDocs(query(collection(db, 'super_admins')));
+          adminsSnap.forEach((doc) => {
+            adminsList.push({ id: doc.id, ...doc.data() });
+          });
+        } catch (adminErr) {
+          console.warn("Could not fetch super_admins from Firestore:", adminErr);
+        }
+
+        if (adminsList.length > 0) {
+          setSecondaryAdmins(adminsList);
+          localStorage.setItem('pasma_secondary_admins', JSON.stringify(adminsList));
+        } else {
+          const cached = localStorage.getItem('pasma_secondary_admins');
+          if (cached) {
+            setSecondaryAdmins(JSON.parse(cached));
+          } else {
+            const defaultAdmins = [
+              { id: 'admin_sec_1', email: 'adjoint@pasma.sys', name: 'Alain Ndzie', createdAt: new Date().toISOString(), addedBy: 'jacquesbene301@gmail.com' }
+            ];
+            setSecondaryAdmins(defaultAdmins);
+            localStorage.setItem('pasma_secondary_admins', JSON.stringify(defaultAdmins));
+          }
+        }
+
       } catch (err) {
         console.error("Super Admin Load failed:", err);
       } finally {
@@ -425,17 +460,23 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
     sch.finManagerName?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // Dynamic user data resolving for super-admin
+  const currentUserEmail = auth.currentUser?.email || currentUserUid || 'jacquesbene301@gmail.com';
+  const currentOperatorName = isPrimarySuperAdmin 
+    ? 'JACQUES BENE MBAMA'
+    : (secondaryAdmins.find(admin => admin.email?.toLowerCase().trim() === currentUserEmail.toLowerCase().trim())?.name?.toUpperCase() || 'SUPERVISEUR ADJOINT');
+
   return (
     <div className="min-h-screen bg-[#f8fafc] text-slate-900 font-sans pb-16">
       {/* Super Top Admin Banner */}
       <div className="bg-slate-950 text-amber-400 font-mono text-[10.5px] px-6 py-2 border-b border-amber-500/20 flex flex-wrap items-center justify-between gap-2 shadow-inner">
         <div className="flex items-center gap-1.5 font-bold">
           <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping shrink-0" />
-          <span>PORTAIL EXCLUSIF DE SURVEILLANCE SYSTÈME PASMA-SYS</span>
+          <span>PORTAIL EXCLUSIF DE SURVEILLANCE SYSTÈME PASMA-SYS {isPrimarySuperAdmin ? "(OPÉRATEUR PRINCIPAL)" : "(OPÉRATEUR ADJOINT)"}</span>
         </div>
         <div className="flex items-center gap-4 text-[10px] text-slate-350">
-          <div>OPERATEUR PRINCIPAL: <span className="font-extrabold text-white">JACQUES BENE MBAMA</span></div>
-          <div>EMAIL: <span className="font-extrabold text-white">jacquesbene301@gmail.com</span></div>
+          <div>OPÉRATEUR: <span className="font-extrabold text-white">{currentOperatorName}</span></div>
+          <div>EMAIL: <span className="font-extrabold text-white">{currentUserEmail}</span></div>
         </div>
       </div>
 
@@ -453,9 +494,15 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
             <div>
               <div className="flex items-center gap-2">
                 <Building2 className="h-6 w-6 text-slate-800" />
-                <h1 className="text-2xl font-black tracking-tight text-slate-950">Superviseur Principal</h1>
+                <h1 className="text-2xl font-black tracking-tight text-slate-950">
+                  {isPrimarySuperAdmin ? "Superviseur Principal" : "Superviseur Adjoint"}
+                </h1>
               </div>
-              <p className="text-xs text-slate-500 font-medium">Contrôle global, pilotage et assistance technique des établissements scolaires</p>
+              <p className="text-xs text-slate-500 font-medium">
+                {isPrimarySuperAdmin
+                  ? "Contrôle global, pilotage suprême et assistance technique des établissements scolaires"
+                  : "Accès d'audit supervisé, contrôle analytique et assistance technique déléguée du système"}
+              </p>
             </div>
           </div>
 
@@ -563,137 +610,367 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
           <div className="lg:col-span-2 space-y-6">
             <div className="bg-white border border-slate-200/80 rounded-3xl shadow-3xs overflow-hidden">
               <div className="p-6 border-b border-slate-150 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div>
-                  <h2 className="text-base font-black tracking-tight text-slate-950">Registre des Établissements</h2>
-                  <p className="text-xs text-slate-500">Activez la supervision ou gérez les paramètres d'exploitation</p>
+                <div className="space-y-1.5">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setActiveSubTab('schools')}
+                      className={`px-4 py-1.5 text-xs font-black rounded-lg transition cursor-pointer border ${
+                        activeSubTab === 'schools'
+                          ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      🏫 Établissements Supervisés
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveSubTab('admins')}
+                      className={`px-4 py-1.5 text-xs font-black rounded-lg transition cursor-pointer border flex items-center gap-1.5 ${
+                        activeSubTab === 'admins'
+                          ? 'bg-slate-950 text-amber-400 border-slate-950 shadow-xs'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      🛡️ Super-Admins Adjoints ({secondaryAdmins.length})
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-500 font-medium">
+                    {activeSubTab === 'schools'
+                      ? "Activez la supervision ou gérez les paramètres d'exploitation"
+                      : "Gérez et auditez les habilitations d'accès des superviseurs adjoints délégués"}
+                  </p>
                 </div>
 
-                <div className="relative w-full sm:w-64">
-                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                    <Search className="h-4 w-4" />
-                  </span>
-                  <input
-                    type="text"
-                    placeholder="Filtrer un établissement..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                  />
-                  {searchQuery && (
-                    <button onClick={() => setSearchQuery('')} className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600">
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                </div>
+                {activeSubTab === 'schools' && (
+                  <div className="relative w-full sm:w-64">
+                    <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                      <Search className="h-4 w-4" />
+                    </span>
+                    <input
+                      type="text"
+                      placeholder="Filtrer un établissement..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    />
+                    {searchQuery && (
+                      <button onClick={() => setSearchQuery('')} className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600">
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
 
-              {filteredSchools.length === 0 ? (
-                <div className="p-12 text-center text-slate-450 space-y-2">
-                  <div className="text-3xl">🏫</div>
-                  <p className="font-bold text-sm text-slate-800">Aucun établissement ne correspond à votre recherche</p>
-                  <p className="text-xs text-slate-400">Essayez de saisir un autre nom ou créez un nouvel établissement.</p>
-                </div>
-              ) : (
-                <div className="divide-y divide-slate-100 overflow-x-auto">
-                  <table className="w-full text-left text-xs text-slate-600 min-w-[700px]">
-                    <thead className="bg-slate-50/50 text-[10.5px] text-slate-450 font-black uppercase tracking-wider border-b border-slate-150">
-                      <tr>
-                        <th className="px-6 py-3.5">Nom de l'Établissement</th>
-                        <th className="px-4 py-3.5">Effectifs Globaux</th>
-                        <th className="px-4 py-3.5">Fonds & Taux APEE</th>
-                        <th className="px-4 py-3.5">Responsable Finances</th>
-                        <th className="px-6 py-3.5 text-right font-sans">Supervision Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 font-medium">
-                      {filteredSchools.map((school) => {
-                        // Calculate metrics for school
-                        const parentsCount = allInvoices.filter(
-                          inv => inv.parentId === school.id && inv.studentId === 'apee_ces_ekali_1'
-                        ).length || 2; // Demodb fallback
-                        
-                        const pupilsCount = allStudents.filter(s => s.parentId === school.id).length || 3;
-                        
-                        const collected = allInvoices
-                          .filter(inv => inv.parentId === school.id && inv.studentId === 'apee_ces_ekali_1')
-                          .reduce((sum, inv) => sum + (inv.amountPaid || 0), 0) || (school.id === 'demo_school_ekali' ? 1250000 : (school.id === 'demo_school_vogt' ? 4200000 : 0));
-                        
-                        const progressPercent = Math.round((collected / (school.financialGoal || 5000000)) * 100);
+              {activeSubTab === 'schools' ? (
+                <>
+                  {filteredSchools.length === 0 ? (
+                    <div className="p-12 text-center text-slate-450 space-y-2">
+                      <div className="text-3xl">🏫</div>
+                      <p className="font-bold text-sm text-slate-800">Aucun établissement ne correspond à votre recherche</p>
+                      <p className="text-xs text-slate-400">Essayez de saisir un autre nom ou créez un nouvel établissement.</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-100 overflow-x-auto">
+                      <table className="w-full text-left text-xs text-slate-600 min-w-[700px]">
+                        <thead className="bg-slate-50/50 text-[10.5px] text-slate-450 font-black uppercase tracking-wider border-b border-slate-150">
+                          <tr>
+                            <th className="px-6 py-3.5">Nom de l'Établissement</th>
+                            <th className="px-4 py-3.5">Effectifs Globaux</th>
+                            <th className="px-4 py-3.5">Fonds & Taux APEE</th>
+                            <th className="px-4 py-3.5">Responsable Finances</th>
+                            <th className="px-6 py-3.5 text-right font-sans">Supervision Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-medium">
+                          {filteredSchools.map((school) => {
+                            // Calculate metrics for school
+                            const parentsCount = allInvoices.filter(
+                              inv => inv.parentId === school.id && inv.studentId === 'apee_ces_ekali_1'
+                            ).length || 2; // Demodb fallback
+                            
+                            const pupilsCount = allStudents.filter(s => s.parentId === school.id).length || 3;
+                            
+                            const collected = allInvoices
+                              .filter(inv => inv.parentId === school.id && inv.studentId === 'apee_ces_ekali_1')
+                              .reduce((sum, inv) => sum + (inv.amountPaid || 0), 0) || (school.id === 'demo_school_ekali' ? 1250000 : (school.id === 'demo_school_vogt' ? 4200000 : 0));
+                            
+                            const progressPercent = Math.round((collected / (school.financialGoal || 5000000)) * 100);
 
-                        return (
-                          <tr key={school.id} className="hover:bg-slate-50/50 transition">
-                            <td className="px-6 py-4.5">
-                              <div className="flex items-center gap-3">
-                                {school.logoUrl ? (
-                                  <img 
-                                    src={school.logoUrl} 
-                                    alt="Logo" 
-                                    className="h-9 w-9 object-contain rounded-lg border border-slate-100 bg-slate-50 p-0.5 shrink-0" 
-                                  />
-                                ) : (
-                                  <div className="h-9 w-9 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700 font-bold shrink-0">
-                                    🏫
+                            return (
+                              <tr key={school.id} className="hover:bg-slate-50/50 transition">
+                                <td className="px-6 py-4.5">
+                                  <div className="flex items-center gap-3">
+                                    {school.logoUrl ? (
+                                      <img 
+                                        src={school.logoUrl} 
+                                        alt="Logo" 
+                                        className="h-9 w-9 object-contain rounded-lg border border-slate-100 bg-slate-50 p-0.5 shrink-0" 
+                                      />
+                                    ) : (
+                                      <div className="h-9 w-9 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700 font-bold shrink-0">
+                                        🏫
+                                      </div>
+                                    )}
+                                    <div>
+                                      <div className="font-extrabold text-slate-900 text-[12.5px] leading-snug">{school.name}</div>
+                                      <div className="text-[10px] text-slate-400 font-mono mt-0.5 flex items-center gap-1.5">
+                                        <span>ID: {school.id}</span>
+                                        <span>•</span>
+                                        <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 font-bold uppercase">{school.schoolYear}</span>
+                                      </div>
+                                    </div>
                                   </div>
-                                )}
-                                <div>
-                                  <div className="font-extrabold text-slate-900 text-[12.5px] leading-snug">{school.name}</div>
-                                  <div className="text-[10px] text-slate-400 font-mono mt-0.5 flex items-center gap-1.5">
-                                    <span>ID: {school.id}</span>
-                                    <span>•</span>
-                                    <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 font-bold uppercase">{school.schoolYear}</span>
+                                </td>
+                                <td className="px-4 py-4.5">
+                                  <div className="space-y-1 text-slate-800">
+                                    <div className="flex items-center gap-1"><Users className="h-3.5 w-3.5 text-slate-400" /> <span className="font-bold">{parentsCount}</span> parents</div>
+                                    <div className="flex items-center gap-1"><GraduationCap className="h-3.5 w-3.5 text-slate-400" /> <span className="font-bold">{pupilsCount}</span> élèves</div>
                                   </div>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-4 py-4.5">
-                              <div className="space-y-1 text-slate-800">
-                                <div className="flex items-center gap-1"><Users className="h-3.5 w-3.5 text-slate-400" /> <span className="font-bold">{parentsCount}</span> parents</div>
-                                <div className="flex items-center gap-1"><GraduationCap className="h-3.5 w-3.5 text-slate-400" /> <span className="font-bold">{pupilsCount}</span> élèves</div>
-                              </div>
-                            </td>
-                            <td className="px-4 py-4.5">
-                              <div className="space-y-1">
-                                <div className="font-black text-slate-900">{collected.toLocaleString()} / {(school.financialGoal).toLocaleString()} FCFA</div>
-                                <div className="flex items-center gap-2">
-                                  <div className="w-16 bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                                    <div className="bg-indigo-600 h-1.5 rounded-full" style={{ width: `${Math.min(progressPercent, 100)}%` }} />
+                                </td>
+                                <td className="px-4 py-4.5">
+                                  <div className="space-y-1">
+                                    <div className="font-black text-slate-900">{collected.toLocaleString()} / {(school.financialGoal).toLocaleString()} FCFA</div>
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-16 bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                                        <div className="bg-indigo-600 h-1.5 rounded-full" style={{ width: `${Math.min(progressPercent, 100)}%` }} />
+                                      </div>
+                                      <span className="font-mono text-[9.5px] font-bold text-indigo-600">{progressPercent}%</span>
+                                    </div>
+                                    <div className="text-[9px] text-slate-400 font-bold">{school.cotisationAmount.toLocaleString()} FCFA / Adhérent</div>
                                   </div>
-                                  <span className="font-mono text-[9.5px] font-bold text-indigo-600">{progressPercent}%</span>
-                                </div>
-                                <div className="text-[9px] text-slate-400 font-bold">{school.cotisationAmount.toLocaleString()} FCFA / Adhérent</div>
+                                </td>
+                                <td className="px-4 py-4.5">
+                                  <div className="text-slate-800 space-y-0.5">
+                                    <div className="font-bold text-[11px]">{school.finManagerName || school.directorName || "N/A"}</div>
+                                    <div className="text-[10px] text-slate-500 font-mono flex items-center gap-0.5">📞 {school.finManagerPhone || "N/A"}</div>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-4.5 text-right font-sans">
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <button
+                                      onClick={() => onSelectSchool(school.id, 'manager')}
+                                      className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 hover:text-indigo-850 rounded-lg text-[10.5px] font-black transition flex items-center gap-0.5 cursor-pointer"
+                                      title="Superviser en s'authentifiant en tant que directeur pédagogique ou financier"
+                                    >
+                                      Superviser <ChevronRight className="h-3 w-3" />
+                                    </button>
+                                    {school.id !== 'demo_school_ekali' && (
+                                      <button
+                                        onClick={() => handleDeleteSchool(school.id, school.name)}
+                                        className="p-1.5 bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-150 text-slate-400 hover:text-rose-600 rounded-lg transition cursor-pointer"
+                                        title="Supprimer cet établissement définitivement"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="p-6 space-y-6">
+                  {/* Informative Banner */}
+                  <div className="bg-slate-900 border border-slate-800 text-slate-300 p-4 rounded-2xl flex items-start gap-3">
+                    <span className="p-2 bg-slate-950 border border-slate-800 text-amber-400 rounded-xl font-bold shrink-0">🛡️</span>
+                    <div className="text-xs leading-relaxed">
+                      <p className="font-extrabold text-amber-400 uppercase tracking-wider mb-1">
+                        Délégation d'Accès de Supervision (Adjoints)
+                      </p>
+                      <p>
+                        Seul le Super-Admin Principal <strong className="text-white">jacquesbene301@gmail.com</strong> est en droit de nommer ou révoquer des adjoints de supervision. Les adjoints délèguent des opérations d'audit d'assistance dans la surveillance système locale.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Split body layout */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Secondary Admins List */}
+                    <div className="space-y-3.5">
+                      <h3 className="text-xs font-black uppercase text-slate-450 tracking-wider">
+                        Superviseurs Adjoints Actifs ({secondaryAdmins.length})
+                      </h3>
+
+                      {secondaryAdmins.length === 0 ? (
+                        <div className="p-8 border border-dashed border-slate-200 rounded-2xl text-center text-slate-400 text-xs font-semibold">
+                          Aucun Super-Admin secondaire de créé à ce jour.
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {secondaryAdmins.map((admin) => (
+                            <div 
+                              key={admin.id} 
+                              className="p-3.5 bg-slate-50 border border-slate-150 rounded-2xl flex items-center justify-between gap-3 hover:border-slate-300 transition"
+                            >
+                              <div className="space-y-1 min-w-0">
+                                <p className="font-extrabold text-slate-900 text-[12px] truncate">
+                                  {admin.name}
+                                </p>
+                                <p className="text-[10.5px] text-slate-450 font-mono truncate">
+                                  {admin.email}
+                                </p>
+                                <p className="text-[9px] text-slate-400 font-mono">
+                                  Créé le {new Date(admin.createdAt).toLocaleDateString()} par Jacques
+                                </p>
                               </div>
-                            </td>
-                            <td className="px-4 py-4.5">
-                              <div className="text-slate-800 space-y-0.5">
-                                <div className="font-bold text-[11px]">{school.finManagerName || school.directorName || "N/A"}</div>
-                                <div className="text-[10px] text-slate-500 font-mono flex items-center gap-0.5">📞 {school.finManagerPhone || "N/A"}</div>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4.5 text-right font-sans">
-                              <div className="flex items-center justify-end gap-1.5">
-                                <button
-                                  onClick={() => onSelectSchool(school.id, 'manager')}
-                                  className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 hover:text-indigo-850 rounded-lg text-[10.5px] font-black transition flex items-center gap-0.5 cursor-pointer"
-                                  title="Superviser en s'authentifiant en tant que directeur pédagogique ou financier"
-                                >
-                                  Superviser <ChevronRight className="h-3 w-3" />
-                                </button>
-                                {school.id !== 'demo_school_ekali' && (
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="px-2 py-0.5 bg-indigo-50 border border-indigo-100 text-indigo-700 text-[8.5px] font-extrabold rounded-md uppercase tracking-wider">
+                                  Adjoint
+                                </span>
+                                {isPrimarySuperAdmin ? (
                                   <button
-                                    onClick={() => handleDeleteSchool(school.id, school.name)}
-                                    className="p-1.5 bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-150 text-slate-400 hover:text-rose-600 rounded-lg transition cursor-pointer"
-                                    title="Supprimer cet établissement définitivement"
+                                    type="button"
+                                    onClick={async () => {
+                                      if (confirm(`Voulez-vous révoquer l'accès super-admin adjoint à ${admin.name} (${admin.email}) ?`)) {
+                                        try {
+                                          await deleteDoc(doc(db, 'super_admins', admin.id));
+                                          
+                                          const updated = secondaryAdmins.filter(a => a.id !== admin.id);
+                                          setSecondaryAdmins(updated);
+                                          localStorage.setItem('pasma_secondary_admins', JSON.stringify(updated));
+                                          
+                                          await handleWriteSystemLog(
+                                            'REVOKE_SUPER_ADMIN', 
+                                            `Révocation de l'accès super-admin adjoint pour: ${admin.name} (${admin.email})`, 
+                                            0
+                                          );
+                                          
+                                          setSuccessMessage(`Les privilèges de l'adjoint ${admin.name} ont été révoqués.`);
+                                          setRefreshTrigger(p => p + 1);
+                                        } catch (e: any) {
+                                          setErrorMessage("Erreur lors de la suppression de l'adjoint.");
+                                        }
+                                      }
+                                    }}
+                                    className="p-1.5 focus:outline-hidden hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition border border-slate-200 cursor-pointer"
+                                    title="Révoquer l'autorisation"
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </button>
+                                ) : (
+                                  <div className="p-2 text-slate-300 cursor-not-allowed" title="Réservé à l'Opérateur Principal">
+                                    <Lock className="h-3.5 w-3.5" />
+                                  </div>
                                 )}
                               </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Nomination block */}
+                    <div className="bg-slate-50 border border-slate-200/80 p-5 rounded-3xl space-y-4">
+                      <div className="flex items-center gap-1.5 border-b border-slate-150 pb-2.5">
+                        <Plus className="h-4.5 w-4.5 text-indigo-600 font-bold" />
+                        <h4 className="text-xs font-black uppercase text-slate-950 tracking-wider">
+                          Désigner un Super-Admin Adjoint
+                        </h4>
+                      </div>
+
+                      {isPrimarySuperAdmin ? (
+                        <form 
+                          onSubmit={async (e) => {
+                            e.preventDefault();
+                            const targetForm = e.currentTarget;
+                            const fd = new FormData(targetForm);
+                            const name = (fd.get('name') as string || '').trim();
+                            const email = (fd.get('email') as string || '').trim();
+                            
+                            if (!name || !email) {
+                              setErrorMessage("Veuillez remplir le nom et l'adresse e-mail de l'adjoint.");
+                              return;
+                            }
+                            
+                            if (email.toLowerCase() === 'jacquesbene301@gmail.com') {
+                              setErrorMessage("Vous êtes déjà l'administrateur principal.");
+                              return;
+                            }
+
+                            if (secondaryAdmins.some(admin => admin.email?.toLowerCase().trim() === email.toLowerCase().trim())) {
+                              setErrorMessage("Cet adjoint est déjà enregistré.");
+                              return;
+                            }
+
+                            try {
+                              const newAdminId = `adm_${Date.now()}`;
+                              const adminDoc = {
+                                id: newAdminId,
+                                name,
+                                email: email.toLowerCase(),
+                                createdAt: new Date().toISOString(),
+                                addedBy: 'jacquesbene301@gmail.com',
+                                role: 'secondary'
+                              };
+
+                              await setDoc(doc(db, 'super_admins', newAdminId), adminDoc);
+                              
+                              const updated = [...secondaryAdmins, adminDoc];
+                              setSecondaryAdmins(updated);
+                              localStorage.setItem('pasma_secondary_admins', JSON.stringify(updated));
+
+                              await handleWriteSystemLog(
+                                'CREATE_SUPER_ADMIN', 
+                                `Nomination d'un Super-Admin secondaire : ${name} (${email})`, 
+                                0
+                              );
+
+                              targetForm.reset();
+                              setSuccessMessage(`Habilitation accordée avec succès à l'adjoint ${name} (${email})`);
+                              setRefreshTrigger(p => p + 1);
+                            } catch (err: any) {
+                              setErrorMessage("Une erreur est survenue lors de l'attribution des privilèges.");
+                            }
+                          }}
+                          className="space-y-4"
+                        >
+                          <div className="space-y-1.5">
+                            <label className="text-[10.5px] font-bold text-slate-600 uppercase">Nom Complet de l'Adjoint</label>
+                            <input
+                              type="text"
+                              name="name"
+                              required
+                              placeholder="Ex: Alain Ndzie"
+                              className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500/15"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[10.5px] font-bold text-slate-600 uppercase">Adresse E-mail Google (Auth)</label>
+                            <input
+                              type="email"
+                              name="email"
+                              required
+                              placeholder="Ex: adjoint@pasma.sys"
+                              className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500/15"
+                            />
+                          </div>
+
+                          <button
+                            type="submit"
+                            className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold transition shadow-md shadow-indigo-100 flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <UserCheck className="h-4 w-4" /> Activer comme Adjoint
+                          </button>
+                        </form>
+                      ) : (
+                        <div className="p-4 bg-slate-100 border border-slate-200 rounded-2xl text-center space-y-2">
+                          <Lock className="h-5 w-5 mx-auto text-slate-400" />
+                          <p className="font-bold text-slate-700 text-xs">Nomination Non Autorisée</p>
+                          <p className="text-[11px] text-slate-450 leading-normal">
+                            Seul le Superviseur Principal Jacques Bene Mbama possède l'autorité suprême pour coopter de nouveaux adjoints.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

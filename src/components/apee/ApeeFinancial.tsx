@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Plus, Trash2, CheckCircle2, DollarSign, Wallet2, FileText, ArrowDownLeft, ArrowUpRight, Check, AlertCircle, TrendingUp, Download, AlertTriangle } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { ApeeExpense, ApeeSettings } from '../../types';
+import { getApeeShortName } from '../../utils/apeeDb';
 
 interface ApeeFinancialProps {
   expenses: ApeeExpense[];
@@ -118,7 +119,7 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(8);
       doc.setTextColor(148, 163, 184); // Slate 400
-      doc.text(`Journal de Caisse APEE - ${settings.associationName || "Association"} • Année : ${settings.schoolYear || ""}`, margin, 9);
+      doc.text(`Journal de Caisse ${getApeeShortName(settings)} - ${settings.associationName || "Association"} • Année : ${settings.schoolYear || ""}`, margin, 9);
       
       // Footer line
       doc.line(margin, pageHeight - 12, margin + contentWidth, pageHeight - 12);
@@ -200,7 +201,7 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
     doc.setTextColor(148, 163, 184); // Slate 400
     doc.text(`Total collectes : ${totalRevenue.toLocaleString()} FCFA`, margin + 6, y + 20);
     doc.text(`Décaissements exécutés`, margin + 65, y + 20);
-    doc.text(`En attente de visa COGE / APEE`, margin + 125, y + 20);
+    doc.text(`En attente de visa COGE / ${getApeeShortName(settings)}`, margin + 125, y + 20);
 
     y += 30;
 
@@ -369,7 +370,7 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9.5);
     doc.setTextColor(15, 23, 42); // Slate 900
-    doc.text("III. JOURNAL DES OPÉRATIONS DE TRÉSORERIE DE L'APEE (DÉTAILLÉ)", margin, y);
+    doc.text(`III. JOURNAL DES OPÉRATIONS DE TRÉSORERIE DE L'${getApeeShortName(settings).toUpperCase()} (DÉTAILLÉ)`, margin, y);
     y += 4;
     
     doc.setDrawColor(226, 232, 240);
@@ -480,12 +481,12 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
 
     // Three columns signatures
     const managerText = settings.finManagerName ? `(${settings.finManagerName})` : "(Signature)";
-    doc.text("Le Responsable Financier APEE", margin + 3, y);
+    doc.text(`Le Responsable Financier ${getApeeShortName(settings)}`, margin + 3, y);
     doc.setFont('helvetica', 'normal');
     doc.text(managerText, margin + 3, y + 16);
 
     doc.setFont('helvetica', 'bold');
-    doc.text("Le Président de l'APEE", margin + contentWidth / 2 - 20, y);
+    doc.text(`Le Président de l'${getApeeShortName(settings)}`, margin + contentWidth / 2 - 20, y);
     doc.setFont('helvetica', 'normal');
     doc.text("(Visa et Signature)", margin + contentWidth / 2 - 20, y + 16);
 
@@ -495,7 +496,7 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
     doc.setFont('helvetica', 'normal');
     doc.text(directorText, margin + contentWidth - 55, y + 16);
 
-    const safeFileNameStr = `journal_comptable_apee_${settings.schoolYear || 'archive'}.pdf`.replace(/[\s\/]/g, '_');
+    const safeFileNameStr = `journal_comptable_${getApeeShortName(settings).toLowerCase()}_${settings.schoolYear || 'archive'}.pdf`.replace(/[\s\/]/g, '_');
     doc.save(safeFileNameStr);
   };
 
@@ -633,7 +634,7 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
         <form onSubmit={handleSubmit} className="bg-slate-50/50 border border-slate-150 p-4.5 rounded-2xl space-y-4">
           <div className="border-b pb-2 flex justify-between items-center text-xs text-slate-800 font-bold select-none">
             <span>AJOUTER UNE NOUVELLE OPÉRATION BUDGETAIRE</span>
-            <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded text-[9px]">CAISSE APEE</span>
+            <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded text-[9px]">CAISSE {getApeeShortName(settings).toUpperCase()}</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -903,7 +904,7 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
                 <div className="text-xs text-slate-655 flex items-start gap-2 bg-amber-50 text-amber-850 p-3.5 rounded-xl border border-amber-200">
                   <span className="shrink-0 mt-0.5 font-bold">⚠️ Impact Solde :</span>
                   <span>
-                    La suppression réajustera immédiatement les calculs de budget décaissé et le solde dynamique de la caisse d'association (APEE).
+                    La suppression réajustera immédiatement les calculs de budget décaissé et le solde dynamique de la caisse d'association ({getApeeShortName(settings)}).
                   </span>
                 </div>
               </div>

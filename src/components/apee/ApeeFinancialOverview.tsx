@@ -2,6 +2,7 @@ import React from 'react';
 import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { TrendingUp, ArrowUpRight, ArrowDownLeft, Landmark, Percent, Receipt, Sparkles, Download } from 'lucide-react';
 import { ApeeParent, ApeeExpense, ApeeSettings, ApeeOtherRevenue } from '../../types';
+import { getApeeShortName } from '../../utils/apeeDb';
 
 interface ApeeFinancialOverviewProps {
   parents: ApeeParent[];
@@ -161,9 +162,9 @@ export default function ApeeFinancialOverview({ parents, expenses, settings, oth
     ];
 
     // Meta information header for Excel/Sheets readability
-    const docTitle = `RÉCAPITULATIF FINANCIER DE L'APEE : ${settings.associationName || "Association"}`;
+    const docTitle = `RÉCAPITULATIF FINANCIER DE L'${getApeeShortName(settings).toUpperCase()} : ${settings.associationName || "Association"}`;
     const dateGenerated = `Généré le : ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}`;
-    const financialGoalVal = `Objectif Annuel de l'APEE : ${settings.financialGoal.toLocaleString()} FCFA`;
+    const financialGoalVal = `Objectif Annuel de l'${getApeeShortName(settings).toUpperCase()} : ${settings.financialGoal.toLocaleString()} FCFA`;
 
     // Construct the CSV string with semi-colon delimiter (Excel French safe)
     const csvLines = [
@@ -195,7 +196,7 @@ export default function ApeeFinancialOverview({ parents, expenses, settings, oth
     // Creating download link and trigger click
     const downloadAnchor = document.createElement("a");
     downloadAnchor.href = blobUrl;
-    downloadAnchor.download = `recapitulatif_financier_${(settings.associationName || 'apee').toLowerCase().replace(/\s+/g, '_')}_6mois.csv`;
+    downloadAnchor.download = `recapitulatif_financier_${getApeeShortName(settings).toLowerCase()}_${(settings.associationName || 'apee').toLowerCase().replace(/\s+/g, '_')}_6mois.csv`;
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     
@@ -447,7 +448,7 @@ export default function ApeeFinancialOverview({ parents, expenses, settings, oth
 
           <div className="bg-emerald-50/40 hover:bg-emerald-50 border border-emerald-150 p-3.5 rounded-xl flex items-center justify-between gap-3 transition">
             <div className="space-y-0.5">
-              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">DÉPÔTS APEE ENREGISTRÉS</span>
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">DÉPÔTS {getApeeShortName(settings).toUpperCase()} ENREGISTRÉS</span>
               <span className="text-[9px] text-emerald-600 font-medium block">Cumul de tous les encaissements réels</span>
             </div>
             <div className="text-right">

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Download, FileSpreadsheet, Printer, Calendar, RefreshCw, BarChart2, DollarSign, Percent, TrendingUp, CheckCircle } from 'lucide-react';
 import { ApeeParent, ApeeSettings, ApeeOtherRevenue } from '../../types';
+import { getApeeShortName } from '../../utils/apeeDb';
 import { jsPDF } from 'jspdf';
 
 interface ApeeReportingProps {
@@ -173,7 +174,7 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [] }:
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(8);
       doc.setTextColor(148, 163, 184); // Slate 400
-      doc.text(`Bilan Financier APEE - ${settings.associationName || "CES Ekali 1"} • Année : ${settings.schoolYear || ""}`, margin, 9);
+      doc.text(`Bilan Financier ${getApeeShortName(settings)} - ${settings.associationName || "CES Ekali 1"} • Année : ${settings.schoolYear || ""}`, margin, 9);
       
       doc.line(margin, pageHeight - 12, margin + contentWidth, pageHeight - 12);
       doc.text(`Page ${num}`, margin + contentWidth - 12, pageHeight - 8);
@@ -204,7 +205,7 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [] }:
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
     doc.setTextColor(255, 255, 255);
-    doc.text("BILAN FINANCIER GLOBAL : RECOUVREMENT DES COTISATIONS APEE", margin + 5, y + 9);
+    doc.text(`BILAN FINANCIER GLOBAL : RECOUVREMENT DES COTISATIONS ${getApeeShortName(settings).toUpperCase()}`, margin + 5, y + 9);
 
     y += 20;
 
@@ -436,7 +437,7 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [] }:
       });
     }
 
-    doc.save(`bilan_financier_apee_${settings.schoolYear.replace(/\//g, '_')}_${filterPeriod}.pdf`);
+    doc.save(`bilan_financier_${getApeeShortName(settings).toLowerCase()}_${settings.schoolYear.replace(/\//g, '_')}_${filterPeriod}.pdf`);
     setSuccessMsg('Bilan financier exporté avec succès sous format PDF !');
     setTimeout(() => setSuccessMsg(null), 4000);
   };
