@@ -1547,6 +1547,9 @@ export default function App() {
                             onUpdateStudent={handleUpdateStudentInPlace}
                             onPrint={() => setPrintingStudent(stu)}
                             settings={apeeSettings}
+                            apeeParents={apeeParents}
+                            grades={grades}
+                            attendanceLogs={attendanceLogs}
                           />
                         ))}
                       </div>

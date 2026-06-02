@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Student, ApeeSettings } from '../types';
-import { Mail, GraduationCap, Calendar, User, UserCheck, Camera, Printer } from 'lucide-react';
+import { Student, ApeeSettings, ApeeParent, Grade, Attendance } from '../types';
+import { Mail, GraduationCap, Calendar, User, UserCheck, Camera, Printer, Phone, TrendingUp, TrendingDown, Clock } from 'lucide-react';
 import { motion } from 'motion/react';
 import StudentCameraModal from './StudentCameraModal';
 
@@ -12,13 +12,16 @@ interface StudentCardProps {
   onUpdateStudent?: (updated: Student) => void;
   onPrint?: () => void;
   settings?: ApeeSettings;
+  apeeParents?: ApeeParent[];
+  grades?: Grade[];
+  attendanceLogs?: Attendance[];
 }
 
 const isImageAvatar = (avatar: string) => {
   return avatar.startsWith('data:image') || avatar.startsWith('http') || avatar.startsWith('/');
 };
 
-export default function StudentCard({ student, isSelected, onSelect, onUpdateStudent, onPrint, settings }: StudentCardProps) {
+export default function StudentCard({ student, isSelected, onSelect, onUpdateStudent, onPrint, settings, apeeParents, grades, attendanceLogs }: StudentCardProps) {
   const [showCamera, setShowCamera] = useState(false);
 
   // Find titular teacher for classroom in settings
@@ -31,6 +34,64 @@ export default function StudentCard({ student, isSelected, onSelect, onUpdateStu
 
   const teacherName = foundTeacher?.teacherName || student.teacherName || 'Enseignant principal';
   const teacherEmail = foundTeacher?.teacherEmail || student.teacherEmail || '';
+
+  // Find matching parent/guardian details
+  const getMatchingParent = (): ApeeParent | undefined => {
+    if (!apeeParents) return undefined;
+    if (student.id.startsWith('stu_')) {
+      const parts = student.id.split('_');
+      if (parts.length >= 3 && parts[0] === 'stu') {
+        const parentId = parts.slice(1, -1).join('_');
+        const found = apeeParents.find(p => p.id === parentId);
+        if (found) return found;
+      }
+    }
+    const foundByName = apeeParents.find(p =>
+      p.students?.some(stu => stu.name.trim().toLowerCase() === student.name.trim().toLowerCase())
+    );
+    if (foundByName) return foundByName;
+    return undefined;
+  };
+
+  const matchingParent = getMatchingParent();
+
+  // Calculate best and worst subjects
+  const studentGrades = (grades || []).filter(g => g.studentId === student.id);
+  const subjectAveragesMap: { [subj: string]: { sumBase20: number; count: number } } = {};
+  studentGrades.forEach(g => {
+    const scoreOn20 = (g.score / g.maxScore) * 20;
+    if (!subjectAveragesMap[g.subject]) {
+      subjectAveragesMap[g.subject] = { sumBase20: 0, count: 0 };
+    }
+    subjectAveragesMap[g.subject].sumBase20 += scoreOn20;
+    subjectAveragesMap[g.subject].count += 1;
+  });
+
+  const subjectAverages = Object.keys(subjectAveragesMap).map(subj => {
+    const stats = subjectAveragesMap[subj];
+    return {
+      subject: subj,
+      avg: stats.sumBase20 / stats.count
+    };
+  });
+
+  let bestSubject = null;
+  let worstSubject = null;
+
+  if (subjectAverages.length > 0) {
+    const sorted = [...subjectAverages].sort((a, b) => b.avg - a.avg);
+    bestSubject = sorted[0];
+    worstSubject = sorted[sorted.length - 1];
+  }
+
+  // Calculate attendance rate
+  const studentAttendance = (attendanceLogs || []).filter(a => a.studentId === student.id);
+  const totalLogs = studentAttendance.length;
+  const presentCount = studentAttendance.filter(a => a.status === 'Present').length;
+  const excusedCount = studentAttendance.filter(a => a.status === 'Excused').length;
+  const presenceRate = totalLogs > 0
+    ? (((presentCount + excusedCount) / totalLogs) * 100).toFixed(1)
+    : '100.0';
 
   return (
     <>
@@ -106,18 +167,32 @@ export default function StudentCard({ student, isSelected, onSelect, onUpdateStu
             <p className={`text-xs ${isSelected ? 'text-indigo-100' : 'text-gray-500'} font-medium`}>
               {student.grade} • {student.classRoom}
             </p>
-            <div className="pt-2 border-t border-dashed mt-2 border-white/10 space-y-1 text-xs">
+            <div className="pt-2 border-t border-dashed mt-2 border-white/10 space-y-1 text-[11px] sm:text-xs">
               <div className={`flex items-center gap-1.5 ${isSelected ? 'text-indigo-100' : 'text-gray-500'}`}>
                 <User className="h-3 w-3 shrink-0" />
                 <span className="truncate">Enseignant : <strong className={isSelected ? 'text-white' : 'text-gray-700'}>{teacherName}</strong></span>
               </div>
               <div className={`flex items-center gap-1.5 ${isSelected ? 'text-indigo-100' : 'text-gray-500'}`}>
-                <Mail className="h-3 w-3 shrink-0" />
-                <span className="truncate">{teacherEmail}</span>
+                <User className="h-3 w-3 shrink-0" />
+                <span className="truncate">Tuteur : <strong className={isSelected ? 'text-white' : 'text-gray-700'}>{matchingParent?.name || 'Non renseigné'}</strong></span>
+              </div>
+              {matchingParent?.phone && (
+                <div className={`flex items-center gap-1.5 ${isSelected ? 'text-indigo-100' : 'text-gray-500'}`}>
+                  <Phone className="h-3 w-3 shrink-0" />
+                  <span className="truncate">Tél Parent : <strong className={isSelected ? 'text-white font-mono' : 'text-gray-700 font-mono'}>{matchingParent.phone}</strong></span>
+                </div>
+              )}
+              <div className={`flex items-center gap-1.5 ${isSelected ? 'text-indigo-100' : 'text-gray-500'}`}>
+                <TrendingUp className={`h-3 w-3 shrink-0 ${isSelected ? 'text-indigo-200' : 'text-emerald-600'}`} />
+                <span className="truncate">Best : <strong className={isSelected ? 'text-white' : 'text-emerald-700 font-bold'}>{bestSubject ? `${bestSubject.subject} (${bestSubject.avg.toFixed(1)}/20)` : 'N/A'}</strong></span>
               </div>
               <div className={`flex items-center gap-1.5 ${isSelected ? 'text-indigo-100' : 'text-gray-500'}`}>
-                <Calendar className="h-3 w-3 shrink-0" />
-                <span className="truncate">Né(e) le {new Date(student.dob).toLocaleDateString('fr-FR', { dateStyle: 'long' })}</span>
+                <TrendingDown className={`h-3 w-3 shrink-0 ${isSelected ? 'text-indigo-200' : 'text-rose-600'}`} />
+                <span className="truncate">Pire : <strong className={isSelected ? 'text-white' : 'text-rose-700 font-bold'}>{worstSubject ? `${worstSubject.subject} (${worstSubject.avg.toFixed(1)}/20)` : 'N/A'}</strong></span>
+              </div>
+              <div className={`flex items-center gap-1.5 ${isSelected ? 'text-indigo-100' : 'text-gray-500'}`}>
+                <Clock className="h-3 w-3 shrink-0" />
+                <span className="truncate">Assiduité : <strong className={isSelected ? 'text-white font-mono' : 'text-gray-700 font-mono'}>{presenceRate}%</strong></span>
               </div>
             </div>
 
