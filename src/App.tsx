@@ -46,7 +46,8 @@ import StudentPrintModal from './components/StudentPrintModal';
 import PortalOnboarding from './components/PortalOnboarding';
 import InstallPWA from './components/InstallPWA';
 import SuperAdminDashboard from './components/SuperAdminDashboard';
-import LibraryDashboard from './components/LibraryDashboard';
+// Reserved for future integration:
+// import LibraryDashboard from './components/LibraryDashboard';
 
 
 // Icons
@@ -92,8 +93,7 @@ type TabType =
   | 'attendance' 
   | 'billing' 
   | 'appointments' 
-  | 'messages'
-  | 'library';
+  | 'messages';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -1858,17 +1858,7 @@ export default function App() {
                           <span className="flex items-center gap-2"><MessageSquare className="h-4 w-4" /> Messagerie</span>
                         </button>
 
-                        <button
-                          onClick={() => setActiveTab('library')}
-                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
-                            activeTab === 'library'
-                              ? 'bg-slate-900 text-white'
-                              : 'text-gray-650 hover:bg-slate-50'
-                          }`}
-                        >
-                          <span className="flex items-center gap-2"><BookMarked className="h-4 w-4" /> Bibliothèque IA</span>
-                          <span className="bg-indigo-100 text-indigo-700 text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider scale-90">Robot</span>
-                        </button>
+
                       </>
                     )}
                   </div>
@@ -2103,14 +2093,7 @@ export default function App() {
                       </motion.div>
                     )}
 
-                    {activeTab === 'library' && (
-                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="library">
-                        <LibraryDashboard 
-                          activeStudent={activeStudent}
-                          filteredStudents={filteredStudents}
-                        />
-                      </motion.div>
-                    )}
+
                   </AnimatePresence>
 
                   <div className="pt-6 border-t border-slate-100 flex items-center justify-between text-[11px] font-mono mt-8 text-gray-400">
