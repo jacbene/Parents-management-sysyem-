@@ -3,6 +3,7 @@ import { Landmark, TrendingUp, Users, GraduationCap, Percent, AlertCircle, Coins
 import { ComposedChart, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend, Cell, Line, ReferenceLine, PieChart, Pie } from 'recharts';
 import { ApeeParent, ApeeExpense, ApeeSettings, ApeeActivityLog, ApeeOtherRevenue } from '../../types';
 import ApeeFinancialOverview from './ApeeFinancialOverview';
+import { useLanguage } from '../../utils/TranslationContext';
 
 interface ApeeDashboardProps {
   parents: ApeeParent[];
@@ -14,6 +15,7 @@ interface ApeeDashboardProps {
 }
 
 export default function ApeeDashboard({ parents, expenses, settings, onNavigate, logs = [], otherRevenues = [] }: ApeeDashboardProps) {
+  const { t, language } = useLanguage();
   const [isMounted, setIsMounted] = React.useState(false);
   const [searchLogQuery, setSearchLogQuery] = React.useState('');
   const [selectedActionFilter, setSelectedActionFilter] = React.useState('all');
@@ -105,10 +107,15 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate,
   });
 
   // Map month names
-  const monthNames: { [m: string]: string } = {
+  const monthNamesFR: { [m: string]: string } = {
     '01': 'Jan', '02': 'Fév', '03': 'Mar', '04': 'Avr', '05': 'Mai', '06': 'Juin',
     '07': 'Juil', '08': 'Août', '09': 'Sept', '10': 'Oct', '11': 'Nov', '12': 'Déc'
   };
+  const monthNamesEN: { [m: string]: string } = {
+    '01': 'Jan', '02': 'Feb', '03': 'Mar', '04': 'Apr', '05': 'May', '06': 'Jun',
+    '07': 'Jul', '08': 'Aug', '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dec'
+  };
+  const monthNames = language === 'en' ? monthNamesEN : monthNamesFR;
 
   const monthlyChartData = Object.keys(monthlyDataMap)
     .sort()
@@ -202,41 +209,41 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate,
   const statCards = [
     {
       id: 'stat_revenue',
-      title: 'Recettes Cotisations Parents',
-      value: `${actualParentsPaid.toLocaleString()} FCFA`,
-      description: `Objectif Parent: ${totalDueAmount.toLocaleString()} FCFA`,
+      title: language === 'en' ? 'Parent Contribution Revenues' : 'Recettes Cotisations Parents',
+      value: `${actualParentsPaid.toLocaleString()} ${settings.currency || 'FCFA'}`,
+      description: language === 'en' ? `Household Target: ${totalDueAmount.toLocaleString()} ${settings.currency || 'FCFA'}` : `Objectif Parent: ${totalDueAmount.toLocaleString()} F`,
       icon: Landmark,
       colorClass: 'text-emerald-650 bg-emerald-50 border-emerald-100',
     },
     {
       id: 'stat_other_revenue',
-      title: 'Autres Recettes',
-      value: `${(actualHonorary + actualSubventions).toLocaleString()} FCFA`,
-      description: `Honneur: ${actualHonorary.toLocaleString()} F | Aides: ${actualSubventions.toLocaleString()} F`,
+      title: t('dash.stats.other_revenues'),
+      value: `${(actualHonorary + actualSubventions).toLocaleString()} ${settings.currency || 'FCFA'}`,
+      description: language === 'en' ? `Sponsors: ${actualHonorary.toLocaleString()} | Grants: ${actualSubventions.toLocaleString()}` : `Honneur: ${actualHonorary.toLocaleString()} F | Aides: ${actualSubventions.toLocaleString()} F`,
       icon: Wallet2,
       colorClass: 'text-cyan-600 bg-cyan-50 border-cyan-100/80',
     },
     {
       id: 'stat_parents',
-      title: 'Familles Enregistrées',
-      value: `${parentsCount} Parents`,
-      description: `Élèves inscrits: ${pupilsCount} enfants`,
+      title: t('dash.stats.registered_parents'),
+      value: language === 'en' ? `${parentsCount} Households` : `${parentsCount} Parents`,
+      description: language === 'en' ? `Enrolled pupils: ${pupilsCount}` : `Élèves inscrits: ${pupilsCount} enfants`,
       icon: Users,
       colorClass: 'text-indigo-600 bg-indigo-50 border-indigo-100',
     },
     {
       id: 'stat_realization',
-      title: 'Taux de Recouvrement',
+      title: t('dash.stats.rate_recette'),
       value: `${realizationRate.toFixed(1)}%`,
-      description: `Moyenne payée: ${Math.round(averagePayment).toLocaleString()} FCFA`,
+      description: language === 'en' ? `Average fee: ${Math.round(averagePayment).toLocaleString()} ${settings.currency || 'FCFA'}` : `Moyenne payée: ${Math.round(averagePayment).toLocaleString()} F`,
       icon: Percent,
       colorClass: 'text-amber-600 bg-amber-50 border-amber-100',
     },
     {
       id: 'stat_expenses',
-      title: 'Caisse Active / Dépenses',
-      value: `${activeBalance.toLocaleString()} FCFA`,
-      description: `Caisse réelle : ${totalExecutedExpenses.toLocaleString()} F décaissés`,
+      title: language === 'en' ? 'Cash Box Balance / Spent' : 'Caisse Active / Dépenses',
+      value: `${activeBalance.toLocaleString()} ${settings.currency || 'FCFA'}`,
+      description: language === 'en' ? `Total Spent: ${totalExecutedExpenses.toLocaleString()} ${settings.currency || 'FCFA'}` : `Caisse réelle : ${totalExecutedExpenses.toLocaleString()} F décaissés`,
       icon: Coins,
       colorClass: 'text-blue-600 bg-blue-50 border-blue-100',
     }
@@ -249,21 +256,21 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate,
       <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-6 rounded-3xl border border-slate-800 shadow-sm relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div className="space-y-2 relative z-10">
           <div className="inline-flex items-center gap-1 bg-indigo-500/20 text-indigo-350 text-[10px] uppercase font-mono px-2 py-0.5 rounded-full font-bold select-none border border-indigo-500/30">
-            <Sparkles className="h-3 w-3 text-indigo-400" /> Mode Hors Ligne PWA & Cloud Actifs
+            <Sparkles className="h-3 w-3 text-indigo-400" /> {language === 'en' ? 'PWA Offline & Cloud Sync Active' : 'Mode Hors Ligne PWA & Cloud Actifs'}
           </div>
           <h1 className="text-xl md:text-2xl font-bold font-sans tracking-tight">
             {settings.associationName}
           </h1>
           <p className="text-xs text-slate-300 font-medium">
-            Tableau de bord financier pour l'année scolaire <strong className="text-white font-semibold">{settings.schoolYear}</strong>.
+            {language === 'en' ? 'Financial tracker dashboard for school year' : 'Tableau de bord financier pour l\'année scolaire'} <strong className="text-white font-semibold">{settings.schoolYear}</strong>.
           </p>
         </div>
         
         {/* Dynamic target bar on the banner itself */}
         <div className="w-full md:w-64 space-y-2 bg-slate-950/60 p-3.5 rounded-2xl border border-slate-800/80 relative z-10">
           <div className="flex justify-between items-center text-[10px] font-mono text-slate-300">
-            <span>OBJECTIF DU BUDGET :</span>
-            <span className="text-slate-100 font-bold">{settings.financialGoal.toLocaleString()} FCFA</span>
+            <span>{language === 'en' ? 'BUDGETARY TARGET :' : 'OBJECTIF DU BUDGET :'}</span>
+            <span className="text-slate-100 font-bold">{settings.financialGoal.toLocaleString()} {settings.currency || 'FCFA'}</span>
           </div>
           <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden">
             <div 
@@ -272,8 +279,8 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate,
             />
           </div>
           <div className="flex justify-between text-[10px] font-mono font-medium text-slate-400">
-            <span>Atteint : {goalPercent.toFixed(1)}%</span>
-            <span>{totalPaidRevenue.toLocaleString()} FCFA</span>
+            <span>{language === 'en' ? 'Reached' : 'Atteint'} : {goalPercent.toFixed(1)}%</span>
+            <span>{totalPaidRevenue.toLocaleString()} {settings.currency || 'FCFA'}</span>
           </div>
         </div>
       </div>

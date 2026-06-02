@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Save, HelpCircle, Shield, Settings, Info, CheckCircle2, Plus, Trash2, Edit2, X, TrendingUp, Lock, Unlock, UserCheck, User, Phone, Mail, GraduationCap, AlertTriangle } from 'lucide-react';
 import { ApeeSettings, ApeeBudgetLine, ApeeParent } from '../../types';
 import { getApeeShortName } from '../../utils/apeeDb';
+import { useLanguage } from '../../utils/TranslationContext';
 
 interface ApeeSettingsProps {
   settings: ApeeSettings;
@@ -10,6 +11,7 @@ interface ApeeSettingsProps {
 }
 
 export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [] }: ApeeSettingsProps) {
+  const { t, language } = useLanguage();
   const [associationName, setAssociationName] = useState(settings.associationName || '');
   const [shortName, setShortName] = useState(settings.shortName || '');
   const [schoolYear, setSchoolYear] = useState(settings.schoolYear || '');
@@ -219,11 +221,11 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!(associationName || '').trim() || !(schoolYear || '').trim() || calculatedFinancialGoal <= 0) {
-      alert("Veuillez renseigner correctement l'ensemble des champs obligatoires.");
+      alert(language === 'en' ? "Please fill in all mandatory fields correctly." : "Veuillez renseigner correctement l'ensemble des champs obligatoires.");
       return;
     }
 
-    handleSaveWithExtra({}, "Paramètres généraux d'administration sauvegardés avec succès !");
+    handleSaveWithExtra({}, language === 'en' ? "General administrative configurations saved successfully!" : "Paramètres généraux d'administration sauvegardés avec succès !");
   };
 
   const handleSaveBudgetLine = (e: React.FormEvent) => {
@@ -317,9 +319,9 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
     <div id="content_apee_settings" className="space-y-6">
 
       <div className="border-b border-slate-150 pb-4">
-        <h2 className="text-xl font-bold text-slate-900 tracking-tight">⚙️ Configuration des Paramètres & Budget</h2>
+        <h2 className="text-xl font-bold text-slate-900 tracking-tight">⚙️ {t('set.title')}</h2>
         <p className="text-xs text-gray-500 font-medium">
-          Ajuster les tarifs unitaires exigibles par élève, définir l'enveloppe annuelle et structurer la planification des lignes budgétaires.
+          {t('set.subtitle')}
         </p>
       </div>
 

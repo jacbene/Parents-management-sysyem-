@@ -32,6 +32,7 @@ import ApeeArchives from './components/apee/ApeeArchives';
 import ApeeSettingsComp from './components/apee/ApeeSettingsComp';
 import ApeeReminders from './components/apee/ApeeReminders';
 import ApeeLegal from './components/ApeeLegal';
+import { useLanguage } from './utils/TranslationContext';
 
 // Components
 import StudentCard from './components/StudentCard';
@@ -96,6 +97,7 @@ type TabType =
   | 'messages';
 
 export default function App() {
+  const { language, setLanguage, t, isAutoDetected } = useLanguage();
   const [user, setUser] = useState<User | null>(null);
   const [secondaryAdmins, setSecondaryAdmins] = useState<{ id: string; email: string; name: string; createdAt: string; addedBy: string }[]>([]);
   
@@ -1424,25 +1426,54 @@ export default function App() {
                     Pasma-sys <span className="text-[10px] bg-slate-900 text-white font-mono px-1.5 py-0.5 rounded-full uppercase scale-90">ENT</span>
                     {isOffline ? (
                       <span className="text-[9px] bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition" title="Le serveur Firestore n'est pas joignable. Vos modifications sont conservées localement dans la cacher.">
-                        <span className="h-1.5 w-1.5 bg-amber-500 rounded-full animate-pulse shrink-0" /> Mode Local / Hors-ligne
+                        <span className="h-1.5 w-1.5 bg-amber-500 rounded-full animate-pulse shrink-0" /> {t('header.offline')}
                       </span>
                     ) : (
                       <span className="text-[9px] bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-250 font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition" title="Données synchronisées avec le Cloud Firestore.">
-                        <span className="h-1.5 w-1.5 bg-emerald-500 rounded-full shrink-0" /> Cloud Sync
+                        <span className="h-1.5 w-1.5 bg-emerald-500 rounded-full shrink-0" /> {t('header.online')}
                       </span>
                     )}
                   </h1>
-                  <p className="text-[10px] text-gray-400 font-medium">Portail de Suivi Éducatif</p>
+                  <p className="text-[10px] text-gray-400 font-medium">{t('header.school_portal')}</p>
                 </div>
               </div>
 
               {/* User Profil card & logout */}
               <div className="flex items-center gap-3.5">
                 <InstallPWA />
+
+                {/* Language Picker Toggle */}
+                <div 
+                  className="flex items-center bg-slate-100 hover:bg-slate-200 p-1 rounded-xl gap-1 shrink-0 border border-slate-250"
+                  title={isAutoDetected ? "Langue détectée automatiquement selon votre région / Language auto-detected by region" : "Changer de langue / Change language"}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setLanguage('fr')}
+                    className={`px-2 py-1 text-[10px] font-black rounded-lg transition-all cursor-pointer ${
+                      language === 'fr'
+                        ? 'bg-white text-indigo-700 shadow-xs font-black'
+                        : 'text-slate-500 hover:text-slate-850'
+                    }`}
+                  >
+                    🇫🇷 FR
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLanguage('en')}
+                    className={`px-2 py-1 text-[10px] font-black rounded-lg transition-all cursor-pointer ${
+                      language === 'en'
+                        ? 'bg-white text-indigo-700 shadow-xs font-black'
+                        : 'text-slate-500 hover:text-slate-855'
+                    }`}
+                  >
+                    🇬🇧 EN
+                  </button>
+                </div>
                 
                 <div className="text-right hidden sm:block">
                   <div className="text-xs font-black text-indigo-950">
-                    {portalUserRole === 'parent' ? `Espace Parent : ${portalParentDetails?.name}` : "Administration Établissement"}
+                    {portalUserRole === 'parent' ? `${t('header.role.parent')} : ${portalParentDetails?.name}` : t('header.role.manager')}
                   </div>
                   <div className="text-[10px] text-indigo-600 font-bold flex items-center gap-1 justify-end">
                     <span className="h-1.5 w-1.5 bg-indigo-500 rounded-full animate-pulse" /> {apeeSettings.associationName || "Établissement Actif"}
@@ -1462,10 +1493,10 @@ export default function App() {
 
                 <button
                   onClick={handleExitSchool}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[10.5px] font-bold rounded-xl transition flex items-center gap-1 border border-slate-200 cursor-pointer"
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[10.5px] font-bold rounded-xl transition flex items-center gap-1 border border-slate-200 cursor-pointer shrink-0"
                   title="Changer d'établissement scolaire"
                 >
-                  🏫 Changer d'école
+                  🏫 {t('header.change_school')}
                 </button>
 
                 {user && (
@@ -1474,7 +1505,7 @@ export default function App() {
                     className="p-2 text-gray-440 hover:text-red-500 rounded-xl hover:bg-red-50 cursor-pointer transition text-xs font-bold"
                     title="Déconnexion complète"
                   >
-                    Déconnexion
+                    {t('header.logout')}
                   </button>
                 )}
               </div>
@@ -1655,7 +1686,7 @@ export default function App() {
                       <>
                         {/* SECTION 1: GESTION TRÉSORERIE APEE */}
                         <h3 className="text-[10px] font-black text-indigo-650 uppercase tracking-widest mb-2 pl-1 flex items-center gap-1">
-                          💼 TRÉSORERIE {getApeeShortName(apeeSettings)}
+                          💼 {getApeeShortName(apeeSettings)} (APEE)
                         </h3>
                         
                         <button
@@ -1664,7 +1695,7 @@ export default function App() {
                             activeTab === 'apee_dashboard' ? 'bg-indigo-600 text-white shadow-xs' : 'text-gray-650 hover:bg-slate-50'
                           }`}
                         >
-                          <span className="flex items-center gap-2"><LayoutDashboard className="h-4 w-4" /> Tableau de Bord</span>
+                          <span className="flex items-center gap-2"><LayoutDashboard className="h-4 w-4" /> {t('tab.apee_dashboard')}</span>
                         </button>
 
                         <button
@@ -1676,7 +1707,7 @@ export default function App() {
                             activeTab === 'apee_recording' ? 'bg-indigo-600 text-white shadow-xs' : 'text-gray-650 hover:bg-slate-50'
                           }`}
                         >
-                          <span className="flex items-center gap-2"><Calculator className="h-4 w-4" /> Enregistrer Cotis.</span>
+                          <span className="flex items-center gap-2"><Calculator className="h-4 w-4" /> {t('tab.apee_recording')}</span>
                         </button>
 
                         <button
@@ -1685,7 +1716,7 @@ export default function App() {
                             activeTab === 'apee_search' ? 'bg-indigo-600 text-white shadow-xs' : 'text-gray-650 hover:bg-slate-50'
                           }`}
                         >
-                          <span className="flex items-center gap-2"><Search className="h-4 w-4" /> Fiches & Reçus</span>
+                          <span className="flex items-center gap-2"><Search className="h-4 w-4" /> {t('tab.apee_search')}</span>
                         </button>
 
                         <button
@@ -1694,7 +1725,7 @@ export default function App() {
                             activeTab === 'apee_reporting' ? 'bg-indigo-600 text-white shadow-xs' : 'text-gray-650 hover:bg-slate-50'
                           }`}
                         >
-                          <span className="flex items-center gap-2"><History className="h-4 w-4" /> Bilans Financiers</span>
+                          <span className="flex items-center gap-2"><History className="h-4 w-4" /> {t('tab.apee_reporting')}</span>
                         </button>
 
                         <button
@@ -1703,7 +1734,7 @@ export default function App() {
                             activeTab === 'apee_finance' ? 'bg-indigo-600 text-white shadow-xs' : 'text-gray-650 hover:bg-slate-50'
                           }`}
                         >
-                          <span className="flex items-center gap-2"><Coins className="h-4 w-4" /> Caisse & Dépenses</span>
+                          <span className="flex items-center gap-2"><Coins className="h-4 w-4" /> {t('tab.apee_finance')}</span>
                         </button>
 
                         <button
@@ -1712,7 +1743,7 @@ export default function App() {
                             activeTab === 'apee_archives' ? 'bg-indigo-600 text-white shadow-xs' : 'text-gray-650 hover:bg-slate-50'
                           }`}
                         >
-                          <span className="flex items-center gap-2"><Database className="h-4 w-4" /> Archives & Imports</span>
+                          <span className="flex items-center gap-2"><Database className="h-4 w-4" /> {t('tab.apee_archives')}</span>
                         </button>
 
                         <button
@@ -1721,7 +1752,7 @@ export default function App() {
                             activeTab === 'apee_settings' ? 'bg-indigo-600 text-white shadow-xs' : 'text-gray-650 hover:bg-slate-50'
                           }`}
                         >
-                          <span className="flex items-center gap-2"><Settings className="h-4 w-4" /> Configurations</span>
+                          <span className="flex items-center gap-2"><Settings className="h-4 w-4" /> {t('tab.apee_settings')}</span>
                         </button>
 
                         <button
@@ -1730,7 +1761,7 @@ export default function App() {
                             activeTab === 'apee_reminders' ? 'bg-indigo-600 text-white shadow-xs' : 'text-gray-650 hover:bg-slate-50'
                           }`}
                         >
-                          <span className="flex items-center gap-2"><Bell className="h-4 w-4" /> Relances & Rappels</span>
+                          <span className="flex items-center gap-2"><Bell className="h-4 w-4" /> {t('tab.apee_reminders')}</span>
                           {apeeParents.filter(p => p.status === 'partiel' || p.status === 'retard').length > 0 && (
                             <span className={`text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-full font-mono shrink-0 transition-colors ${
                               activeTab === 'apee_reminders' ? 'bg-white text-indigo-700' : 'bg-red-100 text-red-800'
@@ -1746,14 +1777,14 @@ export default function App() {
                             activeTab === 'apee_legal' ? 'bg-indigo-600 text-white shadow-xs' : 'text-gray-650 hover:bg-slate-50'
                           }`}
                         >
-                          <span className="flex items-center gap-2"><Shield className="h-4 w-4" /> Droits & RGPD</span>
+                          <span className="flex items-center gap-2"><Shield className="h-4 w-4" /> {t('tab.apee_legal')}</span>
                         </button>
                       </>
                     ) : (
                       <>
                         {/* SECTION 1: DOSSIER FINANCIER PARENT */}
                         <h3 className="text-[10px] font-black text-indigo-650 uppercase tracking-widest mb-2 pl-1 flex items-center gap-1">
-                          💼 MON COMPTE PARENT
+                          💼 {t('header.role.parent')}
                         </h3>
                         <button
                           onClick={() => setActiveTab('billing')}
@@ -1761,14 +1792,14 @@ export default function App() {
                             activeTab === 'billing' ? 'bg-indigo-600 text-white shadow-xs' : 'text-gray-650 hover:bg-slate-50'
                           }`}
                         >
-                          <span className="flex items-center gap-2"><Landmark className="h-4 w-4" /> Ma Cotisation & Cantine</span>
+                          <span className="flex items-center gap-2"><Landmark className="h-4 w-4" /> {t('tab.billing')}</span>
                         </button>
                       </>
                     )}
 
                     {/* SECTION 2: SUIVI SCOLAIRE E.N.T. */}
                     <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-4 mb-2 pl-1 flex items-center gap-1">
-                      🎓 SUIVI SCOLAIRE ENT
+                      🎓 {t('header.school_portal')}
                     </h3>
 
                     <button
@@ -1779,7 +1810,7 @@ export default function App() {
                           : 'text-gray-650 hover:bg-slate-50'
                       }`}
                     >
-                      <span className="flex items-center gap-2"><Newspaper className="h-4 w-4" /> Annonces & Actus</span>
+                      <span className="flex items-center gap-2"><Newspaper className="h-4 w-4" /> {t('tab.announcements')}</span>
                     </button>
 
                     {filteredStudents.length > 0 && (
@@ -1792,7 +1823,7 @@ export default function App() {
                               : 'text-gray-650 hover:bg-slate-50'
                           }`}
                         >
-                          <span className="flex items-center gap-2"><BookOpen className="h-4 w-4" /> Devoirs / Cahier</span>
+                          <span className="flex items-center gap-2"><BookOpen className="h-4 w-4" /> {t('tab.homework')}</span>
                           {pendingHomeworkCount > 0 && <span className="bg-amber-100 text-amber-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full">{pendingHomeworkCount}</span>}
                         </button>
 
@@ -1804,7 +1835,7 @@ export default function App() {
                               : 'text-gray-650 hover:bg-slate-50'
                           }`}
                         >
-                          <span className="flex items-center gap-2"><Award className="h-4 w-4" /> Relevé de Notes</span>
+                          <span className="flex items-center gap-2"><Award className="h-4 w-4" /> {t('tab.grades')}</span>
                         </button>
 
                         <button
@@ -1815,7 +1846,7 @@ export default function App() {
                               : 'text-gray-650 hover:bg-slate-50'
                           }`}
                         >
-                          <span className="flex items-center gap-2"><Calendar className="h-4 w-4" /> Absentéisme</span>
+                          <span className="flex items-center gap-2"><Calendar className="h-4 w-4" /> {t('tab.attendance')}</span>
                         </button>
                       </>
                     )}
@@ -1829,7 +1860,7 @@ export default function App() {
                             : 'text-gray-650 hover:bg-slate-50'
                         }`}
                       >
-                        <span className="flex items-center gap-2"><Landmark className="h-4 w-4" /> Cantine & Services</span>
+                        <span className="flex items-center gap-2"><Landmark className="h-4 w-4" /> {t('tab.billing')}</span>
                         {unpaidInvoiceCount > 0 && <span className="bg-red-100 text-red-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full">{unpaidInvoiceCount}</span>}
                       </button>
                     )}
@@ -1844,7 +1875,7 @@ export default function App() {
                               : 'text-gray-650 hover:bg-slate-50'
                           }`}
                         >
-                          <span className="flex items-center gap-2"><CalendarCheck2 className="h-4 w-4" /> Rédiger RDV</span>
+                          <span className="flex items-center gap-2"><CalendarCheck2 className="h-4 w-4" /> {t('tab.appointments')}</span>
                         </button>
 
                         <button
@@ -1855,10 +1886,8 @@ export default function App() {
                               : 'text-gray-650 hover:bg-slate-50'
                           }`}
                         >
-                          <span className="flex items-center gap-2"><MessageSquare className="h-4 w-4" /> Messagerie</span>
+                          <span className="flex items-center gap-2"><MessageSquare className="h-4 w-4" /> {t('tab.messages')}</span>
                         </button>
-
-
                       </>
                     )}
                   </div>
@@ -2084,7 +2113,7 @@ export default function App() {
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="messages">
                         <MessageInbox 
                           messages={messages} 
-                          students={students} 
+                          students={filteredStudents} 
                           onAddMessage={handleAddMessageInPlace} 
                           apeeParents={apeeParents} 
                           portalUserRole={portalUserRole}

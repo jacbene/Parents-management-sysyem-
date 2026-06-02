@@ -2,6 +2,7 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+import { LanguageProvider } from './utils/TranslationContext';
 
 // De-escalate and suppress expected Firestore network warnings in local sandbox environment
 const originalConsoleError = console.error;
@@ -40,6 +41,8 @@ if ('serviceWorker' in navigator) {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <LanguageProvider>
+      <App />
+    </LanguageProvider>
   </StrictMode>,
 );
