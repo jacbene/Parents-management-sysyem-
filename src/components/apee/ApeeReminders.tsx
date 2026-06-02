@@ -280,6 +280,7 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
           </button>
           <button
             onClick={() => handleBulkReminderRun('email')}
+            title="Relancer par Email"
             className="text-xs px-3.5 py-2 bg-slate-800 hover:bg-slate-905 text-white font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs transition"
           >
             <Mail className="h-3.5 w-3.5" /> Envoi Groupé Email
@@ -504,6 +505,7 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
                   </button>
                   <button
                     onClick={() => handleBulkReminderRun('email')}
+                    title="Relancer par Email"
                     className="text-[9px] px-2 py-1 bg-slate-800 text-white font-bold rounded-lg flex items-center gap-1 cursor-pointer hover:bg-slate-900 transition"
                   >
                     Relancer par Email

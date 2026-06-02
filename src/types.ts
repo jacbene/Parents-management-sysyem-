@@ -129,6 +129,9 @@ export interface Invoice {
   actualHonoraryContributions?: number;
   actualSubventionsAndAids?: number;
   expectedStudents?: number;
+  country?: string;
+  currency?: string;
+  financialObligationsList?: string;
 }
 
 export interface ApeeStudentLink {
@@ -146,6 +149,7 @@ export interface ApeePaymentItem {
   method?: string;
   transactionId?: string;
   provider?: string;
+  allocations?: { [obligationId: string]: number };
 }
 
 export interface ApeeParent {
@@ -207,6 +211,14 @@ export interface ApeeBudgetLine {
   description?: string;
 }
 
+export interface ApeeObligationDefinition {
+  id: string;
+  name: string;
+  amount: number;
+  type: 'per_student' | 'per_parent';
+  description?: string;
+}
+
 export interface ApeeSettings {
   associationName: string;
   shortName?: string;
@@ -219,6 +231,9 @@ export interface ApeeSettings {
   actualHonoraryContributions?: number;
   actualSubventionsAndAids?: number;
   expectedStudents?: number;
+  country?: string;
+  currency?: string;
+  financialObligations?: ApeeObligationDefinition[];
   finManagerName?: string;
   finManagerPhone?: string;
   finManagerPassword?: string;

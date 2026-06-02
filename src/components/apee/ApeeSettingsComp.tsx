@@ -13,17 +13,37 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
   const [associationName, setAssociationName] = useState(settings.associationName || '');
   const [shortName, setShortName] = useState(settings.shortName || '');
   const [schoolYear, setSchoolYear] = useState(settings.schoolYear || '');
-  const [cotisationAmount, setCotisationAmount] = useState<number>(settings.cotisationAmount || 0);
   const [logoUrl, setLogoUrl] = useState(settings.logoUrl || '');
   const [expectedStudents, setExpectedStudents] = useState<number>(settings.expectedStudents || 100);
   const [honoraryContributions, setHonoraryContributions] = useState<number>(settings.honoraryContributions || 0);
   const [subventionsAndAids, setSubventionsAndAids] = useState<number>(settings.subventionsAndAids || 0);
   const [actualHonoraryContributions, setActualHonoraryContributions] = useState<number>(settings.actualHonoraryContributions || 0);
   const [actualSubventionsAndAids, setActualSubventionsAndAids] = useState<number>(settings.actualSubventionsAndAids || 0);
+  
+  // Country & Currency addition inputs
+  const [country, setCountry] = useState(settings.country || 'Cameroun');
+  const [currency, setCurrency] = useState(settings.currency || 'FCFA');
+  const [financialObligations, setFinancialObligations] = useState(() => settings.financialObligations || []);
+
+  // Inline additions state for obligations
+  const [newOblName, setNewOblName] = useState('');
+  const [newOblAmount, setNewOblAmount] = useState<number>(0);
+  const [newOblType, setNewOblType] = useState<'per_student' | 'per_parent'>('per_student');
+  const [newOblDesc, setNewOblDesc] = useState('');
+  const [editingOblId, setEditingOblId] = useState<string | null>(null);
 
   // Dynamic calculations according to client instructions:
-  // Budget prévisionnel total (objectif) = cotisations des parents + contributions des membres d'honneur + subventions et autres aides.
-  const parentCotisations = expectedStudents * cotisationAmount;
+  // We list all obligations and calculate the parent cotisations and goal.
+  const totalObligationsPerStudent = financialObligations
+    .filter(o => o.type === 'per_student')
+    .reduce((sum, o) => sum + o.amount, 0);
+
+  const totalObligationsPerParent = financialObligations
+    .filter(o => o.type === 'per_parent')
+    .reduce((sum, o) => sum + o.amount, 0);
+
+  // Parent cotisations (expected total) = expectedStudents * totalObligationsPerStudent + expectedStudents * totalObligationsPerParent
+  const parentCotisations = (expectedStudents * totalObligationsPerStudent) + (expectedStudents * totalObligationsPerParent);
 
   const calculatedFinancialGoal = parentCotisations + honoraryContributions + subventionsAndAids;
 
@@ -83,7 +103,9 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
       setAssociationName(settings.associationName || '');
       setShortName(settings.shortName || '');
       setSchoolYear(settings.schoolYear || '');
-      setCotisationAmount(settings.cotisationAmount || 0);
+      setCountry(settings.country || 'Cameroun');
+      setCurrency(settings.currency || 'FCFA');
+      setFinancialObligations(settings.financialObligations || []);
       setLogoUrl(settings.logoUrl || '');
       setExpectedStudents(settings.expectedStudents || 100);
       setHonoraryContributions(settings.honoraryContributions || 0);
@@ -153,7 +175,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
         associationName: (associationName || '').trim(),
         shortName: (shortName || '').trim(),
         schoolYear: (schoolYear || '').trim(),
-        cotisationAmount: cotisationAmount || 0,
+        cotisationAmount: totalObligationsPerStudent,
         financialGoal: calculatedFinancialGoal,
         budgetLines: settings.budgetLines || [],
         finManagerName: (finManagerName || '').trim(),
@@ -176,6 +198,9 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
         actualHonoraryContributions: actualHonoraryContributions || 0,
         actualSubventionsAndAids: actualSubventionsAndAids || 0,
         expectedStudents: expectedStudents || 100,
+        country,
+        currency,
+        financialObligations,
         ...extra
       });
 
@@ -193,7 +218,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!(associationName || '').trim() || !(schoolYear || '').trim() || cotisationAmount <= 0 || calculatedFinancialGoal <= 0) {
+    if (!(associationName || '').trim() || !(schoolYear || '').trim() || calculatedFinancialGoal <= 0) {
       alert("Veuillez renseigner correctement l'ensemble des champs obligatoires.");
       return;
     }
@@ -389,10 +414,52 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-600 uppercase">Année Scolaire Active <span className="text-red-500">*</span></label>
+                <label className="text-[10px] font-bold text-slate-600 uppercase block">Pays de l'Établissement <span className="text-red-500">*</span></label>
+                <select
+                  value={country}
+                  onChange={(e) => setCountry(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs border rounded-lg focus:outline-indigo-550 font-medium"
+                >
+                  <option value="Cameroun">🇨🇲 Cameroun</option>
+                  <option value="Sénégal">🇸🇳 Sénégal</option>
+                  <option value="Côte d'Ivoire">🇨🇮 Côte d'Ivoire</option>
+                  <option value="Burkina Faso">🇧🇫 Burkina Faso</option>
+                  <option value="Niger">🇳🇪 Niger</option>
+                  <option value="Bénin">🇧🇯 Bénin</option>
+                  <option value="Togo">🇹🇬 Togo</option>
+                  <option value="Mali">🇲🇱 Mali</option>
+                  <option value="Gabon">🇬🇦 Gabon</option>
+                  <option value="Congo">🇨🇬 Congo-Brazzaville</option>
+                  <option value="RDC">🇨🇩 RDC Congo</option>
+                  <option value="Tchad">🇹🇩 Tchad</option>
+                  <option value="Guinée">🇬🇳 Guinée</option>
+                  <option value="Centrafrique">🇨🇫 Centrafrique</option>
+                  <option value="France">🇫🇷 France (Europe)</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-600 uppercase block">Devise / Monnaie <span className="text-red-500">*</span></label>
+                <select
+                  value={currency}
+                  onChange={(e) => setCurrency(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs border rounded-lg focus:outline-indigo-550 font-bold font-mono"
+                >
+                  <option value="FCFA">FCFA (XAF / XOF)</option>
+                  <option value="EUR">Euro (€)</option>
+                  <option value="USD">Dollar US ($)</option>
+                  <option value="GNF">Franc Guinéen (GNF)</option>
+                  <option value="CDF">Franc Congolais (CDF)</option>
+                  <option value="CAD">Dollar Canadien (C$)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-600 uppercase block">Année Scolaire Active <span className="text-red-500">*</span></label>
                 <input
                   type="text"
                   required
@@ -404,20 +471,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-600 uppercase">Taux Par Élève Camerounais (FCFA) <span className="text-red-500">*</span></label>
-                <input
-                  type="number"
-                  min="500"
-                  required
-                  value={cotisationAmount || ''}
-                  onChange={(e) => setCotisationAmount(Number(e.target.value))}
-                  placeholder="Ex: 12500"
-                  className="w-full px-3 py-1.5 text-xs border rounded-lg focus:outline-indigo-550 font-mono text-right"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-600 uppercase">Nombre d'Élèves Attendus <span className="text-red-500">*</span></label>
+                <label className="text-[10px] font-bold text-slate-600 uppercase block">Nombre d'Élèves Attendus <span className="text-red-500">*</span></label>
                 <input
                   type="number"
                   min="1"
@@ -428,7 +482,191 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
                   className="w-full px-3 py-1.5 text-xs border rounded-lg focus:outline-indigo-550 font-mono text-right"
                 />
               </div>
+            </div>
 
+            {/* Rubriques d'Obligations Financières */}
+            <div className="border border-indigo-100 bg-indigo-50/20 rounded-xl p-3 space-y-3">
+              <div className="flex justify-between items-center border-b border-indigo-100 pb-1.5">
+                <div>
+                  <h4 className="text-[11px] font-black text-indigo-950 uppercase tracking-wider flex items-center gap-1.5">
+                    💳 Obligations Financières de l'Établissement
+                  </h4>
+                  <p className="text-[9px] text-slate-500 font-medium leading-relaxed">
+                    Définir et lister toutes les obligations exigibles par parent ou par élève.
+                  </p>
+                </div>
+              </div>
+
+              {/* Obligations list */}
+              {financialObligations.length === 0 ? (
+                <div className="text-center py-4 bg-white border border-dashed border-slate-205 text-slate-400 text-[10px] rounded-lg">
+                  Aucune obligation active. Veuillez en configurer une ci-dessous.
+                </div>
+              ) : (
+                <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
+                  {financialObligations.map((obl: any) => (
+                    <div key={obl.id} className="bg-white border text-[11px] rounded-lg p-2 flex justify-between items-center shadow-3xs hover:bg-slate-50 transition">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-slate-800">{obl.name}</span>
+                          <span className={`px-1.5 py-0.2 text-[8px] font-black rounded-full uppercase tracking-wider ${obl.type === 'per_student' ? 'bg-blue-50 text-blue-600 border border-blue-105' : 'bg-emerald-55 text-emerald-600 border border-emerald-105'}`}>
+                            {obl.type === 'per_student' ? 'Par élève' : 'Par parent'}
+                          </span>
+                        </div>
+                        {obl.description && <p className="text-[9.5px] text-slate-400 font-medium leading-tight">{obl.description}</p>}
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="font-mono font-bold text-slate-700 bg-slate-50 border px-2 py-0.5 rounded text-[11px]">
+                          {obl.amount.toLocaleString()} {currency}
+                        </span>
+                        <div className="flex shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingOblId(obl.id);
+                              setNewOblName(obl.name);
+                              setNewOblAmount(obl.amount);
+                              setNewOblType(obl.type);
+                              setNewOblDesc(obl.description || '');
+                            }}
+                            className="p-1 hover:text-indigo-600 text-slate-400 rounded transition cursor-pointer"
+                            title="Modifier"
+                          >
+                            <Edit2 className="h-3 w-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = financialObligations.filter((o: any) => o.id !== obl.id);
+                              setFinancialObligations(updated);
+                            }}
+                            className="p-1 hover:text-red-700 text-slate-400 rounded transition cursor-pointer"
+                            title="Supprimer"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Add / Edit Inline Section */}
+              <div className="bg-white border border-indigo-100 rounded-xl p-2.5 space-y-2.5 shadow-2xs">
+                <span className="text-[10px] font-black text-indigo-750 uppercase tracking-wide block">
+                  {editingOblId ? '✏️ Modifier l\'obligation' : '➕ Ajouter une Obligation Financière (Frais d\'inscription, pension, transport, cantine...)'}
+                </span>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-0.5 col-span-2 sm:col-span-1">
+                    <label className="text-[8.5px] font-bold text-slate-500 uppercase block">Intitulé de l'obligation</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: Frais d'inscription, Scolarité..."
+                      value={newOblName}
+                      onChange={(e) => setNewOblName(e.target.value)}
+                      className="w-full px-2 py-1 text-xs border rounded-lg focus:outline-indigo-500 font-medium"
+                    />
+                  </div>
+
+                  <div className="space-y-0.5 col-span-2 sm:col-span-1">
+                    <label className="text-[8.5px] font-bold text-slate-500 uppercase block">Montant ({currency})</label>
+                    <input
+                      type="number"
+                      placeholder="Montant"
+                      value={newOblAmount || ''}
+                      onChange={(e) => setNewOblAmount(Number(e.target.value))}
+                      className="w-full px-2 py-1 text-xs border rounded-lg focus:outline-indigo-500 font-mono text-right font-semibold"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-0.5 col-span-2 sm:col-span-1">
+                    <label className="text-[8.5px] font-bold text-slate-500 uppercase block">Type d'Application</label>
+                    <select
+                      value={newOblType}
+                      onChange={(e) => setNewOblType(e.target.value as 'per_student' | 'per_parent')}
+                      className="w-full px-2 py-1 text-xs border rounded-lg focus:outline-indigo-505 font-bold text-slate-750"
+                    >
+                      <option value="per_student">Par élève inscrit (Dû × nb élèves)</option>
+                      <option value="per_parent">Par foyer parent (Frais fixe unique)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-0.5 col-span-2 sm:col-span-1">
+                    <label className="text-[8.5px] font-bold text-slate-500 uppercase block">Description / Notes</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: Frais annuels obligatoires"
+                      value={newOblDesc}
+                      onChange={(e) => setNewOblDesc(e.target.value)}
+                      className="w-full px-2 py-1 text-xs border rounded-lg focus:outline-indigo-500 font-medium"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-2 justify-end pt-1">
+                  {editingOblId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingOblId(null);
+                        setNewOblName('');
+                        setNewOblAmount(0);
+                        setNewOblType('per_student');
+                        setNewOblDesc('');
+                      }}
+                      className="px-2.5 py-1 text-[9.5px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded transition cursor-pointer"
+                    >
+                      Annuler
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!newOblName.trim()) {
+                        alert("🔴 L'intitulé est requis");
+                        return;
+                      }
+                      if (newOblAmount <= 0) {
+                        alert("🔴 Le montant doit être supérieur à 0");
+                        return;
+                      }
+
+                      if (editingOblId) {
+                        setFinancialObligations((prev: any) => prev.map((o: any) => o.id === editingOblId ? {
+                          ...o,
+                          name: newOblName.trim(),
+                          amount: newOblAmount,
+                          type: newOblType,
+                          description: newOblDesc.trim() || undefined
+                        } : o));
+                        setEditingOblId(null);
+                      } else {
+                        const newObl = {
+                          id: `obl_${Date.now()}`,
+                          name: newOblName.trim(),
+                          amount: newOblAmount,
+                          type: newOblType,
+                          description: newOblDesc.trim() || undefined
+                        };
+                        setFinancialObligations((prev: any) => [...prev, newObl]);
+                      }
+
+                      setNewOblName('');
+                      setNewOblAmount(0);
+                      setNewOblType('per_student');
+                      setNewOblDesc('');
+                    }}
+                    className="px-3 py-1 text-[9.5px] font-extrabold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    {editingOblId ? 'Valider modification' : 'Enregistrer cette obligation'}
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* SECTION: Calculated Annual Budget Goal Breakdowns */}
@@ -439,30 +677,32 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
               
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between items-center bg-white/70 px-3 py-2 rounded-xl border border-indigo-100/40">
-                  <span className="text-slate-600 font-bold">1. Cotisations des parents (attendues) :</span>
+                  <span className="text-slate-600 font-bold">1. Cotisations attendues des parents :</span>
                   <div className="text-right">
-                    <span className="font-mono font-bold text-slate-800block">{parentCotisations.toLocaleString()} FCFA</span>
-                    <span className="text-[9px] text-slate-500 block">({expectedStudents} élèves attendus × {cotisationAmount.toLocaleString()} F)</span>
+                    <span className="font-mono font-bold text-slate-800 block">{parentCotisations.toLocaleString()} {currency}</span>
+                    <span className="text-[9.5px] text-indigo-600 font-bold block">
+                      ({expectedStudents} élèves × {totalObligationsPerStudent.toLocaleString()} {currency} + per-parent {totalObligationsPerParent.toLocaleString()} {currency})
+                    </span>
                   </div>
                 </div>
                 
                 <div className="flex justify-between items-center bg-white/70 px-3 py-2 rounded-xl border border-indigo-100/40">
                   <span className="text-slate-600 font-bold">2. Contributions des membres d'honneur :</span>
-                  <span className="font-mono font-bold text-slate-800">{honoraryContributions.toLocaleString()} FCFA</span>
+                  <span className="font-mono font-bold text-slate-800">{honoraryContributions.toLocaleString()} {currency}</span>
                 </div>
                 
                 <div className="flex justify-between items-center bg-white/70 px-3 py-2 rounded-xl border border-indigo-100/40">
                   <span className="text-slate-600 font-bold">3. Subventions & autres aides (A.D.S) :</span>
-                  <span className="font-mono font-bold text-slate-800">{subventionsAndAids.toLocaleString()} FCFA</span>
+                  <span className="font-mono font-bold text-slate-800">{subventionsAndAids.toLocaleString()} {currency}</span>
                 </div>
                 
                 <div className="border-t border-indigo-200/60 my-2 pt-2 flex justify-between items-center">
                   <span className="text-indigo-950 font-black uppercase text-[10px]">Total du Budget Prévisionnel :</span>
-                  <span className="font-mono font-black text-sm text-indigo-700">{calculatedFinancialGoal.toLocaleString()} FCFA</span>
+                  <span className="font-mono font-black text-sm text-indigo-700">{calculatedFinancialGoal.toLocaleString()} {currency}</span>
                 </div>
               </div>
               <p className="text-[8.5px] text-indigo-700/80 leading-normal font-medium">
-                * Note : Ce montant prévisionnel total sert de base de calcul pour les jauges de recouvrement, les statistiques et le découpage de vos lignes d'allocations de dépenses. Le budget est équilibré en recettes et en dépenses à {calculatedFinancialGoal.toLocaleString()} FCFA.
+                * Note : Ce montant prévisionnel total sert de base de calcul pour les jauges de recouvrement, les statistiques et le découpage de vos lignes d'allocations de dépenses. Le budget est équilibré en recettes et en dépenses à {calculatedFinancialGoal.toLocaleString()} {currency}.
               </p>
             </div>
 
@@ -476,7 +716,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-600 uppercase">Contributions Membres d'Honneur (FCFA)</label>
+                  <label className="text-[10px] font-bold text-slate-600 uppercase">Contributions Membres d'Honneur ({currency})</label>
                   <input
                     type="number"
                     min="0"
@@ -489,7 +729,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-600 uppercase">Aides, Dons et Subventions (FCFA)</label>
+                  <label className="text-[10px] font-bold text-slate-600 uppercase">Aides, Dons et Subventions ({currency})</label>
                   <input
                     type="number"
                     min="0"

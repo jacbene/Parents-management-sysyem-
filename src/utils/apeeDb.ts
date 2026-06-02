@@ -19,6 +19,16 @@ export const DEFAULT_SETTINGS: ApeeSettings = {
   subventionsAndAids: 1000000,
   actualHonoraryContributions: 0,
   actualSubventionsAndAids: 0,
+  country: 'Cameroun',
+  currency: 'FCFA',
+  financialObligations: [
+    { id: 'obl_apee', name: 'Cotisation APEE', amount: 12500, type: 'per_student', description: 'Cotisation de l\'association des parents d\'élèves' },
+    { id: 'obl_inscription', name: 'Frais d\'inscription', amount: 5000, type: 'per_student', description: 'Droits d\'entrée scolaires réglementaires' },
+    { id: 'obl_pension', name: 'Pension scolaire', amount: 25000, type: 'per_student', description: 'Frais de scolarité obligatoires' },
+    { id: 'obl_cantine', name: 'Cantine scolaire', amount: 15000, type: 'per_student', description: 'Service de restauration midi' },
+    { id: 'obl_transport', name: 'Transport scolaire', amount: 10000, type: 'per_student', description: 'Abonnement bus scolaire' },
+    { id: 'obl_secours', name: 'Fonds d\'urgence APEE', amount: 2000, type: 'per_parent', description: 'Contribution de solidarité parentale' }
+  ],
   budgetLines: [
     { id: 'bl_1', name: 'Soutien Pédagogique et Matériel Didactique', allocatedAmount: 900000, description: 'Achat de craies, livres, cahiers de préparation, et soutien aux enseignants vacataires' },
     { id: 'bl_2', name: 'Aménagement et Réparations des Salles', allocatedAmount: 650000, description: 'Réparation des tables-bancs, entretien des toitures et peinture' },
@@ -316,6 +326,14 @@ export async function fetchApeeData(parentId: string) {
         } catch (e) {
           console.error("Failed to parse classTeachersList from Firestore", e);
         }
+        let obligations = DEFAULT_SETTINGS.financialObligations;
+        try {
+          if (data.financialObligationsList) {
+            obligations = JSON.parse(data.financialObligationsList);
+          }
+        } catch (e) {
+          console.error("Failed to parse financialObligationsList from Firestore", e);
+        }
         dbSettings = {
           associationName: data.title,
           cotisationAmount: data.amount,
@@ -342,6 +360,9 @@ export async function fetchApeeData(parentId: string) {
           actualHonoraryContributions: data.actualHonoraryContributions || 0,
           actualSubventionsAndAids: data.actualSubventionsAndAids || 0,
           expectedStudents: data.expectedStudents || 100,
+          country: data.country || DEFAULT_SETTINGS.country,
+          currency: data.currency || DEFAULT_SETTINGS.currency,
+          financialObligations: obligations,
         };
       }
     });
@@ -498,6 +519,9 @@ export async function saveApeeSettings(parentId: string, settings: ApeeSettings)
       actualHonoraryContributions: settings.actualHonoraryContributions || 0,
       actualSubventionsAndAids: settings.actualSubventionsAndAids || 0,
       expectedStudents: settings.expectedStudents || 100,
+      country: settings.country || '',
+      currency: settings.currency || '',
+      financialObligationsList: JSON.stringify(settings.financialObligations || []),
     });
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `invoices/${parentId}_settings`);
@@ -793,3 +817,59 @@ export function generateApeeReminderMessage(
     };
   }
 }
+
+/**
+ * Calcule le détail de la dette par rubrique d'obligation financière pour un parent.
+ */
+export function calculateParentDebtBreakdown(
+  parent: { students?: any[]; payments?: any[] },
+  settings: ApeeSettings
+) {
+  const studentCount = (parent.students || []).filter(s => s && s.name && s.name.trim() !== '').length;
+  const obligations = settings.financialObligations || DEFAULT_SETTINGS.financialObligations || [];
+  
+  // Total paid summing up all payments
+  const globalPaid = (parent.payments || []).reduce((sum, p) => sum + p.amount, 0);
+
+  // First pass: calculate total expected for each obligation
+  let unallocatedPaid = globalPaid;
+  let globalDue = 0;
+
+  const rubricBreakdown = obligations.map(obl => {
+    let due = 0;
+    if (studentCount > 0) {
+      due = obl.type === 'per_student' ? (studentCount * obl.amount) : obl.amount;
+    }
+    globalDue += due;
+
+    // Distribute paid greedily in sequence of defined obligations
+    const paid = Math.min(due, unallocatedPaid);
+    unallocatedPaid -= paid;
+
+    return {
+      id: obl.id,
+      name: obl.name,
+      type: obl.type,
+      amountPerUnit: obl.amount,
+      totalDue: due,
+      totalPaid: paid,
+      remainingDebt: Math.max(0, due - paid)
+    };
+  });
+
+  // If there's surplus payment (overpayment), allocate it to the first obligation
+  if (unallocatedPaid > 0 && rubricBreakdown.length > 0) {
+    rubricBreakdown[0].totalPaid += unallocatedPaid;
+    rubricBreakdown[0].remainingDebt = rubricBreakdown[0].totalDue - rubricBreakdown[0].totalPaid;
+  }
+
+  const globalDebt = Math.max(0, globalDue - globalPaid);
+
+  return {
+    rubricBreakdown,
+    globalDue,
+    globalPaid,
+    globalDebt
+  };
+}
+

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Printer, CheckCircle, Smartphone, Tag, User, Hash, MapPin, Notebook, DollarSign, Calendar, Mail, X, Download } from 'lucide-react';
 import { ApeeParent, ApeeStudentLink, ApeePaymentItem, ApeeSettings, ApeeOtherRevenue } from '../../types';
-import { getApeeShortName } from '../../utils/apeeDb';
+import { getApeeShortName, calculateParentDebtBreakdown } from '../../utils/apeeDb';
 import { jsPDF } from 'jspdf';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -170,7 +170,7 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(13);
     doc.setTextColor(15, 23, 42); // Black
-    doc.text(`${revenueToPrint.amount.toLocaleString()} FCFA`, margin + 6, y + 15);
+    doc.text(`${revenueToPrint.amount.toLocaleString()} ${currency}`, margin + 6, y + 15);
 
     let catLabel = "Autre Tiers / Donateur";
     if (revenueToPrint.status === 'membre_honneur') catLabel = "Membre d'Honneur";
@@ -373,11 +373,24 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
     setStudents(updated);
   };
 
-  // Automated dues calculator
+  // Get active currency
+  const currency = settings?.currency || 'FCFA';
+
+  // Automated dues calculator using global helper for breakdown of obligations
   const validStudentsCount = students.filter(s => s.name.trim() !== '').length;
-  const totalDueAmount = validStudentsCount * settings.cotisationAmount;
-  const currentTotalPaid = payments.reduce((sum, p) => sum + p.amount, 0) + (payAmount > 0 ? payAmount : 0);
-  const restToPay = totalDueAmount - currentTotalPaid;
+  
+  // Calculate dynamic breakdown including any un-added typed payment
+  const mockParentForCalc = {
+    students: students.filter(s => s.name.trim() !== ''),
+    payments: [...payments, ...(payAmount > 0 ? [{ id: 'temp_input', amount: payAmount, date: '', method: '' }] : [])]
+  };
+  
+  const {
+    rubricBreakdown,
+    globalDue: totalDueAmount,
+    globalPaid: currentTotalPaid,
+    globalDebt: restToPay
+  } = calculateParentDebtBreakdown(mockParentForCalc, settings);
 
   const handleAddPaymentNode = () => {
     if (payAmount <= 0) return;
@@ -442,7 +455,10 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
     }
 
     const sumPaid = finalPayments.reduce((sum, p) => sum + p.amount, 0);
-    const calculatedDue = filteredStudents.length * settings.cotisationAmount;
+    
+    // Call our breakdown generator with final values
+    const finalBreakdown = calculateParentDebtBreakdown({ students: filteredStudents, payments: finalPayments }, settings);
+    const calculatedDue = finalBreakdown.globalDue;
     
     let computedStatus: 'soldé' | 'partiel' | 'retard' = 'retard';
     if (sumPaid >= calculatedDue) {
@@ -490,7 +506,7 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
     }
     const finalPaid = payments.reduce((sum, p) => sum + p.amount, 0) + payAmount;
     const kidsStr = students.filter(s => s.name.trim() !== '').map(s => s.name).join(', ');
-    const msg = `${getApeeShortName(settings)}: Bonjour M./Mme ${parentName}. Nous confirmons la réception de ${finalPaid.toLocaleString()} FCFA pour la cotisation ${getApeeShortName(settings)} de (${kidsStr}). Solde restant: ${Math.max(0, totalDueAmount - finalPaid).toLocaleString()} FCFA. Merci pour votre contribution active!`;
+    const msg = `${getApeeShortName(settings)}: Bonjour M./Mme ${parentName}. Nous confirmons la réception de ${finalPaid.toLocaleString()} ${currency} pour la cotisation ${getApeeShortName(settings)} de (${kidsStr}). Solde restant: ${Math.max(0, totalDueAmount - finalPaid).toLocaleString()} ${currency}. Merci pour votre contribution active!`;
     setSmsMockMsg(msg);
   };
 
@@ -585,20 +601,20 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12);
     doc.setTextColor(15, 23, 42); // Black
-    doc.text(`${totalDueAmount.toLocaleString()} FCFA`, margin + 6, y + 15);
+    doc.text(`${totalDueAmount.toLocaleString()} ${currency}`, margin + 6, y + 15);
 
     doc.setTextColor(79, 70, 229); // Indigo-600
-    doc.text(`${payAmount.toLocaleString()} FCFA`, margin + 65, y + 15);
+    doc.text(`${payAmount.toLocaleString()} ${currency}`, margin + 65, y + 15);
 
     doc.setTextColor(245, 158, 11); // Amber-500
-    doc.text(`${Math.max(0, restToPay).toLocaleString()} FCFA`, margin + 125, y + 15);
+    doc.text(`${Math.max(0, restToPay).toLocaleString()} ${currency}`, margin + 125, y + 15);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
     doc.setTextColor(148, 163, 184); // Slate 400
     doc.text(`Frais et dotations`, margin + 6, y + 20);
     doc.text(`Méthode: ${payMethod || 'Espèces'}`, margin + 65, y + 20);
-    doc.text(`Cumul payeur : ${currentTotalPaid.toLocaleString()} FCFA`, margin + 125, y + 20);
+    doc.text(`Cumul payeur : ${currentTotalPaid.toLocaleString()} ${currency}`, margin + 125, y + 20);
 
     y += 32;
 
@@ -904,7 +920,7 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
               </h3>
 
               <div className="space-y-1.5">
-                <label className="text-[11px] font-extrabold text-emerald-900 uppercase">Montant Déposé (FCFA) <span className="text-red-500">*</span></label>
+                <label className="text-[11px] font-extrabold text-emerald-900 uppercase">Montant Déposé ({currency}) <span className="text-red-500">*</span></label>
                 <div className="relative">
                   <DollarSign className="absolute left-3 top-2.5 h-4 w-4 text-emerald-600" />
                   <input
@@ -1036,7 +1052,7 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
             </div>
 
             <p className="text-[10px] text-gray-400 mt-1">
-              Chaque élève enregistré ajoute automatiquement <strong>{settings.cotisationAmount.toLocaleString()} FCFA</strong> au montant exigible global.
+              Chaque élève enregistré active les obligations financières de l'établissement (par élève ou par parent) définies dans les paramètres.
             </p>
 
             <div className="space-y-3 pt-2">
@@ -1108,38 +1124,62 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
         <div className="lg:col-span-5 space-y-6">
           <div className="bg-slate-900 text-white rounded-2xl p-5 shadow-xs space-y-4">
             <h3 className="text-sm font-semibold border-b border-slate-800 pb-2 flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-emerald-400" /> Calculateur de Cotisation
+              <DollarSign className="h-4 w-4 text-emerald-400" /> Synthèse des Obligations & Dettes
             </h3>
 
             <div className="space-y-2.5">
               <div className="flex justify-between text-xs font-medium text-slate-350">
-                <span>Nombre d'élèves valides :</span>
-                <span className="font-bold text-white">{validStudentsCount}</span>
+                <span>Régime de tarification :</span>
+                <span className="font-bold text-white uppercase">{settings.country || 'Cameroun'} ({currency})</span>
               </div>
-              <div className="flex justify-between text-xs font-medium text-slate-350">
-                <span>Tarif unitaire de l'{getApeeShortName(settings)} :</span>
-                <span>{settings.cotisationAmount.toLocaleString()} FCFA</span>
+              <div className="flex justify-between text-[11px] font-medium text-slate-350">
+                <span>Nombre de pupilles inscrites :</span>
+                <span className="font-bold text-white font-mono bg-slate-800 px-1.5 py-0.2 rounded">{validStudentsCount}</span>
               </div>
+              
+              <hr className="border-slate-800 my-1.5" />
+              
+              {/* Detailed debts rubrics list */}
+              <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-0.5">
+                {rubricBreakdown.map((r) => (
+                  <div key={r.id} className="bg-slate-850 border border-slate-800 p-2 rounded-xl text-[11px] space-y-1">
+                    <div className="flex justify-between items-center text-slate-200">
+                      <span className="font-bold text-slate-200">{r.name} <span className="text-[8.5px] text-slate-400 font-normal">({r.type === 'per_student' ? 'par élève' : 'par parent'})</span></span>
+                      <span className="font-mono text-slate-100 font-semibold">{r.totalDue.toLocaleString()} {currency}</span>
+                    </div>
+                    {validStudentsCount > 0 && (
+                      <div className="flex justify-between items-center text-[9px] text-slate-400 font-mono">
+                        <span>Payé: {r.totalPaid.toLocaleString()} {currency}</span>
+                        <span className={r.remainingDebt > 0 ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'}>
+                          Dette: {r.remainingDebt.toLocaleString()} {currency}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
               <hr className="border-slate-800 my-1" />
-              <div className="flex justify-between items-baseline">
-                <span className="text-xs font-bold text-amber-400 uppercase">Montant total dû :</span>
+              
+              <div className="flex justify-between items-baseline pt-1">
+                <span className="text-xs font-bold text-amber-400 uppercase">Dette Globale (Dû) :</span>
                 <span className="text-lg font-mono font-bold text-amber-300">
-                  {totalDueAmount.toLocaleString()} FCFA
+                  {totalDueAmount.toLocaleString()} {currency}
                 </span>
               </div>
             </div>
 
-            <div className="bg-slate-850 p-3 rounded-xl border border-slate-800 flex justify-between items-center text-xs">
-              <span className="text-slate-300">Déjà payé cumulé :</span>
-              <span className="font-semibold text-emerald-400 font-mono">
-                {currentTotalPaid.toLocaleString()} FCFA
+            <div className="bg-slate-850 p-2.5 rounded-xl border border-slate-800 flex justify-between items-center text-xs bg-slate-850">
+              <span className="text-slate-350 font-bold">Total Encaissé (Payé) :</span>
+              <span className="font-bold text-emerald-400 font-mono text-xs">
+                {currentTotalPaid.toLocaleString()} {currency}
               </span>
             </div>
 
-            <div className="bg-slate-800/40 p-3 rounded-xl border border-slate-800/80 flex justify-between items-center text-xs">
-              <span className="text-slate-300">Reste exigible :</span>
-              <span className={`font-mono font-extrabold ${restToPay > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
-                {Math.max(0, restToPay).toLocaleString()} FCFA
+            <div className="bg-slate-800/40 p-2.5 rounded-xl border border-slate-800/80 flex justify-between items-center text-xs">
+              <span className="text-slate-350 font-bold">Reste Global à Recouvrer :</span>
+              <span className={`font-mono font-black text-xs ${restToPay > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                {Math.max(0, restToPay).toLocaleString()} {currency}
               </span>
             </div>
 
@@ -1162,9 +1202,9 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-600">Montant versé (FCFA)</label>
+                <label className="text-[10px] font-bold text-slate-600">Montant versé ({currency})</label>
                 <div className="relative">
-                  <span className="absolute left-2 text-xs top-2 font-mono text-gray-550">FCFA</span>
+                  <span className="absolute left-2 text-xs top-2 font-mono text-gray-550">{currency}</span>
                   <input
                     type="number"
                     min="0"
@@ -1435,22 +1475,32 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
                       <p className="text-[11px]"><strong className="text-slate-500">Téléphone de contact :</strong> <span className="font-mono font-semibold">{parentPhone || 'Non renseigné'}</span></p>
                       <p className="text-[11px]"><strong className="text-slate-500">Quartier / Adresse :</strong> <span>{parentAddress || 'Non spécifié'}</span></p>
                     </div>
-                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1.5 flex flex-col justify-center">
-                      <div className="flex justify-between items-center text-[11px]">
-                        <span className="text-slate-600">Total Exigible :</span>
-                        <span className="font-bold font-mono text-slate-900">{totalDueAmount.toLocaleString()} FCFA</span>
+                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1.5 flex flex-col justify-between">
+                      {/* Rubric specific details on receipt */}
+                      <div className="space-y-1 text-[10px] pb-1.5 border-b border-slate-200">
+                        {rubricBreakdown.map(r => (
+                          <div key={r.id} className="flex justify-between text-slate-600">
+                            <span>{r.name} ({r.type === 'per_student' ? 'élève' : 'parent'}) :</span>
+                            <span className="font-mono font-semibold">{r.totalDue.toLocaleString()} {currency} (rest. {r.remainingDebt.toLocaleString()})</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="flex justify-between items-center text-[11px] font-bold pt-1">
+                        <span className="text-slate-800">Dette Globale (Dû) :</span>
+                        <span className="font-bold font-mono text-slate-900">{totalDueAmount.toLocaleString()} {currency}</span>
                       </div>
                       <div className="flex justify-between items-center text-[11px]">
                         <span className="text-slate-600">Versement Saisi :</span>
-                        <span className="font-bold font-mono text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">+{payAmount.toLocaleString()} FCFA</span>
+                        <span className="font-bold font-mono text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">+{payAmount.toLocaleString()} {currency}</span>
                       </div>
                       <div className="flex justify-between items-center text-[11px] border-t border-slate-200 pt-1">
                         <span className="font-bold text-slate-800">Cumul payé :</span>
-                        <span className="font-black font-mono text-emerald-700">{(currentTotalPaid).toLocaleString()} FCFA</span>
+                        <span className="font-black font-mono text-emerald-700">{(currentTotalPaid).toLocaleString()} {currency}</span>
                       </div>
                       <div className="flex justify-between items-center text-[11px] text-red-700 bg-red-50/50 p-1 rounded font-bold">
                         <span>Reste Exigible :</span>
-                        <span className="font-mono">{Math.max(0, restToPay).toLocaleString()} FCFA</span>
+                        <span className="font-mono">{Math.max(0, restToPay).toLocaleString()} {currency}</span>
                       </div>
                     </div>
                   </div>
@@ -1491,13 +1541,13 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
                       <div className="space-y-1">
                         {payAmount > 0 && (
                           <p className="text-[11px] text-slate-800 bg-amber-50/50 p-1.5 border border-amber-200/50 rounded flex justify-between">
-                            <span>• {new Date().toLocaleDateString('fr-FR')} : <strong>{payAmount.toLocaleString()} FCFA</strong> - {payMethod} ({paymentNote || 'Versement en cours'})</span>
+                            <span>• {new Date().toLocaleDateString('fr-FR')} : <strong>{payAmount.toLocaleString()} {currency}</strong> - {payMethod} ({paymentNote || 'Versement en cours'})</span>
                             {transactionId && <span className="font-mono font-bold text-[10px] bg-white px-2 border rounded">TID: {transactionId}</span>}
                           </p>
                         )}
                         {payments.map((p, idx) => (
                           <p key={p.id || idx} className="text-[11px] text-slate-700 flex justify-between">
-                            <span>• {p.date} : <strong>{p.amount.toLocaleString()} FCFA</strong> ({p.method || 'Espèces'}) {p.note ? `- ${p.note}` : ''}</span>
+                            <span>• {p.date} : <strong>{p.amount.toLocaleString()} {currency}</strong> ({p.method || 'Espèces'}) {p.note ? `- ${p.note}` : ''}</span>
                             {p.transactionId && <span className="font-mono text-[10px] bg-slate-100 px-1.5 border rounded">TID: {p.transactionId}</span>}
                           </p>
                         ))}

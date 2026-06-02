@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Search, UserCheck, MessageSquare, Edit2, Trash2, Printer, X, Phone, MapPin, Tag, Calendar, AlertTriangle, ChevronRight, Notebook, Download } from 'lucide-react';
 import { ApeeParent, ApeeStudentLink } from '../../types';
-import { getApeeShortName } from '../../utils/apeeDb';
+import { getApeeShortName, calculateParentDebtBreakdown } from '../../utils/apeeDb';
 import { jsPDF } from 'jspdf';
 
 interface ApeeSearchProps {
@@ -133,14 +133,15 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12);
     doc.setTextColor(15, 23, 42);
-    doc.text(`${selectedParent.totalDue.toLocaleString()} FCFA`, margin + 6, y + 15);
+    const currency = settings?.currency || 'FCFA';
+    doc.text(`${selectedParent.totalDue.toLocaleString()} ${currency}`, margin + 6, y + 15);
 
     doc.setTextColor(79, 70, 229); // Indigo
-    doc.text(`${selectedParent.totalPaid.toLocaleString()} FCFA`, margin + 65, y + 15);
+    doc.text(`${selectedParent.totalPaid.toLocaleString()} ${currency}`, margin + 65, y + 15);
 
     const rest = Math.max(0, selectedParent.totalDue - selectedParent.totalPaid);
     doc.setTextColor(rest > 0 ? 239 : 16, rest > 0 ? 68 : 185, rest > 0 ? 68 : 129); // Red if due, green if paid
-    doc.text(`${rest.toLocaleString()} FCFA`, margin + 125, y + 15);
+    doc.text(`${rest.toLocaleString()} ${currency}`, margin + 125, y + 15);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
@@ -449,7 +450,7 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
                         {parent.totalPaid.toLocaleString()} / {parent.totalDue.toLocaleString()}
                       </div>
                       <div className={`text-[9px] font-mono ${selectedParentId === parent.id ? 'text-slate-400' : 'text-gray-400'}`}>
-                        FCFA
+                        {settings?.currency || 'FCFA'}
                       </div>
                     </div>
                     <ChevronRight className="h-4 w-4 text-gray-400" />
@@ -566,23 +567,52 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
               </div>
 
               {/* Dues breakdown statistics panel */}
-              <div className="bg-slate-900 text-white rounded-xl p-3.5 font-mono text-xs space-y-1 border border-slate-850">
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Exigible global :</span>
-                  <span>{selectedParent.totalDue.toLocaleString()} FCFA</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Payé cumulé :</span>
-                  <span className="text-emerald-400">{selectedParent.totalPaid.toLocaleString()} FCFA</span>
-                </div>
-                <hr className="border-slate-800 my-1" />
-                <div className="flex justify-between text-sm font-bold">
-                  <span>Reste à payer :</span>
-                  <span className={selectedParent.totalDue - selectedParent.totalPaid > 0 ? 'text-amber-400' : 'text-emerald-400'}>
-                    {Math.max(0, selectedParent.totalDue - selectedParent.totalPaid).toLocaleString()} FCFA
-                  </span>
-                </div>
-              </div>
+              {(() => {
+                const currency = settings?.currency || 'FCFA';
+                const { rubricBreakdown, globalDue, globalPaid, globalDebt } = calculateParentDebtBreakdown(selectedParent, settings || {});
+                return (
+                  <div className="space-y-3">
+                    {/* Rubrics Subordinated specific debts */}
+                    <div className="space-y-1.5">
+                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">🧾 COMPTE PARENT : DETTE SPÉCIFIQUE PAR RUBRIQUE</span>
+                      <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-0.5">
+                        {rubricBreakdown.map((r: any) => (
+                          <div key={r.id} className="bg-slate-50 border border-slate-205 p-2 rounded-xl text-xs space-y-1">
+                            <div className="flex justify-between font-extrabold text-slate-800">
+                              <span className="text-slate-700">{r.name} <span className="text-[9px] text-slate-400 font-normal">({r.type === 'per_student' ? 'par élève' : 'par parent'})</span></span>
+                              <span>{r.totalDue.toLocaleString()} {currency}</span>
+                            </div>
+                            <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                              <span>Payé: {r.totalPaid.toLocaleString()} {currency}</span>
+                              <span className={r.remainingDebt > 0 ? 'text-amber-600 font-black' : 'text-emerald-600 font-black'}>
+                                Solde dû : {r.remainingDebt.toLocaleString()} {currency}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-900 text-white rounded-2xl p-3.5 font-mono text-xs space-y-1 border border-slate-850">
+                      <div className="flex justify-between">
+                        <span className="text-slate-400 font-sans font-semibold">Exigible global :</span>
+                        <span>{selectedParent.totalDue?.toLocaleString() || globalDue.toLocaleString()} {currency}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400 font-sans font-semibold">Payé cumulé :</span>
+                        <span className="text-emerald-400">{selectedParent.totalPaid?.toLocaleString() || globalPaid.toLocaleString()} {currency}</span>
+                      </div>
+                      <hr className="border-slate-800 my-1.5" />
+                      <div className="flex justify-between text-sm font-bold">
+                        <span className="font-sans font-bold text-amber-300">Reste à payer :</span>
+                        <span className={(selectedParent.totalDue - selectedParent.totalPaid) > 0 ? 'text-amber-400' : 'text-emerald-400'}>
+                          {Math.max(0, selectedParent.totalDue - selectedParent.totalPaid).toLocaleString()} {currency}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {selectedParent.note && (
                 <div className="bg-amber-50 rounded-xl p-3 text-[11px] text-amber-900 border border-amber-200">
