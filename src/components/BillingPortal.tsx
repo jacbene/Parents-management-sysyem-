@@ -142,16 +142,24 @@ export default function BillingPortal({
       y += 15;
     }
 
-    // Title Title Block with Green accent (since it is paid)
-    doc.setFillColor(13, 148, 136); // Teal 650
+    const isPaid = inv.status === 'Paid';
+
+    // Title Block with specific status accent color: Teal for paid, Indigo for unpaid, Red for overdue
+    if (isPaid) {
+      doc.setFillColor(13, 148, 136); // Teal 650
+    } else if (inv.status === 'Overdue') {
+      doc.setFillColor(220, 38, 38); // Red 600
+    } else {
+      doc.setFillColor(79, 70, 229); // Indigo 600
+    }
     doc.rect(margin, y, contentWidth, 14, 'F');
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
     doc.setTextColor(255, 255, 255);
-    const mainTitle = isEn 
-      ? "OFFICIAL REGISTRATION RECEIPT & FULLY ACQUITTED PAYMENT BILL" 
-      : "QUITTANCE DE PAIEMENT & REÇU DE RÈGLEMENT ACQUITTE";
+    const mainTitle = isPaid
+      ? (isEn ? "OFFICIAL REGISTRATION RECEIPT & FULLY ACQUITTED PAYMENT BILL" : "QUITTANCE DE PAIEMENT & REÇU DE RÈGLEMENT ACQUITTE")
+      : (isEn ? "SECURE FEE INVOICE & DEMAND FOR PTA CONTRIBUTION" : "AVIS DE FACTURATION & APPEL DE FONDS SCOLAIRES");
     doc.text(mainTitle, margin + 6, y + 9);
 
     y += 20;
@@ -165,19 +173,23 @@ export default function BillingPortal({
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
     doc.setTextColor(15, 23, 42);
-    const refUniqueLabel = isEn ? "UNIQUE TRANSACTION REFERENCE" : "RÉFÉRENCE UNIQUE DE TRANSACTION";
+    const refUniqueLabel = isPaid 
+      ? (isEn ? "UNIQUE TRANSACTION REFERENCE" : "RÉFÉRENCE UNIQUE DE TRANSACTION")
+      : (isEn ? "INVOICE REFERENCE NUMBER" : "RÉFÉRENCE DE LA FACTURE ADMI.");
     doc.text(`${refUniqueLabel} : ${inv.id.toUpperCase()}`, margin + 6, y + 7);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(71, 85, 105);
-    const payDateLabel = isEn ? "Payment Date" : "Date de versement";
-    const rawDate = inv.paymentDate ? new Date(inv.paymentDate) : new Date();
+    const payDateLabel = isPaid ? (isEn ? "Payment Date" : "Date de versement") : (isEn ? "Invoice Due Date" : "Échéance règlementaire de paiement");
+    const rawDate = isPaid && inv.paymentDate ? new Date(inv.paymentDate) : new Date(inv.dueDate);
     const payDateStr = rawDate.toLocaleDateString(isEn ? 'en-US' : 'fr-FR');
     doc.text(`${payDateLabel} : ${payDateStr}`, margin + 6, y + 13);
     
-    const payChannelLabel = isEn ? "Payment Channel" : "Canal de paiement";
-    const payChannels = isEn ? "Orange Money / MTN MoMo / Credit Card" : "Orange Money / MTN MoMo / Carte Bancaire";
+    const payChannelLabel = isPaid ? (isEn ? "Payment Channel" : "Canal de paiement") : (isEn ? "Suggested Payment Methods" : "Méthodes de versement autorisées");
+    const payChannels = isPaid 
+      ? (isEn ? "Orange Money / MTN MoMo / Credit Card" : "Orange Money / MTN MoMo / Carte Bancaire")
+      : (isEn ? "Orange Money / MTN MoMo / Credit Card / Cashier" : "Orange Money / MTN MoMo / Carte Bancaire / Espèces Régie");
     doc.text(`${payChannelLabel} : ${payChannels}`, margin + 6, y + 18);
 
     doc.line(margin + 90, y + 3, margin + 90, y + 23);
@@ -244,8 +256,14 @@ export default function BillingPortal({
     doc.line(margin, y, margin + contentWidth, y);
     y += 6;
 
-    // Table Header
-    doc.setFillColor(13, 148, 136); // Teal
+    // Table Header Color: Teal for Paid, Indigo/Red/Orange for Unpaid
+    if (isPaid) {
+      doc.setFillColor(13, 148, 136); // Teal
+    } else if (inv.status === 'Overdue') {
+      doc.setFillColor(220, 38, 38); // Red
+    } else {
+      doc.setFillColor(79, 70, 229); // Indigo
+    }
     doc.rect(margin, y, contentWidth, 7, 'F');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
@@ -274,15 +292,21 @@ export default function BillingPortal({
     doc.text(inv.title, margin + 5, y + 7.5);
 
     const amountObj = formatAmountTtc(inv.amount);
-     doc.setFont('helvetica', 'semibold');
+    doc.setFont('helvetica', 'semibold');
     doc.text(amountObj.fcfa, margin + 110, y + 7.5, { align: 'right' });
     doc.setFont('helvetica', 'normal');
     doc.text(amountObj.euro, margin + 145, y + 7.5, { align: 'right' });
 
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(16, 185, 129); // Green emerald
-    const paidLabel = isEn ? "PAID & VALIDATED" : "RÉGLÉ / VALIDÉ";
-    doc.text(paidLabel, margin + contentWidth - 5, y + 7.5, { align: 'right' });
+    if (isPaid) {
+      doc.setTextColor(16, 185, 129); // Green emerald
+      const paidLabel = isEn ? "PAID & VALIDATED" : "RÉGLÉ / VALIDÉ";
+      doc.text(paidLabel, margin + contentWidth - 5, y + 7.5, { align: 'right' });
+    } else {
+      doc.setTextColor(220, 38, 38); // Red
+      const unpaidLabel = isEn ? "UNPAID / OUTSTANDING" : "À RÉGLER / EN SOUFFRANCE";
+      doc.text(unpaidLabel, margin + contentWidth - 5, y + 7.5, { align: 'right' });
+    }
 
     y += 24;
 
@@ -295,15 +319,16 @@ export default function BillingPortal({
     doc.setFont('helvetica', 'italic');
     doc.setFontSize(8);
     doc.setTextColor(100, 116, 139);
-    const certCompDesc = isEn 
-      ? "Account certification: This electronic receipt replaces any manual invoice copy."
-      : "Certification comptable : Cet acquit de paiement numérique remplace tout reçu manuel pré-édité.";
+    
+    const certCompDesc = isPaid 
+      ? (isEn ? "Account certification: This electronic receipt replaces any manual invoice copy." : "Certification comptable : Cet acquit de paiement numérique remplace tout reçu manuel pré-édité.")
+      : (isEn ? "Liability certification: This fee invoice establishes a pending administrative liability." : "Certification de créance : Ce bulletin constitue un appel officiel de fonds réglementaires.");
     doc.text(certCompDesc, margin, y);
     
     y += 4;
-    const certVautDesc = isEn
-      ? "This receipt serves as fully acquitted validation for the financial duties mentioned."
-      : "Cette quittance vaut reçu libératoire des obligations financières correspondantes.";
+    const certVautDesc = isPaid
+      ? (isEn ? "This receipt serves as fully acquitted validation for the financial duties mentioned." : "Cette quittance vaut reçu libératoire des obligations financières correspondantes.")
+      : (isEn ? "Please settle the amount due via one of our electronic mobile portals on PASMA-SYS." : "Veuillez vous acquitter du solde dû via l'une de nos passerelles de paiement électronique.");
     doc.text(certVautDesc, margin, y);
 
     y += 12;
@@ -324,7 +349,8 @@ export default function BillingPortal({
     doc.text(certProof, margin + 6, y);
     doc.text(stampProof, margin + (contentWidth / 2) + 6, y);
 
-    doc.save(`recu_paiement_${inv.id.toLowerCase()}.pdf`);
+    const pdfName = isPaid ? `recu_paiement_${inv.id.toLowerCase()}.pdf` : `facture_scolaire_${inv.id.toLowerCase()}.pdf`;
+    doc.save(pdfName);
   };
 
   const handleDownloadFinancialStatementPDF = () => {
@@ -925,8 +951,8 @@ export default function BillingPortal({
                 </div>
               </div>
 
-              <div className="flex items-center gap-5">
-                <div className="text-right">
+              <div className="flex items-center gap-3">
+                <div className="text-right mr-2">
                   <div className="text-base font-black text-indigo-750 font-mono">
                     {formatAmountTtc(inv.amount).fcfa}
                   </div>
@@ -934,6 +960,21 @@ export default function BillingPortal({
                     soit {formatAmountTtc(inv.amount).euro} (TTC)
                   </span>
                 </div>
+                
+                <button
+                  type="button"
+                  onClick={() => handleDownloadReceiptPDF(inv)}
+                  className={`flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-xl transition cursor-pointer ${
+                    inv.status === 'Paid'
+                      ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+                  title={inv.status === 'Paid' ? "Télécharger le reçu de paiement officiel (PDF)" : "Télécharger l'avis de facturation de ce paiement (PDF)"}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span>{inv.status === 'Paid' ? 'Reçu (PDF)' : 'Facture (PDF)'}</span>
+                </button>
+
                 {inv.status !== 'Paid' && (
                   <button
                     onClick={() => startPayment(inv)}

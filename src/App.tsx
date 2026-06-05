@@ -1677,6 +1677,8 @@ export default function App() {
                             apeeParents={apeeParents}
                             grades={grades}
                             attendanceLogs={attendanceLogs}
+                            portalUserRole={portalUserRole}
+                            onAddMessage={handleAddMessageInPlace}
                           />
                         ))}
                       </div>

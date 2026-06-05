@@ -338,6 +338,129 @@ Format de retour JSON attendu : un objet avec un titre 'title' et un tableau d'�
   }
 });
 
+// API: Generate payment reminder templates using Gemini AI
+app.post("/api/apee/generate-reminders", async (req, res) => {
+  const { targetStatus, tone, language, customContext } = req.body;
+
+  let statusText = "Tout parent n'étant pas totalement à jour de ses cotisations d'école";
+  if (targetStatus === "partiel") {
+    statusText = "Un parent d'élève qui a déjà versé un acompte mais qui a encore un solde restant dû (versement partiel)";
+  } else if (targetStatus === "retard") {
+    statusText = "Un parent d'élève qui n'a encore payé aucun frais exigible de l'année scolaire et accumule un retard complet de cotisation";
+  }
+
+  let toneText = "Professionnel administratif standard, neutre et précis";
+  if (tone === "courtois") {
+    toneText = "Bienveillant, respectueux, constructif et chaleureux mais sérieux";
+  } else if (tone === "ferme") {
+    toneText = "Ferme, diplomatique, mettant en valeur l'obligation de s'acquitter des cotisations pour la pérennité de l'enseignement";
+  } else if (tone === "urgent") {
+    toneText = "Urgent, impératif, stipulant qu'une régularisation immédiate est requise pour éviter des perturbations de fin d'année ou des pénalités";
+  }
+
+  let langText = "Français impeccable";
+  if (language === "en") {
+    langText = "Anglais de haut niveau (English)";
+  } else if (language === "bilingual") {
+    langText = "Message bilingue alternant Français et Anglais de manière claire et structurée";
+  }
+
+  const prompt = `Rédige un ensemble de modèles de relances de paiement de cotisation scolaire.
+Ces modèles s'adressent à : ${statusText}.
+Le ton du message doit être : ${toneText}.
+La langue de rédaction doit être : ${langText}.
+${customContext ? `Instructions ou détails supplémentaires à insérer : "${customContext}"` : ""}
+
+Tu dois rédiger deux types de modèles :
+1. Un modèle court de type SMS ou WhatsApp (smsTemplate). Il doit être concis (idéalement moins de 250 caractères).
+2. Un modèle de courriel complet (emailTemplate) avec son Objet de mail (emailSubject). Il doit être professionnel et bien structuré.
+
+Dans ces deux modèles, tu DOIS obligatoirement insérer et respecter les balises d'interpolation dynamique suivantes. Elles seront remplacées par notre programme au moment de l'envoi :
+- {parent_name} : Nom ou Civilité du parent d'élève.
+- {student_names} : Noms du ou des élève(s) supervisés.
+- {remaining_amount} : Montant restant dû à recouvrer.
+- {total_due_amount} : Montant de la cotisation annuelle exigible.
+- {school_year} : L'année scolaire concernée.
+- {association_name} : Nom de l'établissement ou de l'association scolaire / parents d'élèves.
+- {short_name} : Acronyme court de l'association (ex: APEE).
+
+Ne mets aucune explication ni texte d'accompagnement en dehors du format JSON demandé.`;
+
+  try {
+    const aiInstance = getAi();
+    const response = await aiInstance.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        systemInstruction: "Tu es un directeur financier d'école et chef de la régie comptable scolaire en Afrique francophone (Cameroun). Tu maîtrises la rédaction administrative rigoureuse et humaine.",
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            smsTemplate: { type: Type.STRING, description: "Texte court du message SMS ou WhatsApp incluant les balises dynamiques." },
+            emailSubject: { type: Type.STRING, description: "L'objet concis et professionnel de l'email." },
+            emailTemplate: { type: Type.STRING, description: "Tout le corps professionnel structuré de l'email avec les salutations, le corps, la signature, utilisant les balises dynamiques." }
+          },
+          required: ["smsTemplate", "emailSubject", "emailTemplate"]
+        }
+      }
+    });
+
+    const parsedData = JSON.parse(response.text?.trim() || "{}");
+    return res.json({ success: true, source: "gemini", data: parsedData });
+
+  } catch (error) {
+    console.error("APEE Generate Reminders Exception:", error);
+
+    // Heuristic Local Fallback for offline/missing key simulation
+    let fallbackSms = "";
+    let fallbackSubject = "";
+    let fallbackEmail = "";
+
+    if (language === "en") {
+      fallbackSubject = `School Fees Balance Reminder {short_name} - {association_name}`;
+      if (targetStatus === "partiel") {
+        fallbackSms = `Dear Parent. Thank you for your first payment. We kindly remind you that {remaining_amount} FCFA remains outstanding for your child ({student_names}) for {short_name} {school_year}. Thank you for your support.`;
+        fallbackEmail = `Dear {parent_name},\n\nWe thank you for the initial installment paid toward the {short_name} contributions ({school_year}) at {association_name} for your ward(s): {student_names}.\n\nAccording to our financial books, your account has an outstanding balance of {remaining_amount} FCFA (out of {total_due_amount} FCFA due).\n\nWe kindly request that you settle this remainder soon with our administrator.\n\nBest regards,\nSchool Finance Office\n{association_name}`;
+      } else if (targetStatus === "retard") {
+        fallbackSms = `URGENT: Dear Parent. Your {short_name} contribution for {student_names} ({school_year}) has not been settled. Remaining due: {remaining_amount} FCFA. Please clear this immediately. Thank you.`;
+        fallbackEmail = `Dear {parent_name},\n\nWe are writing to draw your attention to your unpaid {short_name} contribution ({school_year}) at {association_name} for your child(ren): {student_names}.\n\nTo date, we have not recorded any payment for your account, leaving an overdue balance of {remaining_amount} FCFA.\n\nWe demand immediate clearance of this amount. ${customContext ? `Note: ${customContext}` : ""}\n\nWarm regards,\nDirector of Finance\n{association_name}`;
+      } else {
+        fallbackSms = `Dear Parent. School fees balance notice for {student_names}. Solde: {remaining_amount} FCFA. Please settle this amount as soon as possible. Thank you for your cooperation.`;
+        fallbackEmail = `Dear {parent_name},\n\nThis is a friendly reminder concerning your outstanding {short_name} fees for the ongoing academic year {school_year} at {association_name} regarding your child(ren): {student_names}.\n\nOur ledger shows a pending balance of {remaining_amount} FCFA of {total_due_amount} FCFA total.\n\nPlease proceed to clear this balance as soon as possible.\n\nBest regards,\nAccounting Department\n{association_name}`;
+      }
+    } else if (language === "bilingual") {
+      fallbackSubject = `Rappel / Reminder : Cotisation {short_name} - {association_name}`;
+      fallbackSms = `Rappel / Reminder {short_name} {school_year}: Reste dû / Outstanding balance of {remaining_amount} FCFA for/pour ({student_names}). Merci de régulariser. Thank you for settling.`;
+      fallbackEmail = `Chers parents / Dear Parents,\n\n[FR] Nous vous rappelons que la cotisation {short_name} ({school_year}) pour votre/vos enfant(s) {student_names} présente un reste à payer de {remaining_amount} FCFA.\n\n[EN] We remind you that the school contribution {school_year} for your child(ren) {student_names} has an outstanding balance of {remaining_amount} FCFA.\n\nMerci pour votre coopération / Thank you for your valuable support.\n\nLa Direction / School Administration`;
+    } else {
+      // French (default)
+      fallbackSubject = `Rappel de paiement cotisation {short_name} - {association_name}`;
+      if (targetStatus === "partiel") {
+        fallbackSms = `Chers parents. Merci pour votre premier acompte. Nous vous rappelons gentiment que le reste dû pour {student_names} ({school_year}) est de {remaining_amount} FCFA. Reste à payer : {remaining_amount} FCFA. Merci de régulariser rapidement.`;
+        fallbackEmail = `Bonjour {parent_name},\n\nNous tenons à vous remercier pour votre versement de premier acompte concernant la cotisation {short_name} ({school_year}) pour votre/vos enfant(s) : {student_names}.\n\nCependant, nos comptes montrent qu'il reste un solde débiteur de {remaining_amount} FCFA sur un montant total exigible de {total_due_amount} FCFA.\n\nNous vous prions de bien vouloir finaliser ce règlement auprès de la régie financière.\n\nCordialement,\nService de la Comptabilité scolaire\n{association_name}`;
+      } else if (targetStatus === "retard") {
+        fallbackSms = `URGENT : Chers parents, la cotisation {short_name} {school_year} de votre/vos enfant(s) ({student_names}) n'est pas réglée. Reste dû : {remaining_amount} FCFA. Veuillez régulariser d'urgence.`;
+        fallbackEmail = `Bonjour {parent_name},\n\nSauf erreur de notre part, nous constatons que la cotisation scolaire {short_name} ({school_year}) pour l'établissement {association_name} de vos enfants ({student_names}) n'a pas encore fait l'objet d'un versement.\n\nLe montant total de {remaining_amount} FCFA est entièrement en retard.\n\nNous sollicitons une régularisation de toute urgence afin de ne pas compromettre le service administratif. ${customContext ? `Rappel additionnel : ${customContext}` : ""}\n\nCordialement,\nLe Régisseur Financier principal\n{association_name}`;
+      } else {
+        fallbackSms = `Chers parents, rappel de solde {short_name} {school_year} de votre/vos enfant(s) ({student_names}). Le montant restant est de {remaining_amount} FCFA. Visitez l'intendance de l'école. Merci.`;
+        fallbackEmail = `Bonjour {parent_name},\n\nNous vous contactons pour faire le point sur la cotisation annuelle {short_name} ({school_year}) à l'école {association_name} de vos enfants ({student_names}).\n\nÀ cette heure, votre compte reste marqué par un reste à payer de {remaining_amount} FCFA.\n\nMerci de vous présenter pour régulariser cette situation.\n\nBien cordialement,\nLa caisse d'intendance\n{short_name} • {association_name}`;
+      }
+    }
+
+    return res.json({
+      success: true,
+      source: "local-fallback",
+      data: {
+        smsTemplate: fallbackSms,
+        emailSubject: fallbackSubject,
+        emailTemplate: fallbackEmail
+      },
+      message: "Modèle généré via la base de repli locale (Gemini non disponible ou clé inactive)."
+    });
+  }
+});
+
 // Vite Middleware integrated after API routes to handle asset serving and SPA routing fallback
 async function bootServer() {
   if (process.env.NODE_ENV !== "production") {
