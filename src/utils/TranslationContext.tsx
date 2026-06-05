@@ -18,7 +18,7 @@ const translations: Record<LanguageType, Record<string, string>> = {
     'tab.apee_reporting': 'Synthèse & Rapports',
     'tab.apee_finance': 'Dépenses & Recettes',
     'tab.apee_archives': 'Historique & Logs',
-    'tab.apee_settings': 'Paramètres APEE',
+    'tab.apee_settings': 'Paramètres',
     'tab.apee_reminders': 'Relances SMS & Email',
     'tab.apee_legal': 'Mentions Légales',
     'tab.announcements': 'Annonces',

@@ -418,7 +418,18 @@ export default function MessageInbox({
                             : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                         }`}
                       >
-                        <span className="text-xl shrink-0">{s.avatar || '🎓'}</span>
+                        {s.avatar && (s.avatar.startsWith('data:image') || s.avatar.startsWith('http') || s.avatar.startsWith('/')) ? (
+                          <div className="w-7 h-7 rounded-lg overflow-hidden shrink-0 border border-slate-200">
+                            <img 
+                              src={s.avatar} 
+                              alt="" 
+                              className="w-full h-full object-cover" 
+                              referrerPolicy="no-referrer" 
+                            />
+                          </div>
+                        ) : (
+                          <span className="text-xl shrink-0">{s.avatar || '🎓'}</span>
+                        )}
                         <div className="min-w-0 flex-1">
                           <h4 className="text-xs font-bold leading-none truncate">{s.name}</h4>
                           <span className={`text-[9px] font-mono leading-none ${isSelected ? 'text-indigo-200' : 'text-slate-400'}`}>
@@ -465,7 +476,18 @@ export default function MessageInbox({
                             : 'border-l-transparent text-slate-700 hover:bg-slate-50/60'
                         }`}
                       >
-                        <span className="text-2xl pt-1 shrink-0">{s.avatar || '👦'}</span>
+                        {s.avatar && (s.avatar.startsWith('data:image') || s.avatar.startsWith('http') || s.avatar.startsWith('/')) ? (
+                          <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-slate-200 mt-0.5">
+                            <img 
+                              src={s.avatar} 
+                              alt="" 
+                              className="w-full h-full object-cover" 
+                              referrerPolicy="no-referrer" 
+                            />
+                          </div>
+                        ) : (
+                          <span className="text-2xl pt-1 shrink-0">{s.avatar || '👦'}</span>
+                        )}
                         <div className="min-w-0 flex-1 space-y-1">
                           <div className="flex items-center justify-between gap-1">
                             <h4 className="text-xs font-black truncate">{s.name}</h4>
@@ -620,9 +642,20 @@ export default function MessageInbox({
                   </button>
                 )}
 
-                <span className="text-3xl bg-slate-100 p-1.5 rounded-2xl block shrink-0">
-                  {currentStudent?.avatar || '👦'}
-                </span>
+                {currentStudent?.avatar && (currentStudent.avatar.startsWith('data:image') || currentStudent.avatar.startsWith('http') || currentStudent.avatar.startsWith('/')) ? (
+                  <div className="w-12 h-12 bg-slate-100 rounded-2xl overflow-hidden block shrink-0 border border-slate-200">
+                    <img 
+                      src={currentStudent.avatar} 
+                      alt="" 
+                      className="w-full h-full object-cover" 
+                      referrerPolicy="no-referrer" 
+                    />
+                  </div>
+                ) : (
+                  <span className="text-3xl bg-slate-100 p-1.5 rounded-2xl block shrink-0">
+                    {currentStudent?.avatar || '👦'}
+                  </span>
+                )}
                 <div>
                   <div className="flex items-center gap-1.5">
                     <h3 className="font-black text-sm text-slate-900 leading-tight">

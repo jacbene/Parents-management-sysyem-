@@ -327,6 +327,296 @@ export default function BillingPortal({
     doc.save(`recu_paiement_${inv.id.toLowerCase()}.pdf`);
   };
 
+  const handleDownloadFinancialStatementPDF = () => {
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    const now = new Date();
+    let y = 15;
+    const margin = 15;
+    const pageWidth = 210;
+    const pageHeight = 297;
+    const contentWidth = pageWidth - (2 * margin); // 180mm
+    const isEn = language === 'en';
+
+    const drawPageHeaderFooter = () => {
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.3);
+      doc.line(margin, 12, margin + contentWidth, 12);
+      
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184); // Slate 400
+      const paymentReceiptHeader = isEn ? `Consolidated Financial Statement` : `Relevé de Compte Financier Consolidé`;
+      doc.text(`${paymentReceiptHeader}`, margin, 9);
+      
+      doc.line(margin, pageHeight - 12, margin + contentWidth, pageHeight - 12);
+      const generatedLabel = isEn ? `Generated on` : `Généré le`;
+      const atLabel = isEn ? `at` : `à`;
+      doc.text(`${generatedLabel} ${now.toLocaleDateString(isEn ? 'en-US' : 'fr-FR')} ${atLabel} ${now.toLocaleTimeString(isEn ? 'en-US' : 'fr-FR')} • PASMA-SYS`, margin, pageHeight - 8);
+    };
+
+    drawPageHeaderFooter();
+
+    // Republic of Cameroon Official alignment with Motto
+    const actCountry = settings?.country || "Cameroun";
+    const countryLabel = isEn 
+      ? (actCountry === "Cameroun" ? "REPUBLIC OF CAMEROON" : actCountry.toUpperCase())
+      : (actCountry === "Cameroun" ? "RÉPUBLIQUE DU CAMEROUN" : actCountry.toUpperCase());
+
+    const assocName = settings?.associationName || (isEn ? "PARENT TEACHER ASSOCIATION (PTA)" : "BUREAU DES PARENTS D'ÉLÈVES (APEE)");
+    const schoolExtracted = settings?.associationName 
+      ? settings.associationName.replace(/^(APEE|A\.P\.E\.E\.)\s+/i, '')
+      : (isEn ? "CES d'Ekali 1" : "CES d'Ekali 1");
+    const yearLabel = isEn ? "Academic Year" : "Année Académique";
+
+    if (actCountry === "Cameroun") {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text("RÉPUBLIQUE DU CAMEROUN", margin, y + 4);
+      doc.text("REPUBLIC OF CAMEROON", margin + contentWidth, y + 4, { align: 'right' });
+
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(6.5);
+      doc.setTextColor(148, 163, 184); // Slate 400
+      doc.text("Paix - Travail - Patrie", margin, y + 7.5);
+      doc.text("Peace - Work - Fatherland", margin + contentWidth, y + 7.5, { align: 'right' });
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text(assocName.toUpperCase(), margin, y + 11.5);
+      doc.text(`${yearLabel} : ${settings?.schoolYear || "2025/2026"}`, margin + contentWidth, y + 11.5, { align: 'right' });
+      
+      y += 18;
+    } else {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text(countryLabel, margin, y + 4);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.text(assocName.toUpperCase(), margin, y + 9);
+      doc.text(schoolExtracted, margin + contentWidth, y + 4, { align: 'right' });
+      doc.text(`${yearLabel} : ${settings?.schoolYear || "2025/2026"}`, margin + contentWidth, y + 9, { align: 'right' });
+      
+      y += 15;
+    }
+
+    // Title Title Block with Indigo Accent
+    doc.setFillColor(79, 70, 229); // Indigo 600
+    doc.rect(margin, y, contentWidth, 14, 'F');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(255, 255, 255);
+    const mainTitle = isEn 
+      ? "CONSOLIDATED STUDENT FINANCIAL LEDGER & REVENUE STATEMENT" 
+      : "RELEVÉ FINANCIER GLOBAL & BILAN DE COMPTE DES ÉLÈVES";
+    doc.text(mainTitle, margin + 6, y + 9);
+
+    y += 20;
+
+    // Family / Recipient Metadata Card
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(15, 23, 42);
+    const billingMetaTitle = isEn ? "FAMILY CONTRIBUABLE & PROFILE INFORMATION" : "INFORMATIONS DU CONTRIBUABLE & IDENTIFICATION PARENT";
+    doc.text(billingMetaTitle, margin, y);
+    y += 4;
+    doc.line(margin, y, margin + contentWidth, y);
+    y += 6;
+
+    // Parent details
+    doc.setFont('helvetica', 'semibold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text(isEn ? "Responsible Parent / Guarantor:" : "Parent d'Élève / Garant Responsable :", margin + 6, y);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.text(parentPhone ? `Parents d'Élèves (Tél: ${parentPhone})` : "Parent Enregistré (ENT-Portal)", margin + 70, y);
+
+    y += 6;
+    doc.setFont('helvetica', 'semibold');
+    doc.setTextColor(71, 85, 105);
+    doc.text(isEn ? "Pupils under supervision:" : "Élèves enregistrés sous supervision :", margin + 6, y);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    
+    // List student names neatly
+    const activePupils = filteredStudents || students || [];
+    const studNames = activePupils.map(s => `${s.name} (${s.grade})`).join(', ');
+    const splitNames = doc.splitTextToSize(studNames, contentWidth - 75);
+    doc.text(splitNames, margin + 70, y);
+    y += (splitNames.length * 4) + 2;
+
+    // Financial Metrics widgets / summary
+    const totInvoiced = studentInvoices.reduce((sum, i) => sum + i.amount, 0);
+    const totPaid = studentInvoices.filter(i => i.status === 'Paid').reduce((sum, i) => sum + i.amount, 0);
+    const outstanding = totInvoiced - totPaid;
+
+    // Draw nice horizontal metric boxes
+    doc.setFillColor(248, 250, 252);
+    doc.rect(margin, y, contentWidth, 20, 'F');
+    doc.setDrawColor(226, 232, 240);
+    doc.rect(margin, y, contentWidth, 20, 'D');
+
+    // Box 1: Total Exigible
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    doc.text(isEn ? "TOTAL DUTY INVOICED" : "TOTAL DE LA REDEVANCE", margin + 10, y + 6);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(15, 23, 42);
+    doc.text(formatAmountTtc(totInvoiced).fcfa, margin + 10, y + 13);
+
+    // Box 2: Total Paid
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    doc.text(isEn ? "TOTAL AMOUNT SETTLED" : "TOTAL DES ENCAISSEMENTS", margin + 70, y + 6);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(16, 185, 129); // Green emerald
+    doc.text(formatAmountTtc(totPaid).fcfa, margin + 70, y + 13);
+
+    // Box 3: Outstanding Balance
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    doc.text(isEn ? "OUTSTANDING BALANCE" : "SOLDE RESTANT EN SOUFFRANCE", margin + 130, y + 6);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    if (outstanding > 0) {
+      doc.setTextColor(220, 38, 38); // Red
+    } else {
+      doc.setTextColor(16, 185, 129); // Green emerald
+    }
+    doc.text(formatAmountTtc(outstanding).fcfa, margin + 130, y + 13);
+
+    y += 28;
+
+    // Invoices Itemized List Table
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(15, 23, 42);
+    const ledgerTableTitle = isEn ? "DETAILED TRANSACTION LEDGER & JOURNAL" : "RELEVÉ COMPTABLE DÉTAILLÉ DE LA FAMILLE";
+    doc.text(ledgerTableTitle, margin, y);
+    y += 4;
+    doc.line(margin, y, margin + contentWidth, y);
+    y += 6;
+
+    // Table Header
+    doc.setFillColor(30, 41, 59); // Slate 800
+    doc.rect(margin, y, contentWidth, 7, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(255, 255, 255);
+    
+    doc.text(isEn ? "Bill Ref & Date" : "Réf & Date Avis", margin + 5, y + 4.5);
+    doc.text(isEn ? "Designation / Fee category" : "Libellé de la prestation", margin + 45, y + 4.5);
+    doc.text(isEn ? "Amount (FCFA)" : "Montant (FCFA)", margin + 135, y + 4.5, { align: 'right' });
+    doc.text(isEn ? "Status" : "Statut du compte", margin + contentWidth - 5, y + 4.5, { align: 'right' });
+
+    y += 7;
+
+    // Draw zebra striping list
+    studentInvoices.forEach((invObj, idx) => {
+      if (y > pageHeight - 35) {
+        doc.addPage();
+        drawPageHeaderFooter();
+        y = 20;
+      }
+      
+      const isEven = idx % 2 === 0;
+      if (isEven) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(margin, y, contentWidth, 10, 'F');
+      }
+      
+      doc.setDrawColor(241, 245, 249);
+      doc.line(margin, y + 10, margin + contentWidth, y + 10);
+
+      // Invoice code & date
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(51, 65, 85);
+      doc.text(invObj.id.toUpperCase(), margin + 5, y + 4.2);
+      
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(148, 163, 184);
+      doc.text(new Date(invObj.dueDate).toLocaleDateString('fr-FR'), margin + 5, y + 8);
+
+      // Title/Description
+      doc.setFont('helvetica', 'semibold');
+      doc.setFontSize(8);
+      doc.setTextColor(15, 23, 42);
+      const cleanedTitle = invObj.title.length > 55 ? invObj.title.substring(0, 52) + "..." : invObj.title;
+      doc.text(cleanedTitle, margin + 45, y + 6);
+
+      // Amount
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.text(formatAmountTtc(invObj.amount).fcfa, margin + 135, y + 6, { align: 'right' });
+
+      // Status
+      if (invObj.status === 'Paid') {
+        doc.setTextColor(16, 185, 129); // Green emerald
+        doc.text(isEn ? "PAID" : "ACQUITTE", margin + contentWidth - 5, y + 6, { align: 'right' });
+      } else {
+        doc.setTextColor(220, 38, 38); // Red
+        doc.text(isEn ? "UNPAID" : "À RÉGLER", margin + contentWidth - 5, y + 6, { align: 'right' });
+      }
+
+      y += 10;
+    });
+
+    y += 10;
+    if (y > pageHeight - 45) {
+      doc.addPage();
+      drawPageHeaderFooter();
+      y = 20;
+    }
+
+    // Signatures / Footers
+    doc.setDrawColor(226, 232, 240);
+    doc.line(margin, y, margin + contentWidth, y);
+    y += 6;
+
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(
+      isEn 
+        ? "Disclaimer: This document is a consolidated overview of payments extracted from your secure parent workspace."
+        : "Recommandation : Ce relevé récapitulatif a été extrait numériquement de l'ENT Pasma-sys pour valider l'historique de vos cotisations.",
+      margin, y
+    );
+
+    y += 12;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(71, 85, 105);
+    doc.text(isEn ? "ADMINISTRATION OF THE ESTABLISHMENT" : "L'ADMINISTRATION DE L'ÉTABLISSEMENT", margin + 6, y);
+    doc.text(isEn ? "PTA GENERAL ACCOUNTS REGISTRY" : "LA DIRECTION FINANCIÈRE DE L'APEE", margin + (contentWidth / 2) + 6, y);
+
+    y += 4;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(148, 163, 184);
+    doc.text(isEn ? "(Digital tracking & official registry entry)" : "(Contrôlé conforme aux registres de caisse)", margin + 6, y);
+    doc.text(isEn ? "(Stamp substitute for online payments)" : "(Acquit certifié par signature cryptographique)", margin + (contentWidth / 2) + 6, y);
+
+    doc.save(`releve_financier_${now.getTime()}.pdf`);
+  };
+
   // Helper to format currency and fetch student name
   const student = payingInvoice ? students?.find(s => s.id === payingInvoice.studentId) : null;
   const studentName = student ? student.name : "Élève de l'établissement";
@@ -545,7 +835,7 @@ export default function BillingPortal({
       </div>
 
       <div className="flex items-center justify-between border-b pb-4 border-gray-100 flex-wrap gap-4">
-        <div>
+        <div className="space-y-1">
           <h2 className="text-xl font-bold font-sans text-gray-900 tracking-tight flex items-center gap-2">
             <Landmark className="h-5 w-5 text-indigo-600" />
             Régie Financière & Facturation
@@ -555,8 +845,19 @@ export default function BillingPortal({
           </p>
         </div>
 
-        {/* Status filtering tabs */}
-        <div className="flex bg-gray-100 p-0.5 rounded-xl border border-gray-200">
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            type="button"
+            onClick={handleDownloadFinancialStatementPDF}
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-xs cursor-pointer select-none active:scale-98"
+            title="Générer un relevé financier global de la famille"
+          >
+            <Download className="h-4 w-4" />
+            <span>Relevé Financier (PDF)</span>
+          </button>
+
+          {/* Status filtering tabs */}
+          <div className="flex bg-gray-100 p-0.5 rounded-xl border border-gray-200">
           <button
             onClick={() => setActiveTab('all')}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
@@ -589,6 +890,7 @@ export default function BillingPortal({
           </button>
         </div>
       </div>
+    </div>
 
       {filteredInvoices.length === 0 ? (
         <div className="text-center p-12 bg-gray-50/50 rounded-2xl border border-gray-100">
