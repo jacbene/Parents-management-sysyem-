@@ -222,6 +222,22 @@ const translations: Record<LanguageType, Record<string, string>> = {
     'msg.write_to_teacher': "Écrire au professeur principal de {name} ({teacher})...",
     'msg.write_to_censor': "Écrire au Censeur & Surveillant général des élèves ({censor})...",
     'msg.write_to_director': "Écrire au Directeur & Proviseur de l'établissement ({director})...",
+    
+    // Notifications Push
+    'notif.title': "Notifications Push Locales",
+    'notif.permission_authorized': "Notifications autorisées ✔",
+    'notif.permission_denied': "Notifications bloquées ❌",
+    'notif.authorize_btn': "Activer les alertes système",
+    'notif.recent_alerts': "Alertes Récentes (Push)",
+    'notif.grade_added_title': "Nouvelle Note Saisie ! 📝",
+    'notif.grade_added_body': "{student} a obtenu {score}/{maxScore} en {subject}. Cliquez pour consulter.",
+    'notif.homework_added_title': "Nouveau Devoir Assigné ! 📚",
+    'notif.homework_added_body': "Nouveau devoir ({subject}) pour {student} : {title}. Échéance: {dueDate}.",
+    'notif.clear_all': "Tout effacer",
+    'notif.mark_read': "Tout marquer comme lu",
+    'notif.no_alerts': "Aucune alerte reçue pour le moment.",
+    'notif.enable_prompt': "Recevoir des alertes push instantanées en temps réel pour vos enfants !",
+    'notif.unsupported': "Le navigateur ne supporte pas les notifications système.",
   },
   en: {
     // Nav Tabs & General labels
@@ -435,6 +451,22 @@ const translations: Record<LanguageType, Record<string, string>> = {
     'msg.write_to_teacher': "Write to class teacher of {name} ({teacher})...",
     'msg.write_to_censor': "Write to head censor / general student supervisor ({censor})...",
     'msg.write_to_director': "Write to school Principal / director ({director})...",
+    
+    // Push Notifications
+    'notif.title': "Local Push Notifications",
+    'notif.permission_authorized': "Notifications authorized ✔",
+    'notif.permission_denied': "Notifications blocked ❌",
+    'notif.authorize_btn': "Enable System Alerts",
+    'notif.recent_alerts': "Recent Alerts (Push)",
+    'notif.grade_added_title': "New Exam Score Posted! 📝",
+    'notif.grade_added_body': "{student} got {score}/{maxScore} in {subject}. Click to check details.",
+    'notif.homework_added_title': "New Homework Assigned! 📚",
+    'notif.homework_added_body': "New homework ({subject}) for {student}: {title}. Due: {dueDate}.",
+    'notif.clear_all': "Clear all",
+    'notif.mark_read': "Mark all read",
+    'notif.no_alerts': "No alerts received yet.",
+    'notif.enable_prompt': "Receive instant push notification alerts for your kids on this device!",
+    'notif.unsupported': "Your device browser does not support native notification alerts.",
   },
 };
 

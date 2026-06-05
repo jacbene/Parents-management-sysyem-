@@ -3,6 +3,7 @@ import { Download, FileSpreadsheet, Printer, Calendar, RefreshCw, BarChart2, Dol
 import { ApeeParent, ApeeSettings, ApeeOtherRevenue, ApeeExpense } from '../../types';
 import { getApeeShortName } from '../../utils/apeeDb';
 import { jsPDF } from 'jspdf';
+import { useLanguage } from '../../utils/TranslationContext';
 
 interface ApeeReportingProps {
   parents: ApeeParent[];
@@ -12,6 +13,8 @@ interface ApeeReportingProps {
 }
 
 export default function ApeeReporting({ parents, settings, otherRevenues = [], expenses = [] }: ApeeReportingProps) {
+  const { language } = useLanguage();
+  const isEn = language === 'en';
   const [filterPeriod, setFilterPeriod] = useState<string>('all'); // 'all' | 'today' | 'month' | 'custom'
   const [activeSegment, setActiveSegment] = useState<'parents' | 'others'>('parents');
   const [startDate, setStartDate] = useState<string>('');
@@ -175,38 +178,69 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(8);
       doc.setTextColor(148, 163, 184); // Slate 400
-      doc.text(`Bilan Financier ${getApeeShortName(settings)} - ${settings.associationName || "CES Ekali 1"} • Année : ${settings.schoolYear || ""}`, margin, 9);
+      const headerTitle = isEn 
+        ? `Financial Report ${getApeeShortName(settings)} - ${settings.associationName || "PTA"} • Academic Year: ${settings.schoolYear || ""}`
+        : `Bilan Financier ${getApeeShortName(settings)} - ${settings.associationName || "CES Ekali 1"} • Année : ${settings.schoolYear || ""}`;
+      doc.text(headerTitle, margin, 9);
       
       doc.line(margin, pageHeight - 12, margin + contentWidth, pageHeight - 12);
       doc.text(`Page ${num}`, margin + contentWidth - 12, pageHeight - 8);
-      doc.text(`Édité par PASMA-SYS Analytics • Période : ${filterPeriod.toUpperCase()}`, margin, pageHeight - 8);
+      const periodLabel = isEn ? `Period: ${filterPeriod.toUpperCase()}` : `Période : ${filterPeriod.toUpperCase()}`;
+      doc.text(`PASMA-SYS Analytics • ${periodLabel}`, margin, pageHeight - 8);
     };
 
     drawPageHeaderFooter(pageCount);
 
-    // Cameroon Official Top Headers
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.5);
-    doc.setTextColor(71, 85, 105);
-    doc.text("RÉPUBLIQUE DU CAMEROUN", margin, y + 4);
-    doc.text("REPUBLIC OF CAMEROON", margin + contentWidth, y + 4, { align: 'right' });
+    // Republic of Cameroon Official alignment with Motto
+    const actCountry = settings?.country || "Cameroun";
+    const countryLabel = isEn 
+      ? (actCountry === "Cameroun" ? "REPUBLIC OF CAMEROON" : actCountry.toUpperCase())
+      : (actCountry === "Cameroun" ? "RÉPUBLIQUE DU CAMEROUN" : actCountry.toUpperCase());
+    const yearLabel = isEn ? "Academic Year" : "Année Académique";
 
-    doc.setFont('helvetica', 'italic');
-    doc.setFontSize(6.5);
-    doc.setTextColor(148, 163, 184);
-    doc.text("Paix - Travail - Patrie", margin, y + 8);
-    doc.text("Peace - Work - Fatherland", margin + contentWidth, y + 8, { align: 'right' });
+    if (actCountry === "Cameroun") {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text("RÉPUBLIQUE DU CAMEROUN", margin, y + 4);
+      doc.text("REPUBLIC OF CAMEROON", margin + contentWidth, y + 4, { align: 'right' });
 
-    y += 15;
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(6.5);
+      doc.setTextColor(148, 163, 184); // Slate 400
+      doc.text("Paix - Travail - Patrie", margin, y + 7.5);
+      doc.text("Peace - Work - Fatherland", margin + contentWidth, y + 7.5, { align: 'right' });
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text(`${yearLabel} : ${settings?.schoolYear || "2025/2026"}`, margin + contentWidth, y + 11.5, { align: 'right' });
+      
+      y += 18;
+    } else {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text(countryLabel, margin, y + 4);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.text(`${yearLabel} : ${settings?.schoolYear || "2025/2026"}`, margin + contentWidth, y + 4, { align: 'right' });
+      
+      y += 12;
+    }
 
     // Title Block
     doc.setFillColor(30, 41, 59); // Slate 800
     doc.rect(margin, y, contentWidth, 14, 'F');
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
+    doc.setFontSize(10.5);
     doc.setTextColor(255, 255, 255);
-    doc.text(`BILAN FINANCIER GLOBAL : RECOUVREMENT DES COTISATIONS ${getApeeShortName(settings).toUpperCase()}`, margin + 5, y + 9);
+    const billingSummaryTitle = isEn 
+      ? `GLOBAL FINANCIAL REPORT: PTA FEES RECOVERY SUMMARIZATION`
+      : `BILAN FINANCIER GLOBAL : RECOUVREMENT DES COTISATIONS ${getApeeShortName(settings).toUpperCase()}`;
+    doc.text(billingSummaryTitle, margin + 5, y + 9);
 
     y += 20;
 
@@ -452,10 +486,15 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
 
     const now = new Date();
     const currentMonth = now.toISOString().slice(0, 7); // "YYYY-MM"
-    const monthNames = [
+    const monthNamesFr = [
       "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
       "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"
     ];
+    const monthNamesEn = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    ];
+    const monthNames = isEn ? monthNamesEn : monthNamesFr;
     const currentMonthName = monthNames[now.getMonth()];
     const currentYear = now.getFullYear();
 
@@ -474,38 +513,71 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(8);
       doc.setTextColor(148, 163, 184); // Slate 400
-      doc.text(`Bilan Mensuel Consolidé - ${getApeeShortName(settings)} • Période : ${currentMonthName} ${currentYear}`, margin, 9);
+      const repHeaderTitle = isEn
+        ? `Consolidated Monthly Statement - ${getApeeShortName(settings)} • Period: ${currentMonthName} ${currentYear}`
+        : `Bilan Mensuel Consolidé - ${getApeeShortName(settings)} • Période : ${currentMonthName} ${currentYear}`;
+      doc.text(repHeaderTitle, margin, 9);
       
       doc.line(margin, pageHeight - 12, margin + contentWidth, pageHeight - 12);
       doc.text(`Page ${num}`, margin + contentWidth - 12, pageHeight - 8);
-      doc.text(`Généré par PASMA-SYS Secrétariat • Date d'édition : ${now.toLocaleDateString('fr-FR')} ${now.toLocaleTimeString('fr-FR')}`, margin, pageHeight - 8);
+      const repEditDate = isEn
+        ? `Generated via PASMA-SYS Secretary • Print Date: ${now.toLocaleDateString('en-US')} ${now.toLocaleTimeString('en-US')}`
+        : `Généré par PASMA-SYS Secrétariat • Date d'édition : ${now.toLocaleDateString('fr-FR')} ${now.toLocaleTimeString('fr-FR')}`;
+      doc.text(repEditDate, margin, pageHeight - 8);
     };
 
     drawPageHeaderFooter(pageCount);
 
-    // Cameroon Official Top Headers
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.5);
-    doc.setTextColor(71, 85, 105);
-    doc.text("RÉPUBLIQUE DU CAMEROUN", margin, y + 4);
-    doc.text("REPUBLIC OF CAMEROON", margin + contentWidth, y + 4, { align: 'right' });
+    // Republic of Cameroon Official alignment with Motto
+    const actCountry = settings?.country || "Cameroun";
+    const countryLabel = isEn 
+      ? (actCountry === "Cameroun" ? "REPUBLIC OF CAMEROON" : actCountry.toUpperCase())
+      : (actCountry === "Cameroun" ? "RÉPUBLIQUE DU CAMEROUN" : actCountry.toUpperCase());
+    const yearLabel = isEn ? "Academic Year" : "Année Académique";
 
-    doc.setFont('helvetica', 'italic');
-    doc.setFontSize(6.5);
-    doc.setTextColor(148, 163, 184);
-    doc.text("Paix - Travail - Patrie", margin, y + 8);
-    doc.text("Peace - Work - Fatherland", margin + contentWidth, y + 8, { align: 'right' });
+    if (actCountry === "Cameroun") {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text("RÉPUBLIQUE DU CAMEROUN", margin, y + 4);
+      doc.text("REPUBLIC OF CAMEROON", margin + contentWidth, y + 4, { align: 'right' });
 
-    y += 15;
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(6.5);
+      doc.setTextColor(148, 163, 184); // Slate 400
+      doc.text("Paix - Travail - Patrie", margin, y + 7.5);
+      doc.text("Peace - Work - Fatherland", margin + contentWidth, y + 7.5, { align: 'right' });
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text(`${yearLabel} : ${settings?.schoolYear || "2025/2026"}`, margin + contentWidth, y + 11.5, { align: 'right' });
+      
+      y += 18;
+    } else {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text(countryLabel, margin, y + 4);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.text(`${yearLabel} : ${settings?.schoolYear || "2025/2026"}`, margin + contentWidth, y + 4, { align: 'right' });
+      
+      y += 12;
+    }
 
     // Title Block
     doc.setFillColor(30, 41, 59); // Slate 800
     doc.rect(margin, y, contentWidth, 14, 'F');
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
+    doc.setFontSize(10.5);
     doc.setTextColor(255, 255, 255);
-    doc.text(`BILAN MENSUEL CONSOLIDÉ : ${currentMonthName.toUpperCase()} ${currentYear}`, margin + 5, y + 9);
+    const monthlyConsTitle = isEn 
+      ? `CONSOLIDATED MONTHLY REPORT: ${currentMonthName.toUpperCase()} ${currentYear}`
+      : `BILAN MENSUEL CONSOLIDÉ : ${currentMonthName.toUpperCase()} ${currentYear}`;
+    doc.text(monthlyConsTitle, margin + 5, y + 9);
 
     y += 20;
 

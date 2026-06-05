@@ -3,6 +3,7 @@ import { Invoice, Student } from '../types';
 import { CreditCard, ShieldCheck, CheckCircle2, AlertCircle, Sparkles, X, Landmark, Receipt, QrCode, Smartphone, Search, Download, RefreshCw } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { jsPDF } from 'jspdf';
+import { useLanguage } from '../utils/TranslationContext';
 import PaymentMethodSelector from './PaymentMethodSelector';
 
 interface BillingPortalProps {
@@ -12,6 +13,7 @@ interface BillingPortalProps {
   students?: Student[];
   portalUserRole?: 'manager' | 'parent' | null;
   filteredStudents?: Student[];
+  settings?: any;
 }
 
 export default function BillingPortal({ 
@@ -20,8 +22,10 @@ export default function BillingPortal({
   parentPhone, 
   students,
   portalUserRole,
-  filteredStudents
+  filteredStudents,
+  settings
 }: BillingPortalProps) {
+  const { t, language } = useLanguage();
   const [activeTab, setActiveTab] = useState<'all' | 'unpaid' | 'paid'>('all');
   const [payingInvoice, setPayingInvoice] = useState<Invoice | null>(null);
 
@@ -70,6 +74,7 @@ export default function BillingPortal({
     const pageWidth = 210;
     const pageHeight = 297;
     const contentWidth = pageWidth - (2 * margin); // 180mm
+    const isEn = language === 'en';
 
     const drawPageHeaderFooter = () => {
       doc.setDrawColor(226, 232, 240);
@@ -79,28 +84,63 @@ export default function BillingPortal({
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(8);
       doc.setTextColor(148, 163, 184); // Slate 400
-      doc.text(`Reçu de Paiement Électronique • Réf : ${inv.id.toUpperCase()}`, margin, 9);
+      const paymentReceiptHeader = isEn ? `Electronic Payment Receipt • Ref: ` : `Reçu de Paiement Électronique • Réf : `;
+      doc.text(`${paymentReceiptHeader}${inv.id.toUpperCase()}`, margin, 9);
       
       doc.line(margin, pageHeight - 12, margin + contentWidth, pageHeight - 12);
-      doc.text(`Généré le ${now.toLocaleDateString('fr-FR')} à ${now.toLocaleTimeString('fr-FR')} • PASMA-SYS`, margin, pageHeight - 8);
+      const generatedLabel = isEn ? `Generated on` : `Généré le`;
+      const atLabel = isEn ? `at` : `à`;
+      doc.text(`${generatedLabel} ${now.toLocaleDateString(isEn ? 'en-US' : 'fr-FR')} ${atLabel} ${now.toLocaleTimeString(isEn ? 'en-US' : 'fr-FR')} • PASMA-SYS`, margin, pageHeight - 8);
     };
 
     drawPageHeaderFooter();
 
-    // Republic of Cameroon Official alignment
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.5);
-    doc.setTextColor(71, 85, 105);
-    doc.text("RÉPUBLIQUE DU CAMEROUN", margin, y + 4);
-    doc.text("REPUBLIC OF CAMEROON", margin + contentWidth, y + 4, { align: 'right' });
+    // Republic of Cameroon Official alignment with Motto
+    const actCountry = settings?.country || "Cameroun";
+    const countryLabel = isEn 
+      ? (actCountry === "Cameroun" ? "REPUBLIC OF CAMEROON" : actCountry.toUpperCase())
+      : (actCountry === "Cameroun" ? "RÉPUBLIQUE DU CAMEROUN" : actCountry.toUpperCase());
 
-    doc.setFont('helvetica', 'italic');
-    doc.setFontSize(6.5);
-    doc.setTextColor(148, 163, 184);
-    doc.text("Paix - Travail - Patrie", margin, y + 8);
-    doc.text("Peace - Work - Fatherland", margin + contentWidth, y + 8, { align: 'right' });
+    const assocName = settings?.associationName || (isEn ? "PARENT TEACHER ASSOCIATION (PTA)" : "BUREAU DES PARENTS D'ÉLÈVES (APEE)");
+    const schoolExtracted = settings?.associationName 
+      ? settings.associationName.replace(/^(APEE|A\.P\.E\.E\.)\s+/i, '')
+      : (isEn ? "CES d'Ekali 1" : "CES d'Ekali 1");
+    const yearLabel = isEn ? "Academic Year" : "Année Académique";
 
-    y += 15;
+    if (actCountry === "Cameroun") {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text("RÉPUBLIQUE DU CAMEROUN", margin, y + 4);
+      doc.text("REPUBLIC OF CAMEROON", margin + contentWidth, y + 4, { align: 'right' });
+
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(6.5);
+      doc.setTextColor(148, 163, 184); // Slate 400
+      doc.text("Paix - Travail - Patrie", margin, y + 7.5);
+      doc.text("Peace - Work - Fatherland", margin + contentWidth, y + 7.5, { align: 'right' });
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text(assocName.toUpperCase(), margin, y + 11.5);
+      doc.text(`${yearLabel} : ${settings?.schoolYear || "2025/2026"}`, margin + contentWidth, y + 11.5, { align: 'right' });
+      
+      y += 18;
+    } else {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text(countryLabel, margin, y + 4);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.text(assocName.toUpperCase(), margin, y + 9);
+      doc.text(schoolExtracted, margin + contentWidth, y + 4, { align: 'right' });
+      doc.text(`${yearLabel} : ${settings?.schoolYear || "2025/2026"}`, margin + contentWidth, y + 9, { align: 'right' });
+      
+      y += 15;
+    }
 
     // Title Title Block with Green accent (since it is paid)
     doc.setFillColor(13, 148, 136); // Teal 650
@@ -109,7 +149,10 @@ export default function BillingPortal({
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
     doc.setTextColor(255, 255, 255);
-    doc.text("QUITTANCE DE PAIEMENT & REÇU DE RÈGLEMENT ACQUITTE", margin + 6, y + 9);
+    const mainTitle = isEn 
+      ? "OFFICIAL REGISTRATION RECEIPT & FULLY ACQUITTED PAYMENT BILL" 
+      : "QUITTANCE DE PAIEMENT & REÇU DE RÈGLEMENT ACQUITTE";
+    doc.text(mainTitle, margin + 6, y + 9);
 
     y += 20;
 
@@ -122,22 +165,31 @@ export default function BillingPortal({
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
     doc.setTextColor(15, 23, 42);
-    doc.text(`RÉFÉRENCE UNIQUE DE TRANSACTION : ${inv.id.toUpperCase()}`, margin + 6, y + 7);
+    const refUniqueLabel = isEn ? "UNIQUE TRANSACTION REFERENCE" : "RÉFÉRENCE UNIQUE DE TRANSACTION";
+    doc.text(`${refUniqueLabel} : ${inv.id.toUpperCase()}`, margin + 6, y + 7);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(71, 85, 105);
-    doc.text(`Date de versement : ${inv.paymentDate ? new Date(inv.paymentDate).toLocaleDateString('fr-FR') : new Date().toLocaleDateString('fr-FR')}`, margin + 6, y + 13);
-    doc.text(`Canal de paiement : Orange Money / MTN MoMo / Carte Bancaire`, margin + 6, y + 18);
+    const payDateLabel = isEn ? "Payment Date" : "Date de versement";
+    const rawDate = inv.paymentDate ? new Date(inv.paymentDate) : new Date();
+    const payDateStr = rawDate.toLocaleDateString(isEn ? 'en-US' : 'fr-FR');
+    doc.text(`${payDateLabel} : ${payDateStr}`, margin + 6, y + 13);
+    
+    const payChannelLabel = isEn ? "Payment Channel" : "Canal de paiement";
+    const payChannels = isEn ? "Orange Money / MTN MoMo / Credit Card" : "Orange Money / MTN MoMo / Carte Bancaire";
+    doc.text(`${payChannelLabel} : ${payChannels}`, margin + 6, y + 18);
 
     doc.line(margin + 90, y + 3, margin + 90, y + 23);
 
     // Right meta column
     doc.setFont('helvetica', 'bold');
-    doc.text("STATION DE RECEPTION", margin + 95, y + 7);
+    const receiveStation = isEn ? "RECEPTION TERMINAL" : "STATION DE RECEPTION";
+    doc.text(receiveStation, margin + 95, y + 7);
     doc.setFont('helvetica', 'normal');
-    doc.text("CES d'EKALI I - Trésorerie Générale APEE", margin + 95, y + 13);
-    doc.text("Mbankomo, District de la Mefou-et-Akono, Cameroun", margin + 95, y + 18);
+    doc.text(schoolExtracted, margin + 95, y + 13);
+    const placeCountry = isEn ? `${settings?.country || "Cameroon"}` : `${settings?.country || "Cameroun"}`;
+    doc.text(`Mbankomo, ${placeCountry}`, margin + 95, y + 18);
 
     y += 32;
 
@@ -146,7 +198,8 @@ export default function BillingPortal({
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9.5);
     doc.setTextColor(15, 23, 42);
-    doc.text("DÉTAILS COMPTABLES DU CONTRIBUABLE & BÉNÉFICIAIRE", margin, y);
+    const contrTitle = isEn ? "COMPTABLE DETAILS OF CONTRIBUTOR & BENEFICIARY" : "DÉTAILS COMPTABLES DU CONTRIBUABLE & BÉNÉFICIAIRE";
+    doc.text(contrTitle, margin, y);
     y += 4;
     doc.line(margin, y, margin + contentWidth, y);
     y += 6;
@@ -154,25 +207,30 @@ export default function BillingPortal({
     doc.setFont('helvetica', 'semibold');
     doc.setFontSize(8.5);
     doc.setTextColor(71, 85, 105);
-    doc.text("Élève bénéficiaire :", margin + 6, y);
+    const pupilLabel = isEn ? "Beneficiary Student:" : "Élève bénéficiaire :";
+    doc.text(pupilLabel, margin + 6, y);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(15, 23, 42);
-    doc.text(relatedStudent ? relatedStudent.name.toUpperCase() : "ÉLÈVE INSCRIT", margin + 45, y);
+    const stdNameLabel = relatedStudent ? relatedStudent.name.toUpperCase() : (isEn ? "REGISTERED STUDENT" : "ÉLÈVE INSCRIT");
+    doc.text(stdNameLabel, margin + 45, y);
 
     y += 6;
     doc.setFont('helvetica', 'semibold');
     doc.setTextColor(71, 85, 105);
-    doc.text("Classe administrative :", margin + 6, y);
+    const classLabel = isEn ? "Administrative Class:" : "Classe administrative :";
+    doc.text(classLabel, margin + 6, y);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(15, 23, 42);
-    doc.text(relatedStudent ? `${relatedStudent.grade} ${relatedStudent.classRoom}` : "Néant / Tous niveaux", margin + 45, y);
+    const stdClassLabel = relatedStudent ? `${relatedStudent.grade} ${relatedStudent.classRoom}` : (isEn ? "N/A / All Grades" : "Néant / Tous niveaux");
+    doc.text(stdClassLabel, margin + 45, y);
 
     y += 6;
     doc.setFont('helvetica', 'semibold');
     doc.setTextColor(71, 85, 105);
-    doc.text("Identificateur Parent :", margin + 6, y);
+    const parentIdLabel = isEn ? "Parent Identifier:" : "Identificateur Parent :";
+    doc.text(parentIdLabel, margin + 6, y);
     doc.setFont('helvetica', 'normal');
-    doc.text(parentPhone ? `${parentPhone}` : "Parent d'Élève Enregistré", margin + 45, y);
+    doc.text(parentPhone ? `${parentPhone}` : (isEn ? "Registered Parent" : "Parent d'Élève Enregistré"), margin + 45, y);
 
     y += 12;
 
@@ -180,7 +238,8 @@ export default function BillingPortal({
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9.5);
     doc.setTextColor(15, 23, 42);
-    doc.text("VENTILATION FINANCIÈRE DE LA COTISATION", margin, y);
+    const finBreakLabel = isEn ? "FINANCIAL DIVISION OF FEES / CONTRIBUTIONS" : "VENTILATION FINANCIÈRE DE LA COTISATION";
+    doc.text(finBreakLabel, margin, y);
     y += 4;
     doc.line(margin, y, margin + contentWidth, y);
     y += 6;
@@ -191,10 +250,15 @@ export default function BillingPortal({
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
     doc.setTextColor(255, 255, 255);
-    doc.text("Libellé de la prestation", margin + 5, y + 4.5);
-    doc.text("Montant (FCFA)", margin + 110, y + 4.5, { align: 'right' });
-    doc.text("Montant (EUR)", margin + 145, y + 4.5, { align: 'right' });
-    doc.text("Statut", margin + contentWidth - 5, y + 4.5, { align: 'right' });
+    const cellDescription = isEn ? "Prestation / Fee item description" : "Libellé de la prestation";
+    const cellFcfa = isEn ? "Amount (FCFA)" : "Montant (FCFA)";
+    const cellEur = isEn ? "Amount (EUR)" : "Montant (EUR)";
+    const cellStatus = isEn ? "Status" : "Statut";
+    
+    doc.text(cellDescription, margin + 5, y + 4.5);
+    doc.text(cellFcfa, margin + 110, y + 4.5, { align: 'right' });
+    doc.text(cellEur, margin + 145, y + 4.5, { align: 'right' });
+    doc.text(cellStatus, margin + contentWidth - 5, y + 4.5, { align: 'right' });
 
     y += 7;
 
@@ -210,14 +274,15 @@ export default function BillingPortal({
     doc.text(inv.title, margin + 5, y + 7.5);
 
     const amountObj = formatAmountTtc(inv.amount);
-    doc.setFont('helvetica', 'semibold');
+     doc.setFont('helvetica', 'semibold');
     doc.text(amountObj.fcfa, margin + 110, y + 7.5, { align: 'right' });
     doc.setFont('helvetica', 'normal');
     doc.text(amountObj.euro, margin + 145, y + 7.5, { align: 'right' });
 
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(16, 185, 129); // Green emerald
-    doc.text("RÉGLÉ / VALIDÉ", margin + contentWidth - 5, y + 7.5, { align: 'right' });
+    const paidLabel = isEn ? "PAID & VALIDATED" : "RÉGLÉ / VALIDÉ";
+    doc.text(paidLabel, margin + contentWidth - 5, y + 7.5, { align: 'right' });
 
     y += 24;
 
@@ -230,23 +295,34 @@ export default function BillingPortal({
     doc.setFont('helvetica', 'italic');
     doc.setFontSize(8);
     doc.setTextColor(100, 116, 139);
-    doc.text("Certification comptable : Cet acquit de paiement numérique remplace tout reçu manuel pré-édité.", margin, y);
+    const certCompDesc = isEn 
+      ? "Account certification: This electronic receipt replaces any manual invoice copy."
+      : "Certification comptable : Cet acquit de paiement numérique remplace tout reçu manuel pré-édité.";
+    doc.text(certCompDesc, margin, y);
+    
     y += 4;
-    doc.text("Cette quittance vaut reçu libératoire des obligations financières correspondantes.", margin, y);
+    const certVautDesc = isEn
+      ? "This receipt serves as fully acquitted validation for the financial duties mentioned."
+      : "Cette quittance vaut reçu libératoire des obligations financières correspondantes.";
+    doc.text(certVautDesc, margin, y);
 
     y += 12;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
     doc.setTextColor(71, 85, 105);
-    doc.text("SERVICES FINANCIERS PORTAIL", margin + 6, y);
-    doc.text("L'AGENCE COMPTABLE DE L'APEE", margin + (contentWidth / 2) + 6, y);
+    const portalServices = isEn ? "PORTAL FINANCIAL SERVICES" : "SERVICES FINANCIERS PORTAIL";
+    const apeeAccounts = isEn ? "REGISTERED PTA ACCOUNTS OFFICE" : "L'AGENCE COMPTABLE DE L'APEE";
+    doc.text(portalServices, margin + 6, y);
+    doc.text(apeeAccounts, margin + (contentWidth / 2) + 6, y);
 
     y += 4;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
     doc.setTextColor(148, 163, 184);
-    doc.text("(Preuve d'authentification par certificat)", margin + 6, y);
-    doc.text("(Cachet officiel de raccordement)", margin + (contentWidth / 2) + 6, y);
+    const certProof = isEn ? "(Digital verification via auth certificate)" : "(Preuve d'authentification par certificat)";
+    const stampProof = isEn ? "(Official stamp and registry trace)" : "(Cachet officiel de raccordement)";
+    doc.text(certProof, margin + 6, y);
+    doc.text(stampProof, margin + (contentWidth / 2) + 6, y);
 
     doc.save(`recu_paiement_${inv.id.toLowerCase()}.pdf`);
   };

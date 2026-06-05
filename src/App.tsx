@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { collection, query, where, getDocs, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, setDoc, deleteDoc, writeBatch, onSnapshot } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, loginWithGoogle, logout, db, handleFirestoreError, OperationType, loginAnonymously, goOffline, goOnline } from './firebase';
 import { isDatabaseSeeded, seedUserData, getOfflineMockData } from './seeder';
 import { Student, Grade, Attendance, Homework, Appointment, Message, Invoice, ApeeParent, ApeeExpense, ApeeSettings, Announcement, AnnouncementCategory, ApeeActivityLog, ApeeOtherRevenue } from './types';
+
+// Notifications Push
+import { LocalNotificationProvider, useLocalNotifications } from './utils/LocalNotificationContext';
+import NotificationBell from './components/NotificationBell';
 
 // APEE Utilities and Components
 import {
@@ -95,6 +99,117 @@ type TabType =
   | 'billing' 
   | 'appointments' 
   | 'messages';
+
+interface PushNotificationSyncerProps {
+  students: Student[];
+  userId: string | null;
+  user: User | null;
+  portalUserRole: 'parent' | 'manager' | null;
+  isOffline: boolean;
+  setGrades: React.Dispatch<React.SetStateAction<Grade[]>>;
+  setHomeworks: React.Dispatch<React.SetStateAction<Homework[]>>;
+}
+
+function PushNotificationSyncer({
+  students,
+  userId,
+  user,
+  portalUserRole,
+  isOffline,
+  setGrades,
+  setHomeworks
+}: PushNotificationSyncerProps) {
+  const { triggerNotification } = useLocalNotifications();
+  const { t } = useLanguage();
+
+  useEffect(() => {
+    if (!userId || !user || portalUserRole !== 'parent' || isOffline) return;
+
+    let isInitialGrades = true;
+    let isInitialHomeworks = true;
+
+    // 1. Listen for new grades
+    const gradesQ = query(collection(db, 'grades'), where('parentId', '==', userId));
+    const unsubscribeGrades = onSnapshot(gradesQ, (snapshot) => {
+      const list = snapshot.docs.map(doc => doc.data() as Grade);
+      setGrades(list);
+      localStorage.setItem(`pasma_grades_${userId}`, JSON.stringify(list));
+
+      if (!isInitialGrades) {
+        snapshot.docChanges().forEach(change => {
+          if (change.type === 'added') {
+            const newGrade = change.doc.data() as Grade;
+            const stu = students.find(s => s.id === newGrade.studentId);
+            const studentName = stu?.name || "Votre enfant";
+            
+            triggerNotification(
+              t('notif.grade_added_title'),
+              t('notif.grade_added_body', {
+                student: studentName,
+                score: newGrade.score,
+                maxScore: newGrade.maxScore,
+                subject: newGrade.subject
+              }),
+              'grade',
+              studentName,
+              newGrade.subject,
+              'grades'
+            );
+          }
+        });
+      }
+      isInitialGrades = false;
+    }, (error) => {
+      console.warn("Real-time grades listener failed:", error);
+    });
+
+    // 2. Listen for new homeworks
+    const homeworksQ = query(collection(db, 'homeworks'), where('parentId', '==', userId));
+    const unsubscribeHomeworks = onSnapshot(homeworksQ, (snapshot) => {
+      const list = snapshot.docs.map(doc => doc.data() as Homework);
+      setHomeworks(list);
+      localStorage.setItem(`pasma_homeworks_${userId}`, JSON.stringify(list));
+
+      if (!isInitialHomeworks) {
+        snapshot.docChanges().forEach(change => {
+          if (change.type === 'added') {
+            const newHw = change.doc.data() as Homework;
+            const stu = students.find(s => s.id === newHw.studentId);
+            const studentName = stu?.name || "Votre enfant";
+            const dueDate = new Date(newHw.dueDate).toLocaleDateString('fr-FR', {
+              day: 'numeric',
+              month: 'short'
+            });
+
+            triggerNotification(
+              t('notif.homework_added_title'),
+              t('notif.homework_added_body', {
+                student: studentName,
+                subject: newHw.subject,
+                title: newHw.title,
+                dueDate
+              }),
+              'homework',
+              studentName,
+              newHw.subject,
+              'homework'
+            );
+          }
+        });
+      }
+      isInitialHomeworks = false;
+    }, (error) => {
+      console.warn("Real-time homeworks listener failed:", error);
+    });
+
+    return () => {
+      unsubscribeGrades();
+      unsubscribeHomeworks();
+    };
+  }, [userId, user, portalUserRole, isOffline, students, triggerNotification, t]);
+
+  return null;
+}
 
 export default function App() {
   const { language, setLanguage, t, isAutoDetected } = useLanguage();
@@ -1235,7 +1350,17 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50/50 flex flex-col text-slate-900 selection:bg-indigo-100 selection:text-indigo-900">
+    <LocalNotificationProvider onNavigateToTab={(tab) => setActiveTab(tab)}>
+      <PushNotificationSyncer
+        students={students}
+        userId={userId}
+        user={user}
+        portalUserRole={portalUserRole}
+        isOffline={isOffline}
+        setGrades={setGrades}
+        setHomeworks={setHomeworks}
+      />
+      <div className="min-h-screen bg-slate-50/50 flex flex-col text-slate-900 selection:bg-indigo-100 selection:text-indigo-900">
       <AnimatePresence mode="wait">
         {showSuperAdmin ? (
           <motion.div
@@ -1441,6 +1566,8 @@ export default function App() {
               {/* User Profil card & logout */}
               <div className="flex items-center gap-3.5">
                 <InstallPWA />
+
+                <NotificationBell portalUserRole={portalUserRole} selectedStudentName={students[0]?.name} />
 
                 {/* Language Picker Toggle */}
                 <div 
@@ -2269,6 +2396,7 @@ export default function App() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </LocalNotificationProvider>
   );
 }

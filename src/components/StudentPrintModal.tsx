@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Student, Grade, Attendance, ApeeSettings } from '../types';
 import { jsPDF } from 'jspdf';
 import { motion, AnimatePresence } from 'motion/react';
+import { useLanguage } from '../utils/TranslationContext';
 import { 
   X, 
   Printer, 
@@ -33,6 +34,8 @@ interface StudentPrintModalProps {
 }
 
 export default function StudentPrintModal({ student, grades, attendance, isOpen, onClose, settings }: StudentPrintModalProps) {
+  const { language } = useLanguage();
+  const isEn = language === 'en';
   const [showChart, setShowChart] = useState(true);
   const [isMounted, setIsMounted] = useState(false);
   const [showPrintToast, setShowPrintToast] = useState(false);
@@ -247,8 +250,51 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(8);
       doc.setTextColor(148, 163, 184); // Slate 400
-      doc.text(`Bulletin de situation - ${student.name} - Classe : ${student.grade} ${student.classRoom}`, margin, 9);
+      const statusTitle = isEn
+        ? `Academic Performance Statement - ${student.name} - Class: ${student.grade} ${student.classRoom}`
+        : `Bulletin de situation - ${student.name} - Classe : ${student.grade} ${student.classRoom}`;
+      doc.text(statusTitle, margin, 9);
     };
+
+    // Republic of Cameroon Official alignment with Motto
+    const actCountry = settings?.country || "Cameroun";
+    const countryLabel = isEn 
+      ? (actCountry === "Cameroun" ? "REPUBLIC OF CAMEROON" : actCountry.toUpperCase())
+      : (actCountry === "Cameroun" ? "RÉPUBLIQUE DU CAMEROUN" : actCountry.toUpperCase());
+    const yearLabel = isEn ? "Academic Year" : "Année Académique";
+    const printedSchoolYear = settings?.schoolYear || "2025/2026";
+
+    if (actCountry === "Cameroun") {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text("RÉPUBLIQUE DU CAMEROUN", margin, y + 4);
+      doc.text("REPUBLIC OF CAMEROON", margin + contentWidth, y + 4, { align: 'right' });
+
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(6.5);
+      doc.setTextColor(148, 163, 184); // Slate 400
+      doc.text("Paix - Travail - Patrie", margin, y + 7.5);
+      doc.text("Peace - Work - Fatherland", margin + contentWidth, y + 7.5, { align: 'right' });
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text(`${yearLabel} : ${printedSchoolYear}`, margin + contentWidth, y + 11.5, { align: 'right' });
+      
+      y += 18;
+    } else {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text(countryLabel, margin, y + 4);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.text(`${yearLabel} : ${printedSchoolYear}`, margin + contentWidth, y + 4, { align: 'right' });
+      
+      y += 12;
+    }
 
     // Elegant accent: Deep indigo header bar
     doc.setFillColor(79, 70, 229); // Primary Indigo
@@ -256,19 +302,22 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
 
     // Title text
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
+    doc.setFontSize(9.5);
     doc.setTextColor(79, 70, 229);
-    doc.text("PORTAIL SCOLAIRE PASMA-SYS • BULLETIN SCOLAIRE", margin + 6, y + 4);
+    doc.text(isEn ? "PASMA-SYS PORTAL • STUDENT PERFORMANCE REPORT CARD" : "PORTAIL SCOLAIRE PASMA-SYS • BULLETIN SCOLAIRE", margin + 6, y + 4);
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(16);
+    doc.setFontSize(14);
     doc.setTextColor(15, 23, 42); // Slate 900
-    doc.text("BILAN DE CONFIGURATION SCOLAIRE & NOTES", margin + 6, y + 12);
+    doc.text(isEn ? "ACADEMIC PROFILE CONFIGURATION & GRADES TRANSCRIPT" : "BILAN DE CONFIGURATION SCOLAIRE & NOTES", margin + 6, y + 12);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(100, 116, 139); // Slate 500
-    doc.text(`Édité le ${new Date().toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' })}`, margin + 6, y + 17);
+    const formattedPrintDate = isEn
+      ? `Generated on ${new Date().toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' })}`
+      : `Édité le ${new Date().toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' })}`;
+    doc.text(formattedPrintDate, margin + 6, y + 17);
 
     y += 24;
 

@@ -3,6 +3,7 @@ import { Search, UserCheck, MessageSquare, Edit2, Trash2, Printer, X, Phone, Map
 import { ApeeParent, ApeeStudentLink } from '../../types';
 import { getApeeShortName, calculateParentDebtBreakdown } from '../../utils/apeeDb';
 import { jsPDF } from 'jspdf';
+import { useLanguage } from '../../utils/TranslationContext';
 
 interface ApeeSearchProps {
   parents: ApeeParent[];
@@ -12,6 +13,8 @@ interface ApeeSearchProps {
 }
 
 export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParent, settings }: ApeeSearchProps) {
+  const { language } = useLanguage();
+  const isEn = language === 'en';
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [classFilter, setClassFilter] = useState<string>('all');
@@ -68,33 +71,62 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(8);
       doc.setTextColor(148, 163, 184); // Slate 400
-      doc.text(`Aperçu Reçu ${getApeeShortName(settings)} • Année : ${settings?.schoolYear || "2025/2026"}`, margin, 9);
+      const headLabel = isEn
+        ? `Official Invoice Receipt ${getApeeShortName(settings)} • Year: ${settings?.schoolYear || "2025/2026"}`
+        : `Aperçu Reçu ${getApeeShortName(settings)} • Année : ${settings?.schoolYear || "2025/2026"}`;
+      doc.text(headLabel, margin, 9);
       
       doc.line(margin, pageHeight - 12, margin + contentWidth, pageHeight - 12);
       
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
       doc.setTextColor(148, 163, 184);
-      doc.text(`PASMA-ENT SYSTEM - Trésorerie d'Établissement`, margin, pageHeight - 8);
-      doc.text(`Reçu certifié conforme`, margin + contentWidth - 35, pageHeight - 8);
+      const systemLabel = isEn ? "PASMA-ENT SYSTEM - School Ledger Trésorerie" : "PASMA-ENT SYSTEM - Trésorerie d'Établissement";
+      const certLabel = isEn ? "Certified Conform Receipt Statement" : "Reçu certifié conforme";
+      doc.text(systemLabel, margin, pageHeight - 8);
+      doc.text(certLabel, margin + contentWidth - 45, pageHeight - 8);
     };
 
     drawPageHeaderFooter();
 
-    // Top Official Header
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.5);
-    doc.setTextColor(71, 85, 105);
-    doc.text("RÉPUBLIQUE DU CAMEROUN", margin, y + 4);
-    doc.text("REPUBLIC OF CAMEROON", margin + contentWidth, y + 4, { align: 'right' });
+    // Republic of Cameroon Official alignment with Motto
+    const actCountry = settings?.country || "Cameroun";
+    const countryLabel = isEn 
+      ? (actCountry === "Cameroun" ? "REPUBLIC OF CAMEROON" : actCountry.toUpperCase())
+      : (actCountry === "Cameroun" ? "RÉPUBLIQUE DU CAMEROUN" : actCountry.toUpperCase());
+    const yearLabel = isEn ? "Academic Year" : "Année Académique";
 
-    doc.setFont('helvetica', 'italic');
-    doc.setFontSize(6.5);
-    doc.setTextColor(148, 163, 184);
-    doc.text("Paix - Travail - Patrie", margin, y + 8);
-    doc.text("Peace - Work - Fatherland", margin + contentWidth, y + 8, { align: 'right' });
+    if (actCountry === "Cameroun") {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text("RÉPUBLIQUE DU CAMEROUN", margin, y + 4);
+      doc.text("REPUBLIC OF CAMEROON", margin + contentWidth, y + 4, { align: 'right' });
 
-    y += 15;
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(6.5);
+      doc.setTextColor(148, 163, 184); // Slate 400
+      doc.text("Paix - Travail - Patrie", margin, y + 7.5);
+      doc.text("Peace - Work - Fatherland", margin + contentWidth, y + 7.5, { align: 'right' });
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text(`${yearLabel} : ${settings?.schoolYear || "2025/2026"}`, margin + contentWidth, y + 11.5, { align: 'right' });
+      
+      y += 15;
+    } else {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text(countryLabel, margin, y + 4);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.text(`${yearLabel} : ${settings?.schoolYear || "2025/2026"}`, margin + contentWidth, y + 4, { align: 'right' });
+      
+      y += 12;
+    }
 
     // Amber left stripe
     doc.setFillColor(245, 158, 11); // Amber-500
@@ -106,14 +138,20 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
     doc.text(`${(settings?.associationName || "APEE CES EKALI 1").toUpperCase()}`, margin + 6, y + 4);
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
+    doc.setFontSize(13);
     doc.setTextColor(15, 23, 42); // Slate 900
-    doc.text(`REÇU OFFICIEL DE COTISATION ${getApeeShortName(settings).toUpperCase()}`, margin + 6, y + 12);
+    const receiptLabel = isEn 
+      ? `OFFICIAL PTA CONTRIBUTION INVOICE RECEIPT`
+      : `REÇU OFFICIEL DE COTISATION ${getApeeShortName(settings).toUpperCase()}`;
+    doc.text(receiptLabel, margin + 6, y + 12);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(100, 116, 139);
-    doc.text(`Facturé le : ${new Date(selectedParent.createdAt || Date.now()).toLocaleDateString('fr-FR')} • Émis le : ${new Date().toLocaleDateString('fr-FR')}`, margin + 6, y + 17);
+    const invoiceDateStr = isEn
+      ? `Invoiced: ${new Date(selectedParent.createdAt || Date.now()).toLocaleDateString('en-US')} • Issued: ${new Date().toLocaleDateString('en-US')}`
+      : `Facturé le : ${new Date(selectedParent.createdAt || Date.now()).toLocaleDateString('fr-FR')} • Émis le : ${new Date().toLocaleDateString('fr-FR')}`;
+    doc.text(invoiceDateStr, margin + 6, y + 17);
 
     y += 24;
 
