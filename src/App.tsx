@@ -38,6 +38,7 @@ import ApeeReminders from './components/apee/ApeeReminders';
 import ApeeLegal from './components/ApeeLegal';
 import ApeeSharePortal from './components/apee/ApeeSharePortal';
 import { useLanguage } from './utils/TranslationContext';
+import DrivePortal from './components/DrivePortal';
 
 // Components
 import StudentCard from './components/StudentCard';
@@ -80,7 +81,8 @@ import {
   Settings,
   Plus,
   Bell,
-  Shield
+  Shield,
+  Cloud
 } from 'lucide-react';
 
 type TabType = 
@@ -93,6 +95,7 @@ type TabType =
   | 'apee_settings'
   | 'apee_reminders'
   | 'apee_legal'
+  | 'google_drive'
   | 'announcements' 
   | 'homework' 
   | 'grades' 
@@ -1912,6 +1915,18 @@ export default function App() {
                         >
                           <span className="flex items-center gap-2"><Shield className="h-4 w-4" /> {t('tab.apee_legal')}</span>
                         </button>
+
+                        <button
+                          onClick={() => setActiveTab('google_drive')}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
+                            activeTab === 'google_drive' ? 'bg-indigo-600 text-white shadow-xs' : 'text-gray-650 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <Cloud className="h-4 w-4" /> 
+                            {language === 'en' ? 'Google Drive Sync' : 'Drive & Sauvegardes'}
+                          </span>
+                        </button>
                       </>
                     ) : (
                       <>
@@ -2141,6 +2156,16 @@ export default function App() {
                     {activeTab === 'apee_legal' && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="apee_legal">
                         <ApeeLegal />
+                      </motion.div>
+                    )}
+
+                    {activeTab === 'google_drive' && (
+                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="google_drive">
+                        <DrivePortal 
+                          parents={apeeParents}
+                          invoices={invoices}
+                          students={students}
+                        />
                       </motion.div>
                     )}
 

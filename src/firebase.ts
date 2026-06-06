@@ -12,7 +12,7 @@ export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({
     tabManager: persistentMultipleTabManager()
   })
-}, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
+}, (firebaseConfig as any).firestoreDatabaseId); /* CRITICAL: The app will break without this line */
 
 export async function goOffline() {
   try {
@@ -34,6 +34,14 @@ export async function goOnline() {
 
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+googleProvider.addScope('https://www.googleapis.com/auth/drive');
+googleProvider.addScope('https://www.googleapis.com/auth/drive.file');
+
+export let googleAccessToken: string | null = null;
+
+export function setGoogleAccessToken(token: string | null) {
+  googleAccessToken = token;
+}
 
 export enum OperationType {
   CREATE = 'create',
@@ -90,6 +98,10 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 export async function loginWithGoogle() {
   try {
     const result = await signInWithPopup(auth, googleProvider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (credential?.accessToken) {
+      googleAccessToken = credential.accessToken;
+    }
     return result.user;
   } catch (error) {
     console.error("Auth Error:", error);
@@ -109,4 +121,5 @@ export async function loginAnonymously() {
 
 export async function logout() {
   await signOut(auth);
+  googleAccessToken = null;
 }
