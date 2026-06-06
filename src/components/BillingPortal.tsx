@@ -171,7 +171,7 @@ export default function BillingPortal({
     doc.rect(margin, y, contentWidth, 26, 'D');
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.5);
+    doc.setFontSize(7.5);
     doc.setTextColor(15, 23, 42);
     const refUniqueLabel = isPaid 
       ? (isEn ? "UNIQUE TRANSACTION REFERENCE" : "RÉFÉRENCE UNIQUE DE TRANSACTION")
@@ -179,7 +179,7 @@ export default function BillingPortal({
     doc.text(`${refUniqueLabel} : ${inv.id.toUpperCase()}`, margin + 6, y + 7);
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
+    doc.setFontSize(7.5);
     doc.setTextColor(71, 85, 105);
     const payDateLabel = isPaid ? (isEn ? "Payment Date" : "Date de versement") : (isEn ? "Invoice Due Date" : "Échéance règlementaire de paiement");
     const rawDate = isPaid && inv.paymentDate ? new Date(inv.paymentDate) : new Date(inv.dueDate);
@@ -192,16 +192,17 @@ export default function BillingPortal({
       : (isEn ? "Orange Money / MTN MoMo / Credit Card / Cashier" : "Orange Money / MTN MoMo / Carte Bancaire / Espèces Régie");
     doc.text(`${payChannelLabel} : ${payChannels}`, margin + 6, y + 18);
 
-    doc.line(margin + 90, y + 3, margin + 90, y + 23);
+    doc.line(margin + 120, y + 3, margin + 120, y + 23);
 
     // Right meta column
     doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
     const receiveStation = isEn ? "RECEPTION TERMINAL" : "STATION DE RECEPTION";
-    doc.text(receiveStation, margin + 95, y + 7);
+    doc.text(receiveStation, margin + 124, y + 7);
     doc.setFont('helvetica', 'normal');
-    doc.text(schoolExtracted, margin + 95, y + 13);
+    doc.text(schoolExtracted, margin + 124, y + 13);
     const placeCountry = isEn ? `${settings?.country || "Cameroon"}` : `${settings?.country || "Cameroun"}`;
-    doc.text(`Mbankomo, ${placeCountry}`, margin + 95, y + 18);
+    doc.text(placeCountry, margin + 124, y + 18);
 
     y += 32;
 
