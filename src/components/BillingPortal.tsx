@@ -206,6 +206,7 @@ export default function BillingPortal({
     y += 32;
 
     // Payer / Student Info
+    const isApeeInvoice = inv.studentId === 'apee_ces_ekali_1';
     const relatedStudent = students?.find(s => s.id === inv.studentId);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9.5);
@@ -223,7 +224,16 @@ export default function BillingPortal({
     doc.text(pupilLabel, margin + 6, y);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(15, 23, 42);
-    const stdNameLabel = relatedStudent ? relatedStudent.name.toUpperCase() : (isEn ? "REGISTERED STUDENT" : "ÉLÈVE INSCRIT");
+    
+    let stdNameLabel = relatedStudent ? relatedStudent.name.toUpperCase() : (isEn ? "REGISTERED STUDENT" : "ÉLÈVE INSCRIT");
+    if (isApeeInvoice && inv.studentsList) {
+      try {
+        const parsed = JSON.parse(inv.studentsList);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          stdNameLabel = parsed.map((s: any) => s.name.toUpperCase()).join(', ');
+        }
+      } catch (e) {}
+    }
     doc.text(stdNameLabel, margin + 45, y);
 
     y += 6;
@@ -233,7 +243,16 @@ export default function BillingPortal({
     doc.text(classLabel, margin + 6, y);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(15, 23, 42);
-    const stdClassLabel = relatedStudent ? `${relatedStudent.grade} ${relatedStudent.classRoom}` : (isEn ? "N/A / All Grades" : "Néant / Tous niveaux");
+    
+    let stdClassLabel = relatedStudent ? `${relatedStudent.grade} ${relatedStudent.classRoom}` : (isEn ? "N/A / All Grades" : "Néant / Tous niveaux");
+    if (isApeeInvoice && inv.studentsList) {
+      try {
+        const parsed = JSON.parse(inv.studentsList);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          stdClassLabel = parsed.map((s: any) => s.classRoom).join(', ');
+        }
+      } catch (e) {}
+    }
     doc.text(stdClassLabel, margin + 45, y);
 
     y += 6;
@@ -645,8 +664,27 @@ export default function BillingPortal({
 
   // Helper to format currency and fetch student name
   const student = payingInvoice ? students?.find(s => s.id === payingInvoice.studentId) : null;
-  const studentName = student ? student.name : "Élève de l'établissement";
-  const studentInfo = student ? `${student.grade} - ${student.classRoom}` : "";
+  const isApee = payingInvoice && payingInvoice.studentId === 'apee_ces_ekali_1';
+  let studentName = student ? student.name : "Élève de l'établissement";
+  let studentInfo = student ? `${student.grade} - ${student.classRoom}` : "";
+
+  if (isApee && payingInvoice) {
+    studentName = payingInvoice.title; // Parent's name
+    try {
+      if (payingInvoice.studentsList) {
+        const parsedList = JSON.parse(payingInvoice.studentsList);
+        if (Array.isArray(parsedList) && parsedList.length > 0) {
+          studentInfo = `Parent de : ${parsedList.map((s: any) => `${s.name} (${s.classRoom})`).join(', ')}`;
+        } else {
+          studentInfo = "Relance de Cotisation APEE";
+        }
+      } else {
+        studentInfo = "Relance de Cotisation APEE";
+      }
+    } catch (e) {
+      studentInfo = "Relance de Cotisation APEE";
+    }
+  }
 
   const formatAmountTtc = (amount: number) => {
     if (amount < 2000) {
@@ -669,12 +707,15 @@ export default function BillingPortal({
   // Filter out non-student (administrative/settings/cotisation parent) documents
   const studentInvoices = invoices.filter(inv => {
     if (
-      inv.studentId === 'apee_ces_ekali_1' ||
       inv.studentId === 'apee_expense' ||
       inv.studentId === 'apee_settings' ||
       inv.id.endsWith('_settings')
     ) {
       return false;
+    }
+    if (inv.studentId === 'apee_ces_ekali_1') {
+      // Pour les cotisations APEE, on n'affiche que s'il y a un retard ou versement partiel (Non soldé)
+      return inv.status !== 'Paid';
     }
     // If the active role is parent and filteredStudents list is available, restrict to matching active pupils
     if (portalUserRole === 'parent' && filteredStudents) {
@@ -937,7 +978,14 @@ export default function BillingPortal({
                   </span>
                   <span className="text-xs font-mono text-gray-400">Réf: {inv.id.toUpperCase()}</span>
                 </div>
-                <h3 className="font-bold text-gray-900 text-sm">{inv.title}</h3>
+                <h3 className="font-bold text-gray-900 text-sm flex items-center gap-2 flex-wrap">
+                  <span>{inv.title}</span>
+                  {inv.studentId === 'apee_ces_ekali_1' && (
+                    <span className="text-[9px] font-black uppercase bg-indigo-50 text-indigo-750 px-2 py-0.5 rounded-md border border-indigo-150 shadow-3xs">
+                      Cotisation APEE
+                    </span>
+                  )}
+                </h3>
                 <div className="text-xs text-gray-500 font-medium">
                   {inv.status === 'Paid' ? (
                     <span className="text-emerald-600 font-semibold flex items-center gap-1">

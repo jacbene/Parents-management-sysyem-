@@ -171,6 +171,42 @@ export default function ApeeBlankForms({ settings }: ApeeBlankFormsProps) {
     let y = 15;
     const isEn = language === 'en';
 
+    const getCertifiedLabelFr = () => {
+      const inLettersLabel = referenceInLetters.trim() || "__________________________________________________________________________";
+      switch (selectedTemplate) {
+        case 'command':
+          return `Arrêté le présent bon de commande à la somme de (en lettres) : ${inLettersLabel} FCFA`;
+        case 'payment-order':
+          return `Arrêté le présent ordre de paiement à la somme de (en lettres) : ${inLettersLabel} FCFA`;
+        case 'refund':
+          return `Arrêté la présente fiche de remboursement à la somme de (en lettres) : ${inLettersLabel} FCFA`;
+        case 'spend-auth':
+          return `Arrêté la présente autorisation d'engagement à la somme de (en lettres) : ${inLettersLabel} FCFA`;
+        case 'fund-deposit':
+          return `Arrêté le présent bordereau de versement à la somme de (en lettres) : ${inLettersLabel} FCFA`;
+        default:
+          return `Arrêté la présente pièce à la somme de (en lettres) : ${inLettersLabel} FCFA`;
+      }
+    };
+
+    const getCertifiedLabelEn = () => {
+      const inLettersLabel = referenceInLetters.trim() || "__________________________________________________________________________";
+      switch (selectedTemplate) {
+        case 'command':
+          return `Certified this purchase order for the total sum of (in letters): ${inLettersLabel} FCFA`;
+        case 'payment-order':
+          return `Certified this payment order for the total sum of (in letters): ${inLettersLabel} FCFA`;
+        case 'refund':
+          return `Certified this reimbursement claim for the total sum of (in letters): ${inLettersLabel} FCFA`;
+        case 'spend-auth':
+          return `Certified this spend authorization for the total sum of (in letters): ${inLettersLabel} FCFA`;
+        case 'fund-deposit':
+          return `Certified this deposit slip for the total sum of (in letters): ${inLettersLabel} FCFA`;
+        default:
+          return `Certified this document for the total sum of (in letters): ${inLettersLabel} FCFA`;
+      }
+    };
+
     // Republic of Cameroon Official alignment with Motto
     const actCountry = settings?.country || "Cameroun";
     const countryLabel = isEn 
@@ -297,8 +333,8 @@ export default function ApeeBlankForms({ settings }: ApeeBlankFormsProps) {
     // Budget line allocation row
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(71, 85, 105);
-    const flLabelEn = isVierge ? '📁 Budget Line Allocation: _______________________________________________' : `📁 Budget Line Allocation: ${fundingLine || 'Operations / General'}`;
-    const flLabelFr = isVierge ? "📁 Rubrique d'imputation : _______________________________________________" : `📁 Rubrique d'imputation : ${fundingLine || 'Fonctionnement / Non spécifiée'}`;
+    const flLabelEn = isVierge ? 'Budget Line Allocation: _______________________________________________' : `Budget Line Allocation: ${fundingLine || 'Operations / General'}`;
+    const flLabelFr = isVierge ? "Rubrique d'imputation : _______________________________________________" : `Rubrique d'imputation : ${fundingLine || 'Fonctionnement / Non spécifiée'}`;
     const flValue = isEn ? flLabelEn : flLabelFr;
     doc.text(flValue, margin, y);
 
@@ -313,12 +349,12 @@ export default function ApeeBlankForms({ settings }: ApeeBlankFormsProps) {
     doc.setFontSize(7.5);
     doc.setTextColor(51, 65, 85);
     
-    const tableDesc = isEn ? "Detailed Description of Operations / Deliverables" : "Description détaillée de l'opération";
+    const tableDesc = isEn ? "Detailed Description of Operations" : "Description détaillée de l'opération";
     const tableQty = isEn ? "Qty" : "Quantité";
     const tablePrice = isEn ? "Unit Price (FCFA)" : "Prix Unitaire (FCFA)";
     doc.text(tableDesc, margin + 3, y + 4.5);
-    doc.text(tableQty, margin + contentWidth - 48, y + 4.5, { align: 'right' });
-    doc.text(tablePrice, margin + contentWidth - 25, y + 4.5, { align: 'right' });
+    doc.text(tableQty, margin + contentWidth - 58, y + 4.5, { align: 'right' });
+    doc.text(tablePrice, margin + contentWidth - 28, y + 4.5, { align: 'right' });
     doc.text("Total (FCFA)", margin + contentWidth - 3, y + 4.5, { align: 'right' });
 
     y += 7;
@@ -335,10 +371,10 @@ export default function ApeeBlankForms({ settings }: ApeeBlankFormsProps) {
         // Blank dots lines
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(203, 213, 225);
-        doc.text(". . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .", margin + 3, y + 4.5);
-        doc.text(". . . . . . . . .", margin + contentWidth - 48, y + 4.5, { align: 'right' });
-        doc.text(". . . . . . . . . . .", margin + contentWidth - 25, y + 4.5, { align: 'right' });
-        doc.text(". . . . . . . . . . .", margin + contentWidth - 3, y + 4.5, { align: 'right' });
+        doc.text(". . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .", margin + 3, y + 4.5);
+        doc.text(". . . . . .", margin + contentWidth - 58, y + 4.5, { align: 'right' });
+        doc.text(". . . . . . . . . .", margin + contentWidth - 28, y + 4.5, { align: 'right' });
+        doc.text(". . . . . . . .", margin + contentWidth - 3, y + 4.5, { align: 'right' });
         
         y += 7;
       }
@@ -355,23 +391,25 @@ export default function ApeeBlankForms({ settings }: ApeeBlankFormsProps) {
         
         // Truncate long descriptions
         const truncDesc = item.description || (isEn ? 'Operation item without title' : 'Opération sans intitulé');
-        doc.text(doc.splitTextToSize(truncDesc, 115), margin + 3, y + 4.5);
+        doc.text(doc.splitTextToSize(truncDesc, 95), margin + 3, y + 4.5);
         
         doc.setFont('helvetica', 'bold');
-        doc.text(item.quantity || "0", margin + contentWidth - 48, y + 4.5, { align: 'right' });
-        doc.text(parseFloat(item.unitPrice || '0').toLocaleString() + ' F', margin + contentWidth - 25, y + 4.5, { align: 'right' });
+        doc.text(item.quantity || "0", margin + contentWidth - 58, y + 4.5, { align: 'right' });
+        doc.text(parseFloat(item.unitPrice || '0').toLocaleString() + ' F', margin + contentWidth - 28, y + 4.5, { align: 'right' });
         doc.text(parseFloat(item.total || '0').toLocaleString() + ' F', margin + contentWidth - 3, y + 4.5, { align: 'right' });
         
         y += 7.5;
       });
     }
 
-    // Outer table borders
+    // Outer table borders and column dividers
     doc.setDrawColor(203, 213, 225);
-    doc.line(margin, y, margin, y - (isVierge ? (Math.max(1, manualTableRows) * 7 + 7) : (items.length * 7.5 + 7)));
-    doc.line(margin + contentWidth, y, margin + contentWidth, y - (isVierge ? (Math.max(1, manualTableRows) * 7 + 7) : (items.length * 7.5 + 7)));
-    doc.line(margin + contentWidth - 55, y, margin + contentWidth - 55, y - (isVierge ? (Math.max(1, manualTableRows) * 7 + 7) : (items.length * 7.5 + 7)));
-    doc.line(margin + contentWidth - 18, y, margin + contentWidth - 18, y - (isVierge ? (Math.max(1, manualTableRows) * 7 + 7) : (items.length * 7.5 + 7)));
+    const tableHeight = isVierge ? (Math.max(1, manualTableRows) * 7 + 7) : (items.length * 7.5 + 7);
+    doc.line(margin, y, margin, y - tableHeight);
+    doc.line(margin + contentWidth, y, margin + contentWidth, y - tableHeight);
+    doc.line(margin + contentWidth - 75, y, margin + contentWidth - 75, y - tableHeight);
+    doc.line(margin + contentWidth - 55, y, margin + contentWidth - 55, y - tableHeight);
+    doc.line(margin + contentWidth - 25, y, margin + contentWidth - 25, y - tableHeight);
 
     // Total section box
     doc.setFillColor(248, 250, 252);
@@ -389,17 +427,14 @@ export default function ApeeBlankForms({ settings }: ApeeBlankFormsProps) {
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(7.5);
       doc.setTextColor(100, 116, 139);
-      const inLetters = referenceInLetters.trim() || "...";
-      const totalLettersLabel = isEn ? `Certified this document for the premium sum of: ${inLetters} FCFA` : `Arrêté la présente pièce à la somme de : ${inLetters} FCFA`;
+      const totalLettersLabel = isEn ? getCertifiedLabelEn() : getCertifiedLabelFr();
       doc.text(totalLettersLabel, margin + 4, y + 13);
       y += 10;
     } else {
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(7.5);
       doc.setTextColor(148, 163, 184);
-      const certifiedBlankLabel = isEn 
-        ? "Certified this blank document for the total sum of (in letters): __________________________________________________________________________ FCFA"
-        : "Arrêté la présente pièce vierge à la somme de (en lettres) : __________________________________________________________________________ FCFA";
+      const certifiedBlankLabel = isEn ? getCertifiedLabelEn() : getCertifiedLabelFr();
       doc.text(certifiedBlankLabel, margin + 4, y + 13);
       y += 10;
     }

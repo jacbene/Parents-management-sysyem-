@@ -1271,61 +1271,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
               </p>
             </div>
 
-            {/* Gemini Security Propositions & Cameroon Context Compliance */}
-            <div className="p-4 bg-slate-900 text-slate-100 rounded-2xl border border-slate-800 space-y-3 shadow-md">
-              <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
-                <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0" />
-                <span className="font-black text-[10px] text-white uppercase tracking-wider">
-                  Proposition Gemini : Sécurité pasma-sys
-                </span>
-              </div>
-              
-              <p className="text-[10px] leading-relaxed text-slate-400">
-                Afin de garantir la souveraineté numérique et la confiance des familles camerounaises, voici les piliers de sécurité intégrés :
-              </p>
 
-              <ul className="space-y-2 text-[10.5px]">
-                <li className="flex items-start gap-2">
-                  <span className="text-emerald-400 font-bold mt-0.5">✓</span>
-                  <div>
-                    <strong className="text-slate-100 block">Double-Facteur Téléphonique sans Email :</strong>
-                    <span className="text-slate-450 text-slate-400 leading-snug">
-                      Pas d'e-mail obligatoire. L'envoi par SMS d'un code OTP à 6 chiffres préserve l'accès des tuteurs résidant en Haute-Sanaga ou dans l'Extrême-Nord avec un équipement rudimentaire.
-                    </span>
-                  </div>
-                </li>
-                
-                <li className="flex items-start gap-2">
-                  <span className="text-emerald-400 font-bold mt-0.5">✓</span>
-                  <div>
-                    <strong className="text-slate-100 block">Limitation d'accès contre l'espionnage :</strong>
-                    <span className="text-slate-450 text-slate-400 leading-snug">
-                      Blocage strict à <strong>3 essais OTP erronés</strong> et à un quota de <strong>5 visites par jour</strong> par parent/appareil pour figer toute tentative de pillage ou d'aspiration algorithmique des relevés.
-                    </span>
-                  </div>
-                </li>
-
-                <li className="flex items-start gap-2">
-                  <span className="text-emerald-400 font-bold mt-0.5">✓</span>
-                  <div>
-                    <strong className="text-slate-100 block">Transactions MoMo &amp; OM Non-Custodiales :</strong>
-                    <span className="text-slate-450 text-slate-400 leading-snug">
-                      La passerelle n'enregistre aucune donnée de carte bancaire ou jeton d'accès secret. Les paiements recourent à la cinématique officielle d'interrogation de l'opérateur (double validation par l'usager sur son portable).
-                    </span>
-                  </div>
-                </li>
-
-                <li className="flex items-start gap-2">
-                  <span className="text-emerald-400 font-bold mt-0.5">✓</span>
-                  <div>
-                    <strong className="text-slate-100 block">Dossiers d'élèves sanctuarisés :</strong>
-                    <span className="text-slate-450 text-slate-400 leading-snug">
-                      L'accès aux notes ou bulletins d'assiduité est bloqué si le tuteur n'a pas régularisé au moins un acompte initial pour sa cotisation de scolarisation (APEE).
-                    </span>
-                  </div>
-                </li>
-              </ul>
-            </div>
           </div>
         </div>
 

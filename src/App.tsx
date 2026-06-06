@@ -36,6 +36,7 @@ import ApeeArchives from './components/apee/ApeeArchives';
 import ApeeSettingsComp from './components/apee/ApeeSettingsComp';
 import ApeeReminders from './components/apee/ApeeReminders';
 import ApeeLegal from './components/ApeeLegal';
+import ApeeSharePortal from './components/apee/ApeeSharePortal';
 import { useLanguage } from './utils/TranslationContext';
 
 // Components
@@ -2023,6 +2024,12 @@ export default function App() {
                       </>
                     )}
                   </div>
+                  
+                  {/* Secure Share Space */}
+                  <ApeeSharePortal 
+                    associationName={apeeSettings.associationName}
+                    portalUserRole={portalUserRole || undefined}
+                  />
                 </div>
 
                 {/* Right Side / Centered: Main Screen Panel workspace */}
@@ -2068,6 +2075,7 @@ export default function App() {
                             setActiveTab('apee_recording');
                           }}
                           onDeleteParent={handleDeleteApeeParentInPlace}
+                          onSaveParent={handleSaveApeeParentInPlace}
                           settings={apeeSettings}
                         />
                       </motion.div>
@@ -2092,6 +2100,8 @@ export default function App() {
                           onDeleteExpense={handleDeleteApeeExpenseInPlace}
                           totalRevenue={apeeParents.reduce((sum, p) => sum + p.totalPaid, 0)}
                           settings={apeeSettings}
+                          parents={apeeParents}
+                          otherRevenues={apeeOtherRevenues}
                         />
                       </motion.div>
                     )}

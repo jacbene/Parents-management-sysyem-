@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, UserCheck, MessageSquare, Edit2, Trash2, Printer, X, Phone, MapPin, Tag, Calendar, AlertTriangle, ChevronRight, Notebook, Download } from 'lucide-react';
+import { Search, UserCheck, MessageSquare, Edit2, Trash2, Printer, X, Phone, MapPin, Tag, Calendar, AlertTriangle, ChevronRight, Notebook, Download, Bell, Copy, Check, ExternalLink, Mail } from 'lucide-react';
 import { ApeeParent, ApeeStudentLink } from '../../types';
 import { getApeeShortName, calculateParentDebtBreakdown } from '../../utils/apeeDb';
 import { jsPDF } from 'jspdf';
@@ -9,10 +9,11 @@ interface ApeeSearchProps {
   parents: ApeeParent[];
   onEditParentRequest: (parent: ApeeParent) => void;
   onDeleteParent: (id: string) => Promise<boolean> | void;
+  onSaveParent?: (parent: ApeeParent) => Promise<boolean> | void;
   settings?: any;
 }
 
-export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParent, settings }: ApeeSearchProps) {
+export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParent, onSaveParent, settings }: ApeeSearchProps) {
   const { language } = useLanguage();
   const isEn = language === 'en';
   const [searchQuery, setSearchQuery] = useState('');
@@ -23,6 +24,58 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
   const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [parentToDeleteId, setParentToDeleteId] = useState<string | null>(null);
+
+  // Reminder states & logic
+  const [reminderParent, setReminderParent] = useState<ApeeParent | null>(null);
+  const [reminderMessage, setReminderMessage] = useState('');
+  const [reminderCopied, setReminderCopied] = useState(false);
+  const [reminderSending, setReminderSending] = useState(false);
+
+  const handlePrepareReminder = (parent: ApeeParent) => {
+    const institution = settings?.schoolNameShort || "l'Établissement";
+    const solde = parent.totalDue - parent.totalPaid;
+    const studentNames = parent.students.map(s => s.name).join(', ');
+    
+    const defaultMsg = `Chers Parents de ${studentNames},\n\nNous vous rappelons gentiment que votre solde de Cotisation APEE à ${institution} présente un encours de ${solde.toLocaleString()} FCFA (Cotisation totale exigible : ${parent.totalDue.toLocaleString()} FCFA, déjà versé : ${parent.totalPaid.toLocaleString()} FCFA).\n\nNous vous prions de bien vouloir approcher les services de la régie financière de l'établissement pour la régularisation de cet arriéré au plus vite.\n\nMerci pour votre précieuse collaboration et votre confiance.\n\nL'Administration Financière de l'APEE.`;
+    
+    setReminderMessage(defaultMsg);
+    setReminderParent(parent);
+    setReminderCopied(false);
+  };
+
+  const handleCopyReminderText = () => {
+    try {
+      navigator.clipboard.writeText(reminderMessage);
+      setReminderCopied(true);
+      setTimeout(() => setReminderCopied(false), 2000);
+    } catch (err) {
+      console.error("L'écriture dans le presse-papier a échoué:", err);
+    }
+  };
+
+  const handleSendLocalReminder = async () => {
+    if (!reminderParent) return;
+    setReminderSending(true);
+    
+    if (onSaveParent) {
+      try {
+        const dateStr = new Date().toLocaleDateString('fr-FR');
+        const updatedParent: ApeeParent = {
+          ...reminderParent,
+          lastReminded: new Date().toISOString(),
+          notes: (reminderParent.notes || '') + `\n[${dateStr}] Relance envoyée (Solde: ${(reminderParent.totalDue - reminderParent.totalPaid).toLocaleString()} FCFA)`
+        };
+        await onSaveParent(updatedParent);
+      } catch (err) {
+        console.error("Erreur d'archivage de la relance :", err);
+      }
+    }
+    
+    setTimeout(() => {
+      setReminderSending(false);
+      setReminderParent(null);
+    }, 1000);
+  };
 
   // Filter list of parents
   const filteredParents = parents.filter(p => {
@@ -461,7 +514,7 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
                   }`}
                 >
                   <div className="space-y-1 overflow-hidden">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       {parent.status === 'retard' && (
                         <AlertTriangle className="h-3.5 w-3.5 text-red-500 animate-pulse shrink-0" title="En retard de paiement" />
                       )}
@@ -473,6 +526,11 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
                       }`}>
                         {parent.status}
                       </span>
+                      {(parent.status === 'retard' || parent.status === 'partiel') && (
+                        <span className="text-[8px] font-black uppercase tracking-wider bg-red-100 text-red-800 border border-red-200 px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0 select-none animate-pulse">
+                          ⚠️ Relance exigée
+                        </span>
+                      )}
                     </div>
                     <div className={`text-[10px] truncate ${selectedParentId === parent.id ? 'text-slate-300' : 'text-gray-500'}`}>
                       Pupilles: <strong className="font-semibold">{parent.students.map(s => s.name).join(', ')}</strong>
@@ -483,6 +541,24 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
                   </div>
 
                   <div className="text-right shrink-0 flex items-center gap-3">
+                    {(parent.status === 'retard' || parent.status === 'partiel') && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePrepareReminder(parent);
+                        }}
+                        className={`px-2 py-1 text-[9.5px] font-bold rounded-lg border flex items-center gap-1 select-none transition cursor-pointer shadow-3xs hover:scale-105 ${
+                          selectedParentId === parent.id
+                            ? 'bg-red-600 hover:bg-red-700 border-red-700 text-white font-extrabold shadow-sm'
+                            : 'bg-red-50 hover:bg-red-100 text-red-600 border-red-100'
+                        }`}
+                        title="Pré-remplir et envoyer une relance de paiement"
+                      >
+                        <Bell className="h-3 w-3 shrink-0" />
+                        <span>Relancer</span>
+                      </button>
+                    )}
                     <div className="space-y-0.5">
                       <div className="text-xs font-bold font-mono">
                         {parent.totalPaid.toLocaleString()} / {parent.totalDue.toLocaleString()}
@@ -812,6 +888,125 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
           </div>
         );
       })()}
+
+      {/* Dynamic automatic reminder modal */}
+      {reminderParent && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-3xl w-full max-w-lg border border-slate-150 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="p-5 bg-slate-900 text-white relative shrink-0">
+              <button
+                onClick={() => setReminderParent(null)}
+                className="absolute right-4 top-4 text-white/60 hover:text-white cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+              <div className="space-y-1">
+                <span className="text-[10px] text-red-400 font-black uppercase tracking-widest block">🔔 Module de Relance Automatique - APEE</span>
+                <h3 className="text-base font-black">Préparer et envoyer un rappel de paiement</h3>
+              </div>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto">
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                  <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-500">Destinataire</span>
+                  <span className="text-[9.5px] font-mono font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded-full select-all">
+                    Arriéré : {(reminderParent.totalDue - reminderParent.totalPaid).toLocaleString()} {settings?.currency || 'FCFA'}
+                  </span>
+                </div>
+                
+                <div className="flex items-center gap-3">
+                  <div className="h-8 w-8 rounded-full bg-slate-900 text-white font-black text-xs flex items-center justify-center shrink-0">
+                    {reminderParent.name.substring(0, 2).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="font-extrabold text-xs text-slate-900">{reminderParent.name}</p>
+                    <p className="text-[10px] text-slate-500 font-mono">Téléphone : {reminderParent.phone}</p>
+                  </div>
+                </div>
+
+                <div className="text-[10px] text-slate-600 bg-white p-2 rounded-xl border border-slate-150 space-y-1">
+                  <p>👶 <strong>Pupilles :</strong> {reminderParent.students.map(s => `${s.name} (${s.classRoom})`).join(', ')}</p>
+                </div>
+              </div>
+
+              {/* Message edit box */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Contenu du message de relance</label>
+                <textarea
+                  value={reminderMessage}
+                  onChange={(e) => setReminderMessage(e.target.value)}
+                  className="w-full h-36 p-3 hover:border-gray-300 border border-gray-250 bg-slate-50 rounded-2xl text-xs font-sans leading-relaxed focus:outline-hidden focus:border-indigo-500 focus:bg-white transition"
+                  placeholder="Saisissez votre message de relance..."
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                {/* Copier le message */}
+                <button
+                  type="button"
+                  onClick={handleCopyReminderText}
+                  className="flex items-center justify-center gap-2 px-3 py-2.5 text-xs font-bold rounded-xl border border-slate-250 bg-white hover:bg-slate-50 text-slate-705 cursor-pointer select-none transition shadow-2xs"
+                >
+                  {reminderCopied ? (
+                    <>
+                      <Check className="h-4 w-4 text-emerald-600 animate-pulse shrink-0" />
+                      <span className="text-emerald-700 font-black">Copié !</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-4 w-4 shrink-0" />
+                      <span>Copier le texte</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Relancer par WhatsApp */}
+                <a
+                  href={`https://wa.me/${reminderParent.phone.replace(/\D/g, '')}?text=${encodeURIComponent(reminderMessage)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={handleSendLocalReminder}
+                  className="flex items-center justify-center gap-2 px-3 py-2.5 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer select-none transition shadow-2xs"
+                >
+                  <MessageSquare className="h-4 w-4 shrink-0" />
+                  <span>Envoyer WhatsApp</span>
+                  <ExternalLink className="h-3 w-3 opacity-60" />
+                </a>
+              </div>
+            </div>
+
+            <div className="px-5 py-4 bg-slate-50 border-t border-slate-150 flex justify-between gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setReminderParent(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-250 hover:bg-slate-50 rounded-xl cursor-pointer transition select-none"
+              >
+                Annuler
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSendLocalReminder}
+                disabled={reminderSending}
+                className="px-4.5 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 disabled:bg-slate-350 rounded-xl cursor-pointer transition select-none flex items-center justify-center gap-1.5"
+              >
+                {reminderSending ? (
+                  <>
+                    <span className="animate-spin inline-block h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full shrink-0" />
+                    Enregistrement...
+                  </>
+                ) : (
+                  <>
+                    <Check className="h-4 w-4 text-emerald-500 shrink-0" />
+                    <span>Marquer relancé</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
