@@ -574,7 +574,7 @@ export default function App() {
   // 2. Fetch and seed database state based on Selected School or logged-in account (Unified ID space)
   const userId = selectedSchoolId || user?.uid;
   useEffect(() => {
-    if (!userId || !user) {
+    if (!userId) {
       // Clear local states on sign out or when no user is signed in
       setStudents([]);
       setSelectedStudentId('');
@@ -1534,71 +1534,73 @@ export default function App() {
             className="flex-1 flex flex-col"
           >
             {/* Top Navigation Bar */}
-            <header className="bg-white border-b border-gray-150 py-3.5 px-6 sticky top-0 z-30 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
+            <header className="bg-white border-b border-gray-150 py-2.5 md:py-3.5 px-3 md:px-6 sticky top-0 z-30 flex items-center justify-between">
+              <div className="flex items-center gap-1.5 md:gap-2.5">
                 {apeeSettings.logoUrl ? (
                   <img
                     src={apeeSettings.logoUrl}
                     alt="Logo Établissement"
-                    className="h-10 w-10 object-contain rounded-xl p-0.5 bg-slate-50 border border-slate-150 shrink-0"
+                    className="h-8 w-8 md:h-10 md:w-10 object-contain rounded-xl p-0.5 bg-slate-50 border border-slate-150 shrink-0"
                     referrerPolicy="no-referrer"
                   />
                 ) : (
                   <img
                     src="/icon-512.png"
                     alt="Logo"
-                    className="h-10 w-10 object-contain rounded-xl p-0.5 bg-indigo-50 border border-indigo-100 shrink-0"
+                    className="h-8 w-8 md:h-10 md:w-10 object-contain rounded-xl p-0.5 bg-indigo-50 border border-indigo-100 shrink-0"
                   />
                 )}
                 <div>
-                  <h1 className="text-base font-black tracking-tight text-gray-950 flex items-center gap-1.5 flex-wrap">
-                    Pasma-sys <span className="text-[10px] bg-slate-900 text-white font-mono px-1.5 py-0.5 rounded-full uppercase scale-90">ENT</span>
+                  <h1 className="text-xs md:text-base font-black tracking-tight text-gray-950 flex items-center gap-1 md:gap-1.5 flex-wrap">
+                    Pasma-sys <span className="text-[8px] md:text-[10px] bg-slate-900 text-white font-mono px-1 md:px-1.5 py-0.25 md:py-0.5 rounded-full uppercase scale-90">ENT</span>
                     {isOffline ? (
-                      <span className="text-[9px] bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition" title="Le serveur Firestore n'est pas joignable. Vos modifications sont conservées localement dans la cacher.">
-                        <span className="h-1.5 w-1.5 bg-amber-500 rounded-full animate-pulse shrink-0" /> {t('header.offline')}
+                      <span className="text-[8px] md:text-[9px] bg-amber-50 hover:bg-amber-105 text-amber-700 border border-amber-200 font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-0.5 md:gap-1 transition" title="Le serveur Firestore n'est pas joignable. Vos modifications sont conservées localement dans la cache.">
+                        <span className="h-1.5 w-1.5 bg-amber-500 rounded-full animate-pulse shrink-0" />
+                        <span className="hidden sm:inline">{t('header.offline')}</span>
                       </span>
                     ) : (
-                      <span className="text-[9px] bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-250 font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-1 transition" title="Données synchronisées avec le Cloud Firestore.">
-                        <span className="h-1.5 w-1.5 bg-emerald-500 rounded-full shrink-0" /> {t('header.online')}
+                      <span className="text-[8px] md:text-[9px] bg-emerald-50 hover:bg-emerald-105 text-emerald-700 border border-emerald-250 font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-0.5 md:gap-1 transition" title="Données synchronisées avec le Cloud Firestore.">
+                        <span className="h-1.5 w-1.5 bg-emerald-500 rounded-full shrink-0" />
+                        <span className="hidden sm:inline">{t('header.online')}</span>
                       </span>
                     )}
                   </h1>
-                  <p className="text-[10px] text-gray-400 font-medium">{t('header.school_portal')}</p>
+                  <p className="text-[8px] md:text-[10px] text-gray-400 font-medium">{t('header.school_portal')}</p>
                 </div>
               </div>
 
               {/* User Profil card & logout */}
-              <div className="flex items-center gap-3.5">
+              <div className="flex items-center gap-1.5 md:gap-3.5">
                 <InstallPWA />
 
                 <NotificationBell portalUserRole={portalUserRole} selectedStudentName={students[0]?.name} />
 
-                {/* Language Picker Toggle */}
+                {/* Language Picker Toggle (Stacked vertically on small screens, horizontal on md+) */}
                 <div 
-                  className="flex items-center bg-slate-100 hover:bg-slate-200 p-1 rounded-xl gap-1 shrink-0 border border-slate-250"
+                  className="flex flex-col md:flex-row items-center bg-slate-100 p-0.5 rounded-xl md:gap-0.5 shrink-0 border border-slate-200/85"
                   title={isAutoDetected ? "Langue détectée automatiquement selon votre région / Language auto-detected by region" : "Changer de langue / Change language"}
                 >
                   <button
                     type="button"
                     onClick={() => setLanguage('fr')}
-                    className={`px-2 py-1 text-[10px] font-black rounded-lg transition-all cursor-pointer ${
+                    className={`px-1.5 md:px-2 py-0.5 md:py-1 text-[9px] md:text-[10.5px] font-black rounded-lg transition-all cursor-pointer ${
                       language === 'fr'
-                        ? 'bg-white text-indigo-700 shadow-xs font-black'
-                        : 'text-slate-500 hover:text-slate-850'
+                        ? 'bg-white text-indigo-700 shadow-3xs font-black'
+                        : 'text-slate-550 hover:text-slate-850'
                     }`}
                   >
-                    🇫🇷 FR
+                    FR
                   </button>
                   <button
                     type="button"
                     onClick={() => setLanguage('en')}
-                    className={`px-2 py-1 text-[10px] font-black rounded-lg transition-all cursor-pointer ${
+                    className={`px-1.5 md:px-2 py-0.5 md:py-1 text-[9px] md:text-[10.5px] font-black rounded-lg transition-all cursor-pointer ${
                       language === 'en'
-                        ? 'bg-white text-indigo-700 shadow-xs font-black'
-                        : 'text-slate-500 hover:text-slate-855'
+                        ? 'bg-white text-indigo-700 shadow-3xs font-black'
+                        : 'text-slate-550 hover:text-slate-850'
                     }`}
                   >
-                    🇬🇧 EN
+                    EN
                   </button>
                 </div>
                 
@@ -1615,28 +1617,33 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setShowSuperAdmin(true)}
-                    className="px-3 py-1.5 bg-amber-400 hover:bg-amber-500 text-slate-950 text-[10.5px] font-extrabold rounded-xl transition flex items-center gap-1 cursor-pointer border border-amber-300 shadow-2xs shrink-0"
-                    title={isPrimarySuperAdmin ? "Retourner à la Console de Supervision Globale (Principal)" : "Retourner à la Console de Supervision Globale (Adjoint)"}
+                    className="p-1.5 md:px-3 md:py-1.5 bg-amber-400 hover:bg-amber-500 text-slate-950 text-[10.5px] font-extrabold rounded-xl transition flex items-center justify-center gap-1 cursor-pointer border border-amber-300 shadow-3xs shrink-0"
+                    title={isPrimarySuperAdmin ? "Super-Admin Principal (Retourner à la Console)" : "Superviseur Adjoint (Retourner à la Console)"}
                   >
-                    ⚙️ {isPrimarySuperAdmin ? "Super-Admin Principal" : "Superviseur Adjoint"}
+                    <Shield className="h-3.5 w-3.5 text-slate-900" />
+                    <span className="hidden md:inline">
+                      {isPrimarySuperAdmin ? "Super-Admin" : "Superviseur"}
+                    </span>
                   </button>
                 )}
 
                 <button
                   onClick={handleExitSchool}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[10.5px] font-bold rounded-xl transition flex items-center gap-1 border border-slate-200 cursor-pointer shrink-0"
-                  title="Changer d'établissement scolaire"
+                  className="p-1.5 md:px-3 md:py-1.5 bg-slate-50 hover:bg-slate-200 text-slate-850 text-[10.5px] font-bold rounded-xl transition flex items-center justify-center gap-1 border border-slate-200 cursor-pointer shrink-0"
+                  title={t('header.change_school')}
                 >
-                  🏫 {t('header.change_school')}
+                  <GraduationCap className="h-3.5 w-3.5 text-slate-600 animate-pulse" />
+                  <span className="hidden md:inline">{t('header.change_school')}</span>
                 </button>
 
                 {user && (
                   <button
                     onClick={() => { handleExitSchool(); logout(); }}
-                    className="p-2 text-gray-440 hover:text-red-500 rounded-xl hover:bg-red-50 cursor-pointer transition text-xs font-bold"
-                    title="Déconnexion complète"
+                    className="p-1.5 md:p-2 text-slate-400 hover:text-red-650 hover:bg-red-50 rounded-xl cursor-pointer transition text-xs font-bold flex items-center justify-center gap-1 shrink-0"
+                    title={t('header.logout')}
                   >
-                    {t('header.logout')}
+                    <LogOut className="h-4 w-4" />
+                    <span className="hidden md:inline">{t('header.logout')}</span>
                   </button>
                 )}
               </div>
@@ -1924,7 +1931,7 @@ export default function App() {
                         >
                           <span className="flex items-center gap-2">
                             <Cloud className="h-4 w-4" /> 
-                            {language === 'en' ? 'Google Drive Sync' : 'Drive & Sauvegardes'}
+                            {t('tab.google_drive')}
                           </span>
                         </button>
                       </>

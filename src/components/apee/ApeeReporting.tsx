@@ -16,7 +16,7 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
   const { language } = useLanguage();
   const isEn = language === 'en';
   const [filterPeriod, setFilterPeriod] = useState<string>('all'); // 'all' | 'today' | 'month' | 'custom'
-  const [activeSegment, setActiveSegment] = useState<'parents' | 'others'>('parents');
+  const [activeSegment, setActiveSegment] = useState<'parents' | 'others' | 'expenses'>('parents');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   
@@ -80,11 +80,34 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
     }).sort((a, b) => b.date.localeCompare(a.date));
   };
 
+  const getFilteredExpenses = () => {
+    return expenses.filter(e => {
+      const dateStr = e.date;
+      let include = true;
+      
+      if (filterPeriod === 'today') {
+        const todayStr = new Date().toISOString().slice(0, 10);
+        include = (dateStr === todayStr);
+      } else if (filterPeriod === 'month') {
+        const activeMonth = new Date().toISOString().slice(0, 7);
+        include = dateStr.startsWith(activeMonth);
+      } else if (filterPeriod === 'custom') {
+        if (startDate && dateStr < startDate) include = false;
+        if (endDate && dateStr > endDate) include = false;
+      }
+      return include;
+    }).sort((a, b) => b.date.localeCompare(a.date));
+  };
+
   const filteredPayments = getFilteredPayments();
   const filteredOtherRevenues = getFilteredOtherRevenues();
+  const filteredExpenses = getFilteredExpenses();
+
   const totalCollectedInPeriod = activeSegment === 'parents'
     ? filteredPayments.reduce((sum, p) => sum + p.amount, 0)
-    : filteredOtherRevenues.reduce((sum, r) => sum + r.amount, 0);
+    : activeSegment === 'others'
+    ? filteredOtherRevenues.reduce((sum, r) => sum + r.amount, 0)
+    : filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
 
   // Global calculations
   const totalExpectedAmount = parents.reduce((sum, p) => sum + p.totalDue, 0);
@@ -117,11 +140,20 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
 
   // Export JSON function
   const handleExportJson = () => {
-    const listToExport = activeSegment === 'parents' ? filteredPayments : filteredOtherRevenues;
+    const listToExport = activeSegment === 'parents' 
+      ? filteredPayments 
+      : activeSegment === 'others' 
+      ? filteredOtherRevenues 
+      : filteredExpenses;
     const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(listToExport, null, 2));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute('href', dataStr);
-    downloadAnchor.setAttribute('download', `bilan_APEE_${activeSegment === 'parents' ? 'cotisations_parents' : 'autres_recettes'}_${filterPeriod}.json`);
+    
+    let suffix = 'cotisations_parents';
+    if (activeSegment === 'others') suffix = 'autres_recettes';
+    if (activeSegment === 'expenses') suffix = 'depenses_apee';
+
+    downloadAnchor.setAttribute('download', `bilan_APEE_${suffix}_${filterPeriod}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
@@ -138,13 +170,20 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
       filteredPayments.forEach(p => {
         tsv += `${p.date}\t${p.parentName}\t${p.parentPhone}\t${p.method || 'Espèces'}\t${p.amount}\t${p.note || ''}\n`;
       });
-    } else {
+    } else if (activeSegment === 'others') {
       tsv = 'Date\tNom Donneur / Payeur\tQualité / Statut\tMoyen de paiement\tMontant Versé (FCFA)\tObservations / Réf\n';
       filteredOtherRevenues.forEach(r => {
         let statLabel = "Autre tiers";
         if (r.status === 'membre_honneur') statLabel = "Membre d'Honneur";
         else if (r.status === 'institution') statLabel = `Institution (${r.statusDetails || ''})`;
         tsv += `${r.date}\t${r.payerName}\t${statLabel}\t${r.paymentMethod}\t${r.amount}\t${(r.notes || '') + (r.transactionId ? ' - Réf : ' + r.transactionId : '')}\n`;
+      });
+    } else {
+      tsv = 'Date\tDésignation de la Dépense\tType / Nature\tÉtat d\'exécution\tMontant (FCFA)\tDescription\n';
+      filteredExpenses.forEach(e => {
+        const typeLabel = e.type === 'payment-order' ? 'Ordre de paiement' : (e.type === 'command' ? 'Bon de commande' : 'Remboursement');
+        const statusLabel = e.status === 'Executed' ? 'Exécuté / Payé' : (e.status === 'Approved' ? 'Approuvé' : 'En attente');
+        tsv += `${e.date}\t${e.title}\t${typeLabel}\t${statusLabel}\t${e.amount}\t${e.description || ''}\n`;
       });
     }
 
@@ -154,6 +193,240 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
     }).catch(err => {
       alert("Échec de la copie automatique: " + err);
     });
+  };
+
+  // Dynamically generate a gorgeous, formal PDF report of the currently selected period and active tab
+  const handlePrintActiveSegmentViewPdf = () => {
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    let y = 15;
+    const margin = 15;
+    const pageWidth = 210;
+    const pageHeight = 297;
+    const contentWidth = pageWidth - (2 * margin); // 180mm
+    let pageCount = 1;
+
+    const drawPageHeaderFooter = (num: number) => {
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.3);
+      doc.line(margin, 12, margin + contentWidth, 12);
+      
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184); // Slate 400
+      const segmentTitle = activeSegment === 'parents' 
+        ? (isEn ? "Detailed PTA Fees Recovery Report" : "Rapport de recouvrement des cotisations parents")
+        : activeSegment === 'others'
+        ? (isEn ? "Detailed Other Revenue Report" : "Rapport détaillé des autres recettes d'appoint")
+        : (isEn ? "Detailed Budget Execution/Expenses Report" : "Rapport d'exécution budgétaire / Dépenses");
+
+      const headerTitle = `${getApeeShortName(settings)} - ${settings.associationName || "PTA"} • ${segmentTitle}`;
+      doc.text(headerTitle, margin, 9);
+      
+      doc.line(margin, pageHeight - 12, margin + contentWidth, pageHeight - 12);
+      doc.text(`Page ${num}`, margin + contentWidth - 12, pageHeight - 8);
+      const periodLabel = isEn ? `Period: ${filterPeriod.toUpperCase()}` : `Période du filtre : ${filterPeriod.toUpperCase()}`;
+      doc.text(`PASMA-SYS SECRETARY • ${periodLabel}`, margin, pageHeight - 8);
+    };
+
+    drawPageHeaderFooter(pageCount);
+
+    const actCountry = settings?.country || "Cameroun";
+    const countryLabel = isEn 
+      ? (actCountry === "Cameroun" ? "REPUBLIC OF CAMEROON" : actCountry.toUpperCase())
+      : (actCountry === "Cameroun" ? "RÉPUBLIQUE DU CAMEROUN" : actCountry.toUpperCase());
+    const yearLabel = isEn ? "Academic Year" : "Année Académique";
+
+    if (actCountry === "Cameroun") {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text("RÉPUBLIQUE DU CAMEROUN", margin, y + 4);
+      doc.text("REPUBLIC OF CAMEROON", margin + contentWidth, y + 4, { align: 'right' });
+
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(6.5);
+      doc.setTextColor(148, 163, 184); // Slate 400
+      doc.text("Paix - Travail - Patrie", margin, y + 7.5);
+      doc.text("Peace - Work - Fatherland", margin + contentWidth, y + 7.5, { align: 'right' });
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text(`${yearLabel} : ${settings?.schoolYear || "2025/2026"}`, margin + contentWidth, y + 11.5, { align: 'right' });
+      
+      y += 18;
+    } else {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text(countryLabel, margin, y + 4);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.text(`${yearLabel} : ${settings?.schoolYear || "2025/2026"}`, margin + contentWidth, y + 4, { align: 'right' });
+      
+      y += 12;
+    }
+
+    // Title Block
+    doc.setFillColor(30, 41, 59); // Slate 800
+    doc.rect(margin, y, contentWidth, 14, 'F');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10.5);
+    doc.setTextColor(255, 255, 255);
+    
+    let titleStr = '';
+    if (activeSegment === 'parents') {
+      titleStr = isEn 
+        ? `EXPORT: PARENTS PTA FEES RECOVERY REPORT`
+        : `EXPORT : RAPPORT DES COTISATIONS DES PARENTS D'ÉLÈVES`;
+    } else if (activeSegment === 'others') {
+      titleStr = isEn
+        ? `EXPORT: OTHER GENERAL SYSTEM REVENUES`
+        : `EXPORT : RAPPORT DES AUTRES RECETTES D'APPOINT`;
+    } else {
+      titleStr = isEn
+        ? `EXPORT: BUDGET DEPLOYMENT & EXPENSES STATEMENT`
+        : `EXPORT : RAPPORT ET RELEVÉ DES DÉPENSES EXÉCUTÉES`;
+    }
+    
+    doc.text(titleStr, margin + 5, y + 9);
+    y += 20;
+
+    // Filtered data count check
+    const itemsList = activeSegment === 'parents' 
+      ? filteredPayments 
+      : activeSegment === 'others' 
+      ? filteredOtherRevenues 
+      : filteredExpenses;
+
+    const totalPeriodAmount = itemsList.reduce((sum: number, item: any) => sum + item.amount, 0);
+
+    // KPI Summary Box
+    doc.setFillColor(248, 250, 252);
+    doc.rect(margin, y, contentWidth, 16, 'F');
+    doc.setDrawColor(226, 232, 240);
+    doc.rect(margin, y, contentWidth, 16, 'D');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor(100, 116, 139);
+    doc.text(isEn ? "EXPORTED PERIOD" : "PÉRIODE EXTRACTIBLE", margin + 4, y + 5);
+    doc.text(isEn ? "TOTAL LINE COUNT" : "NOMBRE DE LIGNES", margin + 65, y + 5);
+    doc.text(isEn ? "CUMULATIVE AMOUNT" : "MONTANT CUMULÉ DU RAPPORT", margin + 115, y + 5);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(15, 23, 42);
+    
+    let periodTextFr = "Tous les enregistrements";
+    if (filterPeriod === 'today') periodTextFr = "Aujourd'hui";
+    else if (filterPeriod === 'month') periodTextFr = "Ce mois";
+    else if (filterPeriod === 'custom') periodTextFr = `Du ${startDate || '?'} au ${endDate || '?'}`;
+    
+    let periodTextEn = "All Records";
+    if (filterPeriod === 'today') periodTextEn = "Today";
+    else if (filterPeriod === 'month') periodTextEn = "Current Month";
+    else if (filterPeriod === 'custom') periodTextEn = `From ${startDate || '?'} to ${endDate || '?'}`;
+
+    doc.text(isEn ? periodTextEn : periodTextFr, margin + 4, y + 11);
+    doc.text(`${itemsList.length} ${isEn ? 'entries' : 'lignes'}`, margin + 65, y + 11);
+    doc.setTextColor(activeSegment === 'expenses' ? 220 : 79, activeSegment === 'expenses' ? 38 : 70, activeSegment === 'expenses' ? 38 : 229); // Red for expenses, Blue for incomes
+    doc.text(`${totalPeriodAmount.toLocaleString()} FCFA`, margin + 115, y + 11);
+
+    y += 24;
+
+    // Table view
+    doc.setFillColor(241, 245, 249);
+    doc.rect(margin, y, contentWidth, 6.5, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+
+    if (activeSegment === 'parents') {
+      doc.text(isEn ? "Payment Date" : "Date Versement", margin + 3, y + 4.5);
+      doc.text(isEn ? "Parent's Full Name" : "Nom complet du Parent", margin + 28, y + 4.5);
+      doc.text(isEn ? "Phone Number" : "Téléphone", margin + 85, y + 4.5);
+      doc.text(isEn ? "Pymt Method" : "Moyen Encaissé", margin + 120, y + 4.5);
+      doc.text(isEn ? "Amount Slipped" : "Montant Reçu (FCFA)", margin + 175, y + 4.5, { align: 'right' });
+    } else if (activeSegment === 'others') {
+      doc.text(isEn ? "Received Date" : "Date de Perception", margin + 3, y + 4.5);
+      doc.text(isEn ? "Donor/Payer Name" : "Nom du Donneur/Payeur", margin + 28, y + 4.5);
+      doc.text(isEn ? "Status/Quality" : "Qualité / Statut", margin + 85, y + 4.5);
+      doc.text(isEn ? "Method" : "Moyen reçu", margin + 125, y + 4.5);
+      doc.text(isEn ? "Amount (FCFA)" : "Montant (FCFA)", margin + 175, y + 4.5, { align: 'right' });
+    } else {
+      doc.text(isEn ? "Expense Date" : "Date Enregistrée", margin + 3, y + 4.5);
+      doc.text(isEn ? "Expense Title" : "Libellé de la Dépense", margin + 28, y + 4.5);
+      doc.text(isEn ? "Expense Type" : "Type/Nature", margin + 85, y + 4.5);
+      doc.text(isEn ? "Status" : "État execution", margin + 125, y + 4.5);
+      doc.text(isEn ? "Amount (FCFA)" : "Montant Dépensé", margin + 175, y + 4.5, { align: 'right' });
+    }
+
+    y += 6.5;
+
+    if (itemsList.length === 0) {
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8.5);
+      doc.setTextColor(148, 163, 184);
+      doc.text(isEn ? "No records match the current reporting filter criteria." : "Aucun dossier financier ne correspond à vos critères de filtre.", margin + 5, y + 6);
+    } else {
+      itemsList.forEach((item: any) => {
+        if (y > pageHeight - 20) {
+          doc.addPage();
+          pageCount++;
+          drawPageHeaderFooter(pageCount);
+          y = 25;
+        }
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(71, 85, 105);
+
+        // Date cell
+        const rawDate = item.date;
+        const formattedDate = rawDate ? new Date(rawDate).toLocaleDateString('fr-FR') : '-';
+        doc.text(formattedDate, margin + 3, y + 4.5);
+
+        if (activeSegment === 'parents') {
+          doc.text(item.parentName.toUpperCase(), margin + 28, y + 4.5);
+          doc.text(item.parentPhone || '-', margin + 85, y + 4.5);
+          doc.text(item.method || 'Espèces', margin + 120, y + 4.5);
+        } else if (activeSegment === 'others') {
+          doc.text(item.payerName.toUpperCase(), margin + 28, y + 4.5);
+          let statLabel = "Autre tiers";
+          if (item.status === 'membre_honneur') statLabel = "Membre d'Honneur";
+          else if (item.status === 'institution') statLabel = `Institution (${item.statusDetails || ''})`;
+          doc.text(statLabel, margin + 85, y + 4.5);
+          doc.text(item.paymentMethod || 'Espèces', margin + 125, y + 4.5);
+        } else {
+          doc.text(item.title, margin + 28, y + 4.5);
+          const typeLabel = item.type === 'payment-order' ? 'Ordre de paiement' : (item.type === 'command' ? 'Bon de commande' : 'Remboursement');
+          doc.text(typeLabel, margin + 85, y + 4.5);
+          const statusLabel = item.status === 'Executed' ? 'Exécuté' : (item.status === 'Approved' ? 'Approuvé' : 'En attente');
+          doc.text(statusLabel, margin + 125, y + 4.5);
+        }
+
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(activeSegment === 'expenses' ? 180 : 15, activeSegment === 'expenses' ? 20 : 23, activeSegment === 'expenses' ? 20 : 42);
+        doc.text(`${item.amount.toLocaleString()} F`, margin + 175, y + 4.5, { align: 'right' });
+
+        y += 6.5;
+
+        doc.setDrawColor(241, 245, 249);
+        doc.line(margin, y, margin + contentWidth, y);
+      });
+    }
+
+    doc.save(`rapport_${activeSegment}_${filterPeriod}_${settings.schoolYear.replace(/\//g, '_')}.pdf`);
+    setSuccessMsg(isEn ? 'Reporting PDF generated successfully !' : 'Rapport PDF généré et téléchargé avec succès !');
+    setTimeout(() => setSuccessMsg(null), 3500);
   };
 
   const handlePrintBilan = () => {
@@ -830,7 +1103,7 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
           </p>
         </div>
         
-        <div className="flex items-center gap-2 select-none shrink-0">
+        <div className="flex items-center gap-2 select-none shrink-0 flex-wrap md:flex-nowrap">
           <button
             onClick={handleCopyTsv}
             className="px-3 py-1.5 text-xs font-semibold bg-slate-100 text-slate-800 rounded-xl hover:bg-slate-200 border border-slate-200 flex items-center gap-1.5 cursor-pointer transition"
@@ -845,6 +1118,14 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
             title="Télécharger fichier JSON"
           >
             <Download className="h-3.5 w-3.5 text-indigo-600" /> Export JSON
+          </button>
+
+          <button
+            onClick={handlePrintActiveSegmentViewPdf}
+            className="px-3.5 py-2 text-xs font-black bg-amber-500 hover:bg-amber-600 text-white rounded-xl flex items-center gap-1.5 cursor-pointer transition shadow-md active:scale-97"
+            title="Télécharger un rapport détaillé au format PDF contenant l'affichage ciblé du tableau filtré ci-dessous"
+          >
+            <Download className="h-4 w-4 text-amber-250" /> Télécharger Rapport Actuel (PDF)
           </button>
 
           <button
@@ -958,27 +1239,41 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
               <p className="text-[10px] text-gray-400 font-sans mt-0.5">Cliquez sur un onglet pour basculer la liste active.</p>
             </div>
             <span className="text-[10px] font-mono text-gray-450 font-bold bg-slate-100 hover:bg-slate-150 rounded-md px-2 py-0.5">
-              Total : {activeSegment === 'parents' ? filteredPayments.length : filteredOtherRevenues.length} lignes
+              Total : {
+                activeSegment === 'parents' 
+                  ? filteredPayments.length 
+                  : activeSegment === 'others' 
+                  ? filteredOtherRevenues.length 
+                  : filteredExpenses.length
+              } lignes
             </span>
           </div>
 
           {/* Segment selection tabs switcher */}
-          <div className="flex bg-slate-100/80 border border-slate-205 rounded-xl p-0.75 font-bold text-[11px] max-w-xs select-none">
+          <div className="flex bg-slate-100/80 border border-slate-205 rounded-xl p-0.75 font-bold text-[11px] max-w-sm select-none gap-1">
             <button
               onClick={() => setActiveSegment('parents')}
-              className={`flex-1 py-1.5 px-3 rounded-lg transition-all duration-155 cursor-pointer flex justify-center items-center gap-1 ${
+              className={`flex-1 py-1.5 px-2 rounded-lg transition-all duration-155 cursor-pointer flex justify-center items-center gap-1 ${
                 activeSegment === 'parents' ? 'bg-white text-slate-900 shadow-3xs border border-slate-200/50' : 'text-slate-500 hover:text-slate-700'
               }`}
             >
-              👨‍👩‍👧‍👦 Cotisations Parents
+              👨‍👩‍👧‍👦 Cotisations
             </button>
             <button
               onClick={() => setActiveSegment('others')}
-              className={`flex-1 py-1.5 px-3 rounded-lg transition-all duration-155 cursor-pointer flex justify-center items-center gap-1 ${
+              className={`flex-1 py-1.5 px-2 rounded-lg transition-all duration-155 cursor-pointer flex justify-center items-center gap-1 ${
                 activeSegment === 'others' ? 'bg-white text-slate-900 shadow-3xs border border-slate-200/50' : 'text-slate-500 hover:text-slate-700'
               }`}
             >
-              💸 Autres Recettes
+              💸 Appoint
+            </button>
+            <button
+              onClick={() => setActiveSegment('expenses')}
+              className={`flex-1 py-1.5 px-2 rounded-lg transition-all duration-155 cursor-pointer flex justify-center items-center gap-1 ${
+                activeSegment === 'expenses' ? 'bg-white text-slate-905 shadow-3xs border border-slate-200/50' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              🧾 Dépenses
             </button>
           </div>
 
@@ -1018,7 +1313,7 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
                   )}
                 </tbody>
               </table>
-            ) : (
+            ) : activeSegment === 'others' ? (
               <table className="w-full text-xs text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-100 text-gray-505 font-bold uppercase text-[9px] tracking-wider select-none">
@@ -1047,7 +1342,7 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
                           <td className="py-2 px-2 font-mono text-gray-450">{rev.date}</td>
                           <td className="py-2 px-2 font-semibold text-slate-800">
                             <div>{rev.payerName}</div>
-                            {rev.notes && <span className="text-[9px] text-[indigo-600]/70 font-sans tracking-wide leading-none select-none italic block mt-0.5">Note: {rev.notes}</span>}
+                            {rev.notes && <span className="text-[9px] text-indigo-600/75 font-sans tracking-wide leading-none select-none italic block mt-0.5">Note: {rev.notes}</span>}
                           </td>
                           <td className="py-2 px-2 font-medium text-slate-655 font-mono text-[10px]">{statLabel}</td>
                           <td className="py-2 px-2">
@@ -1056,6 +1351,54 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
                             </span>
                           </td>
                           <td className="py-2 px-2 text-right font-mono font-bold text-emerald-600">{rev.amount.toLocaleString()} FCFA</td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            ) : (
+              <table className="w-full text-xs text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-100 text-gray-505 font-bold uppercase text-[9px] tracking-wider select-none">
+                    <th className="py-2 px-2">Date</th>
+                    <th className="py-2 px-2">Désignation de la Dépense</th>
+                    <th className="py-2 px-2">Type / Nature</th>
+                    <th className="py-2 px-2">Statut execution</th>
+                    <th className="py-2 px-2 text-right">Montant</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredExpenses.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-6 text-center text-gray-400 text-[11px] font-medium leading-relaxed">
+                        Aucune dépense enregistrée durant cette période.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredExpenses.map((exp) => {
+                      const typeLabel = exp.type === 'payment-order' ? 'Ordre de paiement' : (exp.type === 'command' ? 'Bon de commande' : 'Remboursement');
+                      const statusLabel = exp.status === 'Executed' ? 'Exécuté' : (exp.status === 'Approved' ? 'Approuvé' : 'En attente');
+                      return (
+                        <tr key={exp.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="py-2 px-2 font-mono text-gray-450">{exp.date}</td>
+                          <td className="py-2 px-2 font-semibold text-slate-800">
+                            <div>{exp.title}</div>
+                            {exp.description && <span className="text-[9px] text-slate-400 font-sans block mt-0.5">{exp.description}</span>}
+                          </td>
+                          <td className="py-2 px-2 font-medium text-slate-655 font-mono text-[10px]">{typeLabel}</td>
+                          <td className="py-2 px-2">
+                            <span className={`text-[9px] font-sans font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider border ${
+                              exp.status === 'Executed' 
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-100' 
+                                : exp.status === 'Approved'
+                                ? 'bg-indigo-50 text-indigo-700 border-indigo-100'
+                                : 'bg-amber-50 text-amber-700 border-amber-100'
+                            }`}>
+                              {statusLabel}
+                            </span>
+                          </td>
+                          <td className="py-2 px-2 text-right font-mono font-bold text-red-650">{exp.amount.toLocaleString()} FCFA</td>
                         </tr>
                       );
                     })
