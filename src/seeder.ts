@@ -320,35 +320,23 @@ export async function seedUserData(userId: string): Promise<void> {
       batch.set(doc(db, 'appointments', apt.id), apt);
     });
 
-    // 6. Invoices (Facturation)
+    // 6. Invoices (Facturation comptable APEE)
     const invoices: Invoice[] = [
       {
-        id: `inv_1_${userId.slice(0, 6)}`,
-        studentId: student1Id,
+        id: `apee_par_bene_jacques`,
+        studentId: 'apee_ces_ekali_1',
         parentId: userId,
-        title: 'Cantine Scolaire - Mai 2026',
-        amount: 54.00,
-        dueDate: '2026-06-05',
-        status: 'Unpaid'
-      },
-      {
-        id: `inv_2_${userId.slice(0, 6)}`,
-        studentId: student2Id,
-        parentId: userId,
-        title: 'Abonnement Transport Scolaire - Trimestre 3',
-        amount: 110.00,
-        dueDate: '2026-06-10',
-        status: 'Unpaid'
-      },
-      {
-        id: `inv_3_${userId.slice(0, 6)}`,
-        studentId: student1Id,
-        parentId: userId,
-        title: 'Matériel pédagogique & Fournitures - Trimestre 2',
-        amount: 35.00,
-        dueDate: '2026-03-15',
-        status: 'Paid',
-        paymentDate: '2026-03-10'
+        title: 'Bene Jacques',
+        amount: 25000,
+        dueDate: '2025/2026',
+        status: 'Unpaid',
+        phone: '687463313',
+        address: 'Quartier Ekali',
+        email: 'jacquesbene301@gmail.com',
+        note: 'Règlement initial pour la rentrée scolaire de Marc et Elise',
+        amountPaid: 15000,
+        studentsList: JSON.stringify([{ name: 'Marc Bene', classRoom: 'CM2-A' }, { name: 'Elise Bene', classRoom: 'CE2-B' }]),
+        paymentsHistory: JSON.stringify([{ id: 'p_bene_1', amount: 15000, date: '2026-05-10', note: 'Versement initial par Mobile Money', method: 'Orange Money' }])
       }
     ];
 
@@ -672,32 +660,20 @@ export function getOfflineMockData(userId: string) {
 
   const invoices: Invoice[] = [
     {
-      id: `inv_1_${userId.slice(0, 6)}`,
-      studentId: student1Id,
+      id: `apee_par_bene_jacques`,
+      studentId: 'apee_ces_ekali_1',
       parentId: userId,
-      title: 'Cantine Scolaire - Mai 2026',
-      amount: 54.00,
-      dueDate: '2026-06-05',
-      status: 'Unpaid'
-    },
-    {
-      id: `inv_2_${userId.slice(0, 6)}`,
-      studentId: student2Id,
-      parentId: userId,
-      title: 'Abonnement Transport Scolaire - Trimestre 3',
-      amount: 110.00,
-      dueDate: '2026-06-10',
-      status: 'Unpaid'
-    },
-    {
-      id: `inv_3_${userId.slice(0, 6)}`,
-      studentId: student1Id,
-      parentId: userId,
-      title: 'Matériel pédagogique & Fournitures - Trimestre 2',
-      amount: 35.00,
-      dueDate: '2026-03-15',
-      status: 'Paid',
-      paymentDate: '2026-03-10'
+      title: 'Bene Jacques',
+      amount: 25000,
+      dueDate: '2025/2026',
+      status: 'Unpaid',
+      phone: '687463313',
+      address: 'Quartier Ekali',
+      email: 'jacquesbene301@gmail.com',
+      note: 'Règlement initial pour la rentrée scolaire de Marc et Elise',
+      amountPaid: 15000,
+      studentsList: JSON.stringify([{ name: 'Marc Bene', classRoom: 'CM2-A' }, { name: 'Elise Bene', classRoom: 'CE2-B' }]),
+      paymentsHistory: JSON.stringify([{ id: 'p_bene_1', amount: 15000, date: '2026-05-10', note: 'Versement initial par Mobile Money', method: 'Orange Money' }])
     }
   ];
 

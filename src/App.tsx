@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { collection, query, where, getDocs, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, setDoc, deleteDoc, writeBatch, getDoc } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, loginWithGoogle, logout, db, handleFirestoreError, OperationType, loginAnonymously, goOffline, goOnline } from './firebase';
 import { isDatabaseSeeded, seedUserData, getOfflineMockData } from './seeder';
@@ -287,6 +287,46 @@ export default function App() {
     const s = localStorage.getItem('portal_parent_details');
     return s ? JSON.parse(s) : null;
   });
+
+  // Auto-connect Bene Jacques as requested by the user
+  useEffect(() => {
+    const activeParent = localStorage.getItem('portal_parent_details');
+    const activeRole = localStorage.getItem('portal_user_role');
+    const schoolId = localStorage.getItem('portal_selected_school_id');
+    
+    const overrideToBeneJacques = () => {
+      localStorage.setItem('portal_selected_school_id', 'demo_school_ekali');
+      localStorage.setItem('portal_user_role', 'parent');
+      localStorage.setItem('portal_parent_details', JSON.stringify({
+        name: "Bene Jacques",
+        phone: "687463313",
+        email: "jacquesbene301@gmail.com",
+        studentSubsetNames: ["Marc Bene", "Elise Bene"]
+      }));
+      setSelectedSchoolId('demo_school_ekali');
+      setPortalUserRole('parent');
+      setPortalParentDetails({
+        name: "Bene Jacques",
+        phone: "687463313",
+        email: "jacquesbene301@gmail.com",
+        studentSubsetNames: ["Marc Bene", "Elise Bene"]
+      });
+      setActiveTab('announcements');
+    };
+
+    if (!activeParent || !activeRole || schoolId !== 'demo_school_ekali') {
+      overrideToBeneJacques();
+    } else {
+      try {
+        const parsed = JSON.parse(activeParent);
+        if (parsed.phone !== '687463313') {
+          overrideToBeneJacques();
+        }
+      } catch (err) {
+        overrideToBeneJacques();
+      }
+    }
+  }, []);
 
   // Nav tab control
   const [activeTab, setActiveTab] = useState<TabType>(() => {
@@ -645,6 +685,33 @@ export default function App() {
     const initAndFetchData = async () => {
       setDataLoading(true);
       try {
+        // Ensure Bene Jacques exists in Firestore under demo_school_ekali if not present
+        try {
+          const beneDocRef = doc(db, 'invoices', 'apee_par_bene_jacques');
+          const snap = await getDoc(beneDocRef);
+          if (!snap.exists()) {
+            await setDoc(beneDocRef, {
+              id: 'apee_par_bene_jacques',
+              studentId: 'apee_ces_ekali_1',
+              parentId: 'demo_school_ekali',
+              title: 'Bene Jacques',
+              phone: '687463313',
+              email: 'jacquesbene301@gmail.com',
+              amount: 25000,
+              dueDate: '2025/2026',
+              status: 'Unpaid',
+              paymentDate: new Date().toISOString(),
+              note: 'Règlement initial pour la rentrée scolaire de Marc et Elise',
+              amountPaid: 15000,
+              studentsList: JSON.stringify([{ name: 'Marc Bene', classRoom: 'CM2-A' }, { name: 'Elise Bene', classRoom: 'CE2-B' }]),
+              paymentsHistory: JSON.stringify([{ id: 'p_bene_1', amount: 15000, date: '2026-05-10', note: 'Versement initial par Mobile Money', method: 'Orange Money' }])
+            });
+            console.log("Successfully seeded Bene Jacques into Firestore invoices.");
+          }
+        } catch (beneErr) {
+          console.warn("Soft seeding of Bene Jacques on load skipped or offline:", beneErr);
+        }
+
         // A. Verify if database has seeded profiles for this account space (demo schools pre-seeded dynamically if empty)
         let seeded = true; // Default to true for simulated guests to bypass seeding attempts
         const isSimulatedUser = !auth.currentUser || userId.startsWith('sandboxed_guest_');
@@ -836,8 +903,58 @@ export default function App() {
     setHomeworks(prev => prev.map(hw => hw.id === updated.id ? updated : hw));
   };
 
-  const handleUpdateInvoiceInPlace = (updated: Invoice) => {
+  const handleUpdateInvoiceInPlace = async (updated: Invoice) => {
     setInvoices(prev => prev.map(inv => inv.id === updated.id ? updated : inv));
+
+    if (updated.studentId === 'apee_ces_ekali_1' && userId) {
+      // Synchronize parent cotisation changes back to the ApeeParent model
+      const oldParent = apeeParents.find(p => p.id === updated.id);
+      if (oldParent) {
+        const addedAmount = Math.max(0, updated.amount - oldParent.totalPaid);
+        const newPayment = {
+          id: 'pay_portal_' + Date.now(),
+          amount: addedAmount,
+          date: updated.paymentDate || new Date().toISOString().split('T')[0],
+          note: updated.note || 'Règlement validé directement via le portail de facturation en ligne',
+          method: updated.provider === 'mtn' ? 'MTN MoMo' : updated.provider === 'orange' ? 'Orange Money' : updated.provider === 'wave' ? 'Wave' : 'Carte Bancaire',
+          transactionId: updated.transactionId || ('TX_' + Date.now().toString(36).toUpperCase())
+        };
+
+        const updatedParent: ApeeParent = {
+          ...oldParent,
+          totalPaid: updated.amount,
+          status: 'soldé',
+          payments: [...(oldParent.payments || []), newPayment],
+          updatedAt: new Date().toISOString()
+        };
+
+        // Update local ApeeParent state
+        setApeeParents(prev => prev.map(p => p.id === updated.id ? updatedParent : p));
+
+        // Save progress to database and update activity log
+        try {
+          await saveApeeParent(userId, updatedParent);
+          
+          const operator = apeeSettings.finManagerName || "Gérant Financier";
+          const logId = 'log_' + Date.now() + '_pay_portal_' + Math.random().toString(36).substr(2, 4);
+          const payDesc = `Versement en ligne de ${addedAmount.toLocaleString()} FCFA validé via le portail pour ${updatedParent.name} (Réf : ${newPayment.transactionId}). État global : SOLDÉ.`;
+          const logObj: ApeeActivityLog = {
+            id: logId,
+            parentId: userId,
+            timestamp: new Date().toISOString(),
+            parentName: updatedParent.name,
+            actionType: 'ADD_PAYMENT',
+            description: payDesc,
+            amount: addedAmount,
+            operatorName: operator
+          };
+          await saveApeeLog(userId, logObj);
+          setApeeLogs(prev => [logObj, ...prev]);
+        } catch (e) {
+          console.error("Failed to synchronize parent cotisation payment:", e);
+        }
+      }
+    }
   };
 
   const handleAddAppointmentInPlace = (newApt: Appointment) => {
@@ -1017,6 +1134,38 @@ export default function App() {
 
   const handleSaveApeeParentInPlace = async (parent: ApeeParent): Promise<boolean> => {
     if (!await checkApeeAuthorization()) return false;
+
+    // Normalise and synchronise APEE parent invoice details locally
+    const lastPayment = parent.payments && parent.payments.length > 0 ? parent.payments[parent.payments.length - 1] : null;
+    const parentInvoice: Invoice = {
+      id: parent.id,
+      studentId: 'apee_ces_ekali_1',
+      parentId: userId || '',
+      title: parent.name,
+      amount: parent.totalDue,
+      dueDate: parent.createdAt || new Date().toISOString(),
+      status: parent.status === 'soldé' ? 'Paid' : 'Unpaid',
+      paymentDate: parent.updatedAt || new Date().toISOString(),
+      phone: parent.phone,
+      address: parent.address,
+      email: parent.email || '',
+      lastReminded: parent.lastReminded || '',
+      note: parent.note,
+      amountPaid: parent.totalPaid,
+      studentsList: JSON.stringify(parent.students),
+      paymentsHistory: JSON.stringify(parent.payments),
+      transactionId: lastPayment?.transactionId || '',
+      provider: lastPayment?.provider || '',
+    };
+
+    setInvoices(prev => {
+      const idx = prev.findIndex(inv => inv.id === parent.id);
+      if (idx !== -1) {
+        return prev.map(inv => inv.id === parent.id ? parentInvoice : inv);
+      }
+      return [...prev, parentInvoice];
+    });
+
     setApeeParents(prev => {
       const idx = prev.findIndex(p => p.id === parent.id);
       if (idx !== -1) {
@@ -1238,6 +1387,7 @@ export default function App() {
     // Always synchronize local state so the UI updates beautifully even on database sync quirks
     setApeeParents(prev => prev.filter(p => p.id !== id));
     setStudents(prev => prev.filter(s => !s.id.startsWith(`stu_${id}_`)));
+    setInvoices(prev => prev.filter(inv => inv.id !== id));
     return true;
   };
 

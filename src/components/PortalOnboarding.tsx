@@ -297,6 +297,27 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
               amountPaid: 0,
               studentsList: JSON.stringify([{ name: 'Amadou Diallo', classRoom: 'CM1-A' }])
             };
+          } else if (
+            searchNameNorm.includes('bene') ||
+            searchNameNorm.includes('jacques') ||
+            searchPhoneSan.includes('687463313') ||
+            searchPhoneSan.endsWith('463313')
+          ) {
+            matchedInvoice = {
+              id: 'apee_par_bene_jacques',
+              studentId: 'apee_ces_ekali_1',
+              parentId: 'demo_school_ekali',
+              title: 'Bene Jacques',
+              phone: '687463313',
+              email: 'jacquesbene301@gmail.com',
+              amount: 25000,
+              dueDate: '2025/2026',
+              status: 'Unpaid',
+              note: 'Règlement initial de cotisation APEE',
+              amountPaid: 15000,
+              studentsList: JSON.stringify([{ name: 'Marc Bene', classRoom: 'CM2-A' }, { name: 'Elise Bene', classRoom: 'CE2-B' }]),
+              paymentsHistory: JSON.stringify([{ id: 'p_bene_1', amount: 15000, date: '2026-05-10', note: 'Versement initial par Mobile Money', method: 'Orange Money' }])
+            };
           }
         }
 
@@ -596,46 +617,25 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
       batch.set(doc(db, 'homeworks', hw2.id), hw2);
 
       // 7. Write parent cotisations (invoices marked as apee_ces_ekali_1)
-      // Parent A (Jean Martin): COT paid of 15,000 FCFA -> ACCEPTED
-      const parentAInvoice = {
-        id: `apee_par_martin_${newSchoolId.slice(4, 10)}`,
+      const parentInvoice = {
+        id: `apee_par_bene_jacques_${newSchoolId.slice(4, 10)}`,
         studentId: 'apee_ces_ekali_1',
         parentId: newSchoolId,
-        title: 'Jean Martin',
+        title: 'Bene Jacques',
         amount: Number(cotisationAmount),
         dueDate: schoolYear,
         status: 'Unpaid',
         paymentDate: new Date().toISOString(),
-        phone: '677112233',
-        address: 'Quartier Ekali, face école',
-        email: 'j.martin@email.com',
-        note: 'Acompte versé directement au Censeur',
-        amountPaid: 15000, // SUCCESS! > 0
-        studentsList: JSON.stringify([{ name: 'Lucas Martin', classRoom: 'CM2-A' }, { name: 'Chloé Martin', classRoom: 'CE2-B' }]),
-        paymentsHistory: JSON.stringify([{ id: 'p_1', amount: 15000, date: '2026-05-02', note: 'Versement de rentrée', method: 'Orange Money' }])
+        phone: '687463313',
+        address: 'Quartier Ekali',
+        email: 'jacquesbene301@gmail.com',
+        note: 'Règlement initial pour la rentrée scolaire de Marc et Elise',
+        amountPaid: 15000,
+        studentsList: JSON.stringify([{ name: 'Marc Bene', classRoom: 'CM2-A' }, { name: 'Elise Bene', classRoom: 'CE2-B' }]),
+        paymentsHistory: JSON.stringify([{ id: 'p_bene_1', amount: 15000, date: '2026-05-10', note: 'Versement initial par Mobile Money', method: 'Orange Money' }])
       };
 
-      // Parent B (Amadou Diallo): COT paid of 0 FCFA -> REJECTED
-      const parentBInvoice = {
-        id: `apee_par_diallo_${newSchoolId.slice(4, 10)}`,
-        studentId: 'apee_ces_ekali_1',
-        parentId: newSchoolId,
-        title: 'Mariam Diallo',
-        amount: Number(cotisationAmount),
-        dueDate: schoolYear,
-        status: 'Unpaid',
-        paymentDate: '',
-        phone: '699445566',
-        address: 'Mfou Centre',
-        email: '',
-        note: 'Aucun versement effectué pour le moment',
-        amountPaid: 0, // FAILURE! 0
-        studentsList: JSON.stringify([{ name: 'Amadou Diallo', classRoom: 'CM1-A' }]),
-        paymentsHistory: JSON.stringify([])
-      };
-
-      batch.set(doc(db, 'invoices', parentAInvoice.id), parentAInvoice);
-      batch.set(doc(db, 'invoices', parentBInvoice.id), parentBInvoice);
+      batch.set(doc(db, 'invoices', parentInvoice.id), parentInvoice);
 
       // Commit full batch write
       await batch.commit();
