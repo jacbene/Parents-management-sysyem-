@@ -1,18 +1,47 @@
 import React, { useState } from 'react';
-import { Download, FileSpreadsheet, Printer, Calendar, RefreshCw, BarChart2, DollarSign, Percent, TrendingUp, CheckCircle } from 'lucide-react';
+import { Download, FileSpreadsheet, Printer, Calendar, RefreshCw, BarChart2, DollarSign, Percent, TrendingUp, CheckCircle, Edit2, Trash2, X, TrendingDown, Coins, Activity, ArrowUpRight, ArrowDownRight, Eye, EyeOff } from 'lucide-react';
 import { ApeeParent, ApeeSettings, ApeeOtherRevenue, ApeeExpense } from '../../types';
 import { getApeeShortName } from '../../utils/apeeDb';
 import { jsPDF } from 'jspdf';
 import { useLanguage } from '../../utils/TranslationContext';
+import { 
+  ResponsiveContainer, 
+  BarChart, 
+  Bar, 
+  LineChart, 
+  Line, 
+  AreaChart, 
+  Area, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  Legend 
+} from 'recharts';
 
 interface ApeeReportingProps {
   parents: ApeeParent[];
   settings: ApeeSettings;
   otherRevenues?: ApeeOtherRevenue[];
   expenses?: ApeeExpense[];
+  onSaveParent?: (parent: ApeeParent) => any;
+  onSaveOtherRevenue?: (revenue: ApeeOtherRevenue) => any;
+  onDeleteOtherRevenue?: (id: string) => any;
+  onSaveExpense?: (expense: ApeeExpense) => any;
+  onDeleteExpense?: (id: string) => any;
 }
 
-export default function ApeeReporting({ parents, settings, otherRevenues = [], expenses = [] }: ApeeReportingProps) {
+export default function ApeeReporting({ 
+  parents, 
+  settings, 
+  otherRevenues = [], 
+  expenses = [],
+  onSaveParent,
+  onSaveOtherRevenue,
+  onDeleteOtherRevenue,
+  onSaveExpense,
+  onDeleteExpense
+}: ApeeReportingProps) {
   const { language } = useLanguage();
   const isEn = language === 'en';
   const [filterPeriod, setFilterPeriod] = useState<string>('all'); // 'all' | 'today' | 'month' | 'custom'
@@ -23,9 +52,19 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
   // Visual action alerts
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  // States for 'Annual Financial Summary' Recharts Report
+  const [chartType, setChartType] = useState<'bar' | 'line' | 'area'>('bar');
+  const [expenseFilter, setExpenseFilter] = useState<'executed' | 'all'>('executed');
+  const [showChartPanel, setShowChartPanel] = useState<boolean>(true);
+
+  // States for Editing
+  const [editingParentItem, setEditingParentItem] = useState<{ parentId: string; paymentId: string; parentName: string; amount: number; date: string; method?: string; note?: string } | null>(null);
+  const [editingOtherItem, setEditingOtherItem] = useState<ApeeOtherRevenue | null>(null);
+  const [editingExpenseItem, setEditingExpenseItem] = useState<ApeeExpense | null>(null);
+  
   // Filter payments list based on active dates
   const getFilteredPayments = () => {
-    const list: { parentName: string; parentPhone: string; amount: number; date: string; method?: string; note?: string }[] = [];
+    const list: { parentId: string; paymentId: string; parentName: string; parentPhone: string; amount: number; date: string; method?: string; note?: string }[] = [];
     
     parents.forEach(p => {
       p.payments.forEach(pay => {
@@ -46,6 +85,8 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
         
         if (include) {
           list.push({
+            parentId: p.id,
+            paymentId: pay.id,
             parentName: p.name,
             parentPhone: p.phone,
             amount: pay.amount,
@@ -97,6 +138,135 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
       }
       return include;
     }).sort((a, b) => b.date.localeCompare(a.date));
+  };
+
+  // Save & delete processors inside ApeeReporting:
+  const handleSaveEditedPaymentItem = async () => {
+    if (!editingParentItem || !onSaveParent) return;
+    const parent = parents.find(p => p.id === editingParentItem.parentId);
+    if (!parent) return;
+
+    const updatedPayments = parent.payments.map(pay => {
+      if (pay.id === editingParentItem.paymentId) {
+        return {
+          ...pay,
+          amount: Number(editingParentItem.amount),
+          date: editingParentItem.date,
+          method: editingParentItem.method || 'Espèces',
+          note: editingParentItem.note
+        };
+      }
+      return pay;
+    });
+
+    const sumPaid = updatedPayments.reduce((sum, pay) => sum + pay.amount, 0);
+    let computedStatus: 'soldé' | 'partiel' | 'retard' = 'retard';
+    if (sumPaid >= parent.totalDue) {
+      computedStatus = 'soldé';
+    } else if (sumPaid > 0) {
+      computedStatus = 'partiel';
+    }
+
+    const updatedParent: ApeeParent = {
+      ...parent,
+      payments: updatedPayments,
+      totalPaid: sumPaid,
+      status: computedStatus,
+      updatedAt: new Date().toISOString()
+    };
+
+    const success = await onSaveParent(updatedParent);
+    if (success) {
+      setSuccessMsg(isEn ? "Payment updated successfully." : "La cotisation a été modifiée avec succès.");
+      setEditingParentItem(null);
+      setTimeout(() => setSuccessMsg(null), 3000);
+    }
+  };
+
+  const handleDeletePaymentItem = async (parentId: string, paymentId: string) => {
+    if (!onSaveParent) return;
+    if (!window.confirm(isEn ? "Are you sure you want to delete this payment?" : "Êtes-vous sûr de vouloir supprimer cette cotisation d'élève ?")) return;
+
+    const parent = parents.find(p => p.id === parentId);
+    if (!parent) return;
+
+    const updatedPayments = parent.payments.filter(pay => pay.id !== paymentId);
+    const sumPaid = updatedPayments.reduce((sum, pay) => sum + pay.amount, 0);
+
+    let computedStatus: 'soldé' | 'partiel' | 'retard' = 'retard';
+    if (sumPaid >= parent.totalDue) {
+      computedStatus = 'soldé';
+    } else if (sumPaid > 0) {
+      computedStatus = 'partiel';
+    }
+
+    const updatedParent: ApeeParent = {
+      ...parent,
+      payments: updatedPayments,
+      totalPaid: sumPaid,
+      status: computedStatus,
+      updatedAt: new Date().toISOString()
+    };
+
+    const success = await onSaveParent(updatedParent);
+    if (success) {
+      setSuccessMsg(isEn ? "Payment deleted successfully." : "La cotisation a été supprimée avec succès.");
+      setTimeout(() => setSuccessMsg(null), 3000);
+    }
+  };
+
+  const handleSaveEditedOtherRevenueItem = async () => {
+    if (!editingOtherItem || !onSaveOtherRevenue) return;
+
+    const success = await onSaveOtherRevenue({
+      ...editingOtherItem,
+      payerName: editingOtherItem.payerName.trim(),
+      amount: Number(editingOtherItem.amount),
+      date: editingOtherItem.date,
+      paymentMethod: editingOtherItem.paymentMethod
+    });
+
+    if (success) {
+      setSuccessMsg(isEn ? "Revenue updated successfully." : "La recette d'appoint a été modifiée avec succès.");
+      setEditingOtherItem(null);
+      setTimeout(() => setSuccessMsg(null), 3000);
+    }
+  };
+
+  const handleDeleteOtherRevenueItem = async (id: string) => {
+    if (!onDeleteOtherRevenue) return;
+    if (!window.confirm(isEn ? "Are you sure you want to delete this revenue?" : "Êtes-vous sûr de vouloir supprimer cette recette d'appoint ?")) return;
+
+    await onDeleteOtherRevenue(id);
+    setSuccessMsg(isEn ? "Revenue deleted successfully." : "La recette d'appoint a été supprimée avec succès.");
+    setTimeout(() => setSuccessMsg(null), 3000);
+  };
+
+  const handleSaveEditedExpenseItem = async () => {
+    if (!editingExpenseItem || !onSaveExpense) return;
+
+    const success = await onSaveExpense({
+      ...editingExpenseItem,
+      title: editingExpenseItem.title.trim(),
+      amount: Number(editingExpenseItem.amount),
+      date: editingExpenseItem.date,
+      description: editingExpenseItem.description.trim()
+    });
+
+    if (success) {
+      setSuccessMsg(isEn ? "Expense updated successfully." : "La dépense a été modifiée avec succès.");
+      setEditingExpenseItem(null);
+      setTimeout(() => setSuccessMsg(null), 3000);
+    }
+  };
+
+  const handleDeleteExpenseItem = async (id: string) => {
+    if (!onDeleteExpense) return;
+    if (!window.confirm(isEn ? "Are you sure you want to delete this expense?" : "Êtes-vous sûr de vouloir supprimer cette dépense ?")) return;
+
+    await onDeleteExpense(id);
+    setSuccessMsg(isEn ? "Expense deleted successfully." : "La dépense a été supprimée avec succès.");
+    setTimeout(() => setSuccessMsg(null), 3000);
   };
 
   const filteredPayments = getFilteredPayments();
@@ -1091,6 +1261,171 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
     setTimeout(() => setSuccessMsg(null), 4000);
   };
 
+  // ----------------------------------------------------
+  // ANNUAL FINANCIAL SUMMARY (Month-by-Month Recharts Data Construction)
+  // ----------------------------------------------------
+  
+  // Destructure school year start/end years with strong fallbacks
+  let startYear = 2025;
+  let endYear = 2026;
+  if (settings && settings.schoolYear) {
+    const parts = settings.schoolYear.split('/');
+    if (parts.length === 2) {
+      const s = parseInt(parts[0].trim(), 10);
+      const e = parseInt(parts[1].trim(), 10);
+      if (!isNaN(s) && !isNaN(e)) {
+        startYear = s;
+        endYear = e;
+      }
+    } else {
+      const y = parseInt(settings.schoolYear.trim(), 10);
+      if (!isNaN(y)) {
+        startYear = y;
+        endYear = y + 1;
+      }
+    }
+  } else {
+    // Fallback based on current date
+    const curYear = new Date().getUTCFullYear();
+    const curMonth = new Date().getUTCMonth() + 1;
+    if (curMonth >= 9) {
+      startYear = curYear;
+      endYear = curYear + 1;
+    } else {
+      startYear = curYear - 1;
+      endYear = curYear;
+    }
+  }
+
+  const monthsList = [
+    { monthNum: 9, year: startYear, labelFr: 'Septembre', labelEn: 'September' },
+    { monthNum: 10, year: startYear, labelFr: 'Octobre', labelEn: 'October' },
+    { monthNum: 11, year: startYear, labelFr: 'Novembre', labelEn: 'November' },
+    { monthNum: 12, year: startYear, labelFr: 'Décembre', labelEn: 'December' },
+    { monthNum: 1, year: endYear, labelFr: 'Janvier', labelEn: 'January' },
+    { monthNum: 2, year: endYear, labelFr: 'Février', labelEn: 'February' },
+    { monthNum: 3, year: endYear, labelFr: 'Mars', labelEn: 'March' },
+    { monthNum: 4, year: endYear, labelFr: 'Avril', labelEn: 'April' },
+    { monthNum: 5, year: endYear, labelFr: 'Mai', labelEn: 'May' },
+    { monthNum: 6, year: endYear, labelFr: 'Juin', labelEn: 'June' },
+    { monthNum: 7, year: endYear, labelFr: 'Juillet', labelEn: 'July' },
+    { monthNum: 8, year: endYear, labelFr: 'Août', labelEn: 'August' },
+  ];
+
+  const keyRevenue = isEn ? "Revenue" : "Recettes";
+  const keyExpenses = isEn ? "Expenses" : "Dépenses";
+  const keyParents = isEn ? "Parents Contributions" : "Cotisations Parents";
+  const keyOthers = isEn ? "Other Revenues" : "Autres Recettes";
+  const keyNet = isEn ? "Net Balance" : "Solde Net";
+
+  let schoolYearTotalRevenue = 0;
+  let schoolYearTotalExpenses = 0;
+
+  const annualChartData = monthsList.map(month => {
+    let parentRevenue = 0;
+    let otherRevenue = 0;
+    let executedExpense = 0;
+    let totalExpense = 0;
+
+    // Filter parents' payments matching month and year
+    parents.forEach(p => {
+      if (p.payments) {
+        p.payments.forEach(pay => {
+          if (pay.date) {
+            const d = pay.date.split('-');
+            if (d.length >= 2) {
+              const payYear = parseInt(d[0], 10);
+              const payMonth = parseInt(d[1], 10);
+              if (payYear === month.year && payMonth === month.monthNum) {
+                parentRevenue += pay.amount;
+              }
+            } else {
+              const pDate = new Date(pay.date);
+              if (!isNaN(pDate.getTime())) {
+                const payYear = pDate.getUTCFullYear();
+                const payMonth = pDate.getUTCMonth() + 1;
+                if (payYear === month.year && payMonth === month.monthNum) {
+                  parentRevenue += pay.amount;
+                }
+              }
+            }
+          }
+        });
+      }
+    });
+
+    // Filter other revenues matching month and year
+    otherRevenues.forEach(rev => {
+      if (rev.date) {
+        const d = rev.date.split('-');
+        if (d.length >= 2) {
+          const revYear = parseInt(d[0], 10);
+          const revMonth = parseInt(d[1], 10);
+          if (revYear === month.year && revMonth === month.monthNum) {
+            otherRevenue += rev.amount;
+          }
+        } else {
+          const rDate = new Date(rev.date);
+          if (!isNaN(rDate.getTime())) {
+            const revYear = rDate.getUTCFullYear();
+            const revMonth = rDate.getUTCMonth() + 1;
+            if (revYear === month.year && revMonth === month.monthNum) {
+              otherRevenue += rev.amount;
+            }
+          }
+        }
+      }
+    });
+
+    // Filter expenses matching month and year
+    expenses.forEach(exp => {
+      if (exp.date) {
+        const d = exp.date.split('-');
+        if (d.length >= 2) {
+          const expYear = parseInt(d[0], 10);
+          const expMonth = parseInt(d[1], 10);
+          if (expYear === month.year && expMonth === month.monthNum) {
+            totalExpense += exp.amount;
+            if (exp.status === 'Executed') {
+              executedExpense += exp.amount;
+            }
+          }
+        } else {
+          const eDate = new Date(exp.date);
+          if (!isNaN(eDate.getTime())) {
+            const expYear = eDate.getUTCFullYear();
+            const expMonth = eDate.getUTCMonth() + 1;
+            if (expYear === month.year && expMonth === month.monthNum) {
+              totalExpense += exp.amount;
+              if (exp.status === 'Executed') {
+                executedExpense += exp.amount;
+              }
+            }
+          }
+        }
+      }
+    });
+
+    const totalRev = parentRevenue + otherRevenue;
+    const selectedExpense = expenseFilter === 'executed' ? executedExpense : totalExpense;
+
+    schoolYearTotalRevenue += totalRev;
+    schoolYearTotalExpenses += selectedExpense;
+
+    return {
+      monthLabel: isEn ? month.labelEn.substring(0, 3) : month.labelFr.substring(0, 4) + '.',
+      monthFullName: isEn ? month.labelEn : month.labelFr,
+      year: month.year,
+      [keyRevenue]: totalRev,
+      [keyExpenses]: selectedExpense,
+      [keyParents]: parentRevenue,
+      [keyOthers]: otherRevenue,
+      [keyNet]: totalRev - selectedExpense,
+    };
+  });
+
+  const schoolYearNetSavings = schoolYearTotalRevenue - schoolYearTotalExpenses;
+
   return (
     <div id="content_apee_report" className="space-y-6">
 
@@ -1226,6 +1561,486 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
 
       </div>
 
+      {/* Visual 'Annual Financial Summary' report */}
+      <div id="annual_financial_summary_panel" className="bg-white border border-slate-205 rounded-2xl shadow-sm p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+          <div className="space-y-1">
+            <h3 className="text-base font-bold text-slate-900 tracking-tight flex items-center gap-2">
+              <Activity className="h-5 w-5 text-indigo-500 animate-pulse" />
+              {isEn ? "Annual Financial Summary" : "Bilan Annuel Consolidé"}
+              <span className="text-xs font-semibold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full select-none font-mono">
+                {settings?.schoolYear || "2025/2026"}
+              </span>
+            </h3>
+            <p className="text-xs text-slate-500">
+              {isEn 
+                ? "Consolidated month-by-month cashflow comparing total collected revenues versus school year expenses." 
+                : "Évolution mensuelle consolidée de la trésorerie comparant les recettes totales perçues aux dépenses."}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {/* Collapse Toggle */}
+            <button
+              type="button"
+              onClick={() => setShowChartPanel(!showChartPanel)}
+              className="px-2.5 py-1.5 font-semibold text-slate-700 hover:text-slate-950 bg-slate-50 border border-slate-205 hover:bg-slate-100 rounded-lg cursor-pointer flex items-center gap-1 transition-all"
+            >
+              {showChartPanel ? (
+                <>
+                  <EyeOff className="h-3.5 w-3.5" />
+                  {isEn ? "Hide Chart" : "Masquer le graphique"}
+                </>
+              ) : (
+                <>
+                  <Eye className="h-3.5 w-3.5" />
+                  {isEn ? "Show Chart" : "Afficher le graphique"}
+                </>
+              )}
+            </button>
+
+            {showChartPanel && (
+              <>
+                {/* Expense Status Filter */}
+                <div className="flex bg-slate-100 p-0.5 border rounded-lg font-semibold text-[11px] text-slate-600">
+                  <button
+                    type="button"
+                    onClick={() => setExpenseFilter('executed')}
+                    className={`px-2.5 py-1 rounded cursor-pointer transition ${
+                      expenseFilter === 'executed' ? 'bg-white text-slate-900 shadow-sm font-bold' : 'hover:text-slate-900'
+                    }`}
+                    title={isEn ? "Show actual executed expenses only" : "Ne prendre en compte que les dépenses décaissées de l'exercice"}
+                  >
+                    {isEn ? "Paid Only" : "Décaissé uniquement"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExpenseFilter('all')}
+                    className={`px-2.5 py-1 rounded cursor-pointer transition ${
+                      expenseFilter === 'all' ? 'bg-white text-slate-900 shadow-sm font-bold' : 'hover:text-slate-900'
+                    }`}
+                    title={isEn ? "Show all expenses regardless of status" : "Montrer toutes les dépenses y compris en attente ou approuvées"}
+                  >
+                    {isEn ? "All Projected" : "Tout le budget proposé"}
+                  </button>
+                </div>
+
+                {/* Chart Type Toggle */}
+                <div className="flex bg-slate-100 p-0.5 border rounded-lg font-semibold text-[11px] text-slate-600">
+                  <button
+                    type="button"
+                    onClick={() => setChartType('bar')}
+                    className={`px-2.5 py-1 rounded cursor-pointer transition-all ${
+                      chartType === 'bar' ? 'bg-indigo-600 text-white shadow-sm font-black' : 'hover:text-slate-900'
+                    }`}
+                  >
+                    {isEn ? "Bars" : "Colonnes"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setChartType('line')}
+                    className={`px-2.5 py-1 rounded cursor-pointer transition-all ${
+                      chartType === 'line' ? 'bg-indigo-600 text-white shadow-sm font-black' : 'hover:text-slate-900'
+                    }`}
+                  >
+                    {isEn ? "Line" : "Courbes"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setChartType('area')}
+                    className={`px-2.5 py-1 rounded cursor-pointer transition-all ${
+                      chartType === 'area' ? 'bg-indigo-600 text-white shadow-sm font-black' : 'hover:text-slate-900'
+                    }`}
+                  >
+                    {isEn ? "Area" : "Aires"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {showChartPanel && (
+          <div className="space-y-5 animate-in fade-in duration-200">
+            {/* Visual Overview metrics of the school year */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              
+              <div className="bg-slate-50/85 hover:bg-slate-100/90 pb-3.5 pt-3 px-4 border border-slate-150 rounded-xl space-y-1 select-none transition">
+                <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider flex items-center gap-1">
+                  <Coins className="h-3 w-3 text-emerald-500" />
+                  {isEn ? "School Year Revenue" : "Recettes Globales Scolaires"}
+                </span>
+                <div className="flex items-baseline justify-between">
+                  <p className="text-base font-extrabold text-slate-800 font-mono">
+                    {schoolYearTotalRevenue.toLocaleString()} FCFA
+                  </p>
+                  <span className="text-[10px] text-emerald-600 font-extrabold bg-emerald-50 border border-emerald-100 rounded px-1.5 py-0.25 flex items-center gap-0.5">
+                    <ArrowUpRight className="h-3 w-3" />
+                    INFLOW
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-slate-50/85 hover:bg-slate-100/90 pb-3.5 pt-3 px-4 border border-slate-150 rounded-xl space-y-1 select-none transition">
+                <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider flex items-center gap-1">
+                  <TrendingDown className="h-3 w-3 text-rose-500" />
+                  {isEn ? "School Year Expenses" : "Dépenses Globales Scolaires"}
+                </span>
+                <div className="flex items-baseline justify-between">
+                  <p className="text-base font-extrabold text-slate-800 font-mono">
+                    {schoolYearTotalExpenses.toLocaleString()} FCFA
+                  </p>
+                  <span className="text-[10px] text-rose-600 font-extrabold bg-rose-50 border border-rose-100 rounded px-1.5 py-0.25 flex items-center gap-0.5">
+                    <ArrowDownRight className="h-3 w-3" />
+                    OUTFLOW
+                  </span>
+                </div>
+              </div>
+
+              <div className={`pb-3.5 pt-3 px-4 border rounded-xl space-y-1 select-none transition ${
+                schoolYearNetSavings >= 0 
+                  ? 'bg-emerald-50/40 hover:bg-emerald-50/60 border-emerald-150' 
+                  : 'bg-rose-50/40 hover:bg-rose-50/60 border-rose-150'
+              }`}>
+                <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider flex items-center gap-1">
+                  <Activity className="h-3 w-3 text-indigo-550 animate-pulse" />
+                  {isEn ? "Consolidated Net Savings" : "Trésorerie / Solde Net Cumulé"}
+                </span>
+                <div className="flex items-baseline justify-between">
+                  <p className={`text-base font-black font-mono ${
+                    schoolYearNetSavings >= 0 ? 'text-emerald-700' : 'text-rose-700'
+                  }`}>
+                    {schoolYearNetSavings.toLocaleString()} FCFA
+                  </p>
+                  <span className={`text-[10px] font-black rounded px-1.5 py-0.25 border ${
+                    schoolYearNetSavings >= 0 
+                      ? 'text-emerald-700 bg-emerald-100/60 border-emerald-200' 
+                      : 'text-rose-700 bg-rose-100/60 border-rose-200'
+                  }`}>
+                    {schoolYearNetSavings >= 0 ? '+' : ''} {isEn ? "SURPLUS" : "EXTREME"}
+                  </span>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Recharts Graphical implementation */}
+            <div className="bg-slate-50/50 rounded-xl p-4 border border-slate-100">
+              <div className="w-full h-[320px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  {chartType === 'bar' ? (
+                    <BarChart
+                      data={annualChartData}
+                      margin={{ top: 10, right: 10, left: 10, bottom: 5 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis 
+                        dataKey="monthLabel" 
+                        stroke="#94a3b8" 
+                        fontSize={11} 
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <YAxis 
+                        stroke="#94a3b8" 
+                        fontSize={11} 
+                        tickLine={false}
+                        axisLine={false}
+                        tickFormatter={(v) => v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : (v >= 1000 ? `${(v/1000).toFixed(0)}k` : v)}
+                      />
+                      <Tooltip 
+                        content={({ active, payload }) => {
+                          if (active && payload && payload.length) {
+                            const data = payload[0].payload;
+                            return (
+                              <div className="bg-slate-900 border border-slate-800 text-white rounded-xl shadow-lg p-3.5 space-y-2 select-none text-[11px] max-w-xs transition-transform duration-100">
+                                <div className="flex justify-between items-baseline gap-4 font-black border-b border-white/10 pb-1">
+                                  <span className="text-slate-300">{data.monthFullName} {data.year}</span>
+                                  <span className="font-mono text-indigo-400 text-[10px]">PASMA-SYS</span>
+                                </div>
+                                <div className="space-y-1 font-semibold leading-relaxed">
+                                  <div className="flex justify-between items-center gap-6">
+                                    <span className="flex items-center gap-1 text-emerald-420">
+                                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                                      {keyRevenue}:
+                                    </span>
+                                    <span className="font-mono text-slate-100 font-bold">{(data[keyRevenue] || 0).toLocaleString()} F</span>
+                                  </div>
+                                  <div className="pl-3 text-[10px] text-slate-400 font-sans space-y-0.5">
+                                    <div className="flex justify-between gap-4">
+                                      <span>• {isEn ? "Parents:" : "Cotisations:"}</span>
+                                      <span className="font-mono">{(data[keyParents] || 0).toLocaleString()} F</span>
+                                    </div>
+                                    <div className="flex justify-between gap-4">
+                                      <span>• {isEn ? "Other Sources:" : "Autres Recettes:"}</span>
+                                      <span className="font-mono">{(data[keyOthers] || 0).toLocaleString()} F</span>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex justify-between items-center gap-6 pt-1 border-t border-white/5">
+                                    <span className="flex items-center gap-1 text-rose-420">
+                                      <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+                                      {keyExpenses}:
+                                    </span>
+                                    <span className="font-mono text-slate-100 font-bold">{(data[keyExpenses] || 0).toLocaleString()} F</span>
+                                  </div>
+
+                                  <div className="flex justify-between items-center gap-6 pt-1 border-t border-white/10">
+                                    <span className={`flex items-center gap-1 ${data[keyNet] >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                                      <Activity className="h-3.5 w-3.5 animate-pulse" />
+                                      {isEn ? "Net Excess" : "Excédent Mensuel"}:
+                                    </span>
+                                    <span className={`font-mono text-xs font-black ${data[keyNet] >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                                      {data[keyNet] >= 0 ? '+' : ''}{(data[keyNet] || 0).toLocaleString()} F
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          }
+                          return null;
+                        }}
+                      />
+                      <Legend 
+                        iconType="circle"
+                        verticalAlign="top"
+                        height={36}
+                        iconSize={8}
+                        wrapperStyle={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}
+                      />
+                      <Bar 
+                        dataKey={keyRevenue} 
+                        fill="#10b981" 
+                        radius={[4, 4, 0, 0]} 
+                        maxBarSize={45}
+                      />
+                      <Bar 
+                        dataKey={keyExpenses} 
+                        fill="#f43f5e" 
+                        radius={[4, 4, 0, 0]} 
+                        maxBarSize={45}
+                      />
+                    </BarChart>
+                  ) : chartType === 'line' ? (
+                    <LineChart
+                      data={annualChartData}
+                      margin={{ top: 10, right: 10, left: 10, bottom: 5 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis 
+                        dataKey="monthLabel" 
+                        stroke="#94a3b8" 
+                        fontSize={11} 
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <YAxis 
+                        stroke="#94a3b8" 
+                        fontSize={11} 
+                        tickLine={false}
+                        axisLine={false}
+                        tickFormatter={(v) => v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : (v >= 1000 ? `${(v/1000).toFixed(0)}k` : v)}
+                      />
+                      <Tooltip 
+                        content={({ active, payload }) => {
+                          if (active && payload && payload.length) {
+                            const data = payload[0].payload;
+                            return (
+                              <div className="bg-slate-900 border border-slate-800 text-white rounded-xl shadow-lg p-3.5 space-y-2 select-none text-[11px] max-w-xs transition-transform duration-100">
+                                <div className="flex justify-between items-baseline gap-4 font-black border-b border-white/10 pb-1">
+                                  <span className="text-slate-300">{data.monthFullName} {data.year}</span>
+                                  <span className="font-mono text-indigo-400 text-[10px]">PASMA-SYS</span>
+                                </div>
+                                <div className="space-y-1 font-semibold leading-relaxed">
+                                  <div className="flex justify-between items-center gap-6">
+                                    <span className="flex items-center gap-1 text-emerald-420">
+                                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                                      {keyRevenue}:
+                                    </span>
+                                    <span className="font-mono text-slate-100 font-bold">{(data[keyRevenue] || 0).toLocaleString()} F</span>
+                                  </div>
+                                  <div className="pl-3 text-[10px] text-slate-400 font-sans space-y-0.5">
+                                    <div className="flex justify-between gap-4">
+                                      <span>• {isEn ? "Parents:" : "Cotisations:"}</span>
+                                      <span className="font-mono">{(data[keyParents] || 0).toLocaleString()} F</span>
+                                    </div>
+                                    <div className="flex justify-between gap-4">
+                                      <span>• {isEn ? "Other Sources:" : "Autres Recettes:"}</span>
+                                      <span className="font-mono">{(data[keyOthers] || 0).toLocaleString()} F</span>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex justify-between items-center gap-6 pt-1 border-t border-white/5">
+                                    <span className="flex items-center gap-1 text-rose-420">
+                                      <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+                                      {keyExpenses}:
+                                    </span>
+                                    <span className="font-mono text-slate-100 font-bold">{(data[keyExpenses] || 0).toLocaleString()} F</span>
+                                  </div>
+
+                                  <div className="flex justify-between items-center gap-6 pt-1 border-t border-white/10">
+                                    <span className={`flex items-center gap-1 ${data[keyNet] >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                                      <Activity className="h-3.5 w-3.5 animate-pulse" />
+                                      {isEn ? "Net Excess" : "Excédent Mensuel"}:
+                                    </span>
+                                    <span className={`font-mono text-xs font-black ${data[keyNet] >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                                      {data[keyNet] >= 0 ? '+' : ''}{(data[keyNet] || 0).toLocaleString()} F
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          }
+                          return null;
+                        }}
+                      />
+                      <Legend 
+                        iconType="circle"
+                        verticalAlign="top"
+                        height={36}
+                        iconSize={8}
+                        wrapperStyle={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}
+                      />
+                      <Line 
+                        type="monotone" 
+                        dataKey={keyRevenue} 
+                        stroke="#10b981" 
+                        strokeWidth={3} 
+                        dot={{ r: 4, strokeWidth: 1 }} 
+                        activeDot={{ r: 6 }} 
+                      />
+                      <Line 
+                        type="monotone" 
+                        dataKey={keyExpenses} 
+                        stroke="#f43f5e" 
+                        strokeWidth={3} 
+                        dot={{ r: 4, strokeWidth: 1 }} 
+                        activeDot={{ r: 6 }} 
+                      />
+                      <Line 
+                        type="monotone" 
+                        dataKey={keyNet} 
+                        stroke="#6366f1" 
+                        strokeWidth={2} 
+                        strokeDasharray="5 5" 
+                        dot={{ r: 3 }} 
+                      />
+                    </LineChart>
+                  ) : (
+                    <AreaChart
+                      data={annualChartData}
+                      margin={{ top: 10, right: 10, left: 10, bottom: 5 }}
+                    >
+                      <defs>
+                        <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#10b981" stopOpacity={0.0}/>
+                        </linearGradient>
+                        <linearGradient id="colorExp" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#f43f5e" stopOpacity={0.0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis 
+                        dataKey="monthLabel" 
+                        stroke="#94a3b8" 
+                        fontSize={11} 
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <YAxis 
+                        stroke="#94a3b8" 
+                        fontSize={11} 
+                        tickLine={false}
+                        axisLine={false}
+                        tickFormatter={(v) => v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : (v >= 1000 ? `${(v/1000).toFixed(0)}k` : v)}
+                      />
+                      <Tooltip 
+                        content={({ active, payload }) => {
+                          if (active && payload && payload.length) {
+                            const data = payload[0].payload;
+                            return (
+                              <div className="bg-slate-900 border border-slate-800 text-white rounded-xl shadow-lg p-3.5 space-y-2 select-none text-[11px] max-w-xs transition-transform duration-100">
+                                <div className="flex justify-between items-baseline gap-4 font-black border-b border-white/10 pb-1">
+                                  <span className="text-slate-300">{data.monthFullName} {data.year}</span>
+                                  <span className="font-mono text-indigo-400 text-[10px]">PASMA-SYS</span>
+                                </div>
+                                <div className="space-y-1 font-semibold leading-relaxed">
+                                  <div className="flex justify-between items-center gap-6">
+                                    <span className="flex items-center gap-1 text-emerald-420">
+                                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                                      {keyRevenue}:
+                                    </span>
+                                    <span className="font-mono text-slate-100 font-bold">{(data[keyRevenue] || 0).toLocaleString()} F</span>
+                                  </div>
+                                  <div className="pl-3 text-[10px] text-slate-400 font-sans space-y-0.5">
+                                    <div className="flex justify-between gap-4">
+                                      <span>• {isEn ? "Parents:" : "Cotisations:"}</span>
+                                      <span className="font-mono">{(data[keyParents] || 0).toLocaleString()} F</span>
+                                    </div>
+                                    <div className="flex justify-between gap-4">
+                                      <span>• {isEn ? "Other Sources:" : "Autres Recettes:"}</span>
+                                      <span className="font-mono">{(data[keyOthers] || 0).toLocaleString()} F</span>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex justify-between items-center gap-6 pt-1 border-t border-white/5">
+                                    <span className="flex items-center gap-1 text-rose-420">
+                                      <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+                                      {keyExpenses}:
+                                    </span>
+                                    <span className="font-mono text-slate-100 font-bold">{(data[keyExpenses] || 0).toLocaleString()} F</span>
+                                  </div>
+
+                                  <div className="flex justify-between items-center gap-6 pt-1 border-t border-white/10">
+                                    <span className={`flex items-center gap-1 ${data[keyNet] >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                                      <Activity className="h-3.5 w-3.5 animate-pulse" />
+                                      {isEn ? "Net Excess" : "Excédent Mensuel"}:
+                                    </span>
+                                    <span className={`font-mono text-xs font-black ${data[keyNet] >= 0 ? "text-emerald-300" : "text-rose-300"}`}>
+                                      {data[keyNet] >= 0 ? '+' : ''}{(data[keyNet] || 0).toLocaleString()} F
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          }
+                          return null;
+                        }}
+                      />
+                      <Legend 
+                        iconType="circle"
+                        verticalAlign="top"
+                        height={36}
+                        iconSize={8}
+                        wrapperStyle={{ fontSize: '11px', fontWeight: 'bold', color: '#475569' }}
+                      />
+                      <Area 
+                        type="monotone" 
+                        dataKey={keyRevenue} 
+                        stroke="#10b981" 
+                        fillOpacity={1} 
+                        fill="url(#colorRev)" 
+                        strokeWidth={2}
+                      />
+                      <Area 
+                        type="monotone" 
+                        dataKey={keyExpenses} 
+                        stroke="#f43f5e" 
+                        fillOpacity={1} 
+                        fill="url(#colorExp)" 
+                        strokeWidth={2}
+                      />
+                    </AreaChart>
+                  )}
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Main reporting logs list */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         
@@ -1238,15 +2053,25 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
               </h3>
               <p className="text-[10px] text-gray-400 font-sans mt-0.5">Cliquez sur un onglet pour basculer la liste active.</p>
             </div>
-            <span className="text-[10px] font-mono text-gray-450 font-bold bg-slate-100 hover:bg-slate-150 rounded-md px-2 py-0.5">
-              Total : {
-                activeSegment === 'parents' 
-                  ? filteredPayments.length 
-                  : activeSegment === 'others' 
-                  ? filteredOtherRevenues.length 
-                  : filteredExpenses.length
-              } lignes
-            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handlePrintActiveSegmentViewPdf}
+                className="px-2 py-1 text-[10px] font-bold bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-md flex items-center gap-1 cursor-pointer transition shadow-xs"
+                title="Imprimer cette liste active"
+              >
+                <Printer className="h-3 w-3" /> Imprimer la liste
+              </button>
+              <span className="text-[10px] font-mono text-gray-450 font-bold bg-slate-100 hover:bg-slate-150 rounded-md px-2 py-1">
+                Total : {
+                  activeSegment === 'parents' 
+                    ? filteredPayments.length 
+                    : activeSegment === 'others' 
+                    ? filteredOtherRevenues.length 
+                    : filteredExpenses.length
+                } lignes
+              </span>
+            </div>
           </div>
 
           {/* Segment selection tabs switcher */}
@@ -1287,12 +2112,13 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
                     <th className="py-2 px-2">Moyen</th>
                     <th className="py-2 px-2 text-right">Montant</th>
                     <th className="py-2 px-2">Observations</th>
+                    <th className="py-2 px-2 text-center w-[80px]">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredPayments.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="py-6 text-center text-gray-400 text-[11px] font-medium leading-relaxed">
+                      <td colSpan={6} className="py-6 text-center text-gray-400 text-[11px] font-medium leading-relaxed">
                         Aucune transaction financière n'a été enregistrée pour les parents durant cette période.
                       </td>
                     </tr>
@@ -1308,6 +2134,26 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
                         </td>
                         <td className="py-2 px-2 text-right font-mono font-bold text-emerald-600">{p.amount.toLocaleString()} FCFA</td>
                         <td className="py-2 px-2 text-gray-500 text-[10px] truncate max-w-[150px]">{p.note || '-'}</td>
+                        <td className="py-2 px-2 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setEditingParentItem(p)}
+                              className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition cursor-pointer"
+                              title="Modifier"
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePaymentItem(p.parentId, p.paymentId)}
+                              className="p-1 text-slate-400 hover:text-red-650 hover:bg-slate-50 rounded transition cursor-pointer"
+                              title="Supprimer"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -1322,12 +2168,13 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
                     <th className="py-2 px-2">Qualité/Statut</th>
                     <th className="py-2 px-2">Moyen</th>
                     <th className="py-2 px-2 text-right">Montant</th>
+                    <th className="py-2 px-2 text-center w-[80px]">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredOtherRevenues.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="py-6 text-center text-gray-400 text-[11px] font-medium leading-relaxed">
+                      <td colSpan={6} className="py-6 text-center text-gray-400 text-[11px] font-medium leading-relaxed">
                         Aucune autre recette n'a été encaissée durant cette période.
                       </td>
                     </tr>
@@ -1351,6 +2198,26 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
                             </span>
                           </td>
                           <td className="py-2 px-2 text-right font-mono font-bold text-emerald-600">{rev.amount.toLocaleString()} FCFA</td>
+                          <td className="py-2 px-2 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setEditingOtherItem(rev)}
+                                className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition cursor-pointer"
+                                title="Modifier"
+                              >
+                                <Edit2 className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteOtherRevenueItem(rev.id)}
+                                className="p-1 text-slate-400 hover:text-red-650 hover:bg-slate-50 rounded transition cursor-pointer"
+                                title="Supprimer"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </td>
                         </tr>
                       );
                     })
@@ -1366,12 +2233,13 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
                     <th className="py-2 px-2">Type / Nature</th>
                     <th className="py-2 px-2">Statut execution</th>
                     <th className="py-2 px-2 text-right">Montant</th>
+                    <th className="py-2 px-2 text-center w-[80px]">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredExpenses.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="py-6 text-center text-gray-400 text-[11px] font-medium leading-relaxed">
+                      <td colSpan={6} className="py-6 text-center text-gray-400 text-[11px] font-medium leading-relaxed">
                         Aucune dépense enregistrée durant cette période.
                       </td>
                     </tr>
@@ -1399,6 +2267,26 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
                             </span>
                           </td>
                           <td className="py-2 px-2 text-right font-mono font-bold text-red-650">{exp.amount.toLocaleString()} FCFA</td>
+                          <td className="py-2 px-2 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setEditingExpenseItem(exp)}
+                                className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition cursor-pointer"
+                                title="Modifier"
+                              >
+                                <Edit2 className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteExpenseItem(exp.id)}
+                                className="p-1 text-slate-400 hover:text-red-650 hover:bg-slate-50 rounded transition cursor-pointer"
+                                title="Supprimer"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </td>
                         </tr>
                       );
                     })
@@ -1450,6 +2338,320 @@ export default function ApeeReporting({ parents, settings, otherRevenues = [], e
         </div>
 
       </div>
+
+      {editingParentItem && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-[2px] flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-indigo-600 text-white px-5 py-4 flex justify-between items-center">
+              <div>
+                <h3 className="text-sm font-bold uppercase tracking-wide">Modifier la Cotisation</h3>
+                <p className="text-[10px] text-indigo-205 font-medium mt-0.5">Parent d'élève: {editingParentItem.parentName}</p>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setEditingParentItem(null)}
+                className="text-white/80 hover:text-white p-1 rounded-full hover:bg-white/10 transition cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            
+            <div className="p-5 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] uppercase font-black text-slate-500 tracking-wider block">Date du versement</label>
+                <input
+                  type="date"
+                  value={editingParentItem.date}
+                  onChange={(e) => setEditingParentItem({ ...editingParentItem, date: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-xl text-xs bg-slate-50 focus:bg-white focus:outline-indigo-500 font-medium"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] uppercase font-black text-slate-500 tracking-wider block">Montant (FCFA)</label>
+                <input
+                  type="number"
+                  value={editingParentItem.amount}
+                  onChange={(e) => setEditingParentItem({ ...editingParentItem, amount: Number(e.target.value) })}
+                  className="w-full px-3 py-2 border rounded-xl text-xs bg-slate-50 focus:bg-white focus:outline-indigo-500 font-bold text-slate-800"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] uppercase font-black text-slate-500 tracking-wider block">Moyen de paiement</label>
+                <select
+                  value={editingParentItem.method || 'Espèces'}
+                  onChange={(e) => setEditingParentItem({ ...editingParentItem, method: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-xl text-xs bg-slate-50 focus:bg-white focus:outline-indigo-500 font-semibold text-slate-705"
+                >
+                  <option value="Espèces">Espèces</option>
+                  <option value="Orange Money">Orange Money</option>
+                  <option value="MTN Mobile Money">MTN Mobile Money</option>
+                  <option value="Wave">Wave</option>
+                  <option value="Moov Money">Moov Money</option>
+                  <option value="Virement">Virement bancaire</option>
+                  <option value="Chèque">Chèque</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] uppercase font-black text-slate-500 tracking-wider block">Observations</label>
+                <textarea
+                  value={editingParentItem.note || ''}
+                  onChange={(e) => setEditingParentItem({ ...editingParentItem, note: e.target.value })}
+                  rows={2}
+                  className="w-full px-3 py-2 border rounded-xl text-xs bg-slate-50 focus:bg-white focus:outline-indigo-500"
+                  placeholder="Notes, numéro de transaction, banque, etc."
+                />
+              </div>
+            </div>
+
+            <div className="bg-slate-50 px-5 py-3.5 flex justify-end gap-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setEditingParentItem(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEditedPaymentItem}
+                className="px-4 py-2 text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition shadow-sm active:scale-97 cursor-pointer"
+              >
+                Enregistrer la modification
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingOtherItem && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-[2px] flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-indigo-600 text-white px-5 py-4 flex justify-between items-center">
+              <div>
+                <h3 className="text-sm font-bold uppercase tracking-wide">Modifier une Recette d'Appoint</h3>
+                <p className="text-[10px] text-indigo-205 font-medium mt-0.5">Référence: {editingOtherItem.payerName}</p>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setEditingOtherItem(null)}
+                className="text-white/80 hover:text-white p-1 rounded-full hover:bg-white/10 transition cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            
+            <div className="p-5 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] uppercase font-black text-slate-500 tracking-wider block">Nom Donneur / Payeur</label>
+                <input
+                  type="text"
+                  value={editingOtherItem.payerName}
+                  onChange={(e) => setEditingOtherItem({ ...editingOtherItem, payerName: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-xl text-xs bg-slate-50 focus:bg-white focus:outline-indigo-500 font-medium"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] uppercase font-black text-slate-500 tracking-wider block">Qualité / Statut</label>
+                <select
+                  value={editingOtherItem.status || 'autre'}
+                  onChange={(e) => setEditingOtherItem({ ...editingOtherItem, status: e.target.value as any })}
+                  className="w-full px-3 py-2 border rounded-xl text-xs bg-slate-50 focus:bg-white focus:outline-indigo-500 font-semibold text-slate-705"
+                >
+                  <option value="autre">Autre tiers</option>
+                  <option value="membre_honneur">Membre d'Honneur</option>
+                  <option value="institution">Institution / Subvention</option>
+                </select>
+              </div>
+
+              {editingOtherItem.status === 'institution' && (
+                <div className="space-y-1.5">
+                  <label className="text-[10px] uppercase font-black text-slate-500 tracking-wider block">Précisions Institution</label>
+                  <input
+                    type="text"
+                    value={editingOtherItem.statusDetails || ''}
+                    onChange={(e) => setEditingOtherItem({ ...editingOtherItem, statusDetails: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-xl text-xs bg-slate-50 focus:bg-white focus:outline-indigo-500"
+                    placeholder="e.g. Mairie, Ministère..."
+                  />
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] uppercase font-black text-slate-500 tracking-wider block">Montant (FCFA)</label>
+                  <input
+                    type="number"
+                    value={editingOtherItem.amount}
+                    onChange={(e) => setEditingOtherItem({ ...editingOtherItem, amount: Number(e.target.value) })}
+                    className="w-full px-3 py-2 border rounded-xl text-xs bg-slate-50 focus:bg-white focus:outline-indigo-500 font-bold text-slate-800"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] uppercase font-black text-slate-500 tracking-wider block">Date</label>
+                  <input
+                    type="date"
+                    value={editingOtherItem.date}
+                    onChange={(e) => setEditingOtherItem({ ...editingOtherItem, date: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-xl text-xs bg-slate-50 focus:bg-white focus:outline-indigo-500 font-medium font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] uppercase font-black text-slate-500 tracking-wider block">Moyen de règlement</label>
+                <input
+                  type="text"
+                  value={editingOtherItem.paymentMethod}
+                  onChange={(e) => setEditingOtherItem({ ...editingOtherItem, paymentMethod: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-xl text-xs bg-slate-50 focus:bg-white focus:outline-indigo-500"
+                  placeholder="e.g. Espèces, Orange Money, Wave..."
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] uppercase font-black text-slate-500 tracking-wider block">Notes / Détails</label>
+                <textarea
+                  value={editingOtherItem.notes || ''}
+                  onChange={(e) => setEditingOtherItem({ ...editingOtherItem, notes: e.target.value })}
+                  rows={2}
+                  className="w-full px-3 py-2 border rounded-xl text-xs bg-slate-50 focus:bg-white focus:outline-indigo-500"
+                  placeholder="Plus de précisions..."
+                />
+              </div>
+            </div>
+
+            <div className="bg-slate-50 px-5 py-3.5 flex justify-end gap-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setEditingOtherItem(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEditedOtherRevenueItem}
+                className="px-4 py-2 text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition shadow-sm active:scale-97 cursor-pointer"
+              >
+                Enregistrer la modification
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingExpenseItem && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-[2px] flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-indigo-600 text-white px-5 py-4 flex justify-between items-center">
+              <div>
+                <h3 className="text-sm font-bold uppercase tracking-wide">Modifier une Dépense</h3>
+                <p className="text-[10px] text-indigo-205 font-medium mt-0.5">Titre: {editingExpenseItem.title}</p>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setEditingExpenseItem(null)}
+                className="text-white/80 hover:text-white p-1 rounded-full hover:bg-white/10 transition cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            
+            <div className="p-5 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] uppercase font-black text-slate-500 tracking-wider block">Désignation de la dépense</label>
+                <input
+                  type="text"
+                  value={editingExpenseItem.title}
+                  onChange={(e) => setEditingExpenseItem({ ...editingExpenseItem, title: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-xl text-xs bg-slate-50 focus:bg-white focus:outline-indigo-500 font-medium"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] uppercase font-black text-slate-500 tracking-wider block">Type / Nature</label>
+                <select
+                  value={editingExpenseItem.type || 'payment-order'}
+                  onChange={(e) => setEditingExpenseItem({ ...editingExpenseItem, type: e.target.value as any })}
+                  className="w-full px-3 py-2 border rounded-xl text-xs bg-slate-50 focus:bg-white focus:outline-indigo-500 font-semibold text-slate-705"
+                >
+                  <option value="payment-order">Ordre de paiement</option>
+                  <option value="command">Bon de commande</option>
+                  <option value="refund">Remboursement</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] uppercase font-black text-slate-500 tracking-wider block">Statut d'exécution</label>
+                <select
+                  value={editingExpenseItem.status || 'Pending'}
+                  onChange={(e) => setEditingExpenseItem({ ...editingExpenseItem, status: e.target.value as any })}
+                  className="w-full px-3 py-2 border rounded-xl text-xs bg-slate-50 focus:bg-white focus:outline-indigo-500 font-semibold text-slate-705"
+                >
+                  <option value="Pending">En attente</option>
+                  <option value="Approved">Approuvé</option>
+                  <option value="Executed">Exécuté</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] uppercase font-black text-slate-500 tracking-wider block">Montant (FCFA)</label>
+                  <input
+                    type="number"
+                    value={editingExpenseItem.amount}
+                    onChange={(e) => setEditingExpenseItem({ ...editingExpenseItem, amount: Number(e.target.value) })}
+                    className="w-full px-3 py-2 border rounded-xl text-xs bg-slate-50 focus:bg-white focus:outline-indigo-500 font-bold text-slate-800"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] uppercase font-black text-slate-500 tracking-wider block">Date</label>
+                  <input
+                    type="date"
+                    value={editingExpenseItem.date}
+                    onChange={(e) => setEditingExpenseItem({ ...editingExpenseItem, date: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-xl text-xs bg-slate-50 focus:bg-white focus:outline-indigo-500 font-medium font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] uppercase font-black text-slate-500 tracking-wider block">Description</label>
+                <textarea
+                  value={editingExpenseItem.description || ''}
+                  onChange={(e) => setEditingExpenseItem({ ...editingExpenseItem, description: e.target.value })}
+                  rows={2}
+                  className="w-full px-3 py-2 border rounded-xl text-xs bg-slate-50 focus:bg-white focus:outline-indigo-500"
+                  placeholder="Détails de la dépense..."
+                />
+              </div>
+            </div>
+
+            <div className="bg-slate-50 px-5 py-3.5 flex justify-end gap-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setEditingExpenseItem(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEditedExpenseItem}
+                className="px-4 py-2 text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition shadow-sm active:scale-97 cursor-pointer"
+              >
+                Enregistrer la modification
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

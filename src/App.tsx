@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { collection, query, where, getDocs, doc, setDoc, deleteDoc, writeBatch, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, loginWithGoogle, logout, db, handleFirestoreError, OperationType, loginAnonymously, goOffline, goOnline } from './firebase';
 import { isDatabaseSeeded, seedUserData, getOfflineMockData } from './seeder';
@@ -126,91 +126,139 @@ function PushNotificationSyncer({
   const { triggerNotification } = useLocalNotifications();
   const { t } = useLanguage();
 
+  // Create stable refs for changing callback dependencies
+  const studentsRef = useRef(students);
+  const triggerNotificationRef = useRef(triggerNotification);
+  const tRef = useRef(t);
+
+  // Sync ref values on every render
+  studentsRef.current = students;
+  triggerNotificationRef.current = triggerNotification;
+  tRef.current = t;
+
   useEffect(() => {
-    if (!userId || !user || portalUserRole !== 'parent' || isOffline) return;
+    if (!userId || !user || portalUserRole !== 'parent') return;
 
-    let isInitialGrades = true;
-    let isInitialHomeworks = true;
+    let active = true;
+    let lastGradesMap = new Map<string, Grade>();
+    let lastHomeworksMap = new Map<string, Homework>();
 
-    // 1. Listen for new grades
-    const gradesQ = query(collection(db, 'grades'), where('parentId', '==', userId));
-    const unsubscribeGrades = onSnapshot(gradesQ, (snapshot) => {
-      const list = snapshot.docs.map(doc => doc.data() as Grade);
-      setGrades(list);
-      localStorage.setItem(`pasma_grades_${userId}`, JSON.stringify(list));
+    const fetchGradesAndHomeworks = async (isInitial: boolean) => {
+      try {
+        // 1. Fetch grades
+        const gradesQ = query(collection(db, 'grades'), where('parentId', '==', userId));
+        const gradesSnapshot = await getDocs(gradesQ);
+        if (!active) return;
 
-      if (!isInitialGrades) {
-        snapshot.docChanges().forEach(change => {
-          if (change.type === 'added') {
-            const newGrade = change.doc.data() as Grade;
-            const stu = students.find(s => s.id === newGrade.studentId);
-            const studentName = stu?.name || "Votre enfant";
-            
-            triggerNotification(
-              t('notif.grade_added_title'),
-              t('notif.grade_added_body', {
-                student: studentName,
-                score: newGrade.score,
-                maxScore: newGrade.maxScore,
-                subject: newGrade.subject
-              }),
-              'grade',
-              studentName,
-              newGrade.subject,
-              'grades'
-            );
-          }
+        const currentGradesList: Grade[] = [];
+        gradesSnapshot.forEach((doc) => {
+          const g = { id: doc.id, ...doc.data() as Omit<Grade, 'id'> };
+          currentGradesList.push(g as any);
         });
-      }
-      isInitialGrades = false;
-    }, (error) => {
-      console.warn("Real-time grades listener failed:", error);
-    });
 
-    // 2. Listen for new homeworks
-    const homeworksQ = query(collection(db, 'homeworks'), where('parentId', '==', userId));
-    const unsubscribeHomeworks = onSnapshot(homeworksQ, (snapshot) => {
-      const list = snapshot.docs.map(doc => doc.data() as Homework);
-      setHomeworks(list);
-      localStorage.setItem(`pasma_homeworks_${userId}`, JSON.stringify(list));
+        setGrades(currentGradesList);
+        localStorage.setItem(`pasma_grades_${userId}`, JSON.stringify(currentGradesList));
 
-      if (!isInitialHomeworks) {
-        snapshot.docChanges().forEach(change => {
-          if (change.type === 'added') {
-            const newHw = change.doc.data() as Homework;
-            const stu = students.find(s => s.id === newHw.studentId);
-            const studentName = stu?.name || "Votre enfant";
-            const dueDate = new Date(newHw.dueDate).toLocaleDateString('fr-FR', {
-              day: 'numeric',
-              month: 'short'
-            });
+        if (!isInitial) {
+          currentGradesList.forEach(grade => {
+            const key = grade.id || `${grade.studentId}_${grade.subject}_${grade.score}_${grade.date}`;
+            if (!lastGradesMap.has(key)) {
+              const stu = studentsRef.current.find(s => s.id === grade.studentId);
+              const studentName = stu?.name || "Votre enfant";
+              
+              triggerNotificationRef.current(
+                tRef.current('notif.grade_added_title'),
+                tRef.current('notif.grade_added_body', {
+                  student: studentName,
+                  score: grade.score,
+                  maxScore: grade.maxScore,
+                  subject: grade.subject
+                }),
+                'grade',
+                studentName,
+                grade.subject,
+                'grades'
+              );
+            }
+          });
+        }
 
-            triggerNotification(
-              t('notif.homework_added_title'),
-              t('notif.homework_added_body', {
-                student: studentName,
-                subject: newHw.subject,
-                title: newHw.title,
-                dueDate
-              }),
-              'homework',
-              studentName,
-              newHw.subject,
-              'homework'
-            );
-          }
+        // Update the cache map
+        const newGradesMap = new Map<string, Grade>();
+        currentGradesList.forEach(grade => {
+          const key = grade.id || `${grade.studentId}_${grade.subject}_${grade.score}_${grade.date}`;
+          newGradesMap.set(key, grade);
         });
+        lastGradesMap = newGradesMap;
+
+        // 2. Fetch homeworks
+        const homeworksQ = query(collection(db, 'homeworks'), where('parentId', '==', userId));
+        const homeworksSnapshot = await getDocs(homeworksQ);
+        if (!active) return;
+
+        const currentHomeworkList: Homework[] = [];
+        homeworksSnapshot.forEach((doc) => {
+          const h = { id: doc.id, ...doc.data() as Omit<Homework, 'id'> };
+          currentHomeworkList.push(h as any);
+        });
+
+        setHomeworks(currentHomeworkList);
+        localStorage.setItem(`pasma_homeworks_${userId}`, JSON.stringify(currentHomeworkList));
+
+        if (!isInitial) {
+          currentHomeworkList.forEach(hw => {
+            const key = hw.id || `${hw.studentId}_${hw.subject}_${hw.title}_${hw.dueDate}`;
+            if (!lastHomeworksMap.has(key)) {
+              const stu = studentsRef.current.find(s => s.id === hw.studentId);
+              const studentName = stu?.name || "Votre enfant";
+              const dueDate = new Date(hw.dueDate).toLocaleDateString('fr-FR', {
+                day: 'numeric',
+                month: 'short'
+              });
+
+              triggerNotificationRef.current(
+                tRef.current('notif.homework_added_title'),
+                tRef.current('notif.homework_added_body', {
+                  student: studentName,
+                  subject: hw.subject,
+                  title: hw.title,
+                  dueDate
+                }),
+                'homework',
+                studentName,
+                hw.subject,
+                'homework'
+              );
+            }
+          });
+        }
+
+        // Update the cache map
+        const newHomeworksMap = new Map<string, Homework>();
+        currentHomeworkList.forEach(hw => {
+          const key = hw.id || `${hw.studentId}_${hw.subject}_${hw.title}_${hw.dueDate}`;
+          newHomeworksMap.set(key, hw);
+        });
+        lastHomeworksMap = newHomeworksMap;
+
+      } catch (error) {
+        console.warn("[Pasma-sys Local Sync] Error loading parental data:", error);
       }
-      isInitialHomeworks = false;
-    }, (error) => {
-      console.warn("Real-time homeworks listener failed:", error);
-    });
+    };
+
+    // Initial load
+    fetchGradesAndHomeworks(true);
+
+    // Polling setup: fetch every 30 seconds
+    const intervalId = setInterval(() => {
+      fetchGradesAndHomeworks(false);
+    }, 30000);
 
     return () => {
-      unsubscribeGrades();
-      unsubscribeHomeworks();
+      active = false;
+      clearInterval(intervalId);
     };
-  }, [userId, user, portalUserRole, isOffline, students, triggerNotification, t]);
+  }, [userId, user, portalUserRole]); // Extremely stable dependencies!
 
   return null;
 }
@@ -603,11 +651,7 @@ export default function App() {
 
         if (!isSimulatedUser) {
           try {
-            // Check seeding status with a timeout of 2.5 seconds
-            seeded = await Promise.race([
-              isDatabaseSeeded(userId),
-              new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('Timeout checking seeded state')), 2500))
-            ]);
+            seeded = await isDatabaseSeeded(userId);
             if (!seeded) {
               setSeeding(true);
               await seedUserData(userId);
@@ -695,34 +739,15 @@ export default function App() {
       const invoiceQuery = query(collection(db, 'invoices'), where('parentId', '==', uid));
       const announcementQuery = query(collection(db, 'announcements'), where('parentId', '==', uid));
 
-      // Resolve sequentially with custom handles
-      // Make each query try to complete within 3 seconds, or reject immediately to switch to offline-first cache
-      async function fetchWithTimeout<T>(promise: Promise<T>, collectionName: string): Promise<T> {
-        return Promise.race([
-          promise,
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`Timeout fetching ${collectionName}`)), 3000))
-        ]);
-      }
-
-      const [
-        studentSnapshot,
-        gradeSnapshot,
-        attendanceSnapshot,
-        homeworkSnapshot,
-        appointmentSnapshot,
-        messageSnapshot,
-        invoiceSnapshot,
-        announcementSnapshot
-      ] = await Promise.all([
-        fetchWithTimeout(getDocs(studentQuery), 'students').catch(err => { console.warn(err); return null; }),
-        fetchWithTimeout(getDocs(gradeQuery), 'grades').catch(err => { console.warn(err); return null; }),
-        fetchWithTimeout(getDocs(attendanceQuery), 'attendance').catch(err => { console.warn(err); return null; }),
-        fetchWithTimeout(getDocs(homeworkQuery), 'homeworks').catch(err => { console.warn(err); return null; }),
-        fetchWithTimeout(getDocs(appointmentQuery), 'appointments').catch(err => { console.warn(err); return null; }),
-        fetchWithTimeout(getDocs(messageQuery), 'messages').catch(err => { console.warn(err); return null; }),
-        fetchWithTimeout(getDocs(invoiceQuery), 'invoices').catch(err => { console.warn(err); return null; }),
-        fetchWithTimeout(getDocs(announcementQuery), 'announcements').catch(err => { console.warn(err); return null; })
-      ]);
+      // Fetch collections sequentially to strictly reuse and keep connections alive under browser limits
+      const studentSnapshot = await getDocs(studentQuery).catch(err => { console.warn("Error fetching students:", err); return null; });
+      const gradeSnapshot = await getDocs(gradeQuery).catch(err => { console.warn("Error fetching grades:", err); return null; });
+      const attendanceSnapshot = await getDocs(attendanceQuery).catch(err => { console.warn("Error fetching attendance:", err); return null; });
+      const homeworkSnapshot = await getDocs(homeworkQuery).catch(err => { console.warn("Error fetching homeworks:", err); return null; });
+      const appointmentSnapshot = await getDocs(appointmentQuery).catch(err => { console.warn("Error fetching appointments:", err); return null; });
+      const messageSnapshot = await getDocs(messageQuery).catch(err => { console.warn("Error fetching messages:", err); return null; });
+      const invoiceSnapshot = await getDocs(invoiceQuery).catch(err => { console.warn("Error fetching invoices:", err); return null; });
+      const announcementSnapshot = await getDocs(announcementQuery).catch(err => { console.warn("Error fetching announcements:", err); return null; });
 
       let loadedAnyFromDb = false;
 
@@ -2110,6 +2135,11 @@ export default function App() {
                           settings={apeeSettings}
                           otherRevenues={apeeOtherRevenues}
                           expenses={apeeExpenses}
+                          onSaveParent={handleSaveApeeParentInPlace}
+                          onSaveOtherRevenue={handleSaveApeeOtherRevenueInPlace}
+                          onDeleteOtherRevenue={handleDeleteApeeOtherRevenueInPlace}
+                          onSaveExpense={handleSaveApeeExpenseInPlace}
+                          onDeleteExpense={handleDeleteApeeExpenseInPlace}
                         />
                       </motion.div>
                     )}

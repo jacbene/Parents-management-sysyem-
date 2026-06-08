@@ -1142,6 +1142,15 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
             </button>
             <button
               type="button"
+              onClick={handleDownloadPDF}
+              className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow-md cursor-pointer transition flex items-center gap-2 active:scale-97"
+              title="Télécharger le bulletin trimestriel de l'élève au format PDF"
+            >
+              <Download className="h-4 w-4" />
+              <span>Télécharger PDF</span>
+            </button>
+            <button
+              type="button"
               onClick={handlePrint}
               className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow-md cursor-pointer transition flex items-center gap-2 active:scale-97"
               title="Lancer l'impression directe du rapport"

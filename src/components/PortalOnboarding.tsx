@@ -736,6 +736,17 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
                 </p>
               </div>
 
+              {/* Notice informative de cache effacé */}
+              <div className="p-3.5 bg-indigo-50/60 border border-indigo-100 rounded-2xl flex items-start gap-3">
+                <Sparkles className="h-4.5 w-4.5 text-indigo-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="text-[11px] font-black text-indigo-950 uppercase tracking-wider">ℹ️ Données en sécurité</p>
+                  <p className="text-xs text-indigo-900 leading-relaxed">
+                    Si vous venez d'effacer le cache de votre navigateur, vos identifiants de session locale ont été réinitialisés. <strong>Sachez que vos données enregistrées restent intactes sur notre serveur Cloud sécurisé.</strong> Pour tout retrouver, sélectionnez simplement votre établissement d'origine ci-dessous et reconnectez-vous.
+                  </p>
+                </div>
+              </div>
+
               {/* Role Toggle Choice */}
               <div className="flex gap-2 p-1 bg-slate-100 rounded-xl w-full border border-slate-200">
                 <button
@@ -781,7 +792,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
                       <option value="">-- Choisissez l'établissement en visite --</option>
                       {schools.map(sch => (
                         <option key={sch.id} value={sch.id}>
-                          🏫 {sch.name} (Cotisation APEE: {sch.cotisationAmount.toLocaleString()} FCFA)
+                          🏫 {sch.name}
                         </option>
                       ))}
                     </select>

@@ -288,10 +288,7 @@ export async function fetchApeeData(parentId: string) {
   try {
     // Read from Firestore invoices collection for this parentId
     const qInvoices = query(collection(db, 'invoices'), where('parentId', '==', parentId));
-    const snapshot = await Promise.race([
-      getDocs(qInvoices),
-      new Promise<any>((_, reject) => setTimeout(() => reject(new Error('Timeout fetching APEE data')), 3000))
-    ]);
+    const snapshot = await getDocs(qInvoices);
     
     const dbParents: ApeeParent[] = [];
     const dbExpenses: ApeeExpense[] = [];

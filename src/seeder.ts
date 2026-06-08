@@ -5,10 +5,7 @@ import { Student, Grade, Attendance, Homework, Appointment, Message, Invoice } f
 export async function isDatabaseSeeded(userId: string): Promise<boolean> {
   const q = query(collection(db, 'students'), where('parentId', '==', userId));
   try {
-    const snapshot = await Promise.race([
-      getDocs(q),
-      new Promise<any>((_, reject) => setTimeout(() => reject(new Error('Timeout checking seeded state')), 2500))
-    ]);
+    const snapshot = await getDocs(q);
     return !snapshot.empty;
   } catch (err) {
     console.warn("isDatabaseSeeded: Firestore offline or timed out, assuming true to prevent remote write locks in local preview:", err);

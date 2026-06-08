@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   BookOpen, 
   Sparkles, 
@@ -19,7 +19,7 @@ import {
   BookOpenCheck,
   Award
 } from 'lucide-react';
-import { collection, query, where, getDocs, addDoc, updateDoc, doc, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, updateDoc, doc, deleteDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { Student } from '../types';
 
@@ -179,18 +179,15 @@ export default function LibraryDashboard({ activeStudent, filteredStudents }: Li
     }
   }, [selectedStudent]);
 
-  // Fetch Firestore saved reading logs
-  useEffect(() => {
-    if (!selectedStudent) return;
-    setLoadingLogs(true);
-    
-    // Set up real-time listener for the reading logs of this student
-    const q = query(
-      collection(db, "reading_logs"),
-      where("studentId", "==", selectedStudent.id)
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+  // Fetch Firestore saved reading logs using standard, highly stable one-time requests
+  const fetchReadingLogs = useCallback(async (sId: string, showLoader = false) => {
+    if (showLoader) setLoadingLogs(true);
+    try {
+      const q = query(
+        collection(db, "reading_logs"),
+        where("studentId", "==", sId)
+      );
+      const snapshot = await getDocs(q);
       const logs: ReadingLog[] = [];
       snapshot.forEach((docSnap) => {
         logs.push({
@@ -201,14 +198,25 @@ export default function LibraryDashboard({ activeStudent, filteredStudents }: Li
       // Sort: completed pushed to down, to_read / reading up
       logs.sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime());
       setReadingLogs(logs);
-      setLoadingLogs(false);
-    }, (error) => {
-      console.error("Error watching reading logs:", error);
-      setLoadingLogs(false);
-    });
+    } catch (error) {
+      console.error("Error fetching reading logs:", error);
+    } finally {
+      if (showLoader) setLoadingLogs(false);
+    }
+  }, []);
 
-    return () => unsubscribe();
-  }, [selectedStudent]);
+  useEffect(() => {
+    if (!selectedStudent) return;
+    
+    fetchReadingLogs(selectedStudent.id, true);
+
+    // Dynamic background poll to smoothly update logs without Websockets
+    const intervalId = setInterval(() => {
+      fetchReadingLogs(selectedStudent.id, false);
+    }, 30000);
+
+    return () => clearInterval(intervalId);
+  }, [selectedStudent, fetchReadingLogs]);
 
   const handleQueryRecommendations = async (useInitialQuick = false) => {
     if (!selectedStudent) return;
@@ -289,6 +297,7 @@ export default function LibraryDashboard({ activeStudent, filteredStudents }: Li
       };
 
       await addDoc(collection(db, "reading_logs"), newLog);
+      fetchReadingLogs(selectedStudent.id, false);
     } catch (err) {
       console.error("Error adding to reading logs journal:", err);
       alert("Erreur technique lors de l'enregistrement dans le carnet de lecture.");
@@ -302,6 +311,9 @@ export default function LibraryDashboard({ activeStudent, filteredStudents }: Li
     if (!confirm(`Souhaitez-vous retirer "${title}" du journal de lecture ?`)) return;
     try {
       await deleteDoc(doc(db, "reading_logs", logId));
+      if (selectedStudent) {
+        fetchReadingLogs(selectedStudent.id, false);
+      }
     } catch (err) {
       console.error("Error deleting reading log:", err);
     }
@@ -387,6 +399,9 @@ export default function LibraryDashboard({ activeStudent, filteredStudents }: Li
         status: calculatedStatus
       });
       setUpdatingLogId(null);
+      if (selectedStudent) {
+        fetchReadingLogs(selectedStudent.id, false);
+      }
     } catch (err) {
       console.error("Error updating log track:", err);
       alert("Erreur technique lors de la mise à jour.");
