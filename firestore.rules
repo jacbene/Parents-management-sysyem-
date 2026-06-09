@@ -146,15 +146,14 @@ service cloud.firestore {
 
     // --- Establishments Collection ---
     match /establishments/{establishmentId} {
-      allow get, list: if isSignedIn();
+      allow get, list: if true;
       allow create: if isSignedIn() && isValidId(establishmentId) && isValidEstablishment(incoming());
       allow update, delete: if isSignedIn() && (isSuperAdmin() || resource.data.ownerId == request.auth.uid || establishmentId.matches('^demo_school.*'));
     }
 
     // --- Students Collection ---
     match /students/{studentId} {
-      allow get: if isSignedIn() && (isOwner(resource.data.parentId) || isSchoolManagerOrDemo(resource.data.parentId) || canViewData(resource.data.parentId));
-      allow list: if isSignedIn() && (isSuperAdmin() || resource.data.parentId == request.auth.uid || resource.data.parentId is string);
+      allow get, list: if isSignedIn();
       allow create: if isSignedIn() && isValidId(studentId) && isValidStudent(incoming());
       allow update: if isSignedIn() && isValidStudent(incoming()) && (isOwner(resource.data.parentId) || isSchoolManagerOrDemo(resource.data.parentId));
       allow delete: if isSignedIn() && (isOwner(resource.data.parentId) || isSchoolManagerOrDemo(resource.data.parentId));
@@ -162,8 +161,7 @@ service cloud.firestore {
 
     // --- Grades Collection ---
     match /grades/{gradeId} {
-      allow get: if isSignedIn() && (isOwner(resource.data.parentId) || isSchoolManagerOrDemo(resource.data.parentId) || canViewData(resource.data.parentId));
-      allow list: if isSignedIn() && (isSuperAdmin() || resource.data.parentId == request.auth.uid || resource.data.parentId is string);
+      allow get, list: if isSignedIn();
       allow create: if isSignedIn() && isValidId(gradeId) && isValidGrade(incoming());
       allow update: if isSignedIn() && isValidGrade(incoming()) && (isOwner(resource.data.parentId) || isSchoolManagerOrDemo(resource.data.parentId));
       allow delete: if isSignedIn() && (isOwner(resource.data.parentId) || isSchoolManagerOrDemo(resource.data.parentId));
@@ -171,8 +169,7 @@ service cloud.firestore {
 
     // --- Attendance Collection ---
     match /attendance/{attendanceId} {
-      allow get: if isSignedIn() && (isOwner(resource.data.parentId) || isSchoolManagerOrDemo(resource.data.parentId) || canViewData(resource.data.parentId));
-      allow list: if isSignedIn() && (isSuperAdmin() || resource.data.parentId == request.auth.uid || resource.data.parentId is string);
+      allow get, list: if isSignedIn();
       allow create: if isSignedIn() && isValidId(attendanceId) && isValidAttendance(incoming());
       allow update: if isSignedIn() && isValidAttendance(incoming()) && (isOwner(resource.data.parentId) || isSchoolManagerOrDemo(resource.data.parentId));
       allow delete: if isSignedIn() && (isOwner(resource.data.parentId) || isSchoolManagerOrDemo(resource.data.parentId));
@@ -180,8 +177,7 @@ service cloud.firestore {
 
     // --- Homeworks Collection ---
     match /homeworks/{homeworkId} {
-      allow get: if isSignedIn() && (isOwner(resource.data.parentId) || isSchoolManagerOrDemo(resource.data.parentId) || canViewData(resource.data.parentId));
-      allow list: if isSignedIn() && (isSuperAdmin() || resource.data.parentId == request.auth.uid || resource.data.parentId is string);
+      allow get, list: if isSignedIn();
       allow create: if isSignedIn() && isValidId(homeworkId) && isValidHomework(incoming());
       allow update: if isSignedIn() && isValidHomework(incoming()) && (isOwner(resource.data.parentId) || isSchoolManagerOrDemo(resource.data.parentId));
       allow delete: if isSignedIn() && (isOwner(resource.data.parentId) || isSchoolManagerOrDemo(resource.data.parentId));
@@ -189,8 +185,7 @@ service cloud.firestore {
 
     // --- Announcements Collection ---
     match /announcements/{announcementId} {
-      allow get: if isSignedIn();
-      allow list: if isSignedIn() && (isSuperAdmin() || resource.data.parentId == request.auth.uid || resource.data.parentId is string);
+      allow get, list: if isSignedIn();
       allow create: if isSignedIn() && isValidId(announcementId) && isValidAnnouncement(incoming()) && (isOwner(incoming().parentId) || isSchoolManagerOrDemo(incoming().parentId));
       allow update: if isSignedIn() && isValidAnnouncement(incoming()) && (isOwner(resource.data.parentId) || isSchoolManagerOrDemo(resource.data.parentId));
       allow delete: if isSignedIn() && (isOwner(resource.data.parentId) || isSchoolManagerOrDemo(resource.data.parentId));
@@ -198,8 +193,7 @@ service cloud.firestore {
 
     // --- Appointments Collection ---
     match /appointments/{appointmentId} {
-      allow get: if isSignedIn() && (isOwner(resource.data.parentId) || isSchoolManagerOrDemo(resource.data.parentId) || canViewData(resource.data.parentId));
-      allow list: if isSignedIn() && (isSuperAdmin() || resource.data.parentId == request.auth.uid || resource.data.parentId is string);
+      allow get, list: if isSignedIn();
       allow create: if isSignedIn() && isValidId(appointmentId) && isValidAppointment(incoming());
       allow update: if isSignedIn() && isValidAppointment(incoming()) && (isOwner(resource.data.parentId) || isSchoolManagerOrDemo(resource.data.parentId));
       allow delete: if isSignedIn() && (isOwner(resource.data.parentId) || isSchoolManagerOrDemo(resource.data.parentId));
@@ -207,8 +201,7 @@ service cloud.firestore {
 
     // --- Messages Collection ---
     match /messages/{messageId} {
-      allow get: if isSignedIn() && (isOwner(resource.data.parentId) || isSchoolManagerOrDemo(resource.data.parentId) || canViewData(resource.data.parentId));
-      allow list: if isSignedIn() && (isSuperAdmin() || resource.data.parentId == request.auth.uid || resource.data.parentId is string);
+      allow get, list: if isSignedIn();
       allow create: if isSignedIn() && isValidId(messageId) && isValidMessage(incoming());
       allow update: if isSignedIn() && isValidMessage(incoming()) && (isOwner(resource.data.parentId) || isSchoolManagerOrDemo(resource.data.parentId));
       allow delete: if isSignedIn() && (isOwner(resource.data.parentId) || isSchoolManagerOrDemo(resource.data.parentId));

@@ -288,45 +288,7 @@ export default function App() {
     return s ? JSON.parse(s) : null;
   });
 
-  // Auto-connect Bene Jacques as requested by the user
-  useEffect(() => {
-    const activeParent = localStorage.getItem('portal_parent_details');
-    const activeRole = localStorage.getItem('portal_user_role');
-    const schoolId = localStorage.getItem('portal_selected_school_id');
-    
-    const overrideToBeneJacques = () => {
-      localStorage.setItem('portal_selected_school_id', 'demo_school_ekali');
-      localStorage.setItem('portal_user_role', 'parent');
-      localStorage.setItem('portal_parent_details', JSON.stringify({
-        name: "Bene Jacques",
-        phone: "687463313",
-        email: "jacquesbene301@gmail.com",
-        studentSubsetNames: ["Marc Bene", "Elise Bene"]
-      }));
-      setSelectedSchoolId('demo_school_ekali');
-      setPortalUserRole('parent');
-      setPortalParentDetails({
-        name: "Bene Jacques",
-        phone: "687463313",
-        email: "jacquesbene301@gmail.com",
-        studentSubsetNames: ["Marc Bene", "Elise Bene"]
-      });
-      setActiveTab('announcements');
-    };
-
-    if (!activeParent || !activeRole || schoolId !== 'demo_school_ekali') {
-      overrideToBeneJacques();
-    } else {
-      try {
-        const parsed = JSON.parse(activeParent);
-        if (parsed.phone !== '687463313') {
-          overrideToBeneJacques();
-        }
-      } catch (err) {
-        overrideToBeneJacques();
-      }
-    }
-  }, []);
+  // Persistent role and school state are preserved across reloads with no overrides
 
   // Nav tab control
   const [activeTab, setActiveTab] = useState<TabType>(() => {
