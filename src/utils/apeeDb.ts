@@ -1,5 +1,5 @@
 import { collection, doc, setDoc, deleteDoc, getDocs, query, where, writeBatch } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { db, auth, handleFirestoreError, OperationType } from '../firebase';
 import { ApeeParent, ApeeExpense, ApeeSettings, Invoice, ApeeActivityLog, ApeeOtherRevenue } from '../types';
 
 // Base cache keys
@@ -372,8 +372,12 @@ export async function fetchApeeData(parentId: string) {
     const finalOtherRevenues = dbOtherRevenues.length > 0 ? dbOtherRevenues : cachedOtherRevenues;
     finalLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
+    const currentUser = auth.currentUser;
+    const isParentRole = localStorage.getItem('portal_user_role') === 'parent';
+    const canSyncToWrite = currentUser && !isParentRole;
+
     // Automatic self-healing: copy local-only parents back to Firestore
-    if (parentId && dbParents.length === 0 && cachedParents.length > 0) {
+    if (canSyncToWrite && parentId && dbParents.length === 0 && cachedParents.length > 0) {
       console.log("Rescuing local-only parents and syncing them to Firestore...");
       cachedParents.forEach(async (cp) => {
         try {
@@ -385,7 +389,7 @@ export async function fetchApeeData(parentId: string) {
       });
     }
 
-    if (parentId && dbParents.length > 0 && cachedParents.length > dbParents.length) {
+    if (canSyncToWrite && parentId && dbParents.length > 0 && cachedParents.length > dbParents.length) {
       cachedParents.forEach(async (cp) => {
         if (!dbParents.some(dp => dp.id === cp.id)) {
           console.log("Rescuing newly-added offline parent:", cp.name);

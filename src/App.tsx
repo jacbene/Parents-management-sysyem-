@@ -1282,6 +1282,11 @@ export default function App() {
                 temp.push(newStu);
               }
             });
+            try {
+              localStorage.setItem(`pasma_students_${userId}`, JSON.stringify(temp));
+            } catch (e) {
+              console.warn("Unable to cache newly synced students locally:", e);
+            }
             return temp;
           });
         }
