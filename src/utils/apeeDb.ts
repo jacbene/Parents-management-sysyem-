@@ -1,4 +1,4 @@
-import { collection, doc, setDoc, deleteDoc, getDocs, query, where, writeBatch } from 'firebase/firestore';
+import { collection, doc, setDoc, deleteDoc, getDocs, query, where, writeBatch, onSnapshot } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from '../firebase';
 import { ApeeParent, ApeeExpense, ApeeSettings, Invoice, ApeeActivityLog, ApeeOtherRevenue } from '../types';
 
@@ -306,7 +306,7 @@ export async function fetchApeeData(parentId: string) {
         dbLogs.push(normalizeToApeeLog(data));
       } else if (data.studentId === 'apee_other_revenue') {
         dbOtherRevenues.push(normalizeToOtherRevenue(data));
-      } else if (data.id === 'apee_settings') {
+      } else if (data.studentId === 'apee_settings') {
         let lines = DEFAULT_SETTINGS.budgetLines;
         try {
           if (data.budgetLinesList) {
@@ -873,4 +873,125 @@ export function calculateParentDebtBreakdown(
     globalDebt
   };
 }
+
+/**
+ * Subscribes to dynamic real-time Firestore APEE updates under a school Parent ID
+ */
+export function subscribeApeeData(
+  parentId: string,
+  onUpdate: (data: {
+    settings: ApeeSettings;
+    parents: ApeeParent[];
+    expenses: ApeeExpense[];
+    logs: ApeeActivityLog[];
+    otherRevenues: ApeeOtherRevenue[];
+  }) => void,
+  onError?: (err: any) => void
+) {
+  if (!parentId) return () => {};
+
+  const qInvoices = query(collection(db, 'invoices'), where('parentId', '==', parentId));
+  
+  return onSnapshot(
+    qInvoices,
+    (snapshot) => {
+      const dbParents: ApeeParent[] = [];
+      const dbExpenses: ApeeExpense[] = [];
+      const dbLogs: ApeeActivityLog[] = [];
+      const dbOtherRevenues: ApeeOtherRevenue[] = [];
+      let dbSettings: ApeeSettings | null = null;
+
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data() as Invoice;
+        if (data.studentId === 'apee_ces_ekali_1') {
+          dbParents.push(normalizeToApeeParent(data));
+        } else if (data.studentId === 'apee_expense') {
+          dbExpenses.push(normalizeToApeeExpense(data));
+        } else if (data.studentId === 'apee_log') {
+          dbLogs.push(normalizeToApeeLog(data));
+        } else if (data.studentId === 'apee_other_revenue') {
+          dbOtherRevenues.push(normalizeToOtherRevenue(data));
+        } else if (data.studentId === 'apee_settings') {
+          let lines = DEFAULT_SETTINGS.budgetLines;
+          try {
+            if (data.budgetLinesList) {
+              lines = JSON.parse(data.budgetLinesList);
+            }
+          } catch (e) {
+            console.error("Failed to parse budgetLinesList from Firestore", e);
+          }
+          let teachers = [];
+          try {
+            if (data.classTeachersList) {
+              teachers = JSON.parse(data.classTeachersList);
+            }
+          } catch (e) {
+            console.error("Failed to parse classTeachersList from Firestore", e);
+          }
+          let obligations = DEFAULT_SETTINGS.financialObligations;
+          try {
+            if (data.financialObligationsList) {
+              obligations = JSON.parse(data.financialObligationsList);
+            }
+          } catch (e) {
+            console.error("Failed to parse financialObligationsList from Firestore", e);
+          }
+          dbSettings = {
+            associationName: data.title,
+            cotisationAmount: data.amount,
+            schoolYear: data.dueDate,
+            financialGoal: data.amountPaid || DEFAULT_SETTINGS.financialGoal,
+            budgetLines: lines,
+            finManagerName: data.finManagerName || '',
+            finManagerPhone: data.finManagerPhone || '',
+            finManagerPassword: data.finManagerPassword || '',
+            pedManagerName: data.pedManagerName || '',
+            pedManagerPhone: data.pedManagerPhone || '',
+            pedManagerPassword: data.pedManagerPassword || '',
+            logoUrl: data.logoUrl || '',
+            directorName: data.directorName || '',
+            directorPhone: data.directorPhone || '',
+            directorEmail: data.directorEmail || '',
+            surveillantName: data.surveillantName || '',
+            surveillantPhone: data.surveillantPhone || '',
+            censeurName: data.censeurName || '',
+            censeurPhone: data.censeurPhone || '',
+            classTeachers: teachers,
+            financialObligations: obligations,
+          } as any;
+        }
+      });
+
+      // Save to caches
+      try {
+        if (dbSettings) {
+          localStorage.setItem(`${CACHE_SETTINGS}_${parentId}`, JSON.stringify(dbSettings));
+        }
+        localStorage.setItem(`${CACHE_PARENTS}_${parentId}`, JSON.stringify(dbParents));
+        localStorage.setItem(`${CACHE_EXPENSES}_${parentId}`, JSON.stringify(dbExpenses));
+        localStorage.setItem(`${CACHE_LOGS}_${parentId}`, JSON.stringify(dbLogs));
+        localStorage.setItem(`${CACHE_OTHER_REVENUES}_${parentId}`, JSON.stringify(dbOtherRevenues));
+      } catch (err) {
+        console.error('LocalStorage write failed in subscription', err);
+      }
+
+      onUpdate({
+        settings: dbSettings || DEFAULT_SETTINGS,
+        parents: dbParents,
+        expenses: dbExpenses,
+        logs: dbLogs,
+        otherRevenues: dbOtherRevenues,
+      });
+    },
+    (err) => {
+      console.error("Error in subscribeApeeData onSnapshot:", err);
+      if (onError) {
+        onError(err);
+      } else {
+        handleFirestoreError(err, OperationType.GET, 'invoices');
+      }
+    }
+  );
+}
+
 

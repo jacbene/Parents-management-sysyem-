@@ -15,11 +15,14 @@ export async function isDatabaseSeeded(userId: string): Promise<boolean> {
 
 export async function seedUserData(userId: string): Promise<void> {
   try {
-    const batch = writeBatch(db);
+    // Batches are written separately per collection
 
     // 1. Students
     const student1Id = `stu_lucas_${userId.slice(0, 6)}`;
     const student2Id = `stu_chloe_${userId.slice(0, 6)}`;
+    const student3Id = `stu_amadou_${userId.slice(0, 6)}`;
+    const student4Id = `stu_marc_${userId.slice(0, 6)}`;
+    const student5Id = `stu_elise_${userId.slice(0, 6)}`;
 
     const student1: Student = {
       id: student1Id,
@@ -45,8 +48,54 @@ export async function seedUserData(userId: string): Promise<void> {
       dob: '2018-09-21'
     };
 
-    batch.set(doc(db, 'students', student1Id), student1);
-    batch.set(doc(db, 'students', student2Id), student2);
+    const student3: Student = {
+      id: student3Id,
+      parentId: userId,
+      name: 'Amadou Diallo',
+      grade: 'CM1 (4ème Année)',
+      classRoom: 'Classe de M. Diallo (CM1-A)',
+      avatar: '👦',
+      teacherName: 'M. Aliou Diallo',
+      teacherEmail: 'aliou.diallo@ecole-pasma.fr',
+      dob: '2017-11-04'
+    };
+
+    const student4: Student = {
+      id: student4Id,
+      parentId: userId,
+      name: 'Marc Bene',
+      grade: 'CM2 (5ème Année)',
+      classRoom: 'Classe de M. Picard (CM2-A)',
+      avatar: '👦',
+      teacherName: 'M. Jean Picard',
+      teacherEmail: 'j.picard@ecole-pasma.fr',
+      dob: '2016-06-15'
+    };
+
+    const student5: Student = {
+      id: student5Id,
+      parentId: userId,
+      name: 'Elise Bene',
+      grade: 'CE2 (3ème Année)',
+      classRoom: 'Classe de Mme Laurent (CE2-B)',
+      avatar: '👧',
+      teacherName: 'Mme Sophie Laurent',
+      teacherEmail: 's.laurent@ecole-pasma.fr',
+      dob: '2018-05-10'
+    };
+
+    try {
+      const studentBatch = writeBatch(db);
+      studentBatch.set(doc(db, 'students', student1Id), student1);
+      studentBatch.set(doc(db, 'students', student2Id), student2);
+      studentBatch.set(doc(db, 'students', student3Id), student3);
+      studentBatch.set(doc(db, 'students', student4Id), student4);
+      studentBatch.set(doc(db, 'students', student5Id), student5);
+      await studentBatch.commit();
+      console.log("[Pasma-sys Seeder] Students seeded successfully.");
+    } catch (err) {
+      console.warn("[Pasma-sys Seeder] Students seeding skipped or blocked by rules:", err);
+    }
 
     // 2. Grades (Notes)
     const grades: Grade[] = [
@@ -129,12 +178,88 @@ export async function seedUserData(userId: string): Promise<void> {
         maxScore: 20,
         teacherRemarks: 'Très créative. Chloé s\'est beaucoup investie dans cet atelier artistique.',
         date: '2026-05-08'
+      },
+      // Amadou Grades
+      {
+        id: `grd_amadou_1_${userId.slice(0, 6)}`,
+        studentId: student3Id,
+        parentId: userId,
+        subject: 'Mathématiques',
+        examName: 'Évaluation - Divisions posées',
+        score: 15.5,
+        maxScore: 20,
+        teacherRemarks: 'Très bon raisonnement, poursuivez les efforts.',
+        date: '2026-05-18'
+      },
+      {
+        id: `grd_amadou_2_${userId.slice(0, 6)}`,
+        studentId: student3Id,
+        parentId: userId,
+        subject: 'Français',
+        examName: 'Vocabulaire - Les Synonymes',
+        score: 16.5,
+        maxScore: 20,
+        teacherRemarks: 'Excellent vocabulaire réutilisé à bon escient.',
+        date: '2026-05-12'
+      },
+      // Marc Bene Grades
+      {
+        id: `grd_marc_1_${userId.slice(0, 6)}`,
+        studentId: student4Id,
+        parentId: userId,
+        subject: 'Mathématiques',
+        examName: 'Évaluation - Fractions et Décimaux',
+        score: 18,
+        maxScore: 20,
+        teacherRemarks: 'Raisonnement rigoureux et très bonne logique.',
+        date: '2026-05-18'
+      },
+      {
+        id: `grd_marc_2_${userId.slice(0, 6)}`,
+        studentId: student4Id,
+        parentId: userId,
+        subject: 'Français',
+        examName: 'Dictée & Grammaire - Accord du Participe Passé',
+        score: 14.5,
+        maxScore: 20,
+        teacherRemarks: 'Bonne compréhension générale, poursuivez ainsi.',
+        date: '2026-05-05'
+      },
+      // Elise Bene Grades
+      {
+        id: `grd_elise_1_${userId.slice(0, 6)}`,
+        studentId: student5Id,
+        parentId: userId,
+        subject: 'Mathématiques',
+        examName: 'Évaluation - Tables de Multiplication',
+        score: 17,
+        maxScore: 20,
+        teacherRemarks: 'Chiffres soignés, calcul précis et juste.',
+        date: '2026-05-19'
+      },
+      {
+        id: `grd_elise_2_${userId.slice(0, 6)}`,
+        studentId: student5Id,
+        parentId: userId,
+        subject: 'Français',
+        examName: 'Rédaction - Raconter ses vacances',
+        score: 16,
+        maxScore: 20,
+        teacherRemarks: 'Un très joli style, agréable à lire.',
+        date: '2026-05-14'
       }
     ];
 
-    grades.forEach(g => {
-      batch.set(doc(db, 'grades', g.id), g);
-    });
+    try {
+      const gradeBatch = writeBatch(db);
+      grades.forEach(g => {
+        gradeBatch.set(doc(db, 'grades', g.id), g);
+      });
+      await gradeBatch.commit();
+      console.log("[Pasma-sys Seeder] Grades seeded successfully.");
+    } catch (err) {
+      console.warn("[Pasma-sys Seeder] Grades seeding skipped or blocked by rules:", err);
+    }
 
     // 3. Attendance (Présence)
     const attendances: Attendance[] = [
@@ -212,12 +337,79 @@ export async function seedUserData(userId: string): Promise<void> {
         parentId: userId,
         date: '2026-05-18',
         status: 'Present'
+      },
+      // Amadou Attendance
+      {
+        id: `att_amadou_1_${userId.slice(0, 6)}`,
+        studentId: student3Id,
+        parentId: userId,
+        date: '2026-05-22',
+        status: 'Present'
+      },
+      {
+        id: `att_amadou_2_${userId.slice(0, 6)}`,
+        studentId: student3Id,
+        parentId: userId,
+        date: '2026-05-21',
+        status: 'Present'
+      },
+      {
+        id: `att_amadou_3_${userId.slice(0, 6)}`,
+        studentId: student3Id,
+        parentId: userId,
+        date: '2026-05-20',
+        status: 'Present'
+      },
+      // Marc Bene Attendance
+      {
+        id: `att_marc_1_${userId.slice(0, 6)}`,
+        studentId: student4Id,
+        parentId: userId,
+        date: '2026-05-22',
+        status: 'Present'
+      },
+      {
+        id: `att_marc_2_${userId.slice(0, 6)}`,
+        studentId: student4Id,
+        parentId: userId,
+        date: '2026-05-21',
+        status: 'Late',
+        remarks: 'Retard de 10 min.'
+      },
+      {
+        id: `att_marc_3_${userId.slice(0, 6)}`,
+        studentId: student4Id,
+        parentId: userId,
+        date: '2026-05-20',
+        status: 'Present'
+      },
+      // Elise Bene Attendance
+      {
+        id: `att_elise_1_${userId.slice(0, 6)}`,
+        studentId: student5Id,
+        parentId: userId,
+        date: '2026-05-22',
+        status: 'Present'
+      },
+      {
+        id: `att_elise_2_${userId.slice(0, 6)}`,
+        studentId: student5Id,
+        parentId: userId,
+        date: '2026-05-21',
+        status: 'Present'
       }
     ];
 
-    attendances.forEach(a => {
-      batch.set(doc(db, 'attendance', a.id), a);
-    });
+    try {
+      const attendanceBatch = writeBatch(db);
+      attendances.forEach(a => {
+        attendanceBatch.set(doc(db, 'attendance', a.id), a);
+      });
+      await attendanceBatch.commit();
+      console.log("[Pasma-sys Seeder] Attendance seeded successfully.");
+    } catch (err) {
+      console.warn("[Pasma-sys Seeder] Attendance seeding skipped or blocked by rules:", err);
+    }
 
     // 4. Homework (Devoirs)
     const homeworks: Homework[] = [
@@ -285,12 +477,52 @@ export async function seedUserData(userId: string): Promise<void> {
         dueDate: '2026-05-18',
         status: 'Completed',
         grade: '18/20'
+      },
+      // Amadou Homework
+      {
+        id: `hw_amadou_1_${userId.slice(0, 6)}`,
+        studentId: student3Id,
+        parentId: userId,
+        subject: 'Mathématiques',
+        title: 'La division par 2 chiffres',
+        description: 'Faire les opérations de la page de révision.',
+        dueDate: '2026-05-26',
+        status: 'Pending'
+      },
+      // Marc Bene Homework
+      {
+        id: `hw_marc_1_${userId.slice(0, 6)}`,
+        studentId: student4Id,
+        parentId: userId,
+        subject: 'Mathématiques',
+        title: 'Exercices de géométrie - Droites parallèles',
+        description: 'Faire les exercices 3, 4 et 7 de la page 112.',
+        dueDate: '2026-05-26',
+        status: 'Pending'
+      },
+      // Elise Bene Homework
+      {
+        id: `hw_elise_1_${userId.slice(0, 6)}`,
+        studentId: student5Id,
+        parentId: userId,
+        subject: 'Anglais',
+        title: 'Vocabulaire - Les Animaux de la Ferme',
+        description: 'Apprendre la liste numéro 4.',
+        dueDate: '2026-05-26',
+        status: 'Pending'
       }
     ];
 
-    homeworks.forEach(hw => {
-      batch.set(doc(db, 'homeworks', hw.id), hw);
-    });
+    try {
+      const homeworkBatch = writeBatch(db);
+      homeworks.forEach(hw => {
+        homeworkBatch.set(doc(db, 'homeworks', hw.id), hw);
+      });
+      await homeworkBatch.commit();
+      console.log("[Pasma-sys Seeder] Homeworks seeded successfully.");
+    } catch (err) {
+      console.warn("[Pasma-sys Seeder] Homeworks seeding skipped or blocked by rules:", err);
+    }
 
     // 5. Appointments (Rendez-vous)
     const appointments: Appointment[] = [
@@ -313,12 +545,52 @@ export async function seedUserData(userId: string): Promise<void> {
         dateTime: '2026-05-15T17:00:00Z',
         status: 'Completed',
         notes: 'Chloé est très impliquée. Nous continuerons à soutenir son esprit d\'analyse.'
+      },
+      // Marc Bene Appointment
+      {
+        id: `apt_marc_${userId.slice(0, 6)}`,
+        studentId: student4Id,
+        parentId: userId,
+        teacherName: 'M. Jean Picard',
+        subject: 'Suivi d\'intégration de Marc',
+        dateTime: '2026-06-03T15:00:00Z',
+        status: 'Scheduled',
+        notes: 'Discussion constructive sur la performance globale de Marc.'
+      },
+      // Elise Bene Appointment
+      {
+        id: `apt_elise_${userId.slice(0, 6)}`,
+        studentId: student5Id,
+        parentId: userId,
+        teacherName: 'Mme Sophie Laurent',
+        subject: 'Suivi trimestriel - Lecture',
+        dateTime: '2026-06-04T16:00:00Z',
+        status: 'Scheduled',
+        notes: 'Excellent comportement en classe.'
+      },
+      // Amadou Appointment
+      {
+        id: `apt_amadou_${userId.slice(0, 6)}`,
+        studentId: student3Id,
+        parentId: userId,
+        teacherName: 'M. Aliou Diallo',
+        subject: 'Rencontre Parents-Enseignants',
+        dateTime: '2026-05-12T16:00:00Z',
+        status: 'Completed',
+        notes: 'Amadou travaille bien et participe activement.'
       }
     ];
 
-    appointments.forEach(apt => {
-      batch.set(doc(db, 'appointments', apt.id), apt);
-    });
+    try {
+      const appointmentsBatch = writeBatch(db);
+      appointments.forEach(apt => {
+        appointmentsBatch.set(doc(db, 'appointments', apt.id), apt);
+      });
+      await appointmentsBatch.commit();
+      console.log("[Pasma-sys Seeder] Appointments seeded successfully.");
+    } catch (err) {
+      console.warn("[Pasma-sys Seeder] Appointments seeding skipped or blocked by rules:", err);
+    }
 
     // 6. Invoices (Facturation comptable APEE)
     const invoices: Invoice[] = [
@@ -340,9 +612,16 @@ export async function seedUserData(userId: string): Promise<void> {
       }
     ];
 
-    invoices.forEach(inv => {
-      batch.set(doc(db, 'invoices', inv.id), inv);
-    });
+    try {
+      const invoicesBatch = writeBatch(db);
+      invoices.forEach(inv => {
+        invoicesBatch.set(doc(db, 'invoices', inv.id), inv);
+      });
+      await invoicesBatch.commit();
+      console.log("[Pasma-sys Seeder] Invoices seeded successfully.");
+    } catch (err) {
+      console.warn("[Pasma-sys Seeder] Invoices seeding skipped or blocked by rules:", err);
+    }
 
     // 7. Messaging (Messages initiés)
     const messages: Message[] = [
@@ -372,17 +651,43 @@ export async function seedUserData(userId: string): Promise<void> {
         content: 'N\'oubliez pas de remplir l\'autorisation parentale pour la sortie de fin d\'année de Chloé de vendredi prochain.',
         timestamp: '2026-05-22T08:30:00Z',
         teacherName: 'Mme Sophie Laurent'
+      },
+      // Marc Bene Message
+      {
+        id: `msg_marc_1_${userId.slice(0, 6)}`,
+        studentId: student4Id,
+        parentId: userId,
+        senderType: 'Teacher',
+        content: 'Bonjour, Marc s\'adapte très bien à son nouveau groupe classe. Ses résultats en calcul mental sont remarquables.',
+        timestamp: '2026-05-21T09:30:00Z',
+        teacherName: 'M. Jean Picard'
+      },
+      // Amadou Diallo Message
+      {
+        id: `msg_amadou_1_${userId.slice(0, 6)}`,
+        studentId: student3Id,
+        parentId: userId,
+        senderType: 'Teacher',
+        content: 'Bonjour, je vous informe que la réunion de suivi d\'Amadou s\'est bien déroulée. Son comportement est irréprochable.',
+        timestamp: '2026-05-21T10:15:00Z',
+        teacherName: 'M. Aliou Diallo'
       }
     ];
 
-    messages.forEach(msg => {
-      batch.set(doc(db, 'messages', msg.id), msg);
-    });
+    try {
+      const messagesBatch = writeBatch(db);
+      messages.forEach(msg => {
+        messagesBatch.set(doc(db, 'messages', msg.id), msg);
+      });
+      await messagesBatch.commit();
+      console.log("[Pasma-sys Seeder] Messages seeded successfully.");
+    } catch (err) {
+      console.warn("[Pasma-sys Seeder] Messages seeding skipped or blocked by rules:", err);
+    }
 
-    await batch.commit();
-    console.log('Seeding of Parents Management System (Pasma-sys) ended successfully!');
+    console.log('Seeding of Parents Management System (Pasma-sys) process ended.');
   } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, 'seeding');
+    console.warn('[Pasma-sys Seeder] General seeding process exception caught:', err);
   }
 }
 

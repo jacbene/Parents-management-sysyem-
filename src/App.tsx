@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { collection, query, where, getDocs, doc, setDoc, deleteDoc, writeBatch, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, setDoc, deleteDoc, writeBatch, getDoc, onSnapshot } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, loginWithGoogle, logout, db, handleFirestoreError, OperationType, loginAnonymously, goOffline, goOnline } from './firebase';
 import { isDatabaseSeeded, seedUserData, getOfflineMockData } from './seeder';
@@ -13,6 +13,7 @@ import NotificationBell from './components/NotificationBell';
 // APEE Utilities and Components
 import {
   fetchApeeData,
+  subscribeApeeData,
   saveApeeSettings,
   saveApeeParent,
   deleteApeeParent,
@@ -108,7 +109,7 @@ interface PushNotificationSyncerProps {
   students: Student[];
   userId: string | null;
   user: User | null;
-  portalUserRole: 'parent' | 'manager' | null;
+  portalUserRole: 'parent' | 'manager' | 'teacher' | null;
   isOffline: boolean;
   setGrades: React.Dispatch<React.SetStateAction<Grade[]>>;
   setHomeworks: React.Dispatch<React.SetStateAction<Homework[]>>;
@@ -282,10 +283,14 @@ export default function App() {
 
   // Establishment and role-based access state (with persistence)
   const [selectedSchoolId, setSelectedSchoolId] = useState<string | null>(() => localStorage.getItem('portal_selected_school_id'));
-  const [portalUserRole, setPortalUserRole] = useState<'manager' | 'parent' | null>(() => localStorage.getItem('portal_user_role') as 'manager' | 'parent' | null);
+  const [portalUserRole, setPortalUserRole] = useState<'manager' | 'parent' | 'teacher' | null>(() => localStorage.getItem('portal_user_role') as 'manager' | 'parent' | 'teacher' | null);
   const [portalParentDetails, setPortalParentDetails] = useState<{ name: string; phone: string; studentSubsetNames?: string[] } | null>(() => {
     const s = localStorage.getItem('portal_parent_details');
     return s ? JSON.parse(s) : null;
+  });
+  const [portalTeacherDetails, setPortalTeacherDetails] = useState<{ name: string; classRoom: string; email: string; phone: string } | null>(() => {
+    const t = localStorage.getItem('portal_teacher_details');
+    return t ? JSON.parse(t) : null;
   });
 
   // Persistent role and school state are preserved across reloads with no overrides
@@ -293,7 +298,7 @@ export default function App() {
   // Nav tab control
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const role = localStorage.getItem('portal_user_role');
-    return role === 'parent' ? 'announcements' : 'apee_dashboard';
+    return role === 'parent' ? 'announcements' : role === 'teacher' ? 'grades' : 'apee_dashboard';
   });
   
   const [showCookieBanner, setShowCookieBanner] = useState(false);
@@ -330,29 +335,45 @@ export default function App() {
     };
   }, []);
 
-  const handleSelectSchool = (schoolId: string, role: 'manager' | 'parent', parentDetails?: { name: string; phone: string; studentSubsetNames?: string[] }) => {
+  const handleSelectSchool = (
+    schoolId: string, 
+    role: 'manager' | 'parent' | 'teacher', 
+    details?: { name: string; phone: string; classRoom?: string; email?: string; studentSubsetNames?: string[] }
+  ) => {
     localStorage.setItem('portal_selected_school_id', schoolId);
     localStorage.setItem('portal_user_role', role);
-    if (parentDetails) {
-      localStorage.setItem('portal_parent_details', JSON.stringify(parentDetails));
-      setPortalParentDetails(parentDetails);
+    
+    if (role === 'parent' && details) {
+      localStorage.setItem('portal_parent_details', JSON.stringify(details));
+      setPortalParentDetails(details);
+      setPortalTeacherDetails(null);
+      localStorage.removeItem('portal_teacher_details');
+    } else if (role === 'teacher' && details) {
+      localStorage.setItem('portal_teacher_details', JSON.stringify(details));
+      setPortalTeacherDetails(details as any);
+      setPortalParentDetails(null);
+      localStorage.removeItem('portal_parent_details');
     } else {
       localStorage.removeItem('portal_parent_details');
+      localStorage.removeItem('portal_teacher_details');
       setPortalParentDetails(null);
+      setPortalTeacherDetails(null);
     }
     
     setSelectedSchoolId(schoolId);
     setPortalUserRole(role);
-    setActiveTab(role === 'parent' ? 'announcements' : 'apee_dashboard');
+    setActiveTab(role === 'parent' ? 'announcements' : role === 'teacher' ? 'grades' : 'apee_dashboard');
   };
 
   const handleExitSchool = () => {
     localStorage.removeItem('portal_selected_school_id');
     localStorage.removeItem('portal_user_role');
     localStorage.removeItem('portal_parent_details');
+    localStorage.removeItem('portal_teacher_details');
     setSelectedSchoolId(null);
     setPortalUserRole(null);
     setPortalParentDetails(null);
+    setPortalTeacherDetails(null);
   };
 
   // APEE App State
@@ -559,6 +580,13 @@ export default function App() {
       return allowedNames.includes(sNameLower) || 
              allowedNames.some(allowed => sNameLower.includes(allowed) || allowed.includes(sNameLower));
     }
+    if (portalUserRole === 'teacher') {
+      if (!portalTeacherDetails?.classRoom) return true;
+      const teacherClassLower = portalTeacherDetails.classRoom.toLowerCase().trim();
+      const studentClassLower = (s.classRoom || '').toLowerCase().trim();
+      // Match if classrooms contain each other (e.g. "cm2" and "CM2-A" or "Classe CM2-A")
+      return studentClassLower.includes(teacherClassLower) || teacherClassLower.includes(studentClassLower);
+    }
     return true;
   });
 
@@ -624,6 +652,7 @@ export default function App() {
   // 2. Fetch and seed database state based on Selected School or logged-in account (Unified ID space)
   const userId = selectedSchoolId || user?.uid;
   useEffect(() => {
+    if (loading) return;
     if (!userId) {
       // Clear local states on sign out or when no user is signed in
       setStudents([]);
@@ -643,6 +672,14 @@ export default function App() {
       setActiveParentToEdit(null);
       return;
     }
+
+    // Add authentication guard to prevent unauthenticated database queries/writes
+    if (!user) {
+      console.log("[Pasma-sys Gate] Waiting for authentication to resolve before starting queries.");
+      return;
+    }
+
+    const unsubscribers: (() => void)[] = [];
 
     const initAndFetchData = async () => {
       setDataLoading(true);
@@ -687,35 +724,136 @@ export default function App() {
               setSeeding(false);
             }
           } catch (e) {
-            console.warn("Seeding verification failed or timed out. Moving to local/offline loading mode.", e);
-            await goOffline();
-            setIsOffline(true);
+            console.warn("Seeding verification failed or timed out. Attempting online fetch anyway.", e);
           }
         } else {
           console.log("Local simulated workspace session (or unauthenticated state) detected. Bypassing remote database seeding.");
         }
 
-        // B. Fetch all related collections under parentId
+        // B. Fetch cache/local storage backup first for instant loading
         try {
           await fetchAllData(userId);
         } catch (e) {
-          console.warn("Failure fetching related collections from Firestore:", e);
-          await goOffline();
-          setIsOffline(true);
+          console.warn("Failure fetching initial backup or offline seed:", e);
         }
 
-        // C. Fetch APEE data (sync local cache and Firestore)
-        try {
-          const apeeData = await fetchApeeData(userId);
-          if (apeeData.settings) setApeeSettings(apeeData.settings);
-          if (apeeData.parents) setApeeParents(apeeData.parents);
-          if (apeeData.expenses) setApeeExpenses(apeeData.expenses);
-          if (apeeData.logs) setApeeLogs(apeeData.logs);
-          if (apeeData.otherRevenues) setApeeOtherRevenues(apeeData.otherRevenues);
-        } catch (e) {
-          console.warn("APEE data fetch encountered errors:", e);
-          await goOffline();
-          setIsOffline(true);
+        // C. Setup real-time listeners for all collections (Students, Grades, Attendance, Homework, Appointments, Messages, Announcements)
+        if (!isOffline) {
+          try {
+            unsubscribers.push(
+              onSnapshot(
+                query(collection(db, 'students'), where('parentId', '==', userId)),
+                (snapshot) => {
+                  const list = snapshot.docs.map(doc => doc.data() as Student);
+                  setStudents(list);
+                  if (list.length > 0) {
+                    setSelectedStudentId(prev => prev || list[0]?.id || '');
+                  }
+                  localStorage.setItem(`pasma_students_${userId}`, JSON.stringify(list));
+                },
+                (err) => {
+                  console.warn("Real-time students listener failed (offline fallback active):", err);
+                }
+              )
+            );
+
+            unsubscribers.push(
+              onSnapshot(
+                query(collection(db, 'grades'), where('parentId', '==', userId)),
+                (snapshot) => {
+                  const list = snapshot.docs.map(doc => doc.data() as Grade);
+                  setGrades(list);
+                  localStorage.setItem(`pasma_grades_${userId}`, JSON.stringify(list));
+                },
+                (err) => {
+                  console.warn("Real-time grades listener failed:", err);
+                }
+              )
+            );
+
+            unsubscribers.push(
+              onSnapshot(
+                query(collection(db, 'attendance'), where('parentId', '==', userId)),
+                (snapshot) => {
+                  const list = snapshot.docs.map(doc => doc.data() as Attendance);
+                  setAttendanceLogs(list);
+                  localStorage.setItem(`pasma_attendance_${userId}`, JSON.stringify(list));
+                },
+                (err) => {
+                  console.warn("Real-time attendance listener failed:", err);
+                }
+              )
+            );
+
+            unsubscribers.push(
+              onSnapshot(
+                query(collection(db, 'homeworks'), where('parentId', '==', userId)),
+                (snapshot) => {
+                  const list = snapshot.docs.map(doc => doc.data() as Homework);
+                  setHomeworks(list);
+                  localStorage.setItem(`pasma_homeworks_${userId}`, JSON.stringify(list));
+                },
+                (err) => {
+                  console.warn("Real-time homeworks listener failed:", err);
+                }
+              )
+            );
+
+            unsubscribers.push(
+              onSnapshot(
+                query(collection(db, 'appointments'), where('parentId', '==', userId)),
+                (snapshot) => {
+                  const list = snapshot.docs.map(doc => doc.data() as Appointment);
+                  setAppointments(list);
+                  localStorage.setItem(`pasma_appointments_${userId}`, JSON.stringify(list));
+                },
+                (err) => {
+                  console.warn("Real-time appointments listener failed:", err);
+                }
+              )
+            );
+
+            unsubscribers.push(
+              onSnapshot(
+                query(collection(db, 'messages'), where('parentId', '==', userId)),
+                (snapshot) => {
+                  const list = snapshot.docs.map(doc => doc.data() as Message);
+                  setMessages(list);
+                  localStorage.setItem(`pasma_messages_${userId}`, JSON.stringify(list));
+                },
+                (err) => {
+                  console.warn("Real-time messages listener failed:", err);
+                }
+              )
+            );
+
+            unsubscribers.push(
+              onSnapshot(
+                query(collection(db, 'announcements'), where('parentId', '==', userId)),
+                (snapshot) => {
+                  const list = snapshot.docs.map(doc => doc.data() as Announcement);
+                  setAnnouncements(list);
+                  localStorage.setItem(`pasma_announcements_${userId}`, JSON.stringify(list));
+                },
+                (err) => {
+                  console.warn("Real-time announcements listener failed:", err);
+                }
+              )
+            );
+
+            // D. Setup real-time APEE subscription
+            const unsubApee = subscribeApeeData(userId, (apeeData) => {
+              if (apeeData.settings) setApeeSettings(apeeData.settings);
+              if (apeeData.parents) setApeeParents(apeeData.parents);
+              if (apeeData.expenses) setApeeExpenses(apeeData.expenses);
+              if (apeeData.logs) setApeeLogs(apeeData.logs);
+              if (apeeData.otherRevenues) setApeeOtherRevenues(apeeData.otherRevenues);
+            });
+            if (unsubApee) unsubscribers.push(unsubApee);
+
+          } catch (syncErr) {
+            console.warn("Could not bind real-time listeners. Using fetched snapshots.", syncErr);
+          }
         }
       } catch (err) {
         console.error("Initiation payload failure:", err);
@@ -725,7 +863,11 @@ export default function App() {
     };
 
     initAndFetchData();
-  }, [userId, user?.uid]);
+
+    return () => {
+      unsubscribers.forEach(unsub => unsub());
+    };
+  }, [userId, user?.uid, isOffline, loading]);
 
   const fetchAllData = async (uid: string) => {
     // 1. Load offline cache values first for instant loading
@@ -1486,6 +1628,14 @@ export default function App() {
     }
   };
 
+  // 1.5 Auto-login guest if user is unauthenticated to ensure secure database connection from boot
+  useEffect(() => {
+    if (!loading && !user) {
+      console.log("No authenticated session. Auto-logging in guest for secure database access...");
+      handleGuestLogin();
+    }
+  }, [loading, user]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center space-y-3">
@@ -1917,7 +2067,7 @@ export default function App() {
                       )}
 
                       {/* Responsable Pedagogique Security lock bar */}
-                      {apeeSettings.pedManagerPassword && (
+                      {apeeSettings.pedManagerPassword && portalUserRole !== 'teacher' && (
                         <div className="border-t border-indigo-900/50 pt-2 mt-2 font-sans text-left">
                           {isPedAuthorized ? (
                             <div className="flex items-center justify-between gap-1.5 bg-emerald-950/40 border border-emerald-900/80 p-2 rounded-xl text-emerald-250">
@@ -1967,7 +2117,7 @@ export default function App() {
                   {/* Desktop Unified Nav Menu Card */}
                   <div className="bg-white border border-gray-150 rounded-2xl p-4 space-y-1 block shadow-2xs select-none">
                     
-                    {portalUserRole !== 'parent' ? (
+                    {portalUserRole === 'manager' ? (
                       <>
                         {/* SECTION 1: GESTION TRÉSORERIE APEE */}
                         <h3 className="text-[10px] font-black text-indigo-650 uppercase tracking-widest mb-2 pl-1 flex items-center gap-1">
@@ -2077,6 +2227,16 @@ export default function App() {
                           </span>
                         </button>
                       </>
+                    ) : portalUserRole === 'teacher' ? (
+                      <>
+                        {/* SECTION 1: ESPACE ENSEIGNANT */}
+                        <h3 className="text-[10px] font-black text-indigo-650 uppercase tracking-widest mb-2 pl-1 flex items-center gap-1">
+                          🧑‍🏫 {portalTeacherDetails?.name || 'Enseignant'}
+                        </h3>
+                        <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 text-[11px] text-indigo-950 leading-relaxed mb-3">
+                          🏫 Classe : <span className="font-extrabold text-indigo-700">{portalTeacherDetails?.classRoom || 'Défaut'}</span>
+                        </div>
+                      </>
                     ) : (
                       <>
                         {/* SECTION 1: DOSSIER FINANCIER PARENT */}
@@ -2148,7 +2308,7 @@ export default function App() {
                       </>
                     )}
 
-                    {portalUserRole !== 'parent' && (
+                    {portalUserRole === 'manager' && (
                       <button
                         onClick={() => setActiveTab('billing')}
                         className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
@@ -2330,7 +2490,7 @@ export default function App() {
                           customAnnouncements={announcements}
                           onAddAnnouncement={handleAddAnnouncement}
                           onDeleteAnnouncement={handleDeleteAnnouncement}
-                          isPedAuthorized={isPedAuthorized}
+                          isPedAuthorized={portalUserRole === 'teacher' || isPedAuthorized}
                           onPromptUnlockPed={handlePromptUnlockPed}
                           pedManagerName={apeeSettings.pedManagerName}
                           hasPedPassword={!!apeeSettings.pedManagerPassword}
@@ -2345,7 +2505,7 @@ export default function App() {
                           onUpdateHomework={handleUpdateHomeworkInPlace}
                           onAddHomework={handleAddHomework}
                           onDeleteHomework={handleDeleteHomework}
-                          isPedAuthorized={isPedAuthorized}
+                          isPedAuthorized={portalUserRole === 'teacher' || isPedAuthorized}
                           onPromptUnlockPed={handlePromptUnlockPed}
                           pedManagerName={apeeSettings.pedManagerName}
                           hasPedPassword={!!apeeSettings.pedManagerPassword}
@@ -2360,7 +2520,7 @@ export default function App() {
                           grades={currentGrades}
                           onAddGrade={handleAddGrade}
                           onDeleteGrade={handleDeleteGrade}
-                          isPedAuthorized={isPedAuthorized}
+                          isPedAuthorized={portalUserRole === 'teacher' || isPedAuthorized}
                           onPromptUnlockPed={handlePromptUnlockPed}
                           pedManagerName={apeeSettings.pedManagerName}
                           hasPedPassword={!!apeeSettings.pedManagerPassword}
@@ -2377,7 +2537,7 @@ export default function App() {
                           attendanceLogs={currentAttendance}
                           onAddAttendance={handleAddAttendance}
                           onDeleteAttendance={handleDeleteAttendance}
-                          isPedAuthorized={isPedAuthorized}
+                          isPedAuthorized={portalUserRole === 'teacher' || isPedAuthorized}
                           onPromptUnlockPed={handlePromptUnlockPed}
                           pedManagerName={apeeSettings.pedManagerName}
                           hasPedPassword={!!apeeSettings.pedManagerPassword}

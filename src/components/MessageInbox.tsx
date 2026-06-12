@@ -32,7 +32,7 @@ interface MessageInboxProps {
   students: Student[];
   onAddMessage: (newMsg: Message) => void;
   apeeParents: ApeeParent[];
-  portalUserRole?: 'manager' | 'parent' | null;
+  portalUserRole?: 'manager' | 'parent' | 'teacher' | null;
   apeeSettings?: ApeeSettings;
 }
 
@@ -45,7 +45,16 @@ export default function MessageInbox({
   apeeSettings 
 }: MessageInboxProps) {
   const { t } = useLanguage();
-  const isAdmin = portalUserRole === 'manager';
+  const isAdmin = portalUserRole === 'manager' || portalUserRole === 'teacher';
+
+  const loggedInTeacher = (() => {
+    try {
+      const t = localStorage.getItem('portal_teacher_details');
+      return t ? JSON.parse(t) : null;
+    } catch (e) {
+      return null;
+    }
+  })();
 
   // Determine classroom list from students or settings
   const classrooms = Array.from(new Set(students.map(s => s.classRoom))).filter(Boolean);
@@ -215,7 +224,9 @@ export default function MessageInbox({
     // Resolve teacher/administrator display name
     let senderName = currentTeacherInfo.name;
     if (isAdmin) {
-      if (adminSenderAlias === 'PedManager') {
+      if (portalUserRole === 'teacher' && loggedInTeacher) {
+        senderName = loggedInTeacher.name;
+      } else if (adminSenderAlias === 'PedManager') {
         senderName = censorInfo.name;
       } else if (adminSenderAlias === 'Director') {
         senderName = directorInfo.name;
@@ -251,7 +262,7 @@ export default function MessageInbox({
       ...({
         recipientName: !isAdmin ? recipientName : undefined,
         recipientRole: !isAdmin ? recipientRole : undefined,
-        senderRole: isAdmin ? (adminSenderAlias === 'PedManager' ? 'Censeur / Surveillant' : adminSenderAlias === 'Director' ? 'Directeur / Proviseur' : 'Professeur principal') : undefined
+        senderRole: isAdmin ? (portalUserRole === 'teacher' ? 'Enseignant Titulaire' : adminSenderAlias === 'PedManager' ? 'Censeur / Surveillant' : adminSenderAlias === 'Director' ? 'Directeur / Proviseur' : 'Professeur principal') : undefined
       } as any)
     };
 

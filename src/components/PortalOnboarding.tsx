@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, doc, getDocs, query, setDoc, writeBatch, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, setDoc, writeBatch, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Landmark, Plus, CheckCircle, AlertOctagon, UserCheck, Phone, ShieldCheck, ArrowRight, X, Sparkles, User, HelpCircle, Mail, Smartphone, Key, RotateCw, Bell, Share2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -7,7 +7,7 @@ import { ApeeSettings, ApeeParent, Student, Grade, Homework, Attendance, Invoice
 
 
 interface PortalOnboardingProps {
-  onSelectSchool: (schoolId: string, role: 'manager' | 'parent', parentDetails?: { name: string; phone: string; studentSubsetNames?: string[] }) => void;
+  onSelectSchool: (schoolId: string, role: 'manager' | 'parent' | 'teacher', details?: { name: string; phone: string; classRoom?: string; email?: string; studentSubsetNames?: string[] }) => void;
   currentUserUid: string | null;
   onAutoLoginGuest: () => Promise<string>;
 }
@@ -19,9 +19,14 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Connection Role (Parent vs Administrator)
-  const [onboardingRole, setOnboardingRole] = useState<'parent' | 'manager'>('parent');
+  // Connection Role (Parent vs Administrator vs Teacher)
+  const [onboardingRole, setOnboardingRole] = useState<'parent' | 'manager' | 'teacher'>('parent');
   const [managerPassword, setManagerPassword] = useState('');
+
+  // Teacher Login State
+  const [availableTeachers, setAvailableTeachers] = useState<Array<{ classRoom: string; teacherName: string; teacherPhone?: string; teacherEmail?: string }>>([]);
+  const [selectedTeacherName, setSelectedTeacherName] = useState('');
+  const [teacherVerificationCode, setTeacherVerificationCode] = useState('');
 
   // Custom Logo Upload state
   const [schoolLogo, setSchoolLogo] = useState<string>('');
@@ -161,6 +166,49 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
     fetchSchools();
   }, []);
 
+  // Dynamically load teachers list from the school settings
+  useEffect(() => {
+    if (!selectedSchoolId) {
+      setAvailableTeachers([]);
+      return;
+    }
+    const loadTeachers = async () => {
+      if (!currentUserUid) {
+        // Wait until anonymous login or user login completes to avoid unauthenticated reads
+        return;
+      }
+      try {
+        const docRef = doc(db, 'invoices', `${selectedSchoolId}_settings`);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data.classTeachersList) {
+            const parsed = JSON.parse(data.classTeachersList);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setAvailableTeachers(parsed);
+              return;
+            }
+          }
+        }
+        
+        // Fallback for default schools
+        setAvailableTeachers([
+          { teacherName: 'M. Jean Picard', classRoom: 'Classe CM2-A de M. Picard', teacherEmail: 'jean.picard@pasma.sys', teacherPhone: '654053000' },
+          { teacherName: 'Mme Sophie Laurent', classRoom: 'Classe CE2-B de Mme Laurent', teacherEmail: 'sophie.laurent@pasma.sys', teacherPhone: '654053001' },
+          { teacherName: 'M. Aliou Diallo', classRoom: 'Classe CM1-A de M. Diallo', teacherEmail: 'aliou.diallo@pasma.sys', teacherPhone: '654053002' }
+        ]);
+      } catch (e) {
+        console.warn("Could not load setting teachers", e);
+        setAvailableTeachers([
+          { teacherName: 'M. Jean Picard', classRoom: 'Classe CM2-A de M. Picard', teacherEmail: 'jean.picard@pasma.sys', teacherPhone: '654053000' },
+          { teacherName: 'Mme Sophie Laurent', classRoom: 'Classe CE2-B de Mme Laurent', teacherEmail: 'sophie.laurent@pasma.sys', teacherPhone: '654053001' },
+          { teacherName: 'M. Aliou Diallo', classRoom: 'Classe CM1-A de M. Diallo', teacherEmail: 'aliou.diallo@pasma.sys', teacherPhone: '654053002' }
+        ]);
+      }
+    };
+    loadTeachers();
+  }, [selectedSchoolId, currentUserUid]);
+
   // Quick preset loader helper
   const handleQuickPreset = (option: 'demo_school_ekali' | 'custom') => {
     if (option === 'demo_school_ekali') {
@@ -223,6 +271,72 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
       } catch (err) {
         console.error(err);
         setErrorMessage("Une erreur est survenue lors de la connexion administrative.");
+      } finally {
+        setVerifyingParent(false);
+      }
+      return;
+    }
+
+    if (onboardingRole === 'teacher') {
+      if (!selectedTeacherName) {
+        setErrorMessage("Veuillez sélectionner votre nom d'enseignant dans la liste.");
+        return;
+      }
+      if (!teacherVerificationCode.trim()) {
+        setErrorMessage("Veuillez saisir votre code d'accès personnel.");
+        return;
+      }
+
+      setVerifyingParent(true);
+      try {
+        let currentUid = currentUserUid;
+        if (!currentUid) {
+          try {
+            currentUid = await onAutoLoginGuest();
+          } catch (authErr) {
+            console.warn("Firebase Anonymous auth is disabled or offline. Safe navigation fallback active.", authErr);
+            currentUid = `temp_tchr_${Date.now()}`;
+          }
+        }
+
+        const foundTeacher = availableTeachers.find(t => t.teacherName === selectedTeacherName);
+        if (!foundTeacher) {
+          setErrorMessage("Enseignant non trouvé dans cet établissement.");
+          setVerifyingParent(false);
+          return;
+        }
+
+        // We permit default fallback '1234' or 'enseignant' or exact/last-9 of phone comparison if available
+        const inputCode = teacherVerificationCode.trim().toLowerCase();
+        const expectedPhone = foundTeacher.teacherPhone ? foundTeacher.teacherPhone.replace(/\D/g, '') : '';
+        const inputPhoneSan = inputCode.replace(/\D/g, '');
+        
+        const isAuthorized = inputCode === '1234' || 
+                             inputCode === 'enseignant' ||
+                             (expectedPhone && inputPhoneSan.length >= 8 && expectedPhone.includes(inputPhoneSan));
+
+        if (!isAuthorized) {
+          setErrorMessage("🔴 Code d'accès ou mot de passe incorrect. Pour les démonstrations de l'établissement, saisissez '1234'.");
+          setVerifyingParent(false);
+          return;
+        }
+
+        setSuccessMessage(` ✅ Accès Enseignant validé pour "${selectedTeacherName}" ! Redirection...`);
+        
+        setTimeout(() => {
+          const teacherDetails = {
+            name: selectedTeacherName,
+            phone: foundTeacher.teacherPhone || '',
+            classRoom: foundTeacher.classRoom || '',
+            email: foundTeacher.teacherEmail || ''
+          };
+          localStorage.setItem('portal_teacher_details', JSON.stringify(teacherDetails));
+          onSelectSchool(selectedSchoolId, 'teacher', teacherDetails as any);
+        }, 1200);
+
+      } catch (err) {
+        console.error(err);
+        setErrorMessage("Une erreur est survenue lors de la validation enseignant.");
       } finally {
         setVerifyingParent(false);
       }
@@ -543,6 +657,8 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
       const student1Id = `stu_lucas_${newSchoolId.slice(4, 10)}`;
       const student2Id = `stu_chloe_${newSchoolId.slice(4, 10)}`;
       const student3Id = `stu_amadou_${newSchoolId.slice(4, 10)}`;
+      const student4Id = `stu_marc_${newSchoolId.slice(4, 10)}`;
+      const student5Id = `stu_elise_${newSchoolId.slice(4, 10)}`;
 
       const s1: Student = {
         id: student1Id,
@@ -580,9 +696,35 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
         dob: '2017-11-04'
       };
 
+      const s4: Student = {
+        id: student4Id,
+        parentId: newSchoolId,
+        name: 'Marc Bene',
+        grade: 'CM2 (10-11 ans)',
+        classRoom: 'Classe CM2-A de M. Picard',
+        avatar: '👦',
+        teacherName: 'M. Jean Picard',
+        teacherEmail: 'jean.picard@pasma.sys',
+        dob: '2016-06-15'
+      };
+
+      const s5: Student = {
+        id: student5Id,
+        parentId: newSchoolId,
+        name: 'Elise Bene',
+        grade: 'CE2 (8-9 ans)',
+        classRoom: 'Classe CE2-B de Mme Laurent',
+        avatar: '👧',
+        teacherName: 'Mme Sophie Laurent',
+        teacherEmail: 'sophie.laurent@pasma.sys',
+        dob: '2018-05-10'
+      };
+
       batch.set(doc(db, 'students', student1Id), s1);
       batch.set(doc(db, 'students', student2Id), s2);
       batch.set(doc(db, 'students', student3Id), s3);
+      batch.set(doc(db, 'students', student4Id), s4);
+      batch.set(doc(db, 'students', student5Id), s5);
 
       // 5. Seed standard grades (notes)
       const grade1: Grade = {
@@ -609,8 +751,34 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
         date: '2026-05-19'
       };
 
+      const grade3: Grade = {
+        id: `grd_mar1_${newSchoolId.slice(4, 10)}`,
+        studentId: student4Id,
+        parentId: newSchoolId,
+        subject: 'Mathématiques',
+        examName: 'Contrôle - Calcul de Volumes',
+        score: 18,
+        maxScore: 20,
+        teacherRemarks: 'Raisonnement logique remarquable.',
+        date: '2026-05-18'
+      };
+
+      const grade4: Grade = {
+        id: `grd_eli1_${newSchoolId.slice(4, 10)}`,
+        studentId: student5Id,
+        parentId: newSchoolId,
+        subject: 'Français',
+        examName: 'Grammaire & Conjugaison',
+        score: 16,
+        maxScore: 20,
+        teacherRemarks: 'Très bon esprit d\'analyse scolaire.',
+        date: '2026-05-19'
+      };
+
       batch.set(doc(db, 'grades', grade1.id), grade1);
       batch.set(doc(db, 'grades', grade2.id), grade2);
+      batch.set(doc(db, 'grades', grade3.id), grade3);
+      batch.set(doc(db, 'grades', grade4.id), grade4);
 
       // 6. Seed homeworks
       const hw1: Homework = {
@@ -635,8 +803,32 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
         status: 'Pending'
       };
 
+      const hw3: Homework = {
+        id: `hw_3_${newSchoolId.slice(4, 10)}`,
+        studentId: student4Id,
+        parentId: newSchoolId,
+        subject: 'Mathématiques',
+        title: 'Exercices de fractions',
+        description: 'Terminer les divisions de fractions.',
+        dueDate: '2026-05-28',
+        status: 'Pending'
+      };
+
+      const hw4: Homework = {
+        id: `hw_4_${newSchoolId.slice(4, 10)}`,
+        studentId: student5Id,
+        parentId: newSchoolId,
+        subject: 'Histoire-Géographie',
+        title: 'Leçon sur l\'Afrique Centrale',
+        description: 'Relire la leçon 2.',
+        dueDate: '2026-05-27',
+        status: 'Pending'
+      };
+
       batch.set(doc(db, 'homeworks', hw1.id), hw1);
       batch.set(doc(db, 'homeworks', hw2.id), hw2);
+      batch.set(doc(db, 'homeworks', hw3.id), hw3);
+      batch.set(doc(db, 'homeworks', hw4.id), hw4);
 
       // 7. Write parent cotisations (invoices marked as apee_ces_ekali_1)
       const parentInvoice = {
@@ -769,29 +961,40 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
                 </div>
               </div>
 
-              {/* Role Toggle Choice */}
+               {/* Role Toggle Choice */}
               <div className="flex gap-2 p-1 bg-slate-100 rounded-xl w-full border border-slate-200">
                 <button
                   type="button"
                   onClick={() => { setOnboardingRole('parent'); setErrorMessage(null); }}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                     onboardingRole === 'parent'
-                      ? 'bg-white text-indigo-700 shadow-xs'
+                      ? 'bg-white text-indigo-700 shadow-xs border border-slate-150'
                       : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
-                  👤 Parent d'Élève
+                  👤 Parent
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setOnboardingRole('teacher'); setErrorMessage(null); }}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                    onboardingRole === 'teacher'
+                      ? 'bg-white text-indigo-700 shadow-xs border border-slate-150'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  🧑‍🏫 Enseignant
                 </button>
                 <button
                   type="button"
                   onClick={() => { setOnboardingRole('manager'); setErrorMessage(null); }}
                   className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                     onboardingRole === 'manager'
-                      ? 'bg-white text-indigo-700 shadow-xs'
+                      ? 'bg-white text-indigo-700 shadow-xs border border-slate-150'
                       : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
-                  💼 Administrateur d'Établissement
+                  💼 Administration
                 </button>
               </div>
 
@@ -959,6 +1162,47 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
                       </div>
                     </div>
                   )
+                ) : onboardingRole === 'teacher' ? (
+                  <div className="space-y-4 animate-fadeIn">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider flex items-center gap-1">
+                        Sélectionnez votre Nom d'Enseignant <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={selectedTeacherName}
+                        required={onboardingRole === 'teacher'}
+                        onChange={(e) => setSelectedTeacherName(e.target.value)}
+                        className="w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-indigo-500 focus:bg-white cursor-pointer"
+                      >
+                        <option value="">-- Choisissez votre nom d'enseignant --</option>
+                        {availableTeachers.map((t, idx) => (
+                          <option key={idx} value={t.teacherName}>
+                            🧑‍🏫 {t.teacherName} ({t.classRoom || 'Professeur Principal'})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider">
+                        Code d'Accès de l'Enseignant <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="password"
+                          required={onboardingRole === 'teacher'}
+                          value={teacherVerificationCode}
+                          onChange={(e) => setTeacherVerificationCode(e.target.value)}
+                          placeholder="Saisissez votre code d'accès"
+                          className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 tracking-wider focus:outline-indigo-500 focus:bg-white font-mono"
+                        />
+                        <ShieldCheck className="h-4 w-4 text-slate-400 absolute left-3 top-3.5" />
+                      </div>
+                      <p className="text-[10.5px] text-slate-500 leading-normal p-3 bg-indigo-50/50 rounded-2xl border border-indigo-100 flex items-center gap-2">
+                        💡 Saisissez le code d'accès de démonstration <strong>1234</strong> ou le code d'accès de l'établissement pour vous connecter directement.
+                      </p>
+                    </div>
+                  </div>
                 ) : (
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider">
@@ -997,6 +1241,8 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
                     <>
                       {onboardingRole === 'parent' ? (
                         otpStep === 'input_phone' ? "Vérifier versement APEE & Recevoir OTP" : "Valider le Code d'Accès OTP & Entrer"
+                      ) : onboardingRole === 'teacher' ? (
+                        "S'identifier comme Enseignant Titulaire"
                       ) : (
                         "S'identifier comme Administrateur"
                       )} <ArrowRight className="h-4 w-4" />
