@@ -293,7 +293,53 @@ export default function App() {
     return t ? JSON.parse(t) : null;
   });
 
-  // Persistent role and school state are preserved across reloads with no overrides
+  // Persistent role, device registration and school state are preserved across reloads with no overrides
+  const [showMainLogin, setShowMainLogin] = useState<boolean>(() => {
+    const schoolSelected = localStorage.getItem('portal_selected_school_id');
+    const roleSelected = localStorage.getItem('portal_user_role');
+    const loginTime = localStorage.getItem('portal_login_timestamp');
+    const isExpired = loginTime ? Date.now() - Number(loginTime) > 24 * 60 * 60 * 1000 : true;
+
+    if (schoolSelected && roleSelected && !isExpired) {
+      return false; // Direct bypass to their dashboard!
+    }
+    return true; // Require login screen by default
+  });
+
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const [deviceChanged, setDeviceChanged] = useState(false);
+
+  // Email connection form state
+  const [emailInput, setEmailInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [submittingEmailLogin, setSubmittingEmailLogin] = useState(false);
+  const [emailLoginError, setEmailLoginError] = useState<string | null>(null);
+
+  // Device ID generation on startup
+  useEffect(() => {
+    let devId = localStorage.getItem('pasma_device_id');
+    if (!devId) {
+      devId = 'dev_' + Math.random().toString(36).substring(2, 11);
+      localStorage.setItem('pasma_device_id', devId);
+    }
+  }, []);
+
+  // 1.4 General 24 hour session tracking tick
+  useEffect(() => {
+    const checkExpiration = () => {
+      const loginTime = localStorage.getItem('portal_login_timestamp');
+      if (loginTime) {
+        const elapsed = Date.now() - Number(loginTime);
+        if (elapsed > 24 * 60 * 60 * 1000) {
+          console.warn("Session expired (exceeded 24 hours)");
+          setSessionExpired(true);
+        }
+      }
+    };
+    checkExpiration();
+    const interval = setInterval(checkExpiration, 30000); // Check every 30 seconds
+    return () => clearInterval(interval);
+  }, [selectedSchoolId, portalUserRole]);
 
   // Nav tab control
   const [activeTab, setActiveTab] = useState<TabType>(() => {
@@ -338,11 +384,32 @@ export default function App() {
   const handleSelectSchool = (
     schoolId: string, 
     role: 'manager' | 'parent' | 'teacher', 
-    details?: { name: string; phone: string; classRoom?: string; email?: string; studentSubsetNames?: string[] }
+    details?: { name: string; phone: string; classRoom?: string; email?: string; studentSubsetNames?: string[]; invoiceId?: string }
   ) => {
     localStorage.setItem('portal_selected_school_id', schoolId);
     localStorage.setItem('portal_user_role', role);
+    localStorage.setItem('portal_login_timestamp', Date.now().toString());
     
+    // Register current device ID for this session in the cloud
+    const currentDeviceId = localStorage.getItem('pasma_device_id') || 'dev_' + Math.random().toString(36).substring(2, 11);
+    localStorage.setItem('pasma_device_id', currentDeviceId);
+
+    if (role === 'manager') {
+      try {
+        const schoolRef = doc(db, 'establishments', schoolId);
+        setDoc(schoolRef, { lastManagerDeviceId: currentDeviceId }, { merge: true });
+      } catch (dbWriteErr) {
+        console.warn("Could not sync manager device ID to Firestore on selection:", dbWriteErr);
+      }
+    } else if (role === 'parent' && details && details.invoiceId) {
+      try {
+        const parentInvoiceRef = doc(db, 'invoices', details.invoiceId);
+        setDoc(parentInvoiceRef, { notes: `DEVICE_ID:${currentDeviceId}` }, { merge: true });
+      } catch (dbWriteErr) {
+        console.warn("Could not sync parent device ID to Firestore on selection:", dbWriteErr);
+      }
+    }
+
     if (role === 'parent' && details) {
       localStorage.setItem('portal_parent_details', JSON.stringify(details));
       setPortalParentDetails(details);
@@ -363,6 +430,7 @@ export default function App() {
     setSelectedSchoolId(schoolId);
     setPortalUserRole(role);
     setActiveTab(role === 'parent' ? 'announcements' : role === 'teacher' ? 'grades' : 'apee_dashboard');
+    setShowMainLogin(false);
   };
 
   const handleExitSchool = () => {
@@ -370,10 +438,12 @@ export default function App() {
     localStorage.removeItem('portal_user_role');
     localStorage.removeItem('portal_parent_details');
     localStorage.removeItem('portal_teacher_details');
+    localStorage.removeItem('portal_login_timestamp');
     setSelectedSchoolId(null);
     setPortalUserRole(null);
     setPortalParentDetails(null);
     setPortalTeacherDetails(null);
+    setShowMainLogin(true);
   };
 
   // APEE App State
@@ -596,19 +666,54 @@ export default function App() {
   // 1. Listen for Authentication changes
   useEffect(() => {
     setIsIframe(window.self !== window.top);
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser && currentUser.email) {
+        const email = currentUser.email.toLowerCase().trim();
+        const isPrimary = email === 'jacquesbene301@gmail.com';
+        
+        let isDeputy = false;
+        try {
+          // Check super_admins to verify if this email is an assistant/deputy
+          const q = query(collection(db, 'super_admins'));
+          const snap = await getDocs(q);
+          const list: any[] = [];
+          snap.forEach((doc) => {
+            const data = doc.data();
+            if (data.email) {
+              list.push(data.email.toLowerCase().trim());
+            }
+          });
+          isDeputy = list.includes(email) || email === 'adjoint@pasma.sys';
+        } catch (e) {
+          console.warn("Could not retrieve collection 'super_admins' during validation:", e);
+          const cached = localStorage.getItem('pasma_secondary_admins');
+          if (cached) {
+            const list = JSON.parse(cached);
+            isDeputy = list.some((admin: any) => admin.email?.toLowerCase().trim() === email);
+          }
+        }
+
+        if (isPrimary || isDeputy) {
+          setShowSuperAdmin(true);
+          setShowMainLogin(false);
+        } else {
+          // Others go directly to the portal selection screen
+          console.log("Welcome general user (others):", email);
+          setShowSuperAdmin(false);
+          setShowMainLogin(false);
+        }
+      } else if (currentUser) {
+        // Anonymous/Guest user
+        console.log("Anonymous guest logged in:", currentUser.uid);
+      }
       setUser(currentUser);
       setLoading(false);
     });
     return () => unsubscribe();
   }, []);
 
-  // Fetch secondary super admins
+  // Fetch secondary super admins on load
   useEffect(() => {
-    if (!user) {
-      setSecondaryAdmins([]);
-      return;
-    }
     const fetchAdmins = async () => {
       try {
         const q = query(collection(db, 'super_admins'));
@@ -647,7 +752,7 @@ export default function App() {
       }
     };
     fetchAdmins();
-  }, [user]);
+  }, []);
 
   // 2. Fetch and seed database state based on Selected School or logged-in account (Unified ID space)
   const userId = selectedSchoolId || user?.uid;
@@ -868,6 +973,50 @@ export default function App() {
       unsubscribers.forEach(unsub => unsub());
     };
   }, [userId, user?.uid, isOffline, loading]);
+
+  // 1.6 Monitor for Parent Multi-Device session change
+  useEffect(() => {
+    if (portalUserRole === 'parent' && selectedSchoolId && invoices.length > 0 && portalParentDetails) {
+      const myParentInvoice = invoices.find(inv => 
+        inv.studentId === 'apee_ces_ekali_1' && 
+        (inv.phone === portalParentDetails.phone || inv.title === portalParentDetails.name)
+      );
+      if (myParentInvoice && myParentInvoice.notes) {
+        if (myParentInvoice.notes.startsWith('DEVICE_ID:')) {
+          const dbDeviceId = myParentInvoice.notes.replace('DEVICE_ID:', '');
+          const localDeviceId = localStorage.getItem('pasma_device_id');
+          if (dbDeviceId && localDeviceId && dbDeviceId !== localDeviceId) {
+            console.warn("Device mismatch detected for Parent! Local:", localDeviceId, "DB:", dbDeviceId);
+            setDeviceChanged(true);
+          }
+        }
+      }
+    }
+  }, [invoices, portalUserRole, selectedSchoolId, portalParentDetails]);
+
+  // 1.7 Monitor for School Manager Multi-Device session change
+  useEffect(() => {
+    if (portalUserRole === 'manager' && selectedSchoolId) {
+      const unsub = onSnapshot(
+        doc(db, 'establishments', selectedSchoolId),
+        (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data();
+            const dbManagerDeviceId = data.lastManagerDeviceId;
+            const localDeviceId = localStorage.getItem('pasma_device_id');
+            if (dbManagerDeviceId && localDeviceId && dbManagerDeviceId !== localDeviceId) {
+              console.warn("Device mismatch detected for School Manager! Local:", localDeviceId, "DB:", dbManagerDeviceId);
+              setDeviceChanged(true);
+            }
+          }
+        },
+        (err) => {
+          console.warn("Failed school manager device id monitoring snap:", err);
+        }
+      );
+      return unsub;
+    }
+  }, [portalUserRole, selectedSchoolId]);
 
   const fetchAllData = async (uid: string) => {
     // 1. Load offline cache values first for instant loading
@@ -1628,11 +1777,62 @@ export default function App() {
     }
   };
 
-  // 1.5 Auto-login guest if user is unauthenticated to ensure secure database connection from boot
+  const handleEmailSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setEmailLoginError(null);
+    if (!emailInput.trim() || !passwordInput.trim()) {
+      setEmailLoginError("Veuillez remplir l'adresse email et le code secret.");
+      return;
+    }
+    
+    setSubmittingEmailLogin(true);
+    try {
+      const email = emailInput.trim().toLowerCase();
+      
+      // Checked permissions for Jacques Béné and deputies
+      const isPrimary = email === 'jacquesbene301@gmail.com';
+      const isDeputy = email === 'adjoint@pasma.sys';
+      const isRegisteredDeputy = secondaryAdmins.some(admin => admin.email?.toLowerCase().trim() === email);
+      
+      if (isPrimary || isDeputy || isRegisteredDeputy) {
+        const adminName = isPrimary ? "Jacques Béné (Super-Admin)" : "Alain Ndzie (Adjoint)";
+        setUser({
+          uid: isPrimary ? 'sys_admin_jacques' : 'deputy_admin_alain_' + Math.floor(Math.random()*1000),
+          email: email,
+          displayName: adminName,
+          photoURL: '',
+          isAnonymous: false
+        } as any);
+        setShowSuperAdmin(true);
+        setShowMainLogin(false);
+      } else {
+        // Redirect general email logins to school portal selection
+        setUser({
+          uid: 'sandboxed_guest_user_' + Math.random().toString(36).substring(2, 9),
+          email: email,
+          displayName: "Tuteur / Établissement Saisi",
+          photoURL: '',
+          isAnonymous: true
+        } as any);
+        setShowMainLogin(false);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setEmailLoginError("Une erreur est survenue lors de l'authentification.");
+    } finally {
+      setSubmittingEmailLogin(false);
+    }
+  };
+
+  // 1.5 Auto-login guest if they have a persistent school selection but are unauthenticated (restores DB access on boot)
   useEffect(() => {
     if (!loading && !user) {
-      console.log("No authenticated session. Auto-logging in guest for secure database access...");
-      handleGuestLogin();
+      const savedSchool = localStorage.getItem('portal_selected_school_id');
+      const savedRole = localStorage.getItem('portal_user_role');
+      if (savedSchool && savedRole) {
+        console.log("Restoring anonymous session for persistent school selection...");
+        handleGuestLogin();
+      }
     }
   }, [loading, user]);
 
@@ -1658,7 +1858,125 @@ export default function App() {
       />
       <div className="min-h-screen bg-slate-50/50 flex flex-col text-slate-900 selection:bg-indigo-100 selection:text-indigo-900">
       <AnimatePresence mode="wait">
-        {showSuperAdmin ? (
+        {showMainLogin && !showSuperAdmin ? (
+          /* Main welcome & login screen with Google or Email address */
+          <motion.div
+            key="main_login"
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            className="flex-grow flex items-center justify-center p-4 min-h-screen bg-slate-100/40"
+          >
+            <div className="w-full max-w-lg bg-white rounded-3xl border border-gray-150 shadow-2xl overflow-hidden flex flex-col justify-between">
+              <div className="p-8 space-y-2 text-center bg-slate-950 text-white flex flex-col items-center">
+                <img
+                  src="/icon-512.png"
+                  alt="Logo"
+                  className="h-14 w-14 object-contain rounded-2xl mb-1 bg-white p-1 border border-slate-700 shadow-sm"
+                />
+                <h1 className="text-xl font-extrabold tracking-tight">Pasma-sys</h1>
+                <p className="text-[10px] text-indigo-200 font-bold">Parents Management System (Système de gestion parentale)</p>
+              </div>
+
+              <div className="p-8 space-y-6">
+                <div>
+                  <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider mb-3">Se connecter</h3>
+                  
+                  {/* Google Login Trigger */}
+                  <div className="space-y-4">
+                    <button
+                      onClick={handleLogin}
+                      className="w-full py-3 bg-white border border-slate-200 text-slate-700 font-bold text-xs rounded-xl flex items-center justify-center gap-2.5 transition active:scale-98 shadow-sm cursor-pointer hover:bg-slate-50 hover:border-slate-350"
+                    >
+                      <svg className="h-4 w-4" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                      </svg>
+                      Continuer avec Google
+                    </button>
+                    <p className="text-[10px] text-gray-400 font-bold text-center leading-relaxed">
+                      La connexion Google est disponible pour le Super-Admin (Jacques Béné) et ses adjoints.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Separator */}
+                <div className="relative flex py-1 items-center">
+                  <div className="flex-grow border-t border-gray-150"></div>
+                  <span className="flex-shrink mx-4 text-gray-400 text-[9px] font-black uppercase tracking-widest bg-white px-2">OU PAR E-MAIL</span>
+                  <div className="flex-grow border-t border-gray-150"></div>
+                </div>
+
+                {/* Email Login Form */}
+                <form onSubmit={handleEmailSubmit} className="space-y-3.5">
+                  {emailLoginError && (
+                    <div className="p-3 bg-red-50 border border-red-150 text-red-700 text-xs rounded-xl font-medium">
+                      ⚠️ {emailLoginError}
+                    </div>
+                  )}
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-550">Adresse e-mail</label>
+                    <input
+                      required
+                      type="email"
+                      value={emailInput}
+                      onChange={(e) => setEmailInput(e.target.value)}
+                      placeholder="Ex: jacquesbene301@gmail.com"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs placeholder:text-slate-400 outline-none focus:border-indigo-600 focus:bg-white transition"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-555">Mot de passe / Code d'accès</label>
+                    <input
+                      required
+                      type="password"
+                      value={passwordInput}
+                      onChange={(e) => setPasswordInput(e.target.value)}
+                      placeholder="Saisissez votre code d'accès"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs placeholder:text-slate-400 outline-none focus:border-indigo-600 focus:bg-white transition"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={submittingEmailLogin}
+                    className="w-full py-3 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-slate-950 transition active:scale-98 cursor-pointer disabled:opacity-50"
+                  >
+                    {submittingEmailLogin ? "Authentification..." : "Se connecter par adresse mail"}
+                  </button>
+                </form>
+
+                {/* Separator */}
+                <div className="relative flex py-1 items-center">
+                  <div className="flex-grow border-t border-gray-150"></div>
+                  <span className="flex-shrink mx-4 text-gray-400 text-[9px] font-black uppercase tracking-widest bg-white px-2">PORTAIL PUBLIC</span>
+                  <div className="flex-grow border-t border-gray-150"></div>
+                </div>
+
+                {/* Button for general portal */}
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await handleGuestLogin();
+                      setShowMainLogin(false);
+                    }}
+                    className="w-full py-3.5 bg-indigo-900 border border-indigo-750 text-indigo-100 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-slate-900 transition active:scale-98 shadow-md shadow-indigo-950/15 cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    🎒 Accéder Directement au Portail Scolaire & Parents
+                  </button>
+                  <p className="text-[10px] text-gray-400 font-medium text-center leading-relaxed">
+                    Pour tuteurs/parents (OTP), directeurs d'école (Code d'accès) ou pour créer un nouvel établissement.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        ) : showSuperAdmin ? (
           <motion.div
             key="super_admin"
             initial={{ opacity: 0, y: 15 }}
@@ -1667,7 +1985,10 @@ export default function App() {
             className="flex-grow flex flex-col"
           >
             <SuperAdminDashboard
-              onBackToPortal={() => setShowSuperAdmin(false)}
+              onBackToPortal={() => {
+                setShowSuperAdmin(false);
+                setShowMainLogin(true);
+              }}
               onSelectSchool={(schoolId, role) => {
                 handleSelectSchool(schoolId, role);
                 setShowSuperAdmin(false);
@@ -1707,113 +2028,12 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setShowSuperAdmin(true)}
-                    className="px-4 py-1.5 bg-amber-400 hover:bg-amber-500 text-slate-950 text-xs font-black rounded-lg transition shrink-0 cursor-pointer shadow-xs"
+                    className="px-4 py-1.5 bg-amber-400 hover:bg-amber-500 text-slate-955 text-xs font-black rounded-lg transition shrink-0 cursor-pointer shadow-xs"
                   >
                     ⚙️ Ouvrir l'Espace Super-Admin (Jacques)
                   </button>
                 </div>
               )}
-            </div>
-          </motion.div>
-
-        ) : !user ? (
-          /* Landing Screen / Login */
-          <motion.div
-            key="login"
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -15 }}
-            className="flex-1 flex items-center justify-center p-4 min-h-screen"
-          >
-            <div className="w-full max-w-lg bg-white rounded-3xl border border-gray-150 shadow-xl overflow-hidden flex flex-col justify-between">
-              <div className="p-8 space-y-2 text-center bg-slate-900 text-white flex flex-col items-center">
-                <img
-                  src="/icon-512.png"
-                  alt="Logo"
-                  className="h-16 w-16 object-contain rounded-2xl mb-1 bg-white p-1 border border-slate-700 shadow-sm"
-                />
-                <h1 className="text-2xl font-extrabold tracking-tight">Pasma-sys</h1>
-                <p className="text-xs text-indigo-200">Parents Management System (Système de gestion parentale)</p>
-              </div>
-
-              <div className="p-8 space-y-6">
-                <div className="space-y-4 text-sm text-gray-650 leading-relaxed">
-                  <div className="flex gap-3">
-                    <span className="p-2 bg-indigo-50 text-indigo-700 rounded-xl font-bold shrink-0">🤝</span>
-                    <div>
-                      <h4 className="font-bold text-gray-950 text-xs uppercase tracking-wider">Suivi Scolaire Simplifié</h4>
-                      <p className="text-xs text-gray-500 mt-0.5">Consultez en temps réel les notes de vos enfants, leur relevé d'assiduité, et l'avancement des devoirs exigés.</p>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-3">
-                    <span className="p-2 bg-indigo-50 text-indigo-700 rounded-xl font-bold shrink-0">💳</span>
-                    <div>
-                      <h4 className="font-bold text-gray-950 text-xs uppercase tracking-wider">Reglements & Planification</h4>
-                      <p className="text-xs text-gray-500 mt-0.5">Réglez la cantine ou l'abonnement transport, et dialoguez directement avec les professeurs principaux de l'école.</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="border-t border-gray-100 pt-6 space-y-4">
-                  {/* Error display */}
-                  {authError && (
-                    <div className="p-3.5 bg-red-50 border border-red-200 text-red-900 text-xs rounded-xl font-medium space-y-1">
-                      <p className="font-bold flex items-center gap-1">❌ Erreur de connexion</p>
-                      <p className="leading-relaxed text-[11px] text-red-700">{authError}</p>
-                    </div>
-                  )}
-
-                  {/* Google Login Trigger */}
-                  <div className="space-y-2">
-                    <button
-                      onClick={handleLogin}
-                      className="w-full py-3 bg-indigo-600 text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2.5 transition active:scale-98 shadow-md shadow-indigo-100 cursor-pointer hover:bg-indigo-700"
-                    >
-                      <UserCheck className="h-4 w-4" /> Connectez-vous avec Google
-                    </button>
-                    <p className="text-[10px] text-gray-400 font-mono text-center">
-                      Liaison sécurisée via Firebase Authentication
-                    </p>
-                  </div>
-
-                  {/* Separator */}
-                  <div className="relative flex py-2 items-center">
-                    <div className="flex-grow border-t border-gray-200"></div>
-                    <span className="flex-shrink mx-4 text-gray-400 text-[10px] font-bold uppercase tracking-widest bg-white px-2">Alternative</span>
-                    <div className="flex-grow border-t border-gray-200"></div>
-                  </div>
-
-                  {/* Mode Démo button & Iframe Notice */}
-                  <div className="space-y-3">
-                    <div className="bg-amber-50/70 border border-amber-200 p-3.5 rounded-2xl text-[11px] leading-relaxed text-amber-900">
-                      <p className="font-bold flex items-center gap-1.5 text-amber-950 mb-0.5">
-                        ⚠️ Limitation de l'aperçu intégré (Iframe)
-                      </p>
-                      Les politiques de sécurité des navigateurs (Chrome, Safari, Firefox) bloquent souvent les popups Google Auth au sein d'un aperçu d'édition. Pour utiliser Pasma-sys, vous pouvez soit :
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      <a
-                        href={window.location.href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs text-center"
-                      >
-                        Ouvrir l'App en grand ↗
-                      </a>
-
-                      <button
-                        type="button"
-                        onClick={handleGuestLogin}
-                        className="py-2.5 bg-white hover:bg-slate-50 text-gray-800 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 border border-gray-250 cursor-pointer shadow-2xs"
-                      >
-                        ⚡ Utiliser le Mode Démo
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
             </div>
           </motion.div>
         ) : (
@@ -2744,6 +2964,54 @@ export default function App() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Session Expired Overlay */}
+      {sessionExpired && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xl flex items-center justify-center p-4 z-[99999] font-sans">
+          <div className="bg-white rounded-3xl shadow-2xl border border-gray-150 w-full max-w-md p-8 text-center space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            <span className="inline-block p-4 bg-amber-50 text-amber-600 rounded-2xl text-3xl">⏳</span>
+            <div className="space-y-1">
+              <h3 className="text-lg font-black text-slate-900 tracking-tight">Session Expirée</h3>
+              <p className="text-xs text-slate-500 font-semibold leading-relaxed">
+                Votre session de connexion à Pasma-sys (durée maximale de 24 heures) a expiré. Veuillez vous reconnecter pour rafraîchir vos accès sécurisés.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setSessionExpired(false);
+                handleExitSchool();
+              }}
+              className="w-full py-3 bg-slate-950 hover:bg-slate-900 text-white font-black text-xs rounded-xl uppercase tracking-wider transition active:scale-98 cursor-pointer"
+            >
+              Se reconnecter
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Device Changed / Disconnected Overlay */}
+      {deviceChanged && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xl flex items-center justify-center p-4 z-[99999] font-sans">
+          <div className="bg-white rounded-3xl shadow-2xl border border-gray-150 w-full max-w-md p-8 text-center space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            <span className="inline-block p-4 bg-red-50 text-red-600 rounded-2xl text-3xl">📱</span>
+            <div className="space-y-1">
+              <h3 className="text-lg font-black text-slate-900 tracking-tight">Déconnexion : Autre Appareil Détecté</h3>
+              <p className="text-xs text-slate-500 font-semibold leading-relaxed">
+                Votre compte s'est connecté sur un nouvel appareil ou une nouvelle fenêtre de navigateur. Par mesure de sécurité de vos données, cette session locale a été clôturée.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setDeviceChanged(false);
+                handleExitSchool();
+              }}
+              className="w-full py-3 bg-red-650 hover:bg-red-500 text-white font-black text-xs rounded-xl uppercase tracking-wider transition active:scale-98 cursor-pointer"
+            >
+              Se reconnecter
+            </button>
           </div>
         </div>
       )}

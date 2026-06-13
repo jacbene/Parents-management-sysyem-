@@ -948,7 +948,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                             }
 
                             try {
-                              const newAdminId = `adm_${Date.now()}`;
+                              const newAdminId = email.toLowerCase().trim();
                               const adminDoc = {
                                 id: newAdminId,
                                 name,

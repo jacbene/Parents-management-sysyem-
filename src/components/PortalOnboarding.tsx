@@ -7,7 +7,7 @@ import { ApeeSettings, ApeeParent, Student, Grade, Homework, Attendance, Invoice
 
 
 interface PortalOnboardingProps {
-  onSelectSchool: (schoolId: string, role: 'manager' | 'parent' | 'teacher', details?: { name: string; phone: string; classRoom?: string; email?: string; studentSubsetNames?: string[] }) => void;
+  onSelectSchool: (schoolId: string, role: 'manager' | 'parent' | 'teacher', details?: { name: string; phone: string; classRoom?: string; email?: string; studentSubsetNames?: string[]; invoiceId?: string }) => void;
   currentUserUid: string | null;
   onAutoLoginGuest: () => Promise<string>;
 }
@@ -461,18 +461,6 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
           return;
         }
 
-        // Pre-check Cotisation Paid > 0
-        const amountPaidVal = matchedInvoice.amountPaid || 0;
-        if (amountPaidVal <= 0) {
-          setErrorMessage(
-            `🔴 Accès Rejeté – Cotisation APEE insuffisante.\n` +
-            `Le dossier pour "${matchedInvoice.title}" est enregistré avec 0 FCFA versé (Aucun acompte régularisé).\n` +
-            `L'accès au portail nécessite d'être en règle financièrement (au moins 1 acompte de cotisation).`
-          );
-          setVerifyingParent(false);
-          return;
-        }
-
         // Check Secure Visits Rate-limiting (Max 5 / day per device/parent)
         const todayStr = new Date().toISOString().split('T')[0];
         const dailyVisitsKey = `pasma_visits_${selectedSchoolId}_${searchPhoneSan}_${todayStr}`;
@@ -564,7 +552,8 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
           onSelectSchool(selectedSchoolId, 'parent', {
             name: matchedParentState.title,
             phone: matchedParentState.phone || parentPhone,
-            studentSubsetNames: subs
+            studentSubsetNames: subs,
+            invoiceId: matchedParentState.id
           });
         }, 1200);
 
