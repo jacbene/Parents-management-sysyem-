@@ -238,7 +238,7 @@ export async function seedUserData(userId: string): Promise<void> {
         parentId: userId,
         subject: 'Français',
         title: 'Lecture cursive - Chapitres 4 et 5',
-        description: 'Lire "Le Petit Prince" chapitres 4 et 5 et répondre aux questions de compréhension.',
+        description: 'Lire \'Le Petit Prince\' chapitres 4 et 5 et répondre aux questions de compréhension.',
         dueDate: '2026-05-25',
         status: 'Pending'
       },
@@ -396,4 +396,33 @@ export async function seedUserData(userId: string): Promise<void> {
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, 'seeding');
   }
+}
+
+export async function purgeDatabase(): Promise<void> {
+    const collections = ['students', 'grades', 'attendance', 'homeworks', 'appointments', 'invoices', 'messages'];
+    console.log('Starting database purge...');
+
+    for (const collectionName of collections) {
+        try {
+            const q = query(collection(db, collectionName));
+            const snapshot = await getDocs(q);
+            if (snapshot.empty) {
+                console.log(`Collection '${collectionName}' is already empty.`);
+                continue;
+            }
+
+            const batch = writeBatch(db);
+            snapshot.docs.forEach(doc => {
+                batch.delete(doc.ref);
+            });
+
+            await batch.commit();
+            console.log(`All documents in collection '${collectionName}' have been deleted.`);
+
+        } catch (err) {
+            handleFirestoreError(err, OperationType.DELETE, collectionName);
+        }
+    }
+
+    console.log('Database purge finished.');
 }
