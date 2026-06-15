@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, query, where, getDocs, doc, setDoc, deleteDoc, writeBatch, getDoc, onSnapshot } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
-import { auth, loginWithGoogle, logout, db, handleFirestoreError, OperationType, loginAnonymously, goOffline, goOnline } from './firebase';
-import { isDatabaseSeeded, seedUserData, getOfflineMockData } from './seeder';
-import { Student, Grade, Attendance, Homework, Appointment, Message, Invoice, ApeeParent, ApeeExpense, ApeeSettings, Announcement, AnnouncementCategory, ApeeActivityLog, ApeeOtherRevenue } from './types';
+import { auth, loginWithGoogle, logout, db, handleFirestoreError, OperationType, loginAnonymously, goOffline, goOnline, isOffline as isOfflineCheck, queuePendingAction } from './firebase';
+import { isDatabaseSeeded, seedUserData, getOfflineMockData, purgeUserData } from './seeder';
+import { Student, Grade, Attendance, Homework, Appointment, Message, Invoice, ApeeParent, ApeeExpense, ApeeSettings, Announcement, AnnouncementCategory, ApeeActivityLog, ApeeOtherRevenue, PendingAction } from './types';
 
 // Notifications Push
 import { LocalNotificationProvider, useLocalNotifications } from './utils/LocalNotificationContext';
@@ -83,7 +83,13 @@ import {
   Plus,
   Bell,
   Shield,
-  Cloud
+  Cloud,
+  RefreshCw,
+  Trash2,
+  Clock,
+  AlertCircle,
+  WifiOff,
+  CheckCircle
 } from 'lucide-react';
 
 type TabType = 
@@ -348,7 +354,70 @@ export default function App() {
   });
   
   const [showCookieBanner, setShowCookieBanner] = useState(false);
-  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [isOffline, setIsOffline] = useState(() => {
+    return isOfflineCheck();
+  });
+  
+  const [pendingActions, setPendingActions] = useState<PendingAction[]>(() => {
+    try {
+      const saved = localStorage.getItem('pasma_pending_actions');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const syncPendingActions = async () => {
+    try {
+      const saved = localStorage.getItem('pasma_pending_actions');
+      const actions: PendingAction[] = saved ? JSON.parse(saved) : [];
+      if (actions.length === 0) return;
+
+      let successCount = 0;
+      const remaining: PendingAction[] = [];
+
+      for (const action of actions) {
+        try {
+          if (action.type === 'DELETE') {
+            await deleteDoc(doc(db, action.collection, action.targetId));
+          } else {
+            await setDoc(doc(db, action.collection, action.targetId), action.data);
+          }
+          successCount++;
+        } catch (err) {
+          console.error("Failed syncing item, keeping in queue:", action, err);
+          remaining.push(action);
+        }
+      }
+
+      localStorage.setItem('pasma_pending_actions', JSON.stringify(remaining));
+      setPendingActions(remaining);
+      window.dispatchEvent(new Event('pasma_actions_updated'));
+
+      if (successCount > 0) {
+        console.log(`[Pasma-sys Sync] Synchronisé avec succès ${successCount} modification(s) !`);
+      }
+    } catch (e) {
+      console.error("Error during syncPendingActions:", e);
+    }
+  };
+
+  const handleRemovePendingAction = (id: string) => {
+    try {
+      const saved = localStorage.getItem('pasma_pending_actions');
+      if (saved) {
+        const actions: PendingAction[] = JSON.parse(saved);
+        const filtered = actions.filter(a => a.id !== id);
+        localStorage.setItem('pasma_pending_actions', JSON.stringify(filtered));
+        setPendingActions(filtered);
+        window.dispatchEvent(new Event('pasma_actions_updated'));
+      }
+    } catch (err) {
+      console.error("Error removing pending action:", err);
+    }
+  };
+
+  const [showPendingDrawer, setShowPendingDrawer] = useState(false);
 
   useEffect(() => {
     const decision = localStorage.getItem('cookie_consent_decision');
@@ -358,24 +427,48 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const handleOnline = async () => {
-      setIsOffline(false);
-      await goOnline();
-    };
-    const handleOffline = async () => {
-      setIsOffline(true);
-      await goOffline();
+    const updateOfflineState = () => {
+      const offline = isOfflineCheck();
+      setIsOffline(offline);
+      if (!offline) {
+        syncPendingActions();
+      }
     };
     
+    const updateActions = () => {
+      try {
+        const saved = localStorage.getItem('pasma_pending_actions');
+        setPendingActions(saved ? JSON.parse(saved) : []);
+      } catch (err) {
+        console.error("Failed reading pending actions:", err);
+      }
+    };
+
+    window.addEventListener('pasma_connection_changed', updateOfflineState);
+    window.addEventListener('pasma_actions_updated', updateActions);
+    
+    const handleOnline = async () => {
+      await goOnline();
+      updateOfflineState();
+    };
+    const handleOffline = async () => {
+      await goOffline();
+      updateOfflineState();
+    };
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    // Initial sync check
     if (navigator.onLine) {
       goOnline();
     } else {
       goOffline();
     }
 
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
     return () => {
+      window.removeEventListener('pasma_connection_changed', updateOfflineState);
+      window.removeEventListener('pasma_actions_updated', updateActions);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
@@ -397,14 +490,18 @@ export default function App() {
     if (role === 'manager') {
       try {
         const schoolRef = doc(db, 'establishments', schoolId);
-        setDoc(schoolRef, { lastManagerDeviceId: currentDeviceId }, { merge: true });
+        setDoc(schoolRef, { lastManagerDeviceId: currentDeviceId }, { merge: true }).catch(err => {
+          console.warn("Manager device ID sync rejected or offline:", err);
+        });
       } catch (dbWriteErr) {
         console.warn("Could not sync manager device ID to Firestore on selection:", dbWriteErr);
       }
     } else if (role === 'parent' && details && details.invoiceId) {
       try {
         const parentInvoiceRef = doc(db, 'invoices', details.invoiceId);
-        setDoc(parentInvoiceRef, { notes: `DEVICE_ID:${currentDeviceId}` }, { merge: true });
+        setDoc(parentInvoiceRef, { notes: `DEVICE_ID:${currentDeviceId}` }, { merge: true }).catch(err => {
+          console.warn("Soft parent device-id sync rejected or offline (expected for demo/offline accounts):", err);
+        });
       } catch (dbWriteErr) {
         console.warn("Could not sync parent device ID to Firestore on selection:", dbWriteErr);
       }
@@ -715,6 +812,21 @@ export default function App() {
   // Fetch secondary super admins on load
   useEffect(() => {
     const fetchAdmins = async () => {
+      // Guard: only fetch from Firestore if the user is authenticated and is an admin-related email user
+      if (!user || !user.email) {
+        const cached = localStorage.getItem('pasma_secondary_admins');
+        if (cached) {
+          setSecondaryAdmins(JSON.parse(cached));
+        } else {
+          const defaultAdmins = [
+            { id: 'admin_sec_1', email: 'adjoint@pasma.sys', name: 'Alain Ndzie', createdAt: new Date().toISOString(), addedBy: 'jacquesbene301@gmail.com' }
+          ];
+          setSecondaryAdmins(defaultAdmins);
+          localStorage.setItem('pasma_secondary_admins', JSON.stringify(defaultAdmins));
+        }
+        return;
+      }
+
       try {
         const q = query(collection(db, 'super_admins'));
         const snap = await getDocs(q);
@@ -752,7 +864,7 @@ export default function App() {
       }
     };
     fetchAdmins();
-  }, []);
+  }, [user]);
 
   // 2. Fetch and seed database state based on Selected School or logged-in account (Unified ID space)
   const userId = selectedSchoolId || user?.uid;
@@ -818,7 +930,10 @@ export default function App() {
 
         // A. Verify if database has seeded profiles for this account space (demo schools pre-seeded dynamically if empty)
         let seeded = true; // Default to true for simulated guests to bypass seeding attempts
-        const isSimulatedUser = !auth.currentUser || userId.startsWith('sandboxed_guest_');
+        const isSimulatedUser = !auth.currentUser || 
+                                userId.startsWith('sandboxed_guest_') || 
+                                portalUserRole === 'parent' || 
+                                portalUserRole === 'teacher';
 
         if (!isSimulatedUser) {
           try {
@@ -947,13 +1062,19 @@ export default function App() {
             );
 
             // D. Setup real-time APEE subscription
-            const unsubApee = subscribeApeeData(userId, (apeeData) => {
-              if (apeeData.settings) setApeeSettings(apeeData.settings);
-              if (apeeData.parents) setApeeParents(apeeData.parents);
-              if (apeeData.expenses) setApeeExpenses(apeeData.expenses);
-              if (apeeData.logs) setApeeLogs(apeeData.logs);
-              if (apeeData.otherRevenues) setApeeOtherRevenues(apeeData.otherRevenues);
-            });
+            const unsubApee = subscribeApeeData(
+              userId,
+              (apeeData) => {
+                if (apeeData.settings) setApeeSettings(apeeData.settings);
+                if (apeeData.parents) setApeeParents(apeeData.parents);
+                if (apeeData.expenses) setApeeExpenses(apeeData.expenses);
+                if (apeeData.logs) setApeeLogs(apeeData.logs);
+                if (apeeData.otherRevenues) setApeeOtherRevenues(apeeData.otherRevenues);
+              },
+              (err) => {
+                console.warn("APEE real-time listener subscription failed (offline/permission fallback):", err);
+              }
+            );
             if (unsubApee) unsubscribers.push(unsubApee);
 
           } catch (syncErr) {
@@ -1218,14 +1339,42 @@ export default function App() {
     setMessages(prev => [...prev, newMsg]);
   };
 
+  const runFirestoreWrite = async (
+    collectionName: string,
+    docId: string,
+    type: 'CREATE' | 'UPDATE' | 'DELETE',
+    data: any,
+    friendlyTitle: string
+  ): Promise<boolean> => {
+    if (isOffline) {
+      queuePendingAction(type, collectionName, docId, friendlyTitle, data);
+      return true;
+    } else {
+      try {
+        if (type === 'DELETE') {
+          await deleteDoc(doc(db, collectionName, docId));
+        } else {
+          await setDoc(doc(db, collectionName, docId), data);
+        }
+        return true;
+      } catch (err) {
+        console.warn("Firestore write failed, falling back to queueing offline:", err);
+        queuePendingAction(type, collectionName, docId, friendlyTitle, data);
+        return false;
+      }
+    }
+  };
+
   const handleUpdateStudent = async (updated: Student) => {
     setStudents(prev => prev.map(s => s.id === updated.id ? updated : s));
     if (userId) {
-      try {
-        await setDoc(doc(db, 'students', updated.id), updated);
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `students/${updated.id}`);
-      }
+      await runFirestoreWrite(
+        'students',
+        updated.id,
+        'UPDATE',
+        updated,
+        `Mettre à jour l'élève : ${updated.name}`
+      );
     }
     return true;
   };
@@ -1242,11 +1391,13 @@ export default function App() {
     }
     setGrades(prev => [grade, ...prev]);
     if (userId) {
-      try {
-        await setDoc(doc(db, 'grades', grade.id), grade);
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `grades/${grade.id}`);
-      }
+      await runFirestoreWrite(
+        'grades',
+        grade.id,
+        'UPDATE',
+        grade,
+        `Ajouter note : ${grade.subject} - ${grade.score}/${grade.maxScore}`
+      );
     }
     return true;
   };
@@ -1256,13 +1407,16 @@ export default function App() {
       alert("Accès refusé: Les parents ne sont pas autorisés à supprimer les relevés de notes.");
       return false;
     }
+    const oldGrad = grades.find(g => g.id === id);
     setGrades(prev => prev.filter(g => g.id !== id));
     if (userId) {
-      try {
-        await deleteDoc(doc(db, 'grades', id));
-      } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `grades/${id}`);
-      }
+      await runFirestoreWrite(
+        'grades',
+        id,
+        'DELETE',
+        null,
+        `Supprimer note : ${oldGrad?.subject || 'Relevé'} (${oldGrad?.score || ''}/${oldGrad?.maxScore || ''})`
+      );
     }
     return true;
   };
@@ -1271,24 +1425,29 @@ export default function App() {
     if (!await checkPedAuthorization()) return false;
     setHomeworks(prev => [homework, ...prev]);
     if (userId) {
-      try {
-        await setDoc(doc(db, 'homeworks', homework.id), homework);
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `homeworks/${homework.id}`);
-      }
+      await runFirestoreWrite(
+        'homeworks',
+        homework.id,
+        'UPDATE',
+        homework,
+        `Ajouter devoir : ${homework.title} (${homework.subject})`
+      );
     }
     return true;
   };
 
   const handleDeleteHomework = async (id: string) => {
     if (!await checkPedAuthorization()) return false;
+    const oldHw = homeworks.find(h => h.id === id);
     setHomeworks(prev => prev.filter(hw => hw.id !== id));
     if (userId) {
-      try {
-        await deleteDoc(doc(db, 'homeworks', id));
-      } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `homeworks/${id}`);
-      }
+      await runFirestoreWrite(
+        'homeworks',
+        id,
+        'DELETE',
+        null,
+        `Supprimer devoir : ${oldHw?.title || 'Devoir'} (${oldHw?.subject || ''})`
+      );
     }
     return true;
   };
@@ -1297,24 +1456,29 @@ export default function App() {
     if (!await checkPedAuthorization()) return false;
     setAttendanceLogs(prev => [log, ...prev]);
     if (userId) {
-      try {
-        await setDoc(doc(db, 'attendance', log.id), log);
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `attendance/${log.id}`);
-      }
+      await runFirestoreWrite(
+        'attendance',
+        log.id,
+        'UPDATE',
+        log,
+        `Ajouter présence : ${log.status} pour l'élève`
+      );
     }
     return true;
   };
 
   const handleDeleteAttendance = async (id: string) => {
     if (!await checkPedAuthorization()) return false;
+    const oldAtt = attendanceLogs.find(a => a.id === id);
     setAttendanceLogs(prev => prev.filter(a => a.id !== id));
     if (userId) {
-      try {
-        await deleteDoc(doc(db, 'attendance', id));
-      } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `attendance/${id}`);
-      }
+      await runFirestoreWrite(
+        'attendance',
+        id,
+        'DELETE',
+        null,
+        `Supprimer présence du ${oldAtt?.date || ''}`
+      );
     }
     return true;
   };
@@ -1323,27 +1487,29 @@ export default function App() {
     if (!await checkPedAuthorization()) return false;
     setAnnouncements(prev => [ann, ...prev]);
     if (userId) {
-      try {
-        await setDoc(doc(db, 'announcements', ann.id), {
-          ...ann,
-          parentId: userId,
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `announcements/${ann.id}`);
-      }
+      await runFirestoreWrite(
+        'announcements',
+        ann.id,
+        'UPDATE',
+        { ...ann, parentId: userId },
+        `Ajouter annonce : ${ann.title}`
+      );
     }
     return true;
   };
 
   const handleDeleteAnnouncement = async (id: string) => {
     if (!await checkPedAuthorization()) return false;
+    const oldAnn = announcements.find(a => a.id === id);
     setAnnouncements(prev => prev.filter(a => a.id !== id));
     if (userId) {
-      try {
-        await deleteDoc(doc(db, 'announcements', id));
-      } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `announcements/${id}`);
-      }
+      await runFirestoreWrite(
+        'announcements',
+        id,
+        'DELETE',
+        null,
+        `Supprimer annonce : ${oldAnn?.title || 'Annonce'}`
+      );
     }
     return true;
   };
@@ -1712,6 +1878,59 @@ export default function App() {
     setActiveParentToEdit(null);
     if (userId) {
       await resetApeeData(userId);
+    }
+  };
+
+  const handlePurgeFullDatabase = async () => {
+    if (!await checkApeeAuthorization()) return;
+    if (!confirm("⚠️ DANGER ABSOLU : Vous êtes sur le point de purger INTÉGRALEMENT la base de données. Tous les élèves, les notes, de même que les absences, les devoirs, les rendez-vous, les messages et la comptabilité d'APEE seront EFFACÉS DÉFINITIVEMENT.\n\nCette opération est totalement irréversible. Êtes-vous certain de vouloir vider tout le système ?")) {
+      return;
+    }
+    
+    setDataLoading(true);
+    try {
+      if (userId) {
+        // Clear Firebase cloud collections
+        await purgeUserData(userId);
+        await resetApeeData(userId);
+        
+        // Remove individual local backup buffers
+        localStorage.removeItem(`backup_students_${userId}`);
+        localStorage.removeItem(`backup_grades_${userId}`);
+        localStorage.removeItem(`backup_attendance_${userId}`);
+        localStorage.removeItem(`backup_homeworks_${userId}`);
+        localStorage.removeItem(`backup_appointments_${userId}`);
+        localStorage.removeItem(`backup_messages_${userId}`);
+        localStorage.removeItem(`backup_invoices_${userId}`);
+        localStorage.removeItem(`backup_announcements_${userId}`);
+      }
+
+      // Format core application states locally
+      setStudents([]);
+      setGrades([]);
+      setAttendanceLogs([]);
+      setHomeworks([]);
+      setAppointments([]);
+      setMessages([]);
+      setInvoices([]);
+      setAnnouncements([]);
+      
+      // Format APEE financial records locally
+      setApeeParents([]);
+      setApeeExpenses([]);
+      setApeeOtherRevenues([]);
+      setActiveParentToEdit(null);
+      setApeeSettings(DEFAULT_SETTINGS);
+      
+      // Refresh current student references to null
+      localStorage.removeItem('portal_active_student_id');
+      
+      alert("Félicitations, la purge de la base de données s'est achevée avec succès. L'application est maintenant vide et prête de façon optimale à recevoir vos propres fiches réelles.");
+    } catch (err) {
+      console.error("Critical purge database error caught:", err);
+      alert("Une erreur technique s'est produite lors de la purge.");
+    } finally {
+      setDataLoading(false);
     }
   };
 
@@ -2086,6 +2305,21 @@ export default function App() {
                 <InstallPWA />
 
                 <NotificationBell portalUserRole={portalUserRole} selectedStudentName={students[0]?.name} />
+
+                {/* Pending Actions Trigger Icon */}
+                <button
+                  type="button"
+                  onClick={() => setShowPendingDrawer(true)}
+                  className="relative p-1.5 md:p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition cursor-pointer border border-transparent hover:border-slate-200"
+                  title="Actions en attente de synchronisation"
+                >
+                  <RefreshCw className={`h-4 w-4 md:h-5 md:w-5 ${pendingActions.length > 0 ? 'animate-spin text-amber-500' : ''}`} />
+                  {pendingActions.length > 0 && (
+                    <span className="absolute -top-1 -right-1 h-4.5 w-4.5 bg-amber-500 text-white rounded-full text-[9px] font-black font-mono flex items-center justify-center animate-pulse border border-white">
+                      {pendingActions.length}
+                    </span>
+                  )}
+                </button>
 
                 {/* Language Picker Toggle (Stacked vertically on small screens, horizontal on md+) */}
                 <div 
@@ -2663,6 +2897,7 @@ export default function App() {
                           settings={apeeSettings}
                           onImportBackup={handleImportApeeBackup}
                           onResetDatabase={handleResetApeeDatabase}
+                          onPurgeFullDatabase={handlePurgeFullDatabase}
                         />
                       </motion.div>
                     )}
@@ -2893,6 +3128,162 @@ export default function App() {
               </button>
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Pending Actions Sliding Side Drawer */}
+      <AnimatePresence>
+        {showPendingDrawer && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowPendingDrawer(false)}
+              className="fixed inset-0 bg-slate-950/40 z-[1000] cursor-pointer"
+            />
+
+            {/* Sliding Panel */}
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 220 }}
+              className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-white border-l border-slate-200 shadow-2xl z-[1001] flex flex-col font-sans text-gray-900"
+            >
+              {/* Drawer Header */}
+              <div className="p-4 md:p-6 border-b border-gray-150 flex items-center justify-between bg-slate-50 shrink-0">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-amber-50 text-amber-600 rounded-xl border border-amber-200">
+                    <RefreshCw className={`h-5 w-5 ${pendingActions.length > 0 ? 'animate-spin' : ''}`} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-gray-950 tracking-tight">Actions en attente</h3>
+                    <p className="text-[10px] text-gray-500 font-medium font-mono">{pendingActions.length} modification(s) locale(s)</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowPendingDrawer(false)}
+                  className="p-1 px-2.5 bg-slate-100 hover:bg-slate-250 text-gray-500 font-bold rounded-lg text-xs transition cursor-pointer"
+                >
+                  Fermer
+                </button>
+              </div>
+
+              {/* Offline mode manual toggle switch */}
+              <div className="p-4 bg-amber-50/50 border-b border-amber-100 flex items-center justify-between gap-3 text-xs shrink-0">
+                <div className="flex items-center gap-2">
+                  {isOffline ? (
+                    <WifiOff className="h-4 w-4 text-amber-600 animate-pulse" />
+                  ) : (
+                    <Cloud className="h-4 w-4 text-indigo-500" />
+                  )}
+                  <div>
+                    <span className="font-bold text-gray-800">Simuler le mode hors-ligne</span>
+                    <p className="text-[9px] text-gray-500 font-medium">Permet de tester le stockage en cache de façon contrôlée.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (isOffline) {
+                      await goOnline();
+                    } else {
+                      await goOffline();
+                    }
+                  }}
+                  className={`px-3 py-1 text-[9px] font-bold rounded-full uppercase tracking-wider transition ${
+                    isOffline 
+                      ? 'bg-amber-600 text-white border border-amber-700 font-black' 
+                      : 'bg-slate-200 hover:bg-slate-300 text-slate-800 border border-slate-300 font-bold'
+                  }`}
+                >
+                  {isOffline ? "HORS-LIGNE" : "EN LIGNE"}
+                </button>
+              </div>
+
+              {/* Drawer Content */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {pendingActions.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-3">
+                    <div className="p-4 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100">
+                      <CheckCircle className="h-8 w-8" />
+                    </div>
+                    <div className="space-y-1">
+                      <h4 className="text-xs font-black text-gray-900">Aucune modification en attente</h4>
+                      <p className="text-[10px] text-gray-500 max-w-xs leading-normal">
+                        Toutes vos actions ont été synchronisées avec succès ou vous n'avez fait aucune modification hors-ligne.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {pendingActions.map((action) => {
+                      const isDelete = action.type === 'DELETE';
+                      return (
+                        <div
+                          key={action.id}
+                          className="p-3 rounded-xl border border-slate-150 bg-slate-50/50 hover:bg-slate-50 transition flex items-start gap-2.5 relative group text-left"
+                        >
+                          <div className={`p-1.5 rounded-lg border shrink-0 ${
+                            isDelete 
+                              ? 'bg-rose-50 text-rose-600 border-rose-200' 
+                              : 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                          }`}>
+                            <span className="text-[10px] font-black uppercase tracking-wider font-mono px-0.5">
+                              {action.type}
+                            </span>
+                          </div>
+                          
+                          <div className="flex-1 min-w-0 pr-6">
+                            <h4 className="text-xs font-extrabold text-slate-900 leading-tight break-words">{action.title}</h4>
+                            <p className="text-[9px] text-slate-400 tracking-wide font-mono mt-0.5 uppercase">{action.collection}</p>
+                            <div className="flex items-center gap-1 mt-1 text-[9px] text-slate-400 font-medium">
+                              <Clock className="h-3 w-3" />
+                              <span>{new Date(action.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={() => handleRemovePendingAction(action.id)}
+                            className="absolute top-2.5 right-2 text-slate-400 hover:text-rose-600 p-1 bg-white hover:bg-rose-50 border border-slate-200 rounded-lg transition shrink-0 cursor-pointer"
+                            title="Annuler cette modification locale"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Drawer Footer with Sync action */}
+              <div className="p-4 md:p-6 border-t border-gray-150 bg-slate-50 space-y-3 shrink-0">
+                {pendingActions.length > 0 && (
+                  <button
+                    disabled={isOffline}
+                    onClick={() => syncPendingActions()}
+                    className={`w-full py-2.5 rounded-xl font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer ${
+                      isOffline 
+                        ? 'bg-slate-150 text-slate-400 border border-slate-200 cursor-not-allowed' 
+                        : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-md'
+                    }`}
+                  >
+                    <RefreshCw className={`h-4 w-4 ${isOffline ? '' : 'animate-spin'}`} />
+                    <span>Synchroniser maintenant</span>
+                  </button>
+                )}
+                <p className="text-[9px] text-gray-400 text-center leading-normal">
+                  {isOffline 
+                    ? "⚠️ Connectez-vous à Internet pour activer la synchronisation automatique des modifications." 
+                    : "✨ Synchronisation automatique active en arrière-plan."
+                  }
+                </p>
+              </div>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
 

@@ -80,7 +80,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
         list.push({ id: docSnap.id, ...docSnap.data() } as Establishment);
       });
 
-      // Default fallback schools so there\'s always an active list
+      // Default fallback schools so there's always an active list
       const fallbackList: Establishment[] = [
         {
           id: 'demo_school_ekali',
@@ -262,7 +262,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
           return;
         }
 
-        setSuccessMessage(` ✅ Accès Administrateur validé pour \"${schoolObj.name}\" ! Redirection...`);
+        setSuccessMessage(` ✅ Accès Administrateur validé pour "${schoolObj.name}" ! Redirection...`);
         
         setTimeout(() => {
           onSelectSchool(selectedSchoolId, 'manager');
@@ -321,7 +321,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
           return;
         }
 
-        setSuccessMessage(` ✅ Accès Enseignant validé pour \"${selectedTeacherName}\" ! Redirection...`);
+        setSuccessMessage(` ✅ Accès Enseignant validé pour "${selectedTeacherName}" ! Redirection...`);
         
         setTimeout(() => {
           const teacherDetails = {
@@ -409,32 +409,25 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
         });
 
         // Demotape backup seeds
-        if (!matchedInvoice && selectedSchoolId === 'demo_school_ekali') {
+        if (!matchedInvoice) {
           if (searchNameNorm.includes('martin') || searchPhoneSan.includes('677112233') || searchPhoneSan.endsWith('112233')) {
             matchedInvoice = {
-              id: 'inv_martin',
+              id: 'inv_martin_' + selectedSchoolId.slice(-6),
+              parentId: selectedSchoolId,
               title: 'Jean Martin',
               phone: '677112233',
               amount: 25000,
               amountPaid: 15000,
               studentsList: JSON.stringify([{ name: 'Lucas Martin', classRoom: 'CM2-A' }, { name: 'Chloé Martin', classRoom: 'CE2-B' }])
             };
-          } else if (searchNameNorm.includes('bene') || searchPhoneSan.includes('687463313') || searchPhoneSan.endsWith('463313')) {
-            matchedInvoice = {
-              id: 'inv_bene',
-              title: 'Bene Jacques',
-              phone: '687463313',
-              amount: 25000,
-              amountPaid: 25000,
-              studentsList: JSON.stringify([{ name: 'Bene Mbama', classRoom: '6eme' }])
-            };
           } else if (searchNameNorm.includes('diallo') || searchPhoneSan.includes('699445566') || searchPhoneSan.endsWith('445566')) {
             matchedInvoice = {
-              id: 'inv_diallo',
+              id: 'inv_diallo_' + selectedSchoolId.slice(-6),
+              parentId: selectedSchoolId,
               title: 'Mariam Diallo',
               phone: '699445566',
               amount: 25000,
-              amountPaid: 25000,
+              amountPaid: 0,
               studentsList: JSON.stringify([{ name: 'Amadou Diallo', classRoom: 'CM1-A' }])
             };
           } else if (
@@ -444,9 +437,9 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
             searchPhoneSan.endsWith('463313')
           ) {
             matchedInvoice = {
-              id: 'apee_par_bene_jacques',
+              id: 'apee_par_bene_jacques_' + selectedSchoolId.slice(-6),
               studentId: 'apee_ces_ekali_1',
-              parentId: 'demo_school_ekali',
+              parentId: selectedSchoolId,
               title: 'Bene Jacques',
               phone: '687463313',
               email: 'jacquesbene301@gmail.com',
@@ -463,8 +456,8 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
 
         if (!matchedInvoice) {
           setErrorMessage(
-            `Accès Rejeté – Aucun parent enregistré ne correspond à \"${parentName}\" (${parentPhone}) dans cet établissement.\\n` +
-            `Veuillez vérifier vos données ou contacter le surveillant de l\'école.`
+            `Accès Rejeté – Aucun parent enregistré ne correspond à "${parentName}" (${parentPhone}) dans cet établissement.\n` +
+            `Veuillez vérifier vos données ou contacter le surveillant de l'école.`
           );
           setVerifyingParent(false);
           return;
@@ -476,8 +469,8 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
         const prevVisits = Number(localStorage.getItem(dailyVisitsKey) || '0');
         if (prevVisits >= 5) {
           setErrorMessage(
-            `🔴 Sécurité pasma-sys des données de l\'élève :\\n` +
-            `Limite stricte de 5 connexions quotidiennes atteinte pour ce parent afin de prévenir toute fuite d\'informations scolaires ou tentative d\'extraction frauduleuse de solde Mobile Money (MoMo/Orange).\\n` +
+            `🔴 Sécurité pasma-sys des données de l'élève :\n` +
+            `Limite stricte de 5 connexions quotidiennes atteinte pour ce parent afin de prévenir toute fuite d'informations scolaires ou tentative d'extraction frauduleuse de solde Mobile Money (MoMo/Orange).\n` +
             `Veuillez ré-essayer demain ou contacter Jacques Béné.`
           );
           setVerifyingParent(false);
@@ -491,7 +484,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
         setOtpAttemptsLeft(3);
         setMatchedParentState(matchedInvoice);
         setOtpStep('input_otp');
-        setSuccessMessage(`🔑 Code unique de sécurité expédié ! Saisissez l\'OTP envoyé au portable ${parentPhone}.`);
+        setSuccessMessage(`🔑 Code unique de sécurité expédié ! Saisissez l'OTP envoyé au portable ${parentPhone}.`);
 
         // Trigger SMS pop-up for mock demonstration environments
         setOtpSimulatedMessage({
@@ -504,14 +497,15 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
 
       } catch (err) {
         console.error(err);
-        setErrorMessage("Une erreur est survenue lors de l\'accès sécurisé.");
+        const errMsg = err instanceof Error ? err.message : String(err);
+        setErrorMessage("Une erreur est survenue lors de l'accès sécurisé : " + errMsg);
       } finally {
         setVerifyingParent(false);
       }
     } else {
       // Step: input_otp processing
       if (!enteredOtp.trim()) {
-        setErrorMessage("Saisissez le code d\'authentification reçu à 6 chiffres.");
+        setErrorMessage("Saisissez le code d'authentification reçu à 6 chiffres.");
         return;
       }
 
@@ -527,7 +521,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
           setOtpStep('input_phone');
           setEnteredOtp('');
           setGeneratedOtp('');
-          setErrorMessage("🔴 Sécurité verrouillée après 3 tentatives infructueuses ! Veuillez demander l\'expédition d\'un nouveau code OTP par SMS.");
+          setErrorMessage("🔴 Sécurité verrouillée après 3 tentatives infructueuses ! Veuillez demander l'expédition d'un nouveau code OTP par SMS.");
         } else {
           setErrorMessage(`🔴 Code de sécurité erroné. Il vous reste ${remaining} tentatives de saisie.`);
         }
@@ -545,7 +539,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
         // Save visit to local logs to respect daily limit requirement
         localStorage.setItem(dailyVisitsKey, (prevVisits + 1).toString());
 
-        setSuccessMessage(` ✅ Code unique validé ! Accès tuteur de \"${matchedParentState.title}\" ouvert. Chargement de l\'ENT en cours...`);
+        setSuccessMessage(` ✅ Code unique validé ! Accès tuteur de "${matchedParentState.title}" ouvert. Chargement de l'ENT en cours...`);
         
         let subs: string[] = [];
         try {
@@ -568,7 +562,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
 
       } catch (e) {
         console.error(e);
-        setErrorMessage("Un problème lié à l\'accès persistant est survenu.");
+        setErrorMessage("Un problème lié à l'accès persistant est survenu.");
       } finally {
         setVerifyingParent(false);
       }
@@ -599,7 +593,8 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
         }
       }
 
-      const newSchoolId = `sch_${Date.now()}`;\n      
+      const newSchoolId = `sch_${Date.now()}`;
+      
       // 2. Map establishment profile
       const estDoc: Establishment = {
         id: newSchoolId,
@@ -943,7 +938,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
                   🔐 Connexion Portail Scolaire
                 </h2>
                 <p className="text-xs text-slate-500 mt-1">
-                  Connectez-vous au portail en fonction de votre profil d\'habilitation (Parent ou Gérant d\'école).
+                  Connectez-vous au portail en fonction de votre profil d'habilitation (Parent ou Gérant d'école).
                 </p>
               </div>
 
@@ -1011,7 +1006,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
                       onChange={(e) => setSelectedSchoolId(e.target.value)}
                       className="w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-indigo-500 focus:bg-white cursor-pointer"
                     >
-                      <option value="">-- Choisissez l\'établissement en visite --</option>
+                      <option value="">-- Choisissez l'établissement en visite --</option>
                       {schools.map(sch => (
                         <option key={sch.id} value={sch.id}>
                           🏫 {sch.name}
@@ -1078,7 +1073,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
                           <Mail className="h-4 w-4 text-slate-400 absolute left-3 top-3" />
                         </div>
                         <p className="text-[9.5px] text-indigo-600/90 leading-tight">
-                          💡 En zone rurale au Cameroun, l\'identification par e-mail reste optionnelle. Seul votre numéro de téléphone (Orange/MTN) valide est nécessaire pour recevoir le code unique temporaire.
+                          💡 En zone rurale au Cameroun, l'identification par e-mail reste optionnelle. Seul votre numéro de téléphone (Orange/MTN) valide est nécessaire pour recevoir le code unique temporaire.
                         </p>
                       </div>
                     </div>
@@ -1093,7 +1088,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
                             🔒 Double Facteur Académique (OTP)
                           </h4>
                           <p className="text-[11px] text-slate-500 leading-tight mt-0.5">
-                            Saisissez le code d\'authentification à 6 chiffres transmis sur le numéro : <strong className="font-bold font-mono text-slate-700">{parentPhone}</strong>.
+                            Saisissez le code d'authentification à 6 chiffres transmis sur le numéro : <strong className="font-bold font-mono text-slate-700">{parentPhone}</strong>.
                           </p>
                         </div>
                       </div>
@@ -1117,7 +1112,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
                         
                         <div className="flex items-center justify-between text-[10px] pt-1">
                           <span className="text-amber-700 font-bold flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-                            🛡️ {otpAttemptsLeft} tentatives d\'identification restantes
+                            🛡️ {otpAttemptsLeft} tentatives d'identification restantes
                           </span>
                           <button
                             type="button"
@@ -1241,7 +1236,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
                       ) : onboardingRole === 'teacher' ? (
                         "S'identifier comme Enseignant Titulaire"
                       ) : (
-                        "S\'identifier comme Administrateur"
+                        "S'identifier comme Administrateur"
                       )} <ArrowRight className="h-4 w-4" />
                     </>
                   )}
@@ -1260,7 +1255,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
               </div>
 
               <div className="space-y-5">
-                {/* LOGO DE L\'ÉTABLISSEMENT */}
+                {/* LOGO DE L'ÉTABLISSEMENT */}
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3.5">
                   <div className="flex items-center justify-between">
                     <label className="text-[10px] font-black text-slate-700 uppercase tracking-wider block">
@@ -1302,7 +1297,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
                             const file = e.target.files?.[0];
                             if (file) {
                               if (file.size > 1 * 1024 * 1024) {
-                                alert("🔴 L\'image choisie est trop volumineuse (Veuillez choisir une image de moins de 1 Mo).");
+                                alert("🔴 L'image choisie est trop volumineuse (Veuillez choisir une image de moins de 1 Mo).");
                                 return;
                               }
                               const reader = new FileReader();
@@ -1537,6 +1532,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
         {/* Right Side: Demo Helper Controls / Guidance */}
         <div className="bg-slate-50 border border-slate-200/80 p-5 rounded-3xl space-y-5">
 
+
             <div className="p-3.5 bg-indigo-50 text-indigo-950 rounded-2xl border border-indigo-100 space-y-1.5">
               <span className="font-black text-indigo-900 text-[10px] uppercase tracking-wider flex items-center gap-1">
                 <HelpCircle className="h-3.5 w-3.5 shrink-0" /> Comment ça marche ?
@@ -1545,6 +1541,8 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
                 La création d'un établissement enregistre le taux de cotisation (APEE), le budget prévisionnel de l'école dans Firestore, et pré-génère un jeu complet de données de démonstration de ses élèves pour tester instantanément.
               </p>
             </div>
+
+
           </div>
         </div>
 

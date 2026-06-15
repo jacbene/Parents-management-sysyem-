@@ -8,9 +8,10 @@ interface ApeeArchivesProps {
   settings: ApeeSettings;
   onImportBackup: (data: { parents?: ApeeParent[]; expenses?: ApeeExpense[]; settings?: ApeeSettings }) => void;
   onResetDatabase: () => void;
+  onPurgeFullDatabase?: () => Promise<void>;
 }
 
-export default function ApeeArchives({ parents, expenses, settings, onImportBackup, onResetDatabase }: ApeeArchivesProps) {
+export default function ApeeArchives({ parents, expenses, settings, onImportBackup, onResetDatabase, onPurgeFullDatabase }: ApeeArchivesProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // States
@@ -303,11 +304,44 @@ export default function ApeeArchives({ parents, expenses, settings, onImportBack
             onClick={handleResetClick}
             className="w-full px-4 py-2.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-650 text-xs font-extrabold rounded-xl flex items-center justify-center gap-2 cursor-pointer transition select-none"
           >
-            <Trash2 className="h-4 w-4 text-red-600 animate-bounce" /> Vider la Base de Données
+            <Trash2 className="h-4 w-4 text-red-600 animate-bounce" /> Vider la Base de Données APEE
           </button>
         </div>
 
       </div>
+
+      {onPurgeFullDatabase && (
+        <div className="bg-rose-50/50 border border-rose-150 p-6 rounded-2xl space-y-4">
+          <div className="flex items-start gap-3">
+            <div className="p-2.5 bg-rose-100 text-rose-700 rounded-xl border border-rose-200 shrink-0">
+              <AlertTriangle className="h-6 w-6 animate-bounce" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-sm font-black text-rose-950 uppercase tracking-wider">
+                🚨 ZONE ROUGE CRITIQUE : PURGE EXTRÊME DE LA BASE DE DONNÉES (USINE)
+              </h3>
+              <p className="text-xs text-rose-850 leading-relaxed font-semibold">
+                Cette option supprime absolument TOUTES les fiches de l'établissement liées à votre compte : fiches d'élèves, relevés de notes complets, absences, devoirs, rendez-vous, messages, annonces, et TOUTES les cotisations administratives d'APEE.
+              </p>
+              <p className="text-[10px] text-rose-600 font-bold">
+                Idéal pour supprimer les simulations pré-chargées et recommencer à insérer vos données réelles manuellement depuis le début.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <button
+              onClick={() => {
+                onPurgeFullDatabase();
+              }}
+              className="px-6 py-3 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-rose-250 hover:shadow-lg transition duration-200"
+            >
+              <Trash2 className="h-4.5 w-4.5 shrink-0" />
+              <span>Effacer l'intégralité du système & recommencer à zéro</span>
+            </button>
+          </div>
+        </div>
+      )}
 
     </div>
   );

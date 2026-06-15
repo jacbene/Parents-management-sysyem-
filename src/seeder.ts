@@ -430,7 +430,7 @@ export async function seedUserData(userId: string): Promise<void> {
         parentId: userId,
         subject: 'Français',
         title: 'Lecture cursive - Chapitres 4 et 5',
-        description: 'Lire \'Le Petit Prince\' chapitres 4 et 5 et répondre aux questions de compréhension.',
+        description: 'Lire "Le Petit Prince" chapitres 4 et 5 et répondre aux questions de compréhension.',
         dueDate: '2026-05-25',
         status: 'Pending'
       },
@@ -689,35 +689,6 @@ export async function seedUserData(userId: string): Promise<void> {
   } catch (err) {
     console.warn('[Pasma-sys Seeder] General seeding process exception caught:', err);
   }
-}
-
-export async function purgeDatabase(): Promise<void> {
-    const collections = ['students', 'grades', 'attendance', 'homeworks', 'appointments', 'invoices', 'messages'];
-    console.log('Starting database purge...');
-
-    for (const collectionName of collections) {
-        try {
-            const q = query(collection(db, collectionName));
-            const snapshot = await getDocs(q);
-            if (snapshot.empty) {
-                console.log(`Collection '${collectionName}' is already empty.`);
-                continue;
-            }
-
-            const batch = writeBatch(db);
-            snapshot.docs.forEach(doc => {
-                batch.delete(doc.ref);
-            });
-
-            await batch.commit();
-            console.log(`All documents in collection '${collectionName}' have been deleted.`);
-
-        } catch (err) {
-            handleFirestoreError(err, OperationType.DELETE, collectionName);
-        }
-    }
-
-    console.log('Database purge finished.');
 }
 
 export function getOfflineMockData(userId: string) {
@@ -1051,3 +1022,77 @@ export function getOfflineMockData(userId: string) {
     messages
   };
 }
+
+export async function purgeUserData(userId: string): Promise<void> {
+  const collectionsToPurge = [
+    'grades',
+    'attendance',
+    'homeworks',
+    'appointments',
+    'messages',
+    'invoices',
+    'announcements'
+  ];
+
+  // 1. First find student IDs and purge child reading logs while student records exist
+  try {
+    const studentQuery = query(collection(db, 'students'), where('parentId', '==', userId));
+    const studentSnap = await getDocs(studentQuery);
+    const studentIds: string[] = [];
+    studentSnap.forEach(s => studentIds.push(s.id));
+
+    if (studentIds.length > 0) {
+      for (const sId of studentIds) {
+        try {
+          const rlQuery = query(collection(db, 'reading_logs'), where('studentId', '==', sId));
+          const rlSnap = await getDocs(rlQuery);
+          if (!rlSnap.empty) {
+            const batch = writeBatch(db);
+            rlSnap.forEach(docSnap => batch.delete(docSnap.ref));
+            await batch.commit();
+            console.log(`[Pasma-sys Purger] Successfully purged reading_logs for student ${sId}`);
+          }
+        } catch (subErr) {
+          console.warn(`[Pasma-sys Purger] Error purging reading_logs for student ${sId}:`, subErr);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[Pasma-sys Purger] Error gathering students for reading_logs purge:", err);
+  }
+
+  // 2. Next, delete all entries matching parentId on major collections
+  for (const coll of collectionsToPurge) {
+    try {
+      const q = query(collection(db, coll), where('parentId', '==', userId));
+      const snapshot = await getDocs(q);
+      if (!snapshot.empty) {
+        const batch = writeBatch(db);
+        snapshot.forEach((docSnap) => {
+          batch.delete(docSnap.ref);
+        });
+        await batch.commit();
+        console.log(`[Pasma-sys Purger] Successfully purged collection: ${coll}`);
+      }
+    } catch (err) {
+      console.warn(`[Pasma-sys Purger] Error purging collection ${coll}:`, err);
+    }
+  }
+
+  // 3. Finally delete the students themselves
+  try {
+    const q = query(collection(db, 'students'), where('parentId', '==', userId));
+    const snapshot = await getDocs(q);
+    if (!snapshot.empty) {
+      const batch = writeBatch(db);
+      snapshot.forEach((docSnap) => {
+        batch.delete(docSnap.ref);
+      });
+      await batch.commit();
+      console.log(`[Pasma-sys Purger] Successfully purged students collection.`);
+    }
+  } catch (err) {
+    console.warn(`[Pasma-sys Purger] Error purging students collection:`, err);
+  }
+}
+

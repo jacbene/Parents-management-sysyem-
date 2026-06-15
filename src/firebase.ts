@@ -24,15 +24,82 @@ try {
 
 export const db = dbInstance;
 
+let simulatedOffline = typeof localStorage !== 'undefined' ? localStorage.getItem('pasma_offline_simulated') === 'true' : false;
+
+export function isOffline() {
+  return simulatedOffline || (typeof navigator !== 'undefined' && !navigator.onLine);
+}
+
 export async function goOffline() {
-  // We bypass disableNetwork(db) to avoid interrupting active Firestore watch streams
-  // which causes internal asynchronous assertion exceptions in sandboxed iframe environments.
+  simulatedOffline = true;
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('pasma_offline_simulated', 'true');
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('pasma_connection_changed'));
+    window.dispatchEvent(new Event('pasma_actions_updated'));
+  }
   console.log("[Pasma-sys Local Sync] Simulated offline mode activated (using local persistence cache).");
 }
 
 export async function goOnline() {
-  // We bypass enableNetwork(db) to avoid interrupting active Firestore watch streams.
+  simulatedOffline = false;
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('pasma_offline_simulated', 'false');
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('pasma_connection_changed'));
+    window.dispatchEvent(new Event('pasma_actions_updated'));
+  }
   console.log("[Pasma-sys Local Sync] Connection network active / sync restored.");
+}
+
+export function queuePendingAction(
+  type: 'CREATE' | 'UPDATE' | 'DELETE',
+  collection: string,
+  targetId: string,
+  title: string,
+  data?: any
+) {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    const saved = localStorage.getItem('pasma_pending_actions');
+    const list = saved ? JSON.parse(saved) : [];
+    
+    let newList = [...list];
+    if (type === 'DELETE') {
+      newList = newList.filter((item: any) => !(item.collection === collection && item.targetId === targetId));
+    } else if (type === 'UPDATE') {
+      const existingIdx = newList.findIndex((item: any) => item.collection === collection && item.targetId === targetId && item.type !== 'DELETE');
+      if (existingIdx !== -1) {
+        newList[existingIdx].data = data;
+        newList[existingIdx].title = title;
+        newList[existingIdx].timestamp = new Date().toISOString();
+        localStorage.setItem('pasma_pending_actions', JSON.stringify(newList));
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('pasma_actions_updated'));
+        }
+        return;
+      }
+    }
+
+    const newAction = {
+      id: 'pa_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      type,
+      collection,
+      targetId,
+      title,
+      timestamp: new Date().toISOString(),
+      data
+    };
+    newList.push(newAction);
+    localStorage.setItem('pasma_pending_actions', JSON.stringify(newList));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('pasma_actions_updated'));
+    }
+  } catch (err) {
+    console.error("Failed to queue pending action:", err);
+  }
 }
 
 export const auth = getAuth(app);

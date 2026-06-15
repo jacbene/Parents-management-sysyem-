@@ -1,5 +1,5 @@
 import { collection, doc, setDoc, deleteDoc, getDocs, query, where, writeBatch, onSnapshot } from 'firebase/firestore';
-import { db, auth, handleFirestoreError, OperationType } from '../firebase';
+import { db, auth, handleFirestoreError, OperationType, isOffline, queuePendingAction } from '../firebase';
 import { ApeeParent, ApeeExpense, ApeeSettings, Invoice, ApeeActivityLog, ApeeOtherRevenue } from '../types';
 
 // Base cache keys
@@ -449,8 +449,14 @@ export async function saveApeeOtherRevenue(parentId: string, revenue: ApeeOtherR
 
   if (!parentId) return;
 
+  const invoiceData = normalizeOtherRevenueToInvoice(revenue, parentId);
+
+  if (isOffline()) {
+    queuePendingAction('UPDATE', 'invoices', revenue.id, `Enregistrer autre recette de ${revenue.payerName} (${revenue.amount} FCFA)`, invoiceData);
+    return;
+  }
+
   try {
-    const invoiceData = normalizeOtherRevenueToInvoice(revenue, parentId);
     await setDoc(doc(db, 'invoices', revenue.id), invoiceData);
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `invoices/${revenue.id}`);
@@ -474,6 +480,11 @@ export async function deleteApeeOtherRevenue(parentId: string, id: string) {
 
   if (!parentId) return;
 
+  if (isOffline()) {
+    queuePendingAction('DELETE', 'invoices', id, `Supprimer autre recette : ${id}`);
+    return;
+  }
+
   try {
     await deleteDoc(doc(db, 'invoices', id));
   } catch (err) {
@@ -489,41 +500,48 @@ export async function saveApeeSettings(parentId: string, settings: ApeeSettings)
 
   if (!parentId) return;
 
+  const settingsInvoice = {
+    id: 'apee_settings',
+    studentId: 'apee_settings',
+    parentId,
+    title: settings.associationName,
+    amount: settings.cotisationAmount,
+    dueDate: settings.schoolYear,
+    status: 'Paid',
+    amountPaid: settings.financialGoal,
+    budgetLinesList: JSON.stringify(settings.budgetLines || []),
+    finManagerName: settings.finManagerName || '',
+    finManagerPhone: settings.finManagerPhone || '',
+    finManagerPassword: settings.finManagerPassword || '',
+    pedManagerName: settings.pedManagerName || '',
+    pedManagerPhone: settings.pedManagerPhone || '',
+    pedManagerPassword: settings.pedManagerPassword || '',
+    logoUrl: settings.logoUrl || '',
+    directorName: settings.directorName || '',
+    directorPhone: settings.directorPhone || '',
+    directorEmail: settings.directorEmail || '',
+    surveillantName: settings.surveillantName || '',
+    surveillantPhone: settings.surveillantPhone || '',
+    censeurName: settings.censeurName || '',
+    censeurPhone: settings.censeurPhone || '',
+    classTeachersList: JSON.stringify(settings.classTeachers || []),
+    honoraryContributions: settings.honoraryContributions || 0,
+    subventionsAndAids: settings.subventionsAndAids || 0,
+    actualHonoraryContributions: settings.actualHonoraryContributions || 0,
+    actualSubventionsAndAids: settings.actualSubventionsAndAids || 0,
+    expectedStudents: settings.expectedStudents || 100,
+    country: settings.country || '',
+    currency: settings.currency || '',
+    financialObligationsList: JSON.stringify(settings.financialObligations || []),
+  };
+
+  if (isOffline()) {
+    queuePendingAction('UPDATE', 'invoices', `${parentId}_settings`, `Ajuster les paramètres APEE : ${settings.associationName}`, settingsInvoice);
+    return;
+  }
+
   try {
-    await setDoc(doc(db, 'invoices', `${parentId}_settings`), {
-      id: 'apee_settings',
-      studentId: 'apee_settings',
-      parentId,
-      title: settings.associationName,
-      amount: settings.cotisationAmount,
-      dueDate: settings.schoolYear,
-      status: 'Paid',
-      amountPaid: settings.financialGoal,
-      budgetLinesList: JSON.stringify(settings.budgetLines || []),
-      finManagerName: settings.finManagerName || '',
-      finManagerPhone: settings.finManagerPhone || '',
-      finManagerPassword: settings.finManagerPassword || '',
-      pedManagerName: settings.pedManagerName || '',
-      pedManagerPhone: settings.pedManagerPhone || '',
-      pedManagerPassword: settings.pedManagerPassword || '',
-      logoUrl: settings.logoUrl || '',
-      directorName: settings.directorName || '',
-      directorPhone: settings.directorPhone || '',
-      directorEmail: settings.directorEmail || '',
-      surveillantName: settings.surveillantName || '',
-      surveillantPhone: settings.surveillantPhone || '',
-      censeurName: settings.censeurName || '',
-      censeurPhone: settings.censeurPhone || '',
-      classTeachersList: JSON.stringify(settings.classTeachers || []),
-      honoraryContributions: settings.honoraryContributions || 0,
-      subventionsAndAids: settings.subventionsAndAids || 0,
-      actualHonoraryContributions: settings.actualHonoraryContributions || 0,
-      actualSubventionsAndAids: settings.actualSubventionsAndAids || 0,
-      expectedStudents: settings.expectedStudents || 100,
-      country: settings.country || '',
-      currency: settings.currency || '',
-      financialObligationsList: JSON.stringify(settings.financialObligations || []),
-    });
+    await setDoc(doc(db, 'invoices', `${parentId}_settings`), settingsInvoice);
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `invoices/${parentId}_settings`);
   }
@@ -550,8 +568,14 @@ export async function saveApeeParent(parentId: string, parent: ApeeParent) {
 
   if (!parentId) return;
 
+  const invoiceData = normalizeToInvoice(parent, parentId);
+
+  if (isOffline()) {
+    queuePendingAction('UPDATE', 'invoices', parent.id, `Enregistrer le parent : ${parent.name}`, invoiceData);
+    return;
+  }
+
   try {
-    const invoiceData = normalizeToInvoice(parent, parentId);
     await setDoc(doc(db, 'invoices', parent.id), invoiceData);
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `invoices/${parent.id}`);
@@ -574,6 +598,11 @@ export async function deleteApeeParent(parentId: string, id: string) {
   }
 
   if (!parentId) return;
+
+  if (isOffline()) {
+    queuePendingAction('DELETE', 'invoices', id, `Supprimer le parent : ${id}`);
+    return;
+  }
 
   try {
     await deleteDoc(doc(db, 'invoices', id));
@@ -602,8 +631,14 @@ export async function saveApeeExpense(parentId: string, expense: ApeeExpense) {
 
   if (!parentId) return;
 
+  const invoiceData = normalizeExpenseToInvoice(expense, parentId);
+
+  if (isOffline()) {
+    queuePendingAction('UPDATE', 'invoices', expense.id, `Enregistrer la dépense : ${expense.title}`, invoiceData);
+    return;
+  }
+
   try {
-    const invoiceData = normalizeExpenseToInvoice(expense, parentId);
     await setDoc(doc(db, 'invoices', expense.id), invoiceData);
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `invoices/${expense.id}`);
@@ -626,6 +661,11 @@ export async function deleteApeeExpense(parentId: string, id: string) {
   }
 
   if (!parentId) return;
+
+  if (isOffline()) {
+    queuePendingAction('DELETE', 'invoices', id, `Supprimer la dépense : ${id}`);
+    return;
+  }
 
   try {
     await deleteDoc(doc(db, 'invoices', id));
@@ -659,8 +699,14 @@ export async function saveApeeLog(parentId: string, log: ApeeActivityLog) {
 
   if (!parentId) return;
 
+  const invoiceData = normalizeLogToInvoice(log, parentId);
+
+  if (isOffline()) {
+    queuePendingAction('UPDATE', 'invoices', log.id, `Journaliser : ${log.description}`, invoiceData);
+    return;
+  }
+
   try {
-    const invoiceData = normalizeLogToInvoice(log, parentId);
     await setDoc(doc(db, 'invoices', log.id), invoiceData);
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `invoices/${log.id}`);

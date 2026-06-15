@@ -278,4 +278,15 @@ export interface SystemLog {
   provider: string; // operatorName
 }
 
+export interface PendingAction {
+  id: string;
+  type: 'CREATE' | 'UPDATE' | 'DELETE';
+  collection: string;
+  targetId: string;
+  title: string;
+  timestamp: string;
+  data?: any;
+}
+
+
 

@@ -3,7 +3,6 @@
   "appId": "1:855017284935:web:32ebbc97cd5e886d435862",
   "apiKey": "AIzaSyAtttuzKpAnZomsxPMOUhIa3FJz785PAUk",
   "authDomain": "pasma-sys.firebaseapp.com",
-  "firestoreDatabaseId": "(default)",
   "storageBucket": "pasma-sys.firebasestorage.app",
   "messagingSenderId": "855017284935",
   "measurementId": ""
