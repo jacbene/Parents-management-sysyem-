@@ -1,20 +1,53 @@
 import React, { useState } from 'react';
 import { Save, HelpCircle, Shield, Settings, Info, CheckCircle2, Plus, Trash2, Edit2, X, TrendingUp, Lock, Unlock, UserCheck, User, Phone, Mail, GraduationCap, AlertTriangle } from 'lucide-react';
-import { ApeeSettings, ApeeBudgetLine } from '../../types';
+import { ApeeSettings, ApeeBudgetLine, ApeeParent } from '../../types';
+import { getApeeShortName } from '../../utils/apeeDb';
+import { useLanguage } from '../../utils/TranslationContext';
 
 interface ApeeSettingsProps {
   settings: ApeeSettings;
-  onSaveSettings: (settings: ApeeSettings) => void;
+  onSaveSettings: (settings: ApeeSettings) => Promise<boolean> | void;
+  parents?: ApeeParent[];
 }
 
-export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSettingsProps) {
-  const [associationName, setAssociationName] = useState(settings.associationName);
-  const [schoolYear, setSchoolYear] = useState(settings.schoolYear);
-  const [cotisationAmount, setCotisationAmount] = useState<number>(settings.cotisationAmount);
-  const [financialGoal, setFinancialGoal] = useState<number>(settings.financialGoal);
+export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [] }: ApeeSettingsProps) {
+  const { t, language } = useLanguage();
+  const [associationName, setAssociationName] = useState(settings.associationName || '');
+  const [shortName, setShortName] = useState(settings.shortName || '');
+  const [schoolYear, setSchoolYear] = useState(settings.schoolYear || '');
   const [logoUrl, setLogoUrl] = useState(settings.logoUrl || '');
+  const [expectedStudents, setExpectedStudents] = useState<number>(settings.expectedStudents || 100);
   const [honoraryContributions, setHonoraryContributions] = useState<number>(settings.honoraryContributions || 0);
   const [subventionsAndAids, setSubventionsAndAids] = useState<number>(settings.subventionsAndAids || 0);
+  const [actualHonoraryContributions, setActualHonoraryContributions] = useState<number>(settings.actualHonoraryContributions || 0);
+  const [actualSubventionsAndAids, setActualSubventionsAndAids] = useState<number>(settings.actualSubventionsAndAids || 0);
+  
+  // Country & Currency addition inputs
+  const [country, setCountry] = useState(settings.country || 'Cameroun');
+  const [currency, setCurrency] = useState(settings.currency || 'FCFA');
+  const [financialObligations, setFinancialObligations] = useState(() => settings.financialObligations || []);
+
+  // Inline additions state for obligations
+  const [newOblName, setNewOblName] = useState('');
+  const [newOblAmount, setNewOblAmount] = useState<number>(0);
+  const [newOblType, setNewOblType] = useState<'per_student' | 'per_parent'>('per_student');
+  const [newOblDesc, setNewOblDesc] = useState('');
+  const [editingOblId, setEditingOblId] = useState<string | null>(null);
+
+  // Dynamic calculations according to client instructions:
+  // We list all obligations and calculate the parent cotisations and goal.
+  const totalObligationsPerStudent = financialObligations
+    .filter(o => o.type === 'per_student')
+    .reduce((sum, o) => sum + o.amount, 0);
+
+  const totalObligationsPerParent = financialObligations
+    .filter(o => o.type === 'per_parent')
+    .reduce((sum, o) => sum + o.amount, 0);
+
+  // Parent cotisations (expected total) = expectedStudents * totalObligationsPerStudent + expectedStudents * totalObligationsPerParent
+  const parentCotisations = (expectedStudents * totalObligationsPerStudent) + (expectedStudents * totalObligationsPerParent);
+
+  const calculatedFinancialGoal = parentCotisations + honoraryContributions + subventionsAndAids;
 
   // Financial Manager credentials states
   const [finManagerName, setFinManagerName] = useState(settings.finManagerName || '');
@@ -66,6 +99,61 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
     return [...savedMapped, ...missingPredefined];
   });
 
+  // Synchronize local states with settings props when they load/change
+  React.useEffect(() => {
+    if (settings) {
+      setAssociationName(settings.associationName || '');
+      setShortName(settings.shortName || '');
+      setSchoolYear(settings.schoolYear || '');
+      setCountry(settings.country || 'Cameroun');
+      setCurrency(settings.currency || 'FCFA');
+      setFinancialObligations(settings.financialObligations || []);
+      setLogoUrl(settings.logoUrl || '');
+      setExpectedStudents(settings.expectedStudents || 100);
+      setHonoraryContributions(settings.honoraryContributions || 0);
+      setSubventionsAndAids(settings.subventionsAndAids || 0);
+      setActualHonoraryContributions(settings.actualHonoraryContributions || 0);
+      setActualSubventionsAndAids(settings.actualSubventionsAndAids || 0);
+      setFinManagerName(settings.finManagerName || '');
+      setFinManagerPhone(settings.finManagerPhone || '');
+      setFinManagerPassword(settings.finManagerPassword || '');
+      setPedManagerName(settings.pedManagerName || '');
+      setPedManagerPhone(settings.pedManagerPhone || '');
+      setPedManagerPassword(settings.pedManagerPassword || '');
+      setDirectorName(settings.directorName || '');
+      setDirectorPhone(settings.directorPhone || '');
+      setDirectorEmail(settings.directorEmail || '');
+      setSurveillantName(settings.surveillantName || '');
+      setSurveillantPhone(settings.surveillantPhone || '');
+      setCenseurName(settings.censeurName || '');
+      setCenseurPhone(settings.censeurPhone || '');
+      if (settings.classTeachers && settings.classTeachers.length > 0) {
+        const defaultClassrooms = [
+          { classRoom: '6ème', teacherName: '', teacherPhone: '', teacherEmail: '' },
+          { classRoom: '5ème', teacherName: '', teacherPhone: '', teacherEmail: '' },
+          { classRoom: '4ème ALL', teacherName: '', teacherPhone: '', teacherEmail: '' },
+          { classRoom: '4ème ESP', teacherName: '', teacherPhone: '', teacherEmail: '' },
+          { classRoom: '3ème ALL', teacherName: '', teacherPhone: '', teacherEmail: '' },
+          { classRoom: '3ème ESP', teacherName: '', teacherPhone: '', teacherEmail: '' },
+          { classRoom: '2nde', teacherName: '', teacherPhone: '', teacherEmail: '' },
+          { classRoom: '1ère', teacherName: '', teacherPhone: '', teacherEmail: '' },
+          { classRoom: 'Tle', teacherName: '', teacherPhone: '', teacherEmail: '' },
+          { classRoom: 'CM2-A', teacherName: '', teacherPhone: '', teacherEmail: '' },
+          { classRoom: 'CE2-B', teacherName: '', teacherPhone: '', teacherEmail: '' },
+          { classRoom: 'CM1-A', teacherName: '', teacherPhone: '', teacherEmail: '' },
+        ];
+        const savedMapped = settings.classTeachers.map(s => ({
+          classRoom: s.classRoom,
+          teacherName: s.teacherName || '',
+          teacherPhone: s.teacherPhone || '',
+          teacherEmail: s.teacherEmail || '',
+        }));
+        const missingPredefined = defaultClassrooms.filter(d => !settings.classTeachers!.some(s => s.classRoom === d.classRoom));
+        setClassTeachers([...savedMapped, ...missingPredefined]);
+      }
+    }
+  }, [settings]);
+
   // Budget lines states
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [lineName, setLineName] = useState('');
@@ -83,48 +171,61 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
   const [showSuccess, setShowSuccess] = useState(false);
   const [successMessage, setSuccessMessage] = useState('Paramètres enregistrés avec succès !');
 
-  const handleSaveWithExtra = (extra: Partial<ApeeSettings> = {}) => {
-    onSaveSettings({
-      associationName: associationName.trim(),
-      schoolYear: schoolYear.trim(),
-      cotisationAmount,
-      financialGoal,
-      budgetLines: settings.budgetLines || [],
-      finManagerName: finManagerName.trim(),
-      finManagerPhone: finManagerPhone.trim(),
-      finManagerPassword: finManagerPassword.trim(),
-      pedManagerName: pedManagerName.trim(),
-      pedManagerPhone: pedManagerPhone.trim(),
-      pedManagerPassword: pedManagerPassword.trim(),
-      logoUrl,
-      directorName: directorName.trim(),
-      directorPhone: directorPhone.trim(),
-      directorEmail: directorEmail.trim(),
-      surveillantName: surveillantName.trim(),
-      surveillantPhone: surveillantPhone.trim(),
-      censeurName: censeurName.trim(),
-      censeurPhone: censeurPhone.trim(),
-      classTeachers,
-      honoraryContributions,
-      subventionsAndAids,
-      ...extra
-    });
+  const handleSaveWithExtra = async (extra: Partial<ApeeSettings> = {}, successMsg = "Paramètres enregistrés avec succès !") => {
+    try {
+      const result = await onSaveSettings({
+        associationName: (associationName || '').trim(),
+        shortName: (shortName || '').trim(),
+        schoolYear: (schoolYear || '').trim(),
+        cotisationAmount: totalObligationsPerStudent,
+        financialGoal: calculatedFinancialGoal,
+        budgetLines: settings.budgetLines || [],
+        finManagerName: (finManagerName || '').trim(),
+        finManagerPhone: (finManagerPhone || '').trim(),
+        finManagerPassword: (finManagerPassword || '').trim(),
+        pedManagerName: (pedManagerName || '').trim(),
+        pedManagerPhone: (pedManagerPhone || '').trim(),
+        pedManagerPassword: (pedManagerPassword || '').trim(),
+        logoUrl: logoUrl || '',
+        directorName: (directorName || '').trim(),
+        directorPhone: (directorPhone || '').trim(),
+        directorEmail: (directorEmail || '').trim(),
+        surveillantName: (surveillantName || '').trim(),
+        surveillantPhone: (surveillantPhone || '').trim(),
+        censeurName: (censeurName || '').trim(),
+        censeurPhone: (censeurPhone || '').trim(),
+        classTeachers: classTeachers || [],
+        honoraryContributions: honoraryContributions || 0,
+        subventionsAndAids: subventionsAndAids || 0,
+        actualHonoraryContributions: actualHonoraryContributions || 0,
+        actualSubventionsAndAids: actualSubventionsAndAids || 0,
+        expectedStudents: expectedStudents || 100,
+        country,
+        currency,
+        financialObligations,
+        ...extra
+      });
+
+      if (result !== false) {
+        setSuccessMessage(successMsg);
+        setShowSuccess(true);
+        setTimeout(() => {
+          setShowSuccess(false);
+        }, 3500);
+      }
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!associationName.trim() || !schoolYear.trim() || cotisationAmount <= 0 || financialGoal <= 0) {
-      alert("Veuillez renseigner correctement l'ensemble des champs obligatoires.");
+    if (!(associationName || '').trim() || !(schoolYear || '').trim() || calculatedFinancialGoal <= 0) {
+      alert(language === 'en' ? "Please fill in all mandatory fields correctly." : "Veuillez renseigner correctement l'ensemble des champs obligatoires.");
       return;
     }
 
-    handleSaveWithExtra();
-
-    setSuccessMessage("Paramètres généraux d'administration sauvegardés avec succès !");
-    setShowSuccess(true);
-    setTimeout(() => {
-      setShowSuccess(false);
-    }, 3500);
+    handleSaveWithExtra({}, language === 'en' ? "General administrative configurations saved successfully!" : "Paramètres généraux d'administration sauvegardés avec succès !");
   };
 
   const handleSaveBudgetLine = (e: React.FormEvent) => {
@@ -212,15 +313,15 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
   // Calculations for budget consumption status
   const budgetLinesList = settings.budgetLines || [];
   const totalAllocated = budgetLinesList.reduce((acc, curr) => acc + curr.allocatedAmount, 0);
-  const percentAllocated = Math.min(100, Math.round((totalAllocated / financialGoal) * 100)) || 0;
+  const percentAllocated = Math.min(100, Math.round((totalAllocated / calculatedFinancialGoal) * 100)) || 0;
 
   return (
     <div id="content_apee_settings" className="space-y-6">
 
       <div className="border-b border-slate-150 pb-4">
-        <h2 className="text-xl font-bold text-slate-900 tracking-tight">⚙️ Configuration des Paramètres & Budget</h2>
+        <h2 className="text-xl font-bold text-slate-900 tracking-tight">⚙️ {t('set.title')}</h2>
         <p className="text-xs text-gray-500 font-medium">
-          Ajuster les tarifs unitaires exigibles par élève, définir l'enveloppe annuelle et structurer la planification des lignes budgétaires.
+          {t('set.subtitle')}
         </p>
       </div>
 
@@ -242,7 +343,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
           <div className="space-y-4">
             
             <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-600 uppercase">Nom Officiel de l'Association <span className="text-red-500">*</span></label>
+              <label className="text-[10px] font-bold text-slate-600 uppercase">Nom Officiel de l'Institution <span className="text-red-500">*</span></label>
               <input
                 type="text"
                 required
@@ -251,6 +352,19 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
                 placeholder="Ex: APEE CES d'Ekali 1 - MFOU"
                 className="w-full px-3 py-1.5 text-xs border rounded-lg focus:outline-indigo-505 font-medium"
               />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-600 uppercase">Nom Court de l'Institution</label>
+              <input
+                type="text"
+                value={shortName}
+                onChange={(e) => setShortName(e.target.value.substring(0, 15))}
+                maxLength={15}
+                placeholder="Ex: APEE"
+                className="w-full px-3 py-1.5 text-xs border rounded-lg focus:outline-indigo-505 font-medium"
+              />
+              <p className="text-[9.5px] text-slate-450 italic">Nom abrégé réduit (max. 15 lettres - e.g. APEE, AGE, etc.). Si non spécifié, il sera auto-généré à partir du nom officiel.</p>
             </div>
 
             {/* Logo de l'établissement */}
@@ -302,10 +416,52 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-600 uppercase">Année Scolaire Active <span className="text-red-500">*</span></label>
+                <label className="text-[10px] font-bold text-slate-600 uppercase block">Pays de l'Établissement <span className="text-red-500">*</span></label>
+                <select
+                  value={country}
+                  onChange={(e) => setCountry(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs border rounded-lg focus:outline-indigo-550 font-medium"
+                >
+                  <option value="Cameroun">🇨🇲 Cameroun</option>
+                  <option value="Sénégal">🇸🇳 Sénégal</option>
+                  <option value="Côte d'Ivoire">🇨🇮 Côte d'Ivoire</option>
+                  <option value="Burkina Faso">🇧🇫 Burkina Faso</option>
+                  <option value="Niger">🇳🇪 Niger</option>
+                  <option value="Bénin">🇧🇯 Bénin</option>
+                  <option value="Togo">🇹🇬 Togo</option>
+                  <option value="Mali">🇲🇱 Mali</option>
+                  <option value="Gabon">🇬🇦 Gabon</option>
+                  <option value="Congo">🇨🇬 Congo-Brazzaville</option>
+                  <option value="RDC">🇨🇩 RDC Congo</option>
+                  <option value="Tchad">🇹🇩 Tchad</option>
+                  <option value="Guinée">🇬🇳 Guinée</option>
+                  <option value="Centrafrique">🇨🇫 Centrafrique</option>
+                  <option value="France">🇫🇷 France (Europe)</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-600 uppercase block">Devise / Monnaie <span className="text-red-500">*</span></label>
+                <select
+                  value={currency}
+                  onChange={(e) => setCurrency(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs border rounded-lg focus:outline-indigo-550 font-bold font-mono"
+                >
+                  <option value="FCFA">FCFA (XAF / XOF)</option>
+                  <option value="EUR">Euro (€)</option>
+                  <option value="USD">Dollar US ($)</option>
+                  <option value="GNF">Franc Guinéen (GNF)</option>
+                  <option value="CDF">Franc Congolais (CDF)</option>
+                  <option value="CAD">Dollar Canadien (C$)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-600 uppercase block">Année Scolaire Active <span className="text-red-500">*</span></label>
                 <input
                   type="text"
                   required
@@ -317,45 +473,252 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-600 uppercase">Taux Par Élève Camerounais (FCFA) <span className="text-red-500">*</span></label>
+                <label className="text-[10px] font-bold text-slate-600 uppercase block">Nombre d'Élèves Attendus <span className="text-red-500">*</span></label>
                 <input
                   type="number"
-                  min="500"
+                  min="1"
                   required
-                  value={cotisationAmount || ''}
-                  onChange={(e) => setCotisationAmount(Number(e.target.value))}
-                  placeholder="Ex: 25000"
+                  value={expectedStudents || ''}
+                  onChange={(e) => setExpectedStudents(Number(e.target.value))}
+                  placeholder="Ex: 100"
                   className="w-full px-3 py-1.5 text-xs border rounded-lg focus:outline-indigo-550 font-mono text-right"
                 />
               </div>
-
             </div>
 
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-600 uppercase">Objectif prévisionnel du budget APEE (FCFA) <span className="text-red-500">*</span></label>
-              <input
-                type="number"
-                min="10000"
-                required
-                value={financialGoal || ''}
-                onChange={(e) => setFinancialGoal(Number(e.target.value))}
-                placeholder="Ex: 5000000"
-                className="w-full px-3 py-1.5 text-xs border rounded-lg focus:outline-indigo-550 font-mono text-right"
-              />
-              <p className="text-[9px] text-gray-400">Ce montant sert de base de calcul pour la gauge de progression et l'allocation des lignes de dépenses.</p>
+            {/* Rubriques d'Obligations Financières */}
+            <div className="border border-indigo-100 bg-indigo-50/20 rounded-xl p-3 space-y-3">
+              <div className="flex justify-between items-center border-b border-indigo-100 pb-1.5">
+                <div>
+                  <h4 className="text-[11px] font-black text-indigo-950 uppercase tracking-wider flex items-center gap-1.5">
+                    💳 Obligations Financières de l'Établissement
+                  </h4>
+                  <p className="text-[9px] text-slate-500 font-medium leading-relaxed">
+                    Définir et lister toutes les obligations exigibles par parent ou par élève.
+                  </p>
+                </div>
+              </div>
+
+              {/* Obligations list */}
+              {financialObligations.length === 0 ? (
+                <div className="text-center py-4 bg-white border border-dashed border-slate-205 text-slate-400 text-[10px] rounded-lg">
+                  Aucune obligation active. Veuillez en configurer une ci-dessous.
+                </div>
+              ) : (
+                <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
+                  {financialObligations.map((obl: any) => (
+                    <div key={obl.id} className="bg-white border text-[11px] rounded-lg p-2 flex justify-between items-center shadow-3xs hover:bg-slate-50 transition">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-slate-800">{obl.name}</span>
+                          <span className={`px-1.5 py-0.2 text-[8px] font-black rounded-full uppercase tracking-wider ${obl.type === 'per_student' ? 'bg-blue-50 text-blue-600 border border-blue-105' : 'bg-emerald-55 text-emerald-600 border border-emerald-105'}`}>
+                            {obl.type === 'per_student' ? 'Par élève' : 'Par parent'}
+                          </span>
+                        </div>
+                        {obl.description && <p className="text-[9.5px] text-slate-400 font-medium leading-tight">{obl.description}</p>}
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="font-mono font-bold text-slate-700 bg-slate-50 border px-2 py-0.5 rounded text-[11px]">
+                          {obl.amount.toLocaleString()} {currency}
+                        </span>
+                        <div className="flex shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingOblId(obl.id);
+                              setNewOblName(obl.name);
+                              setNewOblAmount(obl.amount);
+                              setNewOblType(obl.type);
+                              setNewOblDesc(obl.description || '');
+                            }}
+                            className="p-1 hover:text-indigo-600 text-slate-400 rounded transition cursor-pointer"
+                            title="Modifier"
+                          >
+                            <Edit2 className="h-3 w-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = financialObligations.filter((o: any) => o.id !== obl.id);
+                              setFinancialObligations(updated);
+                            }}
+                            className="p-1 hover:text-red-700 text-slate-400 rounded transition cursor-pointer"
+                            title="Supprimer"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Add / Edit Inline Section */}
+              <div className="bg-white border border-indigo-100 rounded-xl p-2.5 space-y-2.5 shadow-2xs">
+                <span className="text-[10px] font-black text-indigo-750 uppercase tracking-wide block">
+                  {editingOblId ? '✏️ Modifier l\'obligation' : '➕ Ajouter une Obligation Financière (Frais d\'inscription, pension, transport, cantine...)'}
+                </span>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-0.5 col-span-2 sm:col-span-1">
+                    <label className="text-[8.5px] font-bold text-slate-500 uppercase block">Intitulé de l'obligation</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: Frais d'inscription, Scolarité..."
+                      value={newOblName}
+                      onChange={(e) => setNewOblName(e.target.value)}
+                      className="w-full px-2 py-1 text-xs border rounded-lg focus:outline-indigo-500 font-medium"
+                    />
+                  </div>
+
+                  <div className="space-y-0.5 col-span-2 sm:col-span-1">
+                    <label className="text-[8.5px] font-bold text-slate-500 uppercase block">Montant ({currency})</label>
+                    <input
+                      type="number"
+                      placeholder="Montant"
+                      value={newOblAmount || ''}
+                      onChange={(e) => setNewOblAmount(Number(e.target.value))}
+                      className="w-full px-2 py-1 text-xs border rounded-lg focus:outline-indigo-500 font-mono text-right font-semibold"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-0.5 col-span-2 sm:col-span-1">
+                    <label className="text-[8.5px] font-bold text-slate-500 uppercase block">Type d'Application</label>
+                    <select
+                      value={newOblType}
+                      onChange={(e) => setNewOblType(e.target.value as 'per_student' | 'per_parent')}
+                      className="w-full px-2 py-1 text-xs border rounded-lg focus:outline-indigo-505 font-bold text-slate-750"
+                    >
+                      <option value="per_student">Par élève inscrit (Dû × nb élèves)</option>
+                      <option value="per_parent">Par foyer parent (Frais fixe unique)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-0.5 col-span-2 sm:col-span-1">
+                    <label className="text-[8.5px] font-bold text-slate-500 uppercase block">Description / Notes</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: Frais annuels obligatoires"
+                      value={newOblDesc}
+                      onChange={(e) => setNewOblDesc(e.target.value)}
+                      className="w-full px-2 py-1 text-xs border rounded-lg focus:outline-indigo-500 font-medium"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-2 justify-end pt-1">
+                  {editingOblId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingOblId(null);
+                        setNewOblName('');
+                        setNewOblAmount(0);
+                        setNewOblType('per_student');
+                        setNewOblDesc('');
+                      }}
+                      className="px-2.5 py-1 text-[9.5px] font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded transition cursor-pointer"
+                    >
+                      Annuler
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!newOblName.trim()) {
+                        alert("🔴 L'intitulé est requis");
+                        return;
+                      }
+                      if (newOblAmount <= 0) {
+                        alert("🔴 Le montant doit être supérieur à 0");
+                        return;
+                      }
+
+                      if (editingOblId) {
+                        setFinancialObligations((prev: any) => prev.map((o: any) => o.id === editingOblId ? {
+                          ...o,
+                          name: newOblName.trim(),
+                          amount: newOblAmount,
+                          type: newOblType,
+                          description: newOblDesc.trim() || undefined
+                        } : o));
+                        setEditingOblId(null);
+                      } else {
+                        const newObl = {
+                          id: `obl_${Date.now()}`,
+                          name: newOblName.trim(),
+                          amount: newOblAmount,
+                          type: newOblType,
+                          description: newOblDesc.trim() || undefined
+                        };
+                        setFinancialObligations((prev: any) => [...prev, newObl]);
+                      }
+
+                      setNewOblName('');
+                      setNewOblAmount(0);
+                      setNewOblType('per_student');
+                      setNewOblDesc('');
+                    }}
+                    className="px-3 py-1 text-[9.5px] font-extrabold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    {editingOblId ? 'Valider modification' : 'Enregistrer cette obligation'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* SECTION: Calculated Annual Budget Goal Breakdowns */}
+            <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-4.5 space-y-3 shadow-3xs">
+              <span className="text-[10px] text-indigo-950 font-extrabold uppercase tracking-wider block">
+                📐 Synthèse & Total du Budget Prévisionnel (Objectif)
+              </span>
+              
+              <div className="space-y-2 text-xs">
+                <div className="flex justify-between items-center bg-white/70 px-3 py-2 rounded-xl border border-indigo-100/40">
+                  <span className="text-slate-600 font-bold">1. Cotisations attendues des parents :</span>
+                  <div className="text-right">
+                    <span className="font-mono font-bold text-slate-800 block">{parentCotisations.toLocaleString()} {currency}</span>
+                    <span className="text-[9.5px] text-indigo-600 font-bold block">
+                      ({expectedStudents} élèves × {totalObligationsPerStudent.toLocaleString()} {currency} + per-parent {totalObligationsPerParent.toLocaleString()} {currency})
+                    </span>
+                  </div>
+                </div>
+                
+                <div className="flex justify-between items-center bg-white/70 px-3 py-2 rounded-xl border border-indigo-100/40">
+                  <span className="text-slate-600 font-bold">2. Contributions des membres d'honneur :</span>
+                  <span className="font-mono font-bold text-slate-800">{honoraryContributions.toLocaleString()} {currency}</span>
+                </div>
+                
+                <div className="flex justify-between items-center bg-white/70 px-3 py-2 rounded-xl border border-indigo-100/40">
+                  <span className="text-slate-600 font-bold">3. Subventions & autres aides (A.D.S) :</span>
+                  <span className="font-mono font-bold text-slate-800">{subventionsAndAids.toLocaleString()} {currency}</span>
+                </div>
+                
+                <div className="border-t border-indigo-200/60 my-2 pt-2 flex justify-between items-center">
+                  <span className="text-indigo-950 font-black uppercase text-[10px]">Total du Budget Prévisionnel :</span>
+                  <span className="font-mono font-black text-sm text-indigo-700">{calculatedFinancialGoal.toLocaleString()} {currency}</span>
+                </div>
+              </div>
+              <p className="text-[8.5px] text-indigo-700/80 leading-normal font-medium">
+                * Note : Ce montant prévisionnel total sert de base de calcul pour les jauges de recouvrement, les statistiques et le découpage de vos lignes d'allocations de dépenses. Le budget est équilibré en recettes et en dépenses à {calculatedFinancialGoal.toLocaleString()} {currency}.
+              </p>
             </div>
 
             {/* Other Revenue streams */}
             <div className="border-t border-slate-100 pt-4 mt-4 space-y-4">
               <div className="flex items-center gap-2 select-none">
-                <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wider block">Autres Sources de Recettes (Prévues)</span>
+                <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wider block">1. Autres Sources de Recettes (Prévues/Budget)</span>
                 <span className="h-px bg-slate-100 flex-1" />
               </div>
               
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-600 uppercase">Contributions Membres d'Honneur (FCFA)</label>
+                  <label className="text-[10px] font-bold text-slate-600 uppercase">Contributions Membres d'Honneur ({currency})</label>
                   <input
                     type="number"
                     min="0"
@@ -364,11 +727,11 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
                     placeholder="Ex: 500000"
                     className="w-full px-3 py-1.5 text-xs border rounded-lg focus:outline-indigo-550 font-mono text-right"
                   />
-                  <p className="text-[8.5px] text-gray-400 leading-tight">Contributions financières exceptionnelles des parents d'honneur et conseillers.</p>
+                  <p className="text-[8.5px] text-gray-400 leading-tight">Contributions financières prévues pour les parents d'honneur et conseillers.</p>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-600 uppercase">Aides, Dons et Subventions (FCFA)</label>
+                  <label className="text-[10px] font-bold text-slate-600 uppercase">Aides, Dons et Subventions ({currency})</label>
                   <input
                     type="number"
                     min="0"
@@ -377,7 +740,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
                     placeholder="Ex: 1000000"
                     className="w-full px-3 py-1.5 text-xs border rounded-lg focus:outline-indigo-550 font-mono text-right"
                   />
-                  <p className="text-[8.5px] text-gray-400 leading-tight">Subventions ministérielles, dons des municipalités ou financements d'urgence.</p>
+                  <p className="text-[8.5px] text-gray-400 leading-tight">Subventions ministérielles ou dons de municipalités prévus.</p>
                 </div>
 
               </div>
@@ -514,10 +877,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
                     finManagerName: finManagerName.trim(),
                     finManagerPhone: finManagerPhone.trim(),
                     finManagerPassword: finManagerPassword.trim(),
-                  });
-                  setSuccessMessage("Accès du Responsable Financier enregistrés avec succès !");
-                  setShowSuccess(true);
-                  setTimeout(() => setShowSuccess(false), 3500);
+                  }, "Accès du Responsable Financier enregistrés avec succès !");
                 }}
                 className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-1 cursor-pointer transition shadow-2xs"
               >
@@ -627,10 +987,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
                     pedManagerName: pedManagerName.trim(),
                     pedManagerPhone: pedManagerPhone.trim(),
                     pedManagerPassword: pedManagerPassword.trim(),
-                  });
-                  setSuccessMessage("Accès du Responsable Pédagogique enregistrés avec succès !");
-                  setShowSuccess(true);
-                  setTimeout(() => setShowSuccess(false), 3500);
+                  }, "Accès du Responsable Pédagogique enregistrés avec succès !");
                 }}
                 className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-1 cursor-pointer transition shadow-2xs"
               >
@@ -780,10 +1137,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
                   surveillantPhone: surveillantPhone.trim(),
                   censeurName: censeurName.trim(),
                   censeurPhone: censeurPhone.trim(),
-                });
-                setSuccessMessage("Responsables administratifs enregistrés avec succès !");
-                setShowSuccess(true);
-                setTimeout(() => setShowSuccess(false), 3500);
+                }, "Responsables administratifs enregistrés avec succès !");
               }}
               className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-1.5 cursor-pointer transition shadow-2xs mt-2"
             >
@@ -841,8 +1195,9 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
                         placeholder="Ex: M. Jean Picard"
                         value={teach.teacherName}
                         onChange={(e) => {
-                          const updated = [...classTeachers];
-                          updated[idx].teacherName = e.target.value;
+                          const updated = classTeachers.map((t, i) =>
+                            i === idx ? { ...t, teacherName: e.target.value } : t
+                          );
                           setClassTeachers(updated);
                         }}
                       />
@@ -855,8 +1210,9 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
                         placeholder="Ex: +237 6xx..."
                         value={teach.teacherPhone || ''}
                         onChange={(e) => {
-                          const updated = [...classTeachers];
-                          updated[idx].teacherPhone = e.target.value;
+                          const updated = classTeachers.map((t, i) =>
+                            i === idx ? { ...t, teacherPhone: e.target.value } : t
+                          );
                           setClassTeachers(updated);
                         }}
                       />
@@ -869,8 +1225,9 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
                         placeholder="Ex: jean.picard@ecole..."
                         value={teach.teacherEmail || ''}
                         onChange={(e) => {
-                          const updated = [...classTeachers];
-                          updated[idx].teacherEmail = e.target.value;
+                          const updated = classTeachers.map((t, i) =>
+                            i === idx ? { ...t, teacherEmail: e.target.value } : t
+                          );
                           setClassTeachers(updated);
                         }}
                       />
@@ -920,10 +1277,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
               onClick={() => {
                 handleSaveWithExtra({
                   classTeachers: classTeachers,
-                });
-                setSuccessMessage("Liste des professeurs titulaires mise à jour !");
-                setShowSuccess(true);
-                setTimeout(() => setShowSuccess(false), 3500);
+                }, "Liste des professeurs titulaires mise à jour !");
               }}
               className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-1.5 cursor-pointer transition shadow-2xs mt-2"
             >
@@ -947,7 +1301,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
             <div className="bg-slate-50 border border-slate-100 px-3 py-1.5 rounded-lg text-right">
               <div className="text-[9px] font-bold text-slate-500">Allocation Budgétaire Totale</div>
               <div className="font-mono text-xs font-black text-slate-800">
-                {totalAllocated.toLocaleString()} FCFA <span className="text-[10px] font-medium text-gray-400">/ {financialGoal.toLocaleString()} FCFA</span>
+                {totalAllocated.toLocaleString()} FCFA <span className="text-[10px] font-medium text-gray-400">/ {calculatedFinancialGoal.toLocaleString()} FCFA</span>
               </div>
             </div>
 
@@ -997,7 +1351,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings }: ApeeSetti
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {budgetLinesList.map((line) => {
-                const percentOfTotal = Math.round((line.allocatedAmount / financialGoal) * 100) || 0;
+                const percentOfTotal = Math.round((line.allocatedAmount / calculatedFinancialGoal) * 100) || 0;
                 return (
                   <div 
                     key={line.id} 

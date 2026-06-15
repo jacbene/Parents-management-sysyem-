@@ -1,16 +1,21 @@
 import React, { useState } from 'react';
-import { Search, UserCheck, MessageSquare, Edit2, Trash2, Printer, X, Phone, MapPin, Tag, Calendar, AlertTriangle, ChevronRight, Notebook, Download } from 'lucide-react';
+import { Search, UserCheck, MessageSquare, Edit2, Trash2, Printer, X, Phone, MapPin, Tag, Calendar, AlertTriangle, ChevronRight, Notebook, Download, Bell, Copy, Check, ExternalLink, Mail } from 'lucide-react';
 import { ApeeParent, ApeeStudentLink } from '../../types';
+import { getApeeShortName, calculateParentDebtBreakdown } from '../../utils/apeeDb';
 import { jsPDF } from 'jspdf';
+import { useLanguage } from '../../utils/TranslationContext';
 
 interface ApeeSearchProps {
   parents: ApeeParent[];
   onEditParentRequest: (parent: ApeeParent) => void;
   onDeleteParent: (id: string) => Promise<boolean> | void;
+  onSaveParent?: (parent: ApeeParent) => Promise<boolean> | void;
   settings?: any;
 }
 
-export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParent, settings }: ApeeSearchProps) {
+export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParent, onSaveParent, settings }: ApeeSearchProps) {
+  const { language } = useLanguage();
+  const isEn = language === 'en';
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [classFilter, setClassFilter] = useState<string>('all');
@@ -19,6 +24,58 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
   const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [parentToDeleteId, setParentToDeleteId] = useState<string | null>(null);
+
+  // Reminder states & logic
+  const [reminderParent, setReminderParent] = useState<ApeeParent | null>(null);
+  const [reminderMessage, setReminderMessage] = useState('');
+  const [reminderCopied, setReminderCopied] = useState(false);
+  const [reminderSending, setReminderSending] = useState(false);
+
+  const handlePrepareReminder = (parent: ApeeParent) => {
+    const institution = settings?.schoolNameShort || "l'Établissement";
+    const solde = parent.totalDue - parent.totalPaid;
+    const studentNames = parent.students.map(s => s.name).join(', ');
+    
+    const defaultMsg = `Chers Parents de ${studentNames},\n\nNous vous rappelons gentiment que votre solde de Cotisation APEE à ${institution} présente un encours de ${solde.toLocaleString()} FCFA (Cotisation totale exigible : ${parent.totalDue.toLocaleString()} FCFA, déjà versé : ${parent.totalPaid.toLocaleString()} FCFA).\n\nNous vous prions de bien vouloir approcher les services de la régie financière de l'établissement pour la régularisation de cet arriéré au plus vite.\n\nMerci pour votre précieuse collaboration et votre confiance.\n\nL'Administration Financière de l'APEE.`;
+    
+    setReminderMessage(defaultMsg);
+    setReminderParent(parent);
+    setReminderCopied(false);
+  };
+
+  const handleCopyReminderText = () => {
+    try {
+      navigator.clipboard.writeText(reminderMessage);
+      setReminderCopied(true);
+      setTimeout(() => setReminderCopied(false), 2000);
+    } catch (err) {
+      console.error("L'écriture dans le presse-papier a échoué:", err);
+    }
+  };
+
+  const handleSendLocalReminder = async () => {
+    if (!reminderParent) return;
+    setReminderSending(true);
+    
+    if (onSaveParent) {
+      try {
+        const dateStr = new Date().toLocaleDateString('fr-FR');
+        const updatedParent: ApeeParent = {
+          ...reminderParent,
+          lastReminded: new Date().toISOString(),
+          notes: (reminderParent.notes || '') + `\n[${dateStr}] Relance envoyée (Solde: ${(reminderParent.totalDue - reminderParent.totalPaid).toLocaleString()} FCFA)`
+        };
+        await onSaveParent(updatedParent);
+      } catch (err) {
+        console.error("Erreur d'archivage de la relance :", err);
+      }
+    }
+    
+    setTimeout(() => {
+      setReminderSending(false);
+      setReminderParent(null);
+    }, 1000);
+  };
 
   // Filter list of parents
   const filteredParents = parents.filter(p => {
@@ -67,33 +124,62 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(8);
       doc.setTextColor(148, 163, 184); // Slate 400
-      doc.text(`Aperçu Reçu APEE • Année : ${settings?.schoolYear || "2025/2026"}`, margin, 9);
+      const headLabel = isEn
+        ? `Official Invoice Receipt ${getApeeShortName(settings)} • Year: ${settings?.schoolYear || "2025/2026"}`
+        : `Aperçu Reçu ${getApeeShortName(settings)} • Année : ${settings?.schoolYear || "2025/2026"}`;
+      doc.text(headLabel, margin, 9);
       
       doc.line(margin, pageHeight - 12, margin + contentWidth, pageHeight - 12);
       
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
       doc.setTextColor(148, 163, 184);
-      doc.text(`PASMA-ENT SYSTEM - Trésorerie d'Établissement`, margin, pageHeight - 8);
-      doc.text(`Reçu certifié conforme`, margin + contentWidth - 35, pageHeight - 8);
+      const systemLabel = isEn ? "PASMA-ENT SYSTEM - School Ledger Trésorerie" : "PASMA-ENT SYSTEM - Trésorerie d'Établissement";
+      const certLabel = isEn ? "Certified Conform Receipt Statement" : "Reçu certifié conforme";
+      doc.text(systemLabel, margin, pageHeight - 8);
+      doc.text(certLabel, margin + contentWidth - 45, pageHeight - 8);
     };
 
     drawPageHeaderFooter();
 
-    // Top Official Header
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.5);
-    doc.setTextColor(71, 85, 105);
-    doc.text("RÉPUBLIQUE DU CAMEROUN", margin, y + 4);
-    doc.text("REPUBLIC OF CAMEROON", margin + contentWidth, y + 4, { align: 'right' });
+    // Republic of Cameroon Official alignment with Motto
+    const actCountry = settings?.country || "Cameroun";
+    const countryLabel = isEn 
+      ? (actCountry === "Cameroun" ? "REPUBLIC OF CAMEROON" : actCountry.toUpperCase())
+      : (actCountry === "Cameroun" ? "RÉPUBLIQUE DU CAMEROUN" : actCountry.toUpperCase());
+    const yearLabel = isEn ? "Academic Year" : "Année Académique";
 
-    doc.setFont('helvetica', 'italic');
-    doc.setFontSize(6.5);
-    doc.setTextColor(148, 163, 184);
-    doc.text("Paix - Travail - Patrie", margin, y + 8);
-    doc.text("Peace - Work - Fatherland", margin + contentWidth, y + 8, { align: 'right' });
+    if (actCountry === "Cameroun") {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text("RÉPUBLIQUE DU CAMEROUN", margin, y + 4);
+      doc.text("REPUBLIC OF CAMEROON", margin + contentWidth, y + 4, { align: 'right' });
 
-    y += 15;
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(6.5);
+      doc.setTextColor(148, 163, 184); // Slate 400
+      doc.text("Paix - Travail - Patrie", margin, y + 7.5);
+      doc.text("Peace - Work - Fatherland", margin + contentWidth, y + 7.5, { align: 'right' });
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text(`${yearLabel} : ${settings?.schoolYear || "2025/2026"}`, margin + contentWidth, y + 11.5, { align: 'right' });
+      
+      y += 15;
+    } else {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text(countryLabel, margin, y + 4);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.text(`${yearLabel} : ${settings?.schoolYear || "2025/2026"}`, margin + contentWidth, y + 4, { align: 'right' });
+      
+      y += 12;
+    }
 
     // Amber left stripe
     doc.setFillColor(245, 158, 11); // Amber-500
@@ -105,14 +191,20 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
     doc.text(`${(settings?.associationName || "APEE CES EKALI 1").toUpperCase()}`, margin + 6, y + 4);
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
+    doc.setFontSize(13);
     doc.setTextColor(15, 23, 42); // Slate 900
-    doc.text("REÇU OFFICIEL DE COTISATION APEE", margin + 6, y + 12);
+    const receiptLabel = isEn 
+      ? `OFFICIAL PTA CONTRIBUTION INVOICE RECEIPT`
+      : `REÇU OFFICIEL DE COTISATION ${getApeeShortName(settings).toUpperCase()}`;
+    doc.text(receiptLabel, margin + 6, y + 12);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(100, 116, 139);
-    doc.text(`Facturé le : ${new Date(selectedParent.createdAt || Date.now()).toLocaleDateString('fr-FR')} • Émis le : ${new Date().toLocaleDateString('fr-FR')}`, margin + 6, y + 17);
+    const invoiceDateStr = isEn
+      ? `Invoiced: ${new Date(selectedParent.createdAt || Date.now()).toLocaleDateString('en-US')} • Issued: ${new Date().toLocaleDateString('en-US')}`
+      : `Facturé le : ${new Date(selectedParent.createdAt || Date.now()).toLocaleDateString('fr-FR')} • Émis le : ${new Date().toLocaleDateString('fr-FR')}`;
+    doc.text(invoiceDateStr, margin + 6, y + 17);
 
     y += 24;
 
@@ -132,14 +224,15 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12);
     doc.setTextColor(15, 23, 42);
-    doc.text(`${selectedParent.totalDue.toLocaleString()} FCFA`, margin + 6, y + 15);
+    const currency = settings?.currency || 'FCFA';
+    doc.text(`${selectedParent.totalDue.toLocaleString()} ${currency}`, margin + 6, y + 15);
 
     doc.setTextColor(79, 70, 229); // Indigo
-    doc.text(`${selectedParent.totalPaid.toLocaleString()} FCFA`, margin + 65, y + 15);
+    doc.text(`${selectedParent.totalPaid.toLocaleString()} ${currency}`, margin + 65, y + 15);
 
     const rest = Math.max(0, selectedParent.totalDue - selectedParent.totalPaid);
     doc.setTextColor(rest > 0 ? 239 : 16, rest > 0 ? 68 : 185, rest > 0 ? 68 : 129); // Red if due, green if paid
-    doc.text(`${rest.toLocaleString()} FCFA`, margin + 125, y + 15);
+    doc.text(`${rest.toLocaleString()} ${currency}`, margin + 125, y + 15);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
@@ -221,7 +314,8 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
       doc.setTextColor(100, 116, 139);
       doc.text("N°", margin + 4, y + 4.5);
       doc.text("Nom de l'élève", margin + 15, y + 4.5);
-      doc.text("Classe assignée", margin + 120, y + 4.5);
+      doc.text("Classe assignée", margin + 105, y + 4.5);
+      doc.text("Date de l'opération", margin + 140, y + 4.5);
 
       y += 6.5;
 
@@ -234,7 +328,9 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
         doc.setFont('helvetica', 'bold');
         doc.text(kid.name.toUpperCase(), margin + 15, y + 4.5);
         doc.setFont('helvetica', 'normal');
-        doc.text(kid.classRoom, margin + 120, y + 4.5);
+        doc.text(kid.classRoom, margin + 105, y + 4.5);
+        const opDateStr = kid.dateOperation ? new Date(kid.dateOperation).toLocaleDateString('fr-FR') : '-';
+        doc.text(opDateStr, margin + 140, y + 4.5);
 
         y += 6.5;
 
@@ -308,9 +404,9 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
     doc.setFontSize(8);
     doc.setTextColor(51, 65, 85);
     doc.text("Émargement Parent d'Élève", margin + 10, y);
-    doc.text("Trésorier de l'Association APEE", margin + contentWidth - 70, y);
+    doc.text(`Trésorier de la régie (${getApeeShortName(settings)})`, margin + contentWidth - 70, y);
 
-    const safeFilename = `bulletin_apee_${selectedParent.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}.pdf`;
+    const safeFilename = `bulletin_${getApeeShortName(settings).toLowerCase()}_${selectedParent.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}.pdf`;
     doc.save(safeFilename);
   };
 
@@ -418,7 +514,7 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
                   }`}
                 >
                   <div className="space-y-1 overflow-hidden">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       {parent.status === 'retard' && (
                         <AlertTriangle className="h-3.5 w-3.5 text-red-500 animate-pulse shrink-0" title="En retard de paiement" />
                       )}
@@ -430,6 +526,11 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
                       }`}>
                         {parent.status}
                       </span>
+                      {(parent.status === 'retard' || parent.status === 'partiel') && (
+                        <span className="text-[8px] font-black uppercase tracking-wider bg-red-100 text-red-800 border border-red-200 px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0 select-none animate-pulse">
+                          ⚠️ Relance exigée
+                        </span>
+                      )}
                     </div>
                     <div className={`text-[10px] truncate ${selectedParentId === parent.id ? 'text-slate-300' : 'text-gray-500'}`}>
                       Pupilles: <strong className="font-semibold">{parent.students.map(s => s.name).join(', ')}</strong>
@@ -440,12 +541,30 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
                   </div>
 
                   <div className="text-right shrink-0 flex items-center gap-3">
+                    {(parent.status === 'retard' || parent.status === 'partiel') && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePrepareReminder(parent);
+                        }}
+                        className={`px-2 py-1 text-[9.5px] font-bold rounded-lg border flex items-center gap-1 select-none transition cursor-pointer shadow-3xs hover:scale-105 ${
+                          selectedParentId === parent.id
+                            ? 'bg-red-600 hover:bg-red-700 border-red-700 text-white font-extrabold shadow-sm'
+                            : 'bg-red-50 hover:bg-red-100 text-red-600 border-red-100'
+                        }`}
+                        title="Pré-remplir et envoyer une relance de paiement"
+                      >
+                        <Bell className="h-3 w-3 shrink-0" />
+                        <span>Relancer</span>
+                      </button>
+                    )}
                     <div className="space-y-0.5">
                       <div className="text-xs font-bold font-mono">
                         {parent.totalPaid.toLocaleString()} / {parent.totalDue.toLocaleString()}
                       </div>
                       <div className={`text-[9px] font-mono ${selectedParentId === parent.id ? 'text-slate-400' : 'text-gray-400'}`}>
-                        FCFA
+                        {settings?.currency || 'FCFA'}
                       </div>
                     </div>
                     <ChevronRight className="h-4 w-4 text-gray-400" />
@@ -513,7 +632,14 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
                 <div className="space-y-1.5">
                   {selectedParent.students.map((student, idx) => (
                     <div key={idx} className="bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100 text-xs flex justify-between items-center font-medium text-slate-800">
-                      <span>{student.name}</span>
+                      <div className="flex flex-col">
+                        <span className="font-bold">{student.name}</span>
+                        {student.dateOperation && (
+                          <span className="text-[10px] text-gray-500 mt-0.5">
+                            📅 Opération : {new Date(student.dateOperation).toLocaleDateString('fr-FR', { dateStyle: 'medium' })}
+                          </span>
+                        )}
+                      </div>
                       <span className="bg-indigo-50 text-indigo-700 text-[10px] font-bold px-1.5 py-0.5 rounded-md font-mono">{student.classRoom}</span>
                     </div>
                   ))}
@@ -555,23 +681,52 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
               </div>
 
               {/* Dues breakdown statistics panel */}
-              <div className="bg-slate-900 text-white rounded-xl p-3.5 font-mono text-xs space-y-1 border border-slate-850">
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Exigible global :</span>
-                  <span>{selectedParent.totalDue.toLocaleString()} FCFA</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Payé cumulé :</span>
-                  <span className="text-emerald-400">{selectedParent.totalPaid.toLocaleString()} FCFA</span>
-                </div>
-                <hr className="border-slate-800 my-1" />
-                <div className="flex justify-between text-sm font-bold">
-                  <span>Reste à payer :</span>
-                  <span className={selectedParent.totalDue - selectedParent.totalPaid > 0 ? 'text-amber-400' : 'text-emerald-400'}>
-                    {Math.max(0, selectedParent.totalDue - selectedParent.totalPaid).toLocaleString()} FCFA
-                  </span>
-                </div>
-              </div>
+              {(() => {
+                const currency = settings?.currency || 'FCFA';
+                const { rubricBreakdown, globalDue, globalPaid, globalDebt } = calculateParentDebtBreakdown(selectedParent, settings || {});
+                return (
+                  <div className="space-y-3">
+                    {/* Rubrics Subordinated specific debts */}
+                    <div className="space-y-1.5">
+                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">🧾 COMPTE PARENT : DETTE SPÉCIFIQUE PAR RUBRIQUE</span>
+                      <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-0.5">
+                        {rubricBreakdown.map((r: any) => (
+                          <div key={r.id} className="bg-slate-50 border border-slate-205 p-2 rounded-xl text-xs space-y-1">
+                            <div className="flex justify-between font-extrabold text-slate-800">
+                              <span className="text-slate-700">{r.name} <span className="text-[9px] text-slate-400 font-normal">({r.type === 'per_student' ? 'par élève' : 'par parent'})</span></span>
+                              <span>{r.totalDue.toLocaleString()} {currency}</span>
+                            </div>
+                            <div className="flex justify-between text-[10px] text-slate-500 font-mono">
+                              <span>Payé: {r.totalPaid.toLocaleString()} {currency}</span>
+                              <span className={r.remainingDebt > 0 ? 'text-amber-600 font-black' : 'text-emerald-600 font-black'}>
+                                Solde dû : {r.remainingDebt.toLocaleString()} {currency}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-900 text-white rounded-2xl p-3.5 font-mono text-xs space-y-1 border border-slate-850">
+                      <div className="flex justify-between">
+                        <span className="text-slate-400 font-sans font-semibold">Exigible global :</span>
+                        <span>{selectedParent.totalDue?.toLocaleString() || globalDue.toLocaleString()} {currency}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400 font-sans font-semibold">Payé cumulé :</span>
+                        <span className="text-emerald-400">{selectedParent.totalPaid?.toLocaleString() || globalPaid.toLocaleString()} {currency}</span>
+                      </div>
+                      <hr className="border-slate-800 my-1.5" />
+                      <div className="flex justify-between text-sm font-bold">
+                        <span className="font-sans font-bold text-amber-300">Reste à payer :</span>
+                        <span className={(selectedParent.totalDue - selectedParent.totalPaid) > 0 ? 'text-amber-400' : 'text-emerald-400'}>
+                          {Math.max(0, selectedParent.totalDue - selectedParent.totalPaid).toLocaleString()} {currency}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {selectedParent.note && (
                 <div className="bg-amber-50 rounded-xl p-3 text-[11px] text-amber-900 border border-amber-200">
@@ -620,7 +775,7 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
               <button
                 onClick={handleTriggerPrint}
                 className="w-full mt-2 bg-indigo-650 hover:bg-indigo-700 text-white font-bold rounded-xl py-2.5 text-xs uppercase tracking-wide flex items-center justify-center gap-2 cursor-pointer transition shadow-xs"
-                title="Générer et télécharger un reçu de cotisation APEE officiel au format PDF"
+                title={`Générer et télécharger un reçu de cotisation ${getApeeShortName(settings)} officiel au format PDF`}
               >
                 <Download className="h-4 w-4 text-amber-300" /> Télécharger Reçu (PDF)
               </button>
@@ -733,6 +888,125 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
           </div>
         );
       })()}
+
+      {/* Dynamic automatic reminder modal */}
+      {reminderParent && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-3xl w-full max-w-lg border border-slate-150 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="p-5 bg-slate-900 text-white relative shrink-0">
+              <button
+                onClick={() => setReminderParent(null)}
+                className="absolute right-4 top-4 text-white/60 hover:text-white cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+              <div className="space-y-1">
+                <span className="text-[10px] text-red-400 font-black uppercase tracking-widest block">🔔 Module de Relance Automatique - APEE</span>
+                <h3 className="text-base font-black">Préparer et envoyer un rappel de paiement</h3>
+              </div>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto">
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                  <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-500">Destinataire</span>
+                  <span className="text-[9.5px] font-mono font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded-full select-all">
+                    Arriéré : {(reminderParent.totalDue - reminderParent.totalPaid).toLocaleString()} {settings?.currency || 'FCFA'}
+                  </span>
+                </div>
+                
+                <div className="flex items-center gap-3">
+                  <div className="h-8 w-8 rounded-full bg-slate-900 text-white font-black text-xs flex items-center justify-center shrink-0">
+                    {reminderParent.name.substring(0, 2).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="font-extrabold text-xs text-slate-900">{reminderParent.name}</p>
+                    <p className="text-[10px] text-slate-500 font-mono">Téléphone : {reminderParent.phone}</p>
+                  </div>
+                </div>
+
+                <div className="text-[10px] text-slate-600 bg-white p-2 rounded-xl border border-slate-150 space-y-1">
+                  <p>👶 <strong>Pupilles :</strong> {reminderParent.students.map(s => `${s.name} (${s.classRoom})`).join(', ')}</p>
+                </div>
+              </div>
+
+              {/* Message edit box */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Contenu du message de relance</label>
+                <textarea
+                  value={reminderMessage}
+                  onChange={(e) => setReminderMessage(e.target.value)}
+                  className="w-full h-36 p-3 hover:border-gray-300 border border-gray-250 bg-slate-50 rounded-2xl text-xs font-sans leading-relaxed focus:outline-hidden focus:border-indigo-500 focus:bg-white transition"
+                  placeholder="Saisissez votre message de relance..."
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                {/* Copier le message */}
+                <button
+                  type="button"
+                  onClick={handleCopyReminderText}
+                  className="flex items-center justify-center gap-2 px-3 py-2.5 text-xs font-bold rounded-xl border border-slate-250 bg-white hover:bg-slate-50 text-slate-705 cursor-pointer select-none transition shadow-2xs"
+                >
+                  {reminderCopied ? (
+                    <>
+                      <Check className="h-4 w-4 text-emerald-600 animate-pulse shrink-0" />
+                      <span className="text-emerald-700 font-black">Copié !</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-4 w-4 shrink-0" />
+                      <span>Copier le texte</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Relancer par WhatsApp */}
+                <a
+                  href={`https://wa.me/${reminderParent.phone.replace(/\D/g, '')}?text=${encodeURIComponent(reminderMessage)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={handleSendLocalReminder}
+                  className="flex items-center justify-center gap-2 px-3 py-2.5 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer select-none transition shadow-2xs"
+                >
+                  <MessageSquare className="h-4 w-4 shrink-0" />
+                  <span>Envoyer WhatsApp</span>
+                  <ExternalLink className="h-3 w-3 opacity-60" />
+                </a>
+              </div>
+            </div>
+
+            <div className="px-5 py-4 bg-slate-50 border-t border-slate-150 flex justify-between gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setReminderParent(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-250 hover:bg-slate-50 rounded-xl cursor-pointer transition select-none"
+              >
+                Annuler
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSendLocalReminder}
+                disabled={reminderSending}
+                className="px-4.5 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 disabled:bg-slate-350 rounded-xl cursor-pointer transition select-none flex items-center justify-center gap-1.5"
+              >
+                {reminderSending ? (
+                  <>
+                    <span className="animate-spin inline-block h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full shrink-0" />
+                    Enregistrement...
+                  </>
+                ) : (
+                  <>
+                    <Check className="h-4 w-4 text-emerald-500 shrink-0" />
+                    <span>Marquer relancé</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

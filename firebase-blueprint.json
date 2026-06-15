@@ -125,6 +125,20 @@
         "paymentDate": { "type": "string" }
       },
       "required": ["id", "studentId", "parentId", "title", "amount", "dueDate", "status"]
+    },
+    "super_admin": {
+      "title": "Super Admin",
+      "description": "System administrator with global monitoring and management privileges.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "addedBy": { "type": "string" },
+        "role": { "type": "string" }
+      },
+      "required": ["id", "name", "email", "createdAt", "addedBy", "role"]
     }
   },
   "firestore": {
@@ -159,6 +173,10 @@
     "invoices": {
       "schema": "invoice",
       "description": "Tuition fees and billing ledger."
+    },
+    "super_admins": {
+      "schema": "super_admin",
+      "description": "Secondary system administrators details."
     }
   }
 }

@@ -1,15 +1,17 @@
 import React from 'react';
 import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { TrendingUp, ArrowUpRight, ArrowDownLeft, Landmark, Percent, Receipt, Sparkles, Download } from 'lucide-react';
-import { ApeeParent, ApeeExpense, ApeeSettings } from '../../types';
+import { ApeeParent, ApeeExpense, ApeeSettings, ApeeOtherRevenue } from '../../types';
+import { getApeeShortName } from '../../utils/apeeDb';
 
 interface ApeeFinancialOverviewProps {
   parents: ApeeParent[];
   expenses: ApeeExpense[];
   settings: ApeeSettings;
+  otherRevenues?: ApeeOtherRevenue[];
 }
 
-export default function ApeeFinancialOverview({ parents, expenses, settings }: ApeeFinancialOverviewProps) {
+export default function ApeeFinancialOverview({ parents, expenses, settings, otherRevenues = [] }: ApeeFinancialOverviewProps) {
   const [isMounted, setIsMounted] = React.useState(false);
   
   React.useEffect(() => {
@@ -25,6 +27,12 @@ export default function ApeeFinancialOverview({ parents, expenses, settings }: A
         allMonthsSet.add(pay.date.slice(0, 7)); // "YYYY-MM"
       }
     });
+  });
+
+  otherRevenues.forEach(r => {
+    if (r.date) {
+      allMonthsSet.add(r.date.slice(0, 7)); // "YYYY-MM"
+    }
   });
 
   expenses.forEach(e => {
@@ -71,6 +79,12 @@ export default function ApeeFinancialOverview({ parents, expenses, settings }: A
       });
     });
 
+    otherRevenues.forEach(r => {
+      if (r.date && r.date.startsWith(mKey)) {
+        revenue += r.amount;
+      }
+    });
+
     expenses.forEach(e => {
       if (e.status === 'Executed' && e.date && e.date.startsWith(mKey)) {
         expense += e.amount;
@@ -92,20 +106,32 @@ export default function ApeeFinancialOverview({ parents, expenses, settings }: A
   const hasActualData = originalChartData.some(d => d['Revenus (Recettes)'] > 0 || d['Dépenses Exécutées'] > 0);
 
   // Beautiful fallback stats for presentation if there aren't many records (avoids empty blank screens)
-  const displayChartData = hasActualData ? originalChartData : [
-    { monthKey: '2025-12', name: 'Déc 2025', 'Revenus (Recettes)': 1850000, 'Dépenses Exécutées': 890000, 'Marge de Trésorerie': 960000 },
-    { monthKey: '2026-01', name: 'Jan 2026', 'Revenus (Recettes)': 3200000, 'Dépenses Exécutées': 1450000, 'Marge de Trésorerie': 1750000 },
-    { monthKey: '2026-02', name: 'Fév 2026', 'Revenus (Recettes)': 2450000, 'Dépenses Exécutées': 1900000, 'Marge de Trésorerie': 550000 },
-    { monthKey: '2026-03', name: 'Mar 2026', 'Revenus (Recettes)': 4100000, 'Dépenses Exécutées': 2200000, 'Marge de Trésorerie': 1900000 },
-    { monthKey: '2026-04', name: 'Avr 2026', 'Revenus (Recettes)': 1500000, 'Dépenses Exécutées': 2400000, 'Marge de Trésorerie': -900000 },
-    { monthKey: '2026-05', name: 'Mai 2026', 'Revenus (Recettes)': 5200000, 'Dépenses Exécutées': 3100000, 'Marge de Trésorerie': 2100000 }
-  ];
+  const displayChartData = hasActualData ? originalChartData : sortedAllMonths.map(mKey => {
+    const [year, month] = mKey.split('-');
+    const label = `${monthNamesFR[month] || month} ${year}`;
+    return {
+      monthKey: mKey,
+      name: label,
+      'Revenus (Recettes)': 0,
+      'Dépenses Exécutées': 0,
+      'Marge de Trésorerie': 0,
+    };
+  });
 
   // 4. Cumulative calculations for the specific 6-month subset
   const total6MonthRevenue = displayChartData.reduce((sum, d) => sum + d['Revenus (Recettes)'], 0);
   const total6MonthExpenses = displayChartData.reduce((sum, d) => sum + d['Dépenses Exécutées'], 0);
   const net6MonthCashFlow = total6MonthRevenue - total6MonthExpenses;
   const realizationRate = total6MonthRevenue > 0 ? (total6MonthRevenue / settings.financialGoal) * 100 : 0;
+
+  const actualParentsPaid = parents.reduce((sum, p) => sum + p.totalPaid, 0);
+  const actualHonorary = otherRevenues && otherRevenues.length > 0
+    ? otherRevenues.filter(r => r.status === 'membre_honneur').reduce((sum, r) => sum + r.amount, 0)
+    : (settings.actualHonoraryContributions || 0);
+  const actualSubventions = otherRevenues && otherRevenues.length > 0
+    ? otherRevenues.filter(r => r.status === 'institution' || r.status === 'autre').reduce((sum, r) => sum + r.amount, 0)
+    : (settings.actualSubventionsAndAids || 0);
+  const totalPaidRevenue = actualParentsPaid + actualHonorary + actualSubventions;
 
   const handleExportCSV = () => {
     // Columns headers
@@ -136,9 +162,9 @@ export default function ApeeFinancialOverview({ parents, expenses, settings }: A
     ];
 
     // Meta information header for Excel/Sheets readability
-    const docTitle = `RÉCAPITULATIF FINANCIER DE L'APEE : ${settings.associationName || "Association"}`;
+    const docTitle = `RÉCAPITULATIF FINANCIER DE L'${getApeeShortName(settings).toUpperCase()} : ${settings.associationName || "Association"}`;
     const dateGenerated = `Généré le : ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}`;
-    const financialGoalVal = `Objectif Annuel de l'APEE : ${settings.financialGoal.toLocaleString()} FCFA`;
+    const financialGoalVal = `Objectif Annuel de l'${getApeeShortName(settings).toUpperCase()} : ${settings.financialGoal.toLocaleString()} FCFA`;
 
     // Construct the CSV string with semi-colon delimiter (Excel French safe)
     const csvLines = [
@@ -170,7 +196,7 @@ export default function ApeeFinancialOverview({ parents, expenses, settings }: A
     // Creating download link and trigger click
     const downloadAnchor = document.createElement("a");
     downloadAnchor.href = blobUrl;
-    downloadAnchor.download = `recapitulatif_financier_${(settings.associationName || 'apee').toLowerCase().replace(/\s+/g, '_')}_6mois.csv`;
+    downloadAnchor.download = `recapitulatif_financier_${getApeeShortName(settings).toLowerCase()}_${(settings.associationName || 'apee').toLowerCase().replace(/\s+/g, '_')}_6mois.csv`;
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     
@@ -373,7 +399,7 @@ export default function ApeeFinancialOverview({ parents, expenses, settings }: A
           📁 Ventilation Consolidée des Recettes (Cotisations Parents & Configurations Actives)
         </h4>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 select-none text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 select-none text-xs">
           
           <div className="bg-slate-50/50 hover:bg-slate-50 border border-slate-150 p-3.5 rounded-xl flex items-center justify-between gap-3 transition">
             <div className="space-y-0.5">
@@ -382,7 +408,7 @@ export default function ApeeFinancialOverview({ parents, expenses, settings }: A
             </div>
             <div className="text-right">
               <p className="font-mono font-bold text-slate-900">
-                {parents.reduce((sum, p) => sum + p.totalPaid, 0).toLocaleString()} FCFA
+                {actualParentsPaid.toLocaleString()} FCFA
               </p>
               <span className="text-[9px] text-indigo-650 font-bold font-sans bg-indigo-50 border border-indigo-100/60 px-1.5 py-0.5 rounded">
                 Versement parents
@@ -393,14 +419,14 @@ export default function ApeeFinancialOverview({ parents, expenses, settings }: A
           <div className="bg-slate-50/50 hover:bg-slate-50 border border-slate-150 p-3.5 rounded-xl flex items-center justify-between gap-3 transition">
             <div className="space-y-0.5">
               <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Contributions Membres d'Honneur</span>
-              <span className="text-[10px] font-medium text-slate-400">Configurations administratives</span>
+              <span className="text-[9px] text-slate-400 block font-medium">Prévu: {(settings.honoraryContributions || 0).toLocaleString()} F</span>
             </div>
             <div className="text-right">
               <p className="font-mono font-bold text-slate-900">
-                {(settings.honoraryContributions || 0).toLocaleString()} FCFA
+                {actualHonorary.toLocaleString()} FCFA
               </p>
               <span className="text-[9px] text-sky-650 font-bold font-sans bg-sky-50 border border-sky-100/60 px-1.5 py-0.5 rounded">
-                Comité d'Honneur
+                Reçu Effectif
               </span>
             </div>
           </div>
@@ -408,14 +434,29 @@ export default function ApeeFinancialOverview({ parents, expenses, settings }: A
           <div className="bg-slate-50/50 hover:bg-slate-50 border border-slate-150 p-3.5 rounded-xl flex items-center justify-between gap-3 transition">
             <div className="space-y-0.5">
               <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Aides, Dons et Subventions</span>
-              <span className="text-[10px] font-medium text-slate-400">Financements externes</span>
+              <span className="text-[9px] text-slate-400 block font-medium">Prévu: {(settings.subventionsAndAids || 0).toLocaleString()} F</span>
             </div>
             <div className="text-right">
               <p className="font-mono font-bold text-slate-900">
-                {(settings.subventionsAndAids || 0).toLocaleString()} FCFA
+                {actualSubventions.toLocaleString()} FCFA
               </p>
               <span className="text-[9px] text-amber-650 font-bold font-sans bg-amber-50 border border-amber-100/60 px-1.5 py-0.5 rounded">
-                Aides/Subventions
+                Reçu Effectif
+              </span>
+            </div>
+          </div>
+
+          <div className="bg-emerald-50/40 hover:bg-emerald-50 border border-emerald-150 p-3.5 rounded-xl flex items-center justify-between gap-3 transition">
+            <div className="space-y-0.5">
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">DÉPÔTS {getApeeShortName(settings).toUpperCase()} ENREGISTRÉS</span>
+              <span className="text-[9px] text-emerald-600 font-medium block">Cumul de tous les encaissements réels</span>
+            </div>
+            <div className="text-right">
+              <p className="font-mono font-black text-emerald-950">
+                {totalPaidRevenue.toLocaleString()} FCFA
+              </p>
+              <span className="text-[9px] text-emerald-700 font-bold font-sans bg-emerald-100 border border-emerald-250/60 px-1.5 py-0.5 rounded">
+                Recettes Réelles
               </span>
             </div>
           </div>

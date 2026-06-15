@@ -126,12 +126,19 @@ export interface Invoice {
   classTeachersList?: string;
   honoraryContributions?: number;
   subventionsAndAids?: number;
+  actualHonoraryContributions?: number;
+  actualSubventionsAndAids?: number;
+  expectedStudents?: number;
+  country?: string;
+  currency?: string;
+  financialObligationsList?: string;
 }
 
 export interface ApeeStudentLink {
   name: string;
   classRoom: string;
   dob?: string;
+  dateOperation?: string;
 }
 
 export interface ApeePaymentItem {
@@ -142,6 +149,7 @@ export interface ApeePaymentItem {
   method?: string;
   transactionId?: string;
   provider?: string;
+  allocations?: { [obligationId: string]: number };
 }
 
 export interface ApeeParent {
@@ -172,6 +180,30 @@ export interface ApeeExpense {
   budgetLineId?: string; // Optional budget line association
 }
 
+export interface ApeeOtherRevenue {
+  id: string;
+  payerName: string;
+  status: 'membre_honneur' | 'institution' | 'autre';
+  statusDetails?: string; // Institution Details e.g. "Ministère"
+  amount: number;
+  paymentMethod: string;
+  date: string;
+  transactionId?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface ApeeActivityLog {
+  id: string;
+  parentId: string;
+  timestamp: string;
+  parentName: string;
+  actionType: 'CREATE_PARENT' | 'UPDATE_PARENT' | 'ADD_PAYMENT' | 'REMOVE_PAYMENT' | 'DELETE_PARENT' | 'MANUAL_ENTRY';
+  description: string;
+  amount: number;
+  operatorName: string;
+}
+
 export interface ApeeBudgetLine {
   id: string;
   name: string; // Nom de la ligne budgétaire, e.g. "Fournitures scolaires"
@@ -179,14 +211,29 @@ export interface ApeeBudgetLine {
   description?: string;
 }
 
+export interface ApeeObligationDefinition {
+  id: string;
+  name: string;
+  amount: number;
+  type: 'per_student' | 'per_parent';
+  description?: string;
+}
+
 export interface ApeeSettings {
   associationName: string;
+  shortName?: string;
   schoolYear: string;
   cotisationAmount: number;
   financialGoal: number;
   budgetLines?: ApeeBudgetLine[];
   honoraryContributions?: number;
   subventionsAndAids?: number;
+  actualHonoraryContributions?: number;
+  actualSubventionsAndAids?: number;
+  expectedStudents?: number;
+  country?: string;
+  currency?: string;
+  financialObligations?: ApeeObligationDefinition[];
   finManagerName?: string;
   finManagerPhone?: string;
   finManagerPassword?: string;
@@ -203,4 +250,32 @@ export interface ApeeSettings {
   censeurPhone?: string;
   classTeachers?: Array<{ classRoom: string; teacherName: string; teacherPhone: string; teacherEmail: string }>;
 }
+
+export interface Establishment {
+  id: string;
+  name: string;
+  cotisationAmount: number;
+  financialGoal: number;
+  finManagerName: string;
+  finManagerPhone: string;
+  finManagerPassword?: string;
+  pedManagerName?: string;
+  pedManagerPhone?: string;
+  pedManagerPassword?: string;
+  schoolYear: string;
+  ownerId: string;
+  logoUrl?: string;
+}
+
+export interface SystemLog {
+  id: string;
+  parentId: string; // schoolId or system administrator id
+  title: string; // description
+  amount: number;
+  dueDate: string; // type: 'CREATE_SCHOOL' | 'DELETE_SCHOOL' | 'PAYMENT' | 'SETTINGS_CHANGE'
+  status: 'Paid';
+  paymentDate: string; // timestamp isolation
+  provider: string; // operatorName
+}
+
 

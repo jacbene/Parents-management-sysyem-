@@ -19,6 +19,7 @@ import {
   Settings
 } from 'lucide-react';
 import { ApeeParent, ApeeSettings } from '../../types';
+import { getApeeShortName, generateApeeReminderMessage } from '../../utils/apeeDb';
 
 interface ApeeRemindersProps {
   parents: ApeeParent[];
@@ -36,16 +37,58 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
   
   // Custom templates
   const [smsTemplate, setSmsTemplate] = useState<string>(
-    "Chers parents. Rappel APEE {school_year} de {association_name} pour votre pupille ({student_names}). Le solde restant dû est de {remaining_amount} FCFA. Veuillez régulariser au plus vite par versement ou virement. Merci pour votre collaboration."
+    "Chers parents. Rappel {short_name} {school_year} de {association_name} pour votre pupille ({student_names}). Le solde restant dû est de {remaining_amount} FCFA. Veuillez régulariser au plus vite par versement ou virement. Merci pour votre collaboration."
   );
   
   const [emailSubject, setEmailSubject] = useState<string>(
-    "Rappel de Paiement Cotisation APEE - {association_name}"
+    "Rappel de Paiement Cotisation {short_name} - {association_name}"
   );
   
   const [emailTemplate, setEmailTemplate] = useState<string>(
-    "Bonjour {parent_name},\n\nNous vous contactons au sujet de la cotisation APEE ({school_year}) pour l'établissement {association_name} quant à la scolarisation de votre/vos enfant(s) : {student_names}.\n\nÀ ce jour, votre compte présente un solde restant de {remaining_amount} FCFA (sur un montant exigible de {total_due_amount} FCFA).\n\nNous vous prions de bien vouloir régulariser cette situation auprès de l'intendante.\n\nSi vous avez déjà procédé au versement, veuillez ignorer ce message.\n\nCordialement,\nLe Bureau de l'APEE\n{association_name}"
+    "Bonjour {parent_name},\n\nNous vous contactons au sujet de la cotisation {short_name} ({school_year}) pour l'établissement {association_name} quant à la scolarisation de votre/vos enfant(s) : {student_names}.\n\nÀ ce jour, votre compte présente un solde restant de {remaining_amount} FCFA (sur un montant exigible de {total_due_amount} FCFA).\n\nNous vous prions de bien vouloir régulariser cette situation auprès de l'intendante.\n\nSi vous avez déjà procédé au versement, veuillez ignorer ce message.\n\nCordialement,\nLe Bureau de la régie de {short_name}\n{association_name}"
   );
+
+  // AI Template Generator states
+  const [aiTargetStatus, setAiTargetStatus] = useState<'partiel' | 'retard' | 'both'>('both');
+  const [aiTone, setAiTone] = useState<'courtois' | 'ferme' | 'urgent' | 'standard'>('standard');
+  const [aiLanguage, setAiLanguage] = useState<'fr' | 'en' | 'bilingual'>('fr');
+  const [aiCustomContext, setAiCustomContext] = useState('');
+  const [generatingWithAi, setGeneratingWithAi] = useState(false);
+
+  const handleGenerateAiTemplates = async () => {
+    setGeneratingWithAi(true);
+    try {
+      const response = await fetch('/api/apee/generate-reminders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          targetStatus: aiTargetStatus,
+          tone: aiTone,
+          language: aiLanguage,
+          customContext: aiCustomContext.trim() || undefined,
+        }),
+      });
+
+      const resData = await response.json();
+      if (resData.success && resData.data) {
+        const { smsTemplate: generatedSms, emailSubject: generatedSubject, emailTemplate: generatedEmail } = resData.data;
+        if (generatedSms) setSmsTemplate(generatedSms);
+        if (generatedSubject) setEmailSubject(generatedSubject);
+        if (generatedEmail) setEmailTemplate(generatedEmail);
+        
+        triggerToast('success', 'Nouveaux modèles de messages générés avec succès !');
+      } else {
+        triggerToast('info', 'Une erreur est survenue lors de la génération avec l\'IA.');
+      }
+    } catch (err: any) {
+      console.error(err);
+      triggerToast('info', 'Erreur réseau : impossible de joindre le service de génération d\'IA.');
+    } finally {
+      setGeneratingWithAi(false);
+    }
+  };
 
   // Focus parent state
   const [selectedParentId, setSelectedParentId] = useState<string>(
@@ -95,16 +138,23 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
     }
   };
 
-  // Helper replacing tags
+  // Helper replacing tags using our global utility helper
   const formatText = (text: string, parent?: ApeeParent) => {
     if (!parent) return text;
+    const generated = generateApeeReminderMessage(parent, settings, 'sms', { smsTemplate: text });
+    if (generated) {
+      return generated.message;
+    }
+
+    // Fallback if balance is not > 0 but we still want to display preview
     const remaining = Math.max(0, parent.totalDue - parent.totalPaid);
     const kidsList = parent.students.map(s => `${s.name} (${s.classRoom})`).join(', ');
     
     return text
       .replace(/{parent_name}/g, parent.name)
-      .replace(/{association_name}/g, settings.associationName)
-      .replace(/{school_year}/g, settings.schoolYear)
+      .replace(/{association_name}/g, settings?.associationName || "Établissement")
+      .replace(/{short_name}/g, getApeeShortName(settings))
+      .replace(/{school_year}/g, settings?.schoolYear || "")
       .replace(/{student_names}/g, kidsList)
       .replace(/{remaining_amount}/g, remaining.toLocaleString())
       .replace(/{total_due_amount}/g, parent.totalDue.toLocaleString());
@@ -272,6 +322,7 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
           </button>
           <button
             onClick={() => handleBulkReminderRun('email')}
+            title="Relancer par Email"
             className="text-xs px-3.5 py-2 bg-slate-800 hover:bg-slate-905 text-white font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs transition"
           >
             <Mail className="h-3.5 w-3.5" /> Envoi Groupé Email
@@ -496,6 +547,7 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
                   </button>
                   <button
                     onClick={() => handleBulkReminderRun('email')}
+                    title="Relancer par Email"
                     className="text-[9px] px-2 py-1 bg-slate-800 text-white font-bold rounded-lg flex items-center gap-1 cursor-pointer hover:bg-slate-900 transition"
                   >
                     Relancer par Email
@@ -515,6 +567,91 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
             <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-2">
               <Settings className="h-4 w-4 text-indigo-500" /> Modèles de Relances Universels
             </h3>
+
+            {/* AI Generator Panel */}
+            <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl border border-indigo-100 p-4 space-y-3 shadow-3xs text-left">
+              <div className="flex justify-between items-center">
+                <h4 className="text-xs font-black text-indigo-950 flex items-center gap-1.5">
+                  <span className="p-1 bg-indigo-200 text-indigo-700 rounded-lg">✨</span>
+                  <span>Générateur de Modèles de Rappels IA (Gemini 3.5)</span>
+                </h4>
+                <span className="text-[9px] bg-indigo-200/50 text-indigo-800 px-2 py-0.5 rounded-full font-bold">Actif</span>
+              </div>
+              <p className="text-[10px] text-indigo-900/80 leading-relaxed font-medium">
+                Générez de nouveaux modèles de rappels (SMS & Email) adaptés aux parents en retard. L'IA injectera automatiquement les bons jetons variables pour un publipostage sans faute.
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-500 uppercase tracking-wider block">Statut Ciblé</label>
+                  <select
+                    value={aiTargetStatus}
+                    onChange={(e: any) => setAiTargetStatus(e.target.value)}
+                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-xl focus:outline-indigo-500 font-bold text-slate-700 focus:ring-1 focus:ring-indigo-300"
+                  >
+                    <option value="both">Tous (« retard » et « partiel »)</option>
+                    <option value="partiel">Versement Partiel (partiel)</option>
+                    <option value="retard">Retard Total (retard)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-500 uppercase tracking-wider block">Ton du Message</label>
+                  <select
+                    value={aiTone}
+                    onChange={(e: any) => setAiTone(e.target.value)}
+                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-xl focus:outline-indigo-500 font-bold text-slate-700 focus:ring-1 focus:ring-indigo-300"
+                  >
+                    <option value="standard">Standard d'Intendance</option>
+                    <option value="courtois">Courtois & Chaleureux</option>
+                    <option value="ferme">Diplomatique & Ferme</option>
+                    <option value="urgent">Impératif & Urgent (Mise en demeure)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-500 uppercase tracking-wider block">Langue</label>
+                  <select
+                    value={aiLanguage}
+                    onChange={(e: any) => setAiLanguage(e.target.value)}
+                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-xl focus:outline-indigo-500 font-bold text-slate-700 focus:ring-1 focus:ring-indigo-300"
+                  >
+                    <option value="fr">Français</option>
+                    <option value="en">Anglais (English)</option>
+                    <option value="bilingual">Bilingue (Français/Anglais)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1 text-left">
+                <label className="text-[9px] font-black text-slate-500 uppercase tracking-wider block">Consignes complémentaires de l'IA (optionnel)</label>
+                <input
+                  type="text"
+                  placeholder="Ex : insister sur l'approche des examens de fin d'année, proposer des paiements par tranche..."
+                  value={aiCustomContext}
+                  onChange={(e) => setAiCustomContext(e.target.value)}
+                  className="w-full text-xs p-2 border border-slate-200 rounded-xl focus:outline-indigo-500 bg-white"
+                />
+              </div>
+
+              <button
+                type="button"
+                disabled={generatingWithAi}
+                onClick={handleGenerateAiTemplates}
+                className="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl shadow-xs transition duration-150 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {generatingWithAi ? (
+                  <>
+                    <RefreshCw className="h-3 w-3 animate-spin text-white" />
+                    <span>Création du modèle via l'IA...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>✨ Écrire ces modèles avec l'IA</span>
+                  </>
+                )}
+              </button>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
@@ -721,7 +858,7 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
             </div>
           ) : (
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-8 text-center text-xs text-slate-400 font-sans">
-              Tous les parents ont réglé leur cotisation APEE ! Aucune relance n'est nécessaire pour le moment.
+              Tous les parents ont réglé leur cotisation {getApeeShortName(settings)} ! Aucune relance n'est nécessaire pour le moment.
             </div>
           )}
 

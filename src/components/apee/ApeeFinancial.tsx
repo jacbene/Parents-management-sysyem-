@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, CheckCircle2, DollarSign, Wallet2, FileText, ArrowDownLeft, ArrowUpRight, Check, AlertCircle, TrendingUp, Download, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, CheckCircle2, DollarSign, Wallet2, FileText, ArrowDownLeft, ArrowUpRight, Check, AlertCircle, TrendingUp, Download, AlertTriangle, ClipboardList } from 'lucide-react';
 import { jsPDF } from 'jspdf';
-import { ApeeExpense, ApeeSettings } from '../../types';
+import { ApeeExpense, ApeeSettings, ApeeParent, ApeeOtherRevenue } from '../../types';
+import { getApeeShortName } from '../../utils/apeeDb';
+import ApeeBlankForms from './ApeeBlankForms';
+import { useLanguage } from '../../utils/TranslationContext';
 
 interface ApeeFinancialProps {
   expenses: ApeeExpense[];
@@ -9,9 +12,21 @@ interface ApeeFinancialProps {
   onDeleteExpense: (id: string) => void;
   totalRevenue: number;
   settings: ApeeSettings;
+  parents?: ApeeParent[];
+  otherRevenues?: ApeeOtherRevenue[];
 }
 
-export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense, totalRevenue, settings }: ApeeFinancialProps) {
+export default function ApeeFinancial({ 
+  expenses, 
+  onSaveExpense, 
+  onDeleteExpense, 
+  totalRevenue, 
+  settings,
+  parents = [],
+  otherRevenues = []
+}: ApeeFinancialProps) {
+  const { language } = useLanguage();
+  const isEn = language === 'en';
   // New expense form states
   const [showAddForm, setShowAddForm] = useState(false);
   const [title, setTitle] = useState('');
@@ -25,6 +40,7 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
 
   // Active filter tab
   const [activeFilter, setActiveFilter] = useState<string>('all'); // 'all' | 'command' | 'payment-order' | 'refund'
+  const [activeView, setActiveView] = useState<'journal' | 'generator'>('journal');
 
   // Calculations
   const calculatedExpenses = expenses.reduce((sums, e) => {
@@ -41,7 +57,10 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
     return sums;
   }, { totalExecuted: 0, totalPending: 0, commands: 0, orders: 0, refunds: 0 });
 
-  const currentBoxBalance = totalRevenue - calculatedExpenses.totalExecuted;
+  const parentsContribution = parents.length > 0 ? parents.reduce((sum, p) => sum + p.totalPaid, 0) : totalRevenue;
+  const otherContribution = otherRevenues.length > 0 ? otherRevenues.reduce((sum, r) => sum + r.amount, 0) : 0;
+  const calculatedTotalRevenue = parentsContribution + otherContribution;
+  const currentBoxBalance = calculatedTotalRevenue - calculatedExpenses.totalExecuted;
 
   const budgetLines = settings.budgetLines || [];
 
@@ -118,7 +137,10 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(8);
       doc.setTextColor(148, 163, 184); // Slate 400
-      doc.text(`Journal de Caisse APEE - ${settings.associationName || "Association"} • Année : ${settings.schoolYear || ""}`, margin, 9);
+      const headerTextLabel = isEn
+        ? `Comprehensive Financial & Ledger Audit Report ${getApeeShortName(settings)} - ${settings.associationName || "Association"} • Academic Year: ${settings.schoolYear || ""}`
+        : `Rapport Financier Global et Bilan Comptable ${getApeeShortName(settings)} - ${settings.associationName || "Association"} • Année Scolaire : ${settings.schoolYear || ""}`;
+      doc.text(headerTextLabel, margin, 9);
       
       // Footer line
       doc.line(margin, pageHeight - 12, margin + contentWidth, pageHeight - 12);
@@ -127,27 +149,54 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
       doc.setTextColor(148, 163, 184);
-      doc.text(`Édité via PASMA-ENT ANALYTICS (Génération de pièces comptables)`, margin, pageHeight - 8);
+      const footerTextLabel = isEn 
+        ? `Generated via PASMA-ENT ANALYTICS (Accounting & Audit Forms Creation)` 
+        : `Édité via PASMA-ENT ANALYTICS (Génération de pièces comptables)`;
+      doc.text(footerTextLabel, margin, pageHeight - 8);
       doc.text(`Page ${pageNum}`, margin + contentWidth - 10, pageHeight - 8);
     };
 
     let pageCount = 1;
     drawPageHeaderFooter(pageCount);
 
-    // Top Cameroonian Official Ribbon
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.5);
-    doc.setTextColor(71, 85, 105); // Slate 600
-    doc.text("RÉPUBLIQUE DU CAMEROUN", margin, y + 4);
-    doc.text("REPUBLIC OF CAMEROON", margin + contentWidth, y + 4, { align: 'right' });
+    // Republic of Cameroon Official alignment with Motto
+    const actCountry = settings?.country || "Cameroun";
+    const countryLabel = isEn 
+      ? (actCountry === "Cameroun" ? "REPUBLIC OF CAMEROON" : actCountry.toUpperCase())
+      : (actCountry === "Cameroun" ? "RÉPUBLIQUE DU CAMEROUN" : actCountry.toUpperCase());
+    const yearLabel = isEn ? "Academic Year" : "Année Académique";
 
-    doc.setFont('helvetica', 'italic');
-    doc.setFontSize(6.5);
-    doc.setTextColor(148, 163, 184); // Slate 400
-    doc.text("Paix - Travail - Patrie", margin, y + 8);
-    doc.text("Peace - Work - Fatherland", margin + contentWidth, y + 8, { align: 'right' });
+    if (actCountry === "Cameroun") {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text("RÉPUBLIQUE DU CAMEROUN", margin, y + 4);
+      doc.text("REPUBLIC OF CAMEROON", margin + contentWidth, y + 4, { align: 'right' });
 
-    y += 15;
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(6.5);
+      doc.setTextColor(148, 163, 184); // Slate 400
+      doc.text("Paix - Travail - Patrie", margin, y + 7.5);
+      doc.text("Peace - Work - Fatherland", margin + contentWidth, y + 7.5, { align: 'right' });
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text(`${yearLabel} : ${settings?.schoolYear || "2025/2026"}`, margin + contentWidth, y + 11.5, { align: 'right' });
+      
+      y += 15;
+    } else {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text(countryLabel, margin, y + 4);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.text(`${yearLabel} : ${settings?.schoolYear || "2025/2026"}`, margin + contentWidth, y + 4, { align: 'right' });
+      
+      y += 12;
+    }
 
     // Left accent bar
     doc.setFillColor(79, 70, 229); // Primary Indigo (indigo-600)
@@ -160,56 +209,219 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
     doc.text(`${(settings.associationName || "BUREAU DES PARENTS D'ÉLÈVES").toUpperCase()}`, margin + 6, y + 4);
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
+    doc.setFontSize(13);
     doc.setTextColor(15, 23, 42); // Slate 900
-    doc.text("JOURNAL DE TRÉSORERIE & DÉCAISSEMENTS", margin + 6, y + 12);
+    const journalTitle = isEn ? "COMPREHENSIVE FINANCIAL AUDIT REPORT" : "RAPPORT FINANCIER GLOBAL & COMPTES ANNUELS";
+    doc.text(journalTitle, margin + 6, y + 12);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(100, 116, 139); // Slate 500
-    doc.text(`Année Scolaire : ${settings.schoolYear || "N/A"} • Date de tirage : ${new Date().toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' })}`, margin + 6, y + 17);
+    const printDate = isEn 
+      ? `School Year: ${settings.schoolYear || "N/A"} • Report Date: ${new Date().toLocaleString('en-US', { dateStyle: 'long', timeStyle: 'short' })}`
+      : `Année Scolaire : ${settings.schoolYear || "N/A"} • Date d'édition : ${new Date().toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' })}`;
+    doc.text(printDate, margin + 6, y + 17);
 
     y += 24;
 
-    // Summary Card Box style
+    // Summary Card Box style (Enhanced dual density box)
     doc.setFillColor(248, 250, 252); // Slate 50
     doc.setDrawColor(226, 232, 240); // Slate 200
     doc.setLineWidth(0.3);
-    doc.rect(margin, y, contentWidth, 24, 'FD');
+    doc.rect(margin, y, contentWidth, 30, 'FD');
 
+    // Divider in summary box
+    doc.setDrawColor(241, 245, 249);
+    doc.line(margin, y + 15, margin + contentWidth, y + 15);
+
+    // Row 1 of Box Card
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
+    doc.setFontSize(7.5);
     doc.setTextColor(100, 116, 139); // Slate 500
-    doc.text("SOLDE DISPONIBLE EN CAISSE", margin + 6, y + 7);
-    doc.text("TOTAL DÉPENSES ENGAGÉES", margin + 65, y + 7);
-    doc.text("DÉPENSES EN ATTENTE", margin + 125, y + 7);
+    doc.text(isEn ? "AVAILABLE NET CASH" : "SOLDE DE CAISSE DISPONIBLE", margin + 6, y + 5);
+    doc.text(isEn ? "GRAND TOTAL REVENUE" : "TOTAL GENERAL DES RECETTES", margin + 65, y + 5);
+    doc.text(isEn ? "EXECUTED DISBURSEMENTS" : "TOTAL DEPENSES EXECUTEES", margin + 125, y + 5);
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
+    doc.setFontSize(10.5);
     doc.setTextColor(16, 185, 129); // Emerald-500
-    doc.text(`${currentBoxBalance.toLocaleString()} FCFA`, margin + 6, y + 15);
+    doc.text(`${currentBoxBalance.toLocaleString()} FCFA`, margin + 6, y + 11);
 
-    doc.setTextColor(239, 68, 68); // Red-500
-    doc.text(`${calculatedExpenses.totalExecuted.toLocaleString()} FCFA`, margin + 65, y + 15);
+    doc.setTextColor(79, 70, 229); // Indigo-600
+    doc.text(`${calculatedTotalRevenue.toLocaleString()} FCFA`, margin + 65, y + 11);
 
-    doc.setTextColor(245, 158, 11); // Amber-500
-    doc.text(`${calculatedExpenses.totalPending.toLocaleString()} FCFA`, margin + 125, y + 15);
+    doc.setTextColor(220, 38, 38); // Red-600
+    doc.text(`${calculatedExpenses.totalExecuted.toLocaleString()} FCFA`, margin + 125, y + 11);
+
+    // Row 2 of Box Card
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor(148, 163, 184); // Slate 400
+    doc.text(isEn ? "Parents Fee Receipts" : "Dont Cotisations Parents", margin + 6, y + 20);
+    doc.text(isEn ? "External Funds & Subventions" : "Dont Autres Recettes/Aides", margin + 65, y + 20);
+    doc.text(isEn ? "Pending Authorized Budget" : "Budget Engagé en Attente", margin + 125, y + 20);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(51, 65, 85);
+    doc.text(`${parentsContribution.toLocaleString()} FCFA`, margin + 6, y + 26);
+    doc.text(`${otherContribution.toLocaleString()} FCFA`, margin + 65, y + 26);
+    doc.text(`${calculatedExpenses.totalPending.toLocaleString()} FCFA`, margin + 125, y + 26);
+
+    y += 36;
+
+    // Parse parents statuses for reports
+    const parentsPaidTotal = parents.reduce((sum, p) => sum + p.totalPaid, 0);
+    const parentsDueTotal = parents.reduce((sum, p) => sum + p.totalDue, 0);
+    const parentsRemaining = Math.max(0, parentsDueTotal - parentsPaidTotal);
+    
+    const countSoldes = parents.filter(p => p.status === 'soldé').length;
+    const sumSoldes = parents.filter(p => p.status === 'soldé').reduce((sum, p) => sum + p.totalPaid, 0);
+    
+    const countPartiels = parents.filter(p => p.status === 'partiel').length;
+    const sumPartiels = parents.filter(p => p.status === 'partiel').reduce((sum, p) => sum + p.totalPaid, 0);
+    
+    const countRetards = parents.filter(p => p.status === 'retard').length;
+    const sumRetards = parents.filter(p => p.status === 'retard').reduce((sum, p) => sum + p.totalPaid, 0);
+
+    // Section I: Audit des Recettes (Parent fees & other contributions)
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(15, 23, 42); // Slate 900
+    doc.text(isEn ? "I. COMPREHENSIVE SCHOOL REGISTRY REVENUES BREAKDOWN" : "I. AUDIT DE RECOUVREMENT DES RECETTES DE L'ÉTA-COMPTABLE", margin, y);
+    y += 4;
+    
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.35);
+    doc.line(margin, y, margin + contentWidth, y);
+    y += 5;
+
+    // Influx summary block
+    doc.setFillColor(250, 250, 252);
+    doc.rect(margin, y, contentWidth, 24, 'F');
+    doc.setDrawColor(241, 245, 249);
+    doc.rect(margin, y, contentWidth, 24, 'D');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text(isEn ? "A. School Fees Collections Snapshot:" : "A. Tableau statistique des cotisations parents d'élèves (APEE) :", margin + 4, y + 5);
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.5);
-    doc.setTextColor(148, 163, 184); // Slate 400
-    doc.text(`Total collectes : ${totalRevenue.toLocaleString()} FCFA`, margin + 6, y + 20);
-    doc.text(`Décaissements exécutés`, margin + 65, y + 20);
-    doc.text(`En attente de visa COGE / APEE`, margin + 125, y + 20);
+    doc.setFontSize(7);
+    doc.setTextColor(100, 116, 139);
+    
+    const colXRec = {
+      col1: margin + 4,
+      col2: margin + 65,
+      col3: margin + 125,
+    };
 
-    y += 30;
+    doc.text(isEn ? `• Parents Settled (Soldes) : ${countSoldes} (${sumSoldes.toLocaleString()} F)` : `• Tuteurs en règle (Soldés) : ${countSoldes} (${sumSoldes.toLocaleString()} FCFA)`, colXRec.col1, y + 10);
+    doc.text(isEn ? `• Parents Partial (Partiels) : ${countPartiels} (${sumPartiels.toLocaleString()} F)` : `• Versements d'acomptes (Partiels) : ${countPartiels} (${sumPartiels.toLocaleString()} FCFA)`, colXRec.col1, y + 15);
+    doc.text(isEn ? `• School Feed Registered Sum : ${parentsDueTotal.toLocaleString()} F` : `• Objectif total théorique attendu : ${parentsDueTotal.toLocaleString()} FCFA`, colXRec.col1, y + 20);
+    
+    doc.text(isEn ? `• Parents Overdue (Retards) : ${countRetards} (${sumRetards.toLocaleString()} F)` : `• Parents insolvables réels (Retards) : ${countRetards} (${sumRetards.toLocaleString()} FCFA)`, colXRec.col2, y + 10);
+    doc.text(isEn ? `• Actual Amount Collected : ${parentsContribution.toLocaleString()} F` : `• Cotisations parentales effectivement perçues : ${parentsContribution.toLocaleString()} FCFA`, colXRec.col2, y + 15);
 
-    // Section I: Budget lines consumption rate
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(220, 38, 38); // red-600
+    doc.text(isEn ? `• Remainder Arrears to Recover:` : `• Solde de cotisations restant à recouvrer :`, colXRec.col3, y + 10);
+    doc.setFontSize(8.5);
+    doc.text(`${parentsRemaining.toLocaleString()} FCFA`, colXRec.col3, y + 16);
+
+    y += 29;
+
+    // Detailed other revenues (mécénats) table
+    if (otherRevenues.length > 0) {
+      if (y > pageHeight - 35) {
+        doc.addPage();
+        pageCount++;
+        drawPageHeaderFooter(pageCount);
+        y = 25;
+      }
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text(isEn ? "B. Detailed External Sponsorships & Other Additional Revenues Logs:" : "B. Détails des subventions, dons d'honneur et apports externes additionnels :", margin, y);
+      y += 4;
+
+      // Table Header Budget lines
+      doc.setFillColor(241, 245, 249); // Slate 100
+      doc.rect(margin, y, contentWidth, 6.5, 'F');
+      
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.5);
+      doc.setTextColor(71, 85, 105); // Slate 600
+      doc.text(isEn ? "Date" : "Date", margin + 3, y + 4.5);
+      doc.text(isEn ? "Payer / Benefactor Name" : "Donateur / Payeur / Institution", margin + 25, y + 4.5);
+      doc.text(isEn ? "Category Classification" : "Catégorie de Recette", margin + 85, y + 4.5);
+      doc.text(isEn ? "Payment Method" : "Mode de Règlement", margin + 130, y + 4.5);
+      doc.text(isEn ? "Revenue (FCFA)" : "Versement (FCFA)", margin + contentWidth - 3, y + 4.5, { align: 'right' });
+
+      y += 6.5;
+
+      otherRevenues.forEach((rev) => {
+        if (y > pageHeight - 20) {
+          doc.addPage();
+          pageCount++;
+          drawPageHeaderFooter(pageCount);
+          y = 25;
+
+          // Repeat headers
+          doc.setFillColor(241, 245, 249);
+          doc.rect(margin, y, contentWidth, 6.5, 'F');
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(6.5);
+          doc.setTextColor(71, 85, 105);
+          doc.text(isEn ? "Date" : "Date", margin + 3, y + 4.5);
+          doc.text(isEn ? "Payer / Benefactor Name" : "Donateur / Payeur / Institution", margin + 25, y + 4.5);
+          doc.text(isEn ? "Category Classification" : "Catégorie de Recette", margin + 85, y + 4.5);
+          doc.text(isEn ? "Payment Method" : "Mode de Règlement", margin + 130, y + 4.5);
+          doc.text(isEn ? "Revenue (FCFA)" : "Versement (FCFA)", margin + contentWidth - 3, y + 4.5, { align: 'right' });
+          y += 6.5;
+        }
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor(71, 85, 105);
+
+        doc.text(rev.date || rev.createdAt.substring(0,10), margin + 3, y + 4.5);
+        doc.text(rev.payerName, margin + 25, y + 4.5);
+
+        let statusText = rev.status === 'membre_honneur' ? 'Bienfaiteur / Membre d\'Honneur' : (rev.status === 'institution' ? 'Subvention d\'Institution' : 'Autre source');
+        if (isEn) {
+          statusText = rev.status === 'membre_honneur' ? 'Honorary Support' : (rev.status === 'institution' ? 'State Subvention' : 'Other Payer');
+        }
+        if (rev.statusDetails) statusText += ` (${rev.statusDetails})`;
+        doc.text(statusText, margin + 85, y + 4.5);
+        doc.text(rev.paymentMethod || 'Espèces/Cash', margin + 130, y + 4.5);
+        
+        doc.setFont('helvetica', 'bold');
+        doc.text(rev.amount.toLocaleString(), margin + contentWidth - 3, y + 4.5, { align: 'right' });
+
+        y += 6;
+        doc.setDrawColor(241, 245, 249);
+        doc.setLineWidth(0.15);
+        doc.line(margin, y, margin + contentWidth, y);
+      });
+      y += 6;
+    }
+
+    // Section II: Budget lines consumption rate
     if (budgetLines.length > 0) {
+      if (y > pageHeight - 35) {
+        doc.addPage();
+        pageCount++;
+        drawPageHeaderFooter(pageCount);
+        y = 25;
+      }
+
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9.5);
       doc.setTextColor(15, 23, 42); // Slate 900
-      doc.text("I. TAUX DE CONSOMMATION BUDGETAIRE PAR RUBRIQUE", margin, y);
+      doc.text(isEn ? "II. BUDGET LINE CONSUMPTION RATES BY CATEGORY" : "II. SUIVI BUDGÉTAIRE ET TAUX DE CONSOMMATION PAR RUBRIQUE", margin, y);
       y += 4;
       
       doc.setDrawColor(226, 232, 240);
@@ -224,11 +436,11 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(7);
       doc.setTextColor(71, 85, 105); // Slate 600
-      doc.text("Rubrique Budgétaire", margin + 3, y + 4.5);
-      doc.text("Montant Alloué (FCFA)", margin + 70, y + 4.5, { align: 'right' });
-      doc.text("Montant Consommé (FCFA)", margin + 115, y + 4.5, { align: 'right' });
-      doc.text("Reste (FCFA)", margin + 150, y + 4.5, { align: 'right' });
-      doc.text("Taux %", margin + 175, y + 4.5, { align: 'right' });
+      doc.text(isEn ? "Budget Category Description" : "Rubrique Budgétaire", margin + 3, y + 4.5);
+      doc.text(isEn ? "Allocated Sum (FCFA)" : "Montant Alloué (FCFA)", margin + 70, y + 4.5, { align: 'right' });
+      doc.text(isEn ? "Spent Sum (FCFA)" : "Montant Consommé (FCFA)", margin + 115, y + 4.5, { align: 'right' });
+      doc.text(isEn ? "Remaining (FCFA)" : "Reste (FCFA)", margin + 150, y + 4.5, { align: 'right' });
+      doc.text(isEn ? "Usage %" : "Taux %", margin + 175, y + 4.5, { align: 'right' });
 
       y += 6.5;
 
@@ -264,37 +476,66 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
       y += 8;
     }
 
-    // New Section II: Aggregated Table of Monthly Expenses
-    const monthlySummary: Record<string, { total: number; count: number; commands: number; orders: number; refunds: number }> = {};
+    // New Section III: Reconstructed Monthly Receipts and Disbursements Table (Bilan des flux)
+    const monthlyRevenues: Record<string, number> = {};
+    const monthlyExpenses: Record<string, number> = {};
+    
+    // Group expenses (executed only) by Month (YYYY-MM)
     expenses.forEach(exp => {
       if (exp.status === 'Executed') {
-        const monthKey = exp.date.slice(0, 7); // "YYYY-MM"
-        if (!monthlySummary[monthKey]) {
-          monthlySummary[monthKey] = { total: 0, count: 0, commands: 0, orders: 0, refunds: 0 };
-        }
-        monthlySummary[monthKey].total += exp.amount;
-        monthlySummary[monthKey].count += 1;
-        if (exp.type === 'command') monthlySummary[monthKey].commands += exp.amount;
-        else if (exp.type === 'payment-order') monthlySummary[monthKey].orders += exp.amount;
-        else if (exp.type === 'refund') monthlySummary[monthKey].refunds += exp.amount;
+        const m = exp.date.substring(0, 7);
+        monthlyExpenses[m] = (monthlyExpenses[m] || 0) + exp.amount;
       }
     });
-
-    const sortedMonths = Object.keys(monthlySummary).sort().reverse();
+    
+    // Group other revenues by Month (YYYY-MM)
+    otherRevenues.forEach(rev => {
+      const dateStr = rev.date || rev.createdAt || new Date().toISOString();
+      const m = dateStr.substring(0, 7);
+      monthlyRevenues[m] = (monthlyRevenues[m] || 0) + rev.amount;
+    });
+    
+    // Group parent fee payments by Month (YYYY-MM)
+    parents.forEach(p => {
+      if (p.payments) {
+        p.payments.forEach(pay => {
+          const dateStr = pay.date || p.createdAt || new Date().toISOString();
+          const m = dateStr.substring(0, 7);
+          monthlyRevenues[m] = (monthlyRevenues[m] || 0) + pay.amount;
+        });
+      }
+    });
+    
+    // Fallback if empty to align stats
+    if (Object.keys(monthlyRevenues).length === 0 && totalRevenue > 0) {
+      const currentMonth = new Date().toISOString().substring(0, 7);
+      monthlyRevenues[currentMonth] = totalRevenue;
+    }
+    
+    // Merge all unique months sorted descending
+    const allMonths = Array.from(new Set([
+      ...Object.keys(monthlyRevenues),
+      ...Object.keys(monthlyExpenses)
+    ])).sort().reverse();
 
     const getFrenchMonthLabel = (key: string) => {
       const parts = key.split('-');
       if (parts.length !== 2) return key;
       const monthIndex = parseInt(parts[1], 10) - 1;
       const year = parts[0];
-      const months = [
+      const monthsFr = [
         "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
         "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"
       ];
+      const monthsEn = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+      ];
+      const months = isEn ? monthsEn : monthsFr;
       return `${months[monthIndex] || parts[1]} ${year}`;
     };
 
-    if (sortedMonths.length > 0) {
+    if (allMonths.length > 0) {
       if (y > pageHeight - 40) {
         doc.addPage();
         pageCount++;
@@ -305,7 +546,7 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9.5);
       doc.setTextColor(15, 23, 42); // Slate 900
-      doc.text("II. TABLEAU DE SYNTHÈSE DES DÉPENSES MENSUELLES", margin, y);
+      doc.text(isEn ? "III. RECONSTRUCTED MONTHLY RECEIPTS & DISBURSEMENTS SYNTHESIS" : "III. TABLEAU DE SYNTHÈSE MENSUELLE DES FLUX (RECETTES VS DÉPENSES)", margin, y);
       y += 4;
       
       doc.setDrawColor(226, 232, 240);
@@ -320,16 +561,18 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(7);
       doc.setTextColor(71, 85, 105); // Slate 600
-      doc.text("Mois Évalué", margin + 3, y + 4.5);
-      doc.text("Bons Commandes", margin + 50, y + 4.5);
-      doc.text("Ordres Paiement", margin + 90, y + 4.5);
-      doc.text("Remboursements", margin + 130, y + 4.5);
-      doc.text("Total Mensuel", margin + 175, y + 4.5, { align: 'right' });
+      doc.text(isEn ? "Evaluated Month" : "Mois d'Activité", margin + 3, y + 4.5);
+      doc.text(isEn ? "Received Inflow (Recettes)" : "Flux Total Recettes (A)", margin + 50, y + 4.5);
+      doc.text(isEn ? "Executed Outflow (Disbursed)" : "Décaissements Effectués (B)", margin + 105, y + 4.5);
+      doc.text(isEn ? "Net Monthly Flow Margin" : "Marge / Solde Mensuel (A - B)", margin + contentWidth - 3, y + 4.5, { align: 'right' });
 
       y += 6.5;
 
-      sortedMonths.forEach((monthKey) => {
-        const data = monthlySummary[monthKey];
+      allMonths.forEach((monthKey) => {
+        const revAmount = monthlyRevenues[monthKey] || 0;
+        const expAmount = monthlyExpenses[monthKey] || 0;
+        const netFlow = revAmount - expAmount;
+
         if (y > pageHeight - 25) {
           doc.addPage();
           pageCount++;
@@ -342,12 +585,16 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
         doc.setTextColor(71, 85, 105);
 
         doc.text(getFrenchMonthLabel(monthKey), margin + 3, y + 4.5);
-        doc.text(data.commands.toLocaleString() + " F", margin + 50, y + 4.5);
-        doc.text(data.orders.toLocaleString() + " F", margin + 90, y + 4.5);
-        doc.text(data.refunds.toLocaleString() + " F", margin + 130, y + 4.5);
+        doc.text(revAmount.toLocaleString() + " FCFA", margin + 50, y + 4.5);
+        doc.text(expAmount.toLocaleString() + " FCFA", margin + 105, y + 4.5);
         
         doc.setFont('helvetica', 'bold');
-        doc.text(data.total.toLocaleString() + " FCFA", margin + 175, y + 4.5, { align: 'right' });
+        if (netFlow >= 0) {
+          doc.setTextColor(16, 185, 129); // Emerald margin
+        } else {
+          doc.setTextColor(220, 38, 38); // Red deficit
+        }
+        doc.text((netFlow >= 0 ? "+" : "") + netFlow.toLocaleString() + " FCFA", margin + contentWidth - 3, y + 4.5, { align: 'right' });
 
         y += 6.5;
 
@@ -358,7 +605,7 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
       y += 8;
     }
 
-    // Section III: Detailed log of transactions
+    // Section IV: Detailed log of transactions
     if (y > pageHeight - 35) {
       doc.addPage();
       pageCount++;
@@ -369,7 +616,10 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9.5);
     doc.setTextColor(15, 23, 42); // Slate 900
-    doc.text("III. JOURNAL DES OPÉRATIONS DE TRÉSORERIE DE L'APEE (DÉTAILLÉ)", margin, y);
+    const secThreeTitle = isEn
+      ? `IV. DETAILED PTA FINANCIAL TRANSACTION JOURNAL LOG`
+      : `IV. JOURNAL DÉTAILLÉ DES ENGAGEMENTS ET DÉPENSES DE L'${getApeeShortName(settings).toUpperCase()}`;
+    doc.text(secThreeTitle, margin, y);
     y += 4;
     
     doc.setDrawColor(226, 232, 240);
@@ -393,11 +643,11 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
       amount: margin + contentWidth - 3,
     };
 
-    doc.text("Date", colX.date, y + 4.8);
-    doc.text("Type Pièce", colX.type, y + 4.8);
-    doc.text("Opération & Description", colX.label, y + 4.8);
-    doc.text("Statut", colX.status, y + 4.8);
-    doc.text("Montant (FCFA)", colX.amount, y + 4.8, { align: 'right' });
+    doc.text(isEn ? "Date" : "Date", colX.date, y + 4.8);
+    doc.text(isEn ? "Doc Type" : "Type Pièce", colX.type, y + 4.8);
+    doc.text(isEn ? "Operation & Justificative Title" : "Opération & Description", colX.label, y + 4.8);
+    doc.text(isEn ? "Status" : "Statut", colX.status, y + 4.8);
+    doc.text(isEn ? "Amount (FCFA)" : "Montant (FCFA)", colX.amount, y + 4.8, { align: 'right' });
 
     y += 7;
 
@@ -405,7 +655,7 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(8);
       doc.setTextColor(148, 163, 184);
-      doc.text("Aucune pièce comptable n'est référencée pour cette catégorie dans le journal.", margin + 10, y + 7);
+      doc.text(isEn ? "No administrative forms are referenced in this category." : "Aucune pièce comptable n'est référencée pour cette catégorie dans le journal.", margin + 10, y + 7);
       y += 12;
     } else {
       filteredExpenses.forEach((exp) => {
@@ -421,11 +671,11 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
           doc.setFont('helvetica', 'bold');
           doc.setFontSize(7.5);
           doc.setTextColor(255, 255, 255);
-          doc.text("Date", colX.date, y + 4.8);
-          doc.text("Type Pièce", colX.type, y + 4.8);
-          doc.text("Opération & Description", colX.label, y + 4.8);
-          doc.text("Statut", colX.status, y + 4.8);
-          doc.text("Montant (FCFA)", colX.amount, y + 4.8, { align: 'right' });
+          doc.text(isEn ? "Date" : "Date", colX.date, y + 4.8);
+          doc.text(isEn ? "Doc Type" : "Type Pièce", colX.type, y + 4.8);
+          doc.text(isEn ? "Operation & Justificative Title" : "Opération & Description", colX.label, y + 4.8);
+          doc.text(isEn ? "Status" : "Statut", colX.status, y + 4.8);
+          doc.text(isEn ? "Amount (FCFA)" : "Montant (FCFA)", colX.amount, y + 4.8, { align: 'right' });
           y += 7;
         }
 
@@ -437,7 +687,10 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
         doc.text(exp.date, colX.date, y + 4.5);
 
         // Type
-        const typeText = exp.type === 'command' ? 'B. Commande' : (exp.type === 'payment-order' ? 'O. Paiement' : 'Rembours.');
+        let typeText = exp.type === 'command' ? 'B. Commande' : (exp.type === 'payment-order' ? 'O. Paiement' : 'Rembours.');
+        if (isEn) {
+          typeText = exp.type === 'command' ? 'P. Order' : (exp.type === 'payment-order' ? 'Pay Order' : 'Refund');
+        }
         doc.text(typeText, colX.type, y + 4.5);
 
         // Label word wrap
@@ -447,7 +700,10 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
         doc.text(splitLabel, colX.label, y + 4.5);
 
         // Status text
-        const statusText = exp.status === 'Executed' ? 'Payé / Décavé' : (exp.status === 'Approved' ? 'Autorisé' : 'En examen');
+        let statusText = exp.status === 'Executed' ? 'Payé / Décavé' : (exp.status === 'Approved' ? 'Autorisé' : 'En examen');
+        if (isEn) {
+          statusText = exp.status === 'Executed' ? 'Disbursed' : (exp.status === 'Approved' ? 'Approved' : 'Review');
+        }
         doc.text(statusText, colX.status, y + 4.5);
 
         // Amount math
@@ -479,23 +735,26 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
     doc.setTextColor(51, 65, 85);
 
     // Three columns signatures
-    const managerText = settings.finManagerName ? `(${settings.finManagerName})` : "(Signature)";
-    doc.text("Le Responsable Financier APEE", margin + 3, y);
+    const managerText = settings.finManagerName ? `(${settings.finManagerName})` : (isEn ? "(Signature)" : "(Signature)");
+    const finManagerTitle = isEn ? `PTA Financial Officer / Treasurer` : `Le Responsable Financier ${getApeeShortName(settings)}`;
+    doc.text(finManagerTitle, margin + 3, y);
     doc.setFont('helvetica', 'normal');
     doc.text(managerText, margin + 3, y + 16);
 
     doc.setFont('helvetica', 'bold');
-    doc.text("Le Président de l'APEE", margin + contentWidth / 2 - 20, y);
+    const ptaPresidentTitle = isEn ? `PTA Elected Association President` : `Le Président de l'${getApeeShortName(settings)}`;
+    doc.text(ptaPresidentTitle, margin + contentWidth / 2 - 20, y);
     doc.setFont('helvetica', 'normal');
-    doc.text("(Visa et Signature)", margin + contentWidth / 2 - 20, y + 16);
+    doc.text(isEn ? "(Visa and Signature)" : "(Visa et Signature)", margin + contentWidth / 2 - 20, y + 16);
 
-    const directorText = settings.directorName ? `(${settings.directorName})` : "(Signature)";
+    const directorText = settings.directorName ? `(${settings.directorName})` : (isEn ? "(Signature)" : "(Signature)");
     doc.setFont('helvetica', 'bold');
-    doc.text("Le Chef d'Établissement / COGE", margin + contentWidth - 55, y);
+    const principalTitle = isEn ? "School Principal / COGE Chair" : "Le Chef d'Établisement / COGE";
+    doc.text(principalTitle, margin + contentWidth - 55, y);
     doc.setFont('helvetica', 'normal');
     doc.text(directorText, margin + contentWidth - 55, y + 16);
 
-    const safeFileNameStr = `journal_comptable_apee_${settings.schoolYear || 'archive'}.pdf`.replace(/[\s\/]/g, '_');
+    const safeFileNameStr = `journal_comptable_${getApeeShortName(settings).toLowerCase()}_${settings.schoolYear || 'archive'}.pdf`.replace(/[\s\/]/g, '_');
     doc.save(safeFileNameStr);
   };
 
@@ -504,32 +763,68 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
 
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-150 pb-4 gap-4">
         <div>
-          <h2 className="text-xl font-bold text-slate-900 tracking-tight">💸 Gestion Financière & Décaissements</h2>
+          <h2 className="text-xl font-bold text-slate-900 tracking-tight font-sans">💸 Gestion Financière & Décaissements</h2>
           <p className="text-xs text-gray-500 font-medium">
             Suivi budgétaire, bons d'achat, ordres d'affectations, remboursements aux parents et états de caisse.
           </p>
         </div>
 
         <div className="flex items-center gap-2.5 shrink-0 select-none">
-          <button
-            onClick={handleExportPDF}
-            className="text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-sm px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 cursor-pointer transition"
-          >
-            <Download className="h-4 w-4 text-emerald-600" />
-            Exporter en PDF
-          </button>
-          <button
-            onClick={() => setShowAddForm(!showAddForm)}
-            className="text-xs font-bold bg-slate-900 hover:bg-black text-white px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 cursor-pointer transition"
-          >
-            <Plus className="h-4 w-4" />
-            {showAddForm ? 'Fermer le formulaire' : 'Enregistrer une opération'}
-          </button>
+          {activeView === 'journal' && (
+            <>
+              <button
+                onClick={handleExportPDF}
+                className="text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-sm px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 cursor-pointer transition"
+              >
+                <Download className="h-4 w-4 text-emerald-600" />
+                Exporter en PDF
+              </button>
+              <button
+                onClick={() => setShowAddForm(!showAddForm)}
+                className="text-xs font-bold bg-slate-900 hover:bg-black text-white px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 cursor-pointer transition"
+              >
+                <Plus className="h-4 w-4" />
+                {showAddForm ? 'Fermer le formulaire' : 'Enregistrer une opération'}
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Financial math visualizer */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono select-none">
+      {/* Navigation subtabs for Caisse vs Blank Form Generator */}
+      <div className="flex bg-slate-100 p-1 rounded-2xl max-w-md border select-none">
+        <button
+          type="button"
+          onClick={() => setActiveView('journal')}
+          className={`flex-1 py-2 px-4 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+            activeView === 'journal'
+              ? 'bg-white text-slate-900 shadow-sm ring-1 ring-black/5'
+              : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Wallet2 className="h-4 w-4 text-indigo-605" />
+          Journal & Budget de Caisse
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveView('generator')}
+          className={`flex-1 py-1.5 px-4 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+            activeView === 'generator'
+              ? 'bg-white text-slate-900 shadow-sm ring-1 ring-black/5'
+              : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <ClipboardList className="h-4 w-4 text-emerald-650" />
+          Formulaires Vierges <span className="bg-emerald-100 text-emerald-800 text-[9px] px-1.5 py-0.5 rounded-md font-black">Nouveau</span>
+        </button>
+      </div>
+
+      {activeView === 'generator' ? (
+        <ApeeBlankForms settings={settings} />
+      ) : (
+        <>
+          {/* Financial math visualizer */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono select-none">
         
         <div className="bg-gradient-to-br from-indigo-950 to-slate-900 text-white p-4.5 rounded-2xl border border-slate-800 space-y-1">
           <span className="text-[10px] text-slate-350 flex items-center gap-1">
@@ -633,7 +928,7 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
         <form onSubmit={handleSubmit} className="bg-slate-50/50 border border-slate-150 p-4.5 rounded-2xl space-y-4">
           <div className="border-b pb-2 flex justify-between items-center text-xs text-slate-800 font-bold select-none">
             <span>AJOUTER UNE NOUVELLE OPÉRATION BUDGETAIRE</span>
-            <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded text-[9px]">CAISSE APEE</span>
+            <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded text-[9px]">CAISSE {getApeeShortName(settings).toUpperCase()}</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -841,6 +1136,8 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
           </tbody>
         </table>
       </div>
+      </>
+      )}
 
       {/* Custom Confirmation Modal for Expenses */}
       {expenseToDeleteId && (() => {
@@ -903,7 +1200,7 @@ export default function ApeeFinancial({ expenses, onSaveExpense, onDeleteExpense
                 <div className="text-xs text-slate-655 flex items-start gap-2 bg-amber-50 text-amber-850 p-3.5 rounded-xl border border-amber-200">
                   <span className="shrink-0 mt-0.5 font-bold">⚠️ Impact Solde :</span>
                   <span>
-                    La suppression réajustera immédiatement les calculs de budget décaissé et le solde dynamique de la caisse d'association (APEE).
+                    La suppression réajustera immédiatement les calculs de budget décaissé et le solde dynamique de la caisse d'association ({getApeeShortName(settings)}).
                   </span>
                 </div>
               </div>

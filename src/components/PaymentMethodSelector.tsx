@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CreditCard, Smartphone, QrCode, ShieldCheck, CheckCircle2, ChevronRight, Sparkles, AlertCircle, Info } from 'lucide-react';
+import { CreditCard, Smartphone, QrCode, ShieldCheck, CheckCircle2, ChevronRight, Sparkles, AlertCircle, Info, HelpCircle } from 'lucide-react';
 import { Invoice } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -34,6 +34,7 @@ export default function PaymentMethodSelector({
   const [stepMessage, setStepMessage] = useState('');
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   // Auto-fill phone if parentPhone changes
   useEffect(() => {
@@ -59,16 +60,32 @@ export default function PaymentMethodSelector({
     return `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(payload)}&color=0f172a&bgcolor=ffffff&qzone=1`;
   };
 
-  const handlePaymentSubmit = async (e: React.FormEvent) => {
+  const handlePaymentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
+
+    if (paymentMethod === 'momo') {
+      if (!momoPhone || momoPhone.trim().length < 8) {
+        setError('Veuillez saisir un numéro de téléphone Mobile Money valide.');
+        return;
+      }
+    } else if (paymentMethod === 'card') {
+      if (!cardNumber || !expiry || !cvv || !cardholderName) {
+        setError('Veuillez remplir tous les champs de votre carte de crédit.');
+        return;
+      }
+    }
+
+    setShowConfirmModal(true);
+  };
+
+  const executePayment = async () => {
+    setShowConfirmModal(false);
     setProcessing(true);
     setError(null);
 
     try {
       if (paymentMethod === 'momo') {
-        if (!momoPhone || momoPhone.trim().length < 8) {
-          throw new Error('Veuillez saisir un numéro de téléphone Mobile Money valide.');
-        }
         const providerName = provider === 'mtn' ? 'MTN MoMo' : provider === 'orange' ? 'Orange Money' : 'Wave';
         
         setStepMessage(`Envoi de la demande de paiement de ${invoice.amount.toLocaleString()} FCFA sur ${momoPhone}...`);
@@ -88,13 +105,10 @@ export default function PaymentMethodSelector({
         setStepMessage(`Attente de confirmation et de détection par le scanner mobile...`);
         await new Promise(resolve => setTimeout(resolve, 1500));
 
-        setStepMessage(`Règlement reçu par le Trésor de l'APEE de l'établissement...`);
+        setStepMessage(`Règlement reçu par le Trésor de l'institution...`);
         await new Promise(resolve => setTimeout(resolve, 1000));
       } else {
         // Card payment
-        if (!cardNumber || !expiry || !cvv || !cardholderName) {
-          throw new Error('Veuillez remplir tous les champs de votre carte de crédit.');
-        }
         setStepMessage(`Communication cryptée SSL établie avec l'émetteur de la carte...`);
         await new Promise(resolve => setTimeout(resolve, 1500));
 
@@ -494,6 +508,64 @@ export default function PaymentMethodSelector({
           )}
         </AnimatePresence>
       </div>
+
+      {/* Confirmation Dialog before status changes to Paid */}
+      <AnimatePresence>
+        {showConfirmModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-51">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl w-full max-w-sm border border-slate-100 shadow-2xl p-6 text-center space-y-4"
+            >
+              <div className="h-12 w-12 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto">
+                <HelpCircle className="h-6 w-6" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-sm font-black text-slate-900 uppercase tracking-wide">
+                  Confirmer le règlement
+                </h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Êtes-vous sûr de vouloir marquer cette facture d'un montant de{" "}
+                  <strong className="text-indigo-700 font-mono font-extrabold bg-indigo-50 px-1.5 py-0.5 rounded">
+                    {invoice.amount.toLocaleString()} FCFA
+                  </strong>{" "}
+                  comme <strong className="text-emerald-705">PAYÉE</strong> ?
+                </p>
+                <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4 text-left space-y-1 text-[11px] text-slate-600">
+                  <p className="font-extrabold text-slate-800 truncate"> Libellé : {invoice.title}</p>
+                  <p className="font-mono text-slate-400 text-[10px]">Réf : {invoice.id.toUpperCase()}</p>
+                  <p className="text-slate-500 font-semibold">
+                    Mode : {paymentMethod === 'card' ? '💳 Carte Bancaire' : paymentMethod === 'momo' ? '📱 Mobile Money' : '📶 Code QR Mobile'}
+                  </p>
+                </div>
+                <p className="text-[10px] text-slate-400 font-medium font-sans">
+                  Cette action est définitive et mettra immédiatement à jour le registre comptable de l'établissement en marquant le statut à réglé.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmModal(false)}
+                  className="py-2.5 border border-slate-200 text-slate-500 text-xs font-bold rounded-xl hover:bg-slate-50 transition cursor-pointer"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  onClick={executePayment}
+                  className="py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <ShieldCheck className="h-4 w-4 text-white" />
+                  Oui, Confirmer
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

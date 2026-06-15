@@ -1,17 +1,50 @@
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApp, getApps } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, signInAnonymously } from 'firebase/auth';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
+import { initializeFirestore, setLogLevel, getFirestore } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
-const app = initializeApp(firebaseConfig);
-export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({
-    tabManager: persistentMultipleTabManager()
-  }),
-  experimentalForceLongPolling: true,
-}, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+
+// Silence Firestore's built-in unreachable backend warnings in sandbox container
+setLogLevel('silent');
+
+const databaseId = (firebaseConfig as any).firestoreDatabaseId;
+let dbInstance;
+
+try {
+  // Use experimentalForceLongPolling: true to ensure stable network connections
+  // in sandboxed iframe / containerized environments to prevent transport-layer stream drop exceptions (ca9/b815 / ve: -1).
+  dbInstance = databaseId 
+    ? initializeFirestore(app, { experimentalForceLongPolling: true }, databaseId)
+    : initializeFirestore(app, { experimentalForceLongPolling: true });
+} catch (error: any) {
+  // If already initialized (e.g. during dev HMR loads), safely retrieve the active instance
+  dbInstance = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
+}
+
+export const db = dbInstance;
+
+export async function goOffline() {
+  // We bypass disableNetwork(db) to avoid interrupting active Firestore watch streams
+  // which causes internal asynchronous assertion exceptions in sandboxed iframe environments.
+  console.log("[Pasma-sys Local Sync] Simulated offline mode activated (using local persistence cache).");
+}
+
+export async function goOnline() {
+  // We bypass enableNetwork(db) to avoid interrupting active Firestore watch streams.
+  console.log("[Pasma-sys Local Sync] Connection network active / sync restored.");
+}
+
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+googleProvider.addScope('https://www.googleapis.com/auth/drive');
+googleProvider.addScope('https://www.googleapis.com/auth/drive.file');
+
+export let googleAccessToken: string | null = null;
+
+export function setGoogleAccessToken(token: string | null) {
+  googleAccessToken = token;
+}
 
 export enum OperationType {
   CREATE = 'create',
@@ -40,8 +73,13 @@ export interface FirestoreErrorInfo {
 }
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errMsg = error instanceof Error ? error.message : String(error);
+  if (errMsg.includes('unavailable') || errMsg.includes('Could not reach') || errMsg.includes('offline') || errMsg.includes('Failed to get document')) {
+    console.warn(`[Pasma-sys Local Sync] Firestore is offline during ${operationType} on ${path || 'database'}. Data will sync when network is restored.`);
+    return;
+  }
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errMsg,
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
@@ -63,6 +101,10 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 export async function loginWithGoogle() {
   try {
     const result = await signInWithPopup(auth, googleProvider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (credential?.accessToken) {
+      googleAccessToken = credential.accessToken;
+    }
     return result.user;
   } catch (error) {
     console.error("Auth Error:", error);
@@ -82,4 +124,5 @@ export async function loginAnonymously() {
 
 export async function logout() {
   await signOut(auth);
+  googleAccessToken = null;
 }

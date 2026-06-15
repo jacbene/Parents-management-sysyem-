@@ -19,18 +19,20 @@ import {
   Info,
   ChevronRight,
   Sparkles,
-  ArrowRightLeft
+  ArrowRightLeft,
+  ArrowLeft
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { doc, setDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
+import { useLanguage } from '../utils/TranslationContext';
 
 interface MessageInboxProps {
   messages: Message[];
   students: Student[];
   onAddMessage: (newMsg: Message) => void;
   apeeParents: ApeeParent[];
-  portalUserRole?: 'manager' | 'parent' | null;
+  portalUserRole?: 'manager' | 'parent' | 'teacher' | null;
   apeeSettings?: ApeeSettings;
 }
 
@@ -42,7 +44,17 @@ export default function MessageInbox({
   portalUserRole = 'parent',
   apeeSettings 
 }: MessageInboxProps) {
-  const isAdmin = portalUserRole === 'manager';
+  const { t } = useLanguage();
+  const isAdmin = portalUserRole === 'manager' || portalUserRole === 'teacher';
+
+  const loggedInTeacher = (() => {
+    try {
+      const t = localStorage.getItem('portal_teacher_details');
+      return t ? JSON.parse(t) : null;
+    } catch (e) {
+      return null;
+    }
+  })();
 
   // Determine classroom list from students or settings
   const classrooms = Array.from(new Set(students.map(s => s.classRoom))).filter(Boolean);
@@ -55,6 +67,9 @@ export default function MessageInbox({
   // Selected thread identification
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
 
+  // Mobile responsive layout view toggle (list vs chat)
+  const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
+
   // Local message inputs
   const [textInput, setTextInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -62,6 +77,9 @@ export default function MessageInbox({
   // Custom sender identity selection for Administration
   const [adminSenderAlias, setAdminSenderAlias] = useState<'Director' | 'PedManager' | 'ClassTeacher'>('PedManager');
   const [customSenderName, setCustomSenderName] = useState('');
+
+  // Custom recipient role selection for Parents
+  const [parentRecipientRole, setParentRecipientRole] = useState<'Teacher' | 'Censor' | 'Director'>('Teacher');
 
   // Phone action simulation overlay states
   const [simulatedMobileSms, setSimulatedMobileSms] = useState<{
@@ -76,11 +94,12 @@ export default function MessageInbox({
 
   // Auto-init selected student
   useEffect(() => {
-    if (!selectedStudentId && students.length > 0) {
+    const isValidId = students.some(s => s.id === selectedStudentId);
+    if ((!selectedStudentId || !isValidId) && students.length > 0) {
       if (isAdmin) {
         // For admin, select the student with most recent conversation or first active student
         const recentMsg = [...messages].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
-        const initialId = recentMsg ? recentMsg.studentId : (students[0]?.id || '');
+        const initialId = (recentMsg && students.some(s => s.id === recentMsg.studentId)) ? recentMsg.studentId : (students[0]?.id || '');
         setSelectedStudentId(initialId);
       } else {
         setSelectedStudentId(students[0]?.id || '');
@@ -131,6 +150,17 @@ export default function MessageInbox({
   };
 
   const currentTeacherInfo = getStudentTeacherInfo(currentStudent);
+
+  const directorInfo = {
+    name: apeeSettings?.directorName || 'Directeur / Proviseur d\'Établissement',
+    phone: apeeSettings?.directorPhone || '677 000 001',
+    email: apeeSettings?.directorEmail || 'direction@pasma.sys'
+  };
+
+  const censorInfo = {
+    name: apeeSettings?.pedManagerName || apeeSettings?.censeurName || apeeSettings?.surveillantName || 'Censeur & Surveillant Général',
+    phone: apeeSettings?.pedManagerPhone || apeeSettings?.censeurPhone || apeeSettings?.surveillantPhone || '655 000 002',
+  };
 
   // Filter messages by selected student conversation thread
   const threadMessages = messages
@@ -194,12 +224,29 @@ export default function MessageInbox({
     // Resolve teacher/administrator display name
     let senderName = currentTeacherInfo.name;
     if (isAdmin) {
-      if (adminSenderAlias === 'PedManager') {
-        senderName = apeeSettings?.pedManagerName || 'Responsable Pédagogique';
+      if (portalUserRole === 'teacher' && loggedInTeacher) {
+        senderName = loggedInTeacher.name;
+      } else if (adminSenderAlias === 'PedManager') {
+        senderName = censorInfo.name;
       } else if (adminSenderAlias === 'Director') {
-        senderName = apeeSettings?.directorName || 'Administration Directeur';
+        senderName = directorInfo.name;
       } else if (customSenderName.trim()) {
         senderName = customSenderName.trim();
+      }
+    }
+
+    let recipientName = '';
+    let recipientRole = '';
+    if (!isAdmin) {
+      if (parentRecipientRole === 'Teacher') {
+        recipientName = currentTeacherInfo.name;
+        recipientRole = 'Professeur Principal';
+      } else if (parentRecipientRole === 'Censor') {
+        recipientName = censorInfo.name;
+        recipientRole = 'Censeur / Surveillant Général';
+      } else if (parentRecipientRole === 'Director') {
+        recipientName = directorInfo.name;
+        recipientRole = 'Directeur / Proviseur';
       }
     }
 
@@ -210,7 +257,13 @@ export default function MessageInbox({
       senderType: senderTypeToUse,
       content: textInput,
       timestamp: new Date().toISOString(),
-      teacherName: senderName
+      teacherName: isAdmin ? senderName : undefined,
+      // Extra properties using bracket index signatures or cast to avoid TS compilation noise
+      ...({
+        recipientName: !isAdmin ? recipientName : undefined,
+        recipientRole: !isAdmin ? recipientRole : undefined,
+        senderRole: isAdmin ? (portalUserRole === 'teacher' ? 'Enseignant Titulaire' : adminSenderAlias === 'PedManager' ? 'Censeur / Surveillant' : adminSenderAlias === 'Director' ? 'Directeur / Proviseur' : 'Professeur principal') : undefined
+      } as any)
     };
 
     try {
@@ -267,33 +320,33 @@ export default function MessageInbox({
                 <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-xs">
                   <Smartphone className="h-5 w-5" />
                 </div>
-                <span>Espace Messagerie Académique & Relations Mobiles</span>
+                <span>{t('tab.messages')}</span>
               </>
             ) : (
               <>
                 <div className="p-2 bg-indigo-100 text-indigo-700 rounded-xl">
                   <MessageSquare className="h-5 w-5" />
                 </div>
-                <span>Messagerie Directe Parents-Enseignants</span>
+                <span>{t('tab.messages')}</span>
               </>
             )}
           </h2>
           <p className="text-sm text-slate-550 pt-1">
             {isAdmin 
-              ? "Console d'échange de l'administration et des professeurs titulaires avec les familles."
-              : "Échangez directement avec les professeurs principaux et l'administration scolaire."}
+              ? t('msg.console_admin')
+              : t('msg.console_parent')}
           </p>
         </div>
 
         {/* Legend block display role */}
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Session active :</span>
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('msg.active_session')}</span>
           <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
             isAdmin 
               ? 'bg-amber-120 text-amber-900 border border-amber-200 shadow-3xs' 
               : 'bg-indigo-50 text-indigo-700 border border-indigo-100'
           }`}>
-            {isAdmin ? '🏫 Administration / Enseignants' : '👤 Espace Parent'}
+            {isAdmin ? t('msg.role_admin') : t('msg.role_parent')}
           </span>
         </div>
       </div>
@@ -308,10 +361,12 @@ export default function MessageInbox({
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 border border-slate-150 rounded-3xl overflow-hidden bg-slate-50 min-h-[580px] max-h-[700px]">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 border border-slate-150 rounded-3xl overflow-hidden bg-slate-50 min-h-[580px] h-[650px] lg:h-[700px]">
           
           {/* LEFT COLUMN: CONVERSATION LIST FOR TEACHERS / OR CHILD SWITCHER FOR PARENTS */}
-          <div className="bg-white border-r border-slate-150 flex flex-col justify-between overflow-hidden">
+          <div className={`bg-white border-r border-slate-150 flex flex-col justify-between overflow-hidden h-full ${
+            mobileView === 'chat' ? 'hidden lg:flex' : 'flex h-full'
+          }`}>
             
             {/* ADMIN ONLY SEARCHBARS & FILTERS */}
             {isAdmin ? (
@@ -320,7 +375,7 @@ export default function MessageInbox({
                   <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                   <input
                     type="text"
-                    placeholder="Élève, parent, ou téléphone..."
+                    placeholder={t('msg.search_placeholder')}
                     value={adminSearch}
                     onChange={(e) => setAdminSearch(e.target.value)}
                     className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500 bg-white"
@@ -333,7 +388,7 @@ export default function MessageInbox({
                     onChange={(e) => setSelectedClassroom(e.target.value)}
                     className="flex-1 px-2.5 py-1.5 border border-slate-200 rounded-xl text-[11px] font-bold bg-white"
                   >
-                    <option value="all">Toutes les classes ({classrooms.length})</option>
+                    <option value="all">{t('msg.all_classes', { count: classrooms.length })}</option>
                     {classrooms.map(cls => (
                       <option key={cls} value={cls}>{cls}</option>
                     ))}
@@ -348,7 +403,7 @@ export default function MessageInbox({
                         : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-50'
                     }`}
                   >
-                    Échanges actifs
+                    {t('msg.filter_active')}
                   </button>
                 </div>
               </div>
@@ -364,14 +419,28 @@ export default function MessageInbox({
                       <button
                         key={s.id}
                         type="button"
-                        onClick={() => setSelectedStudentId(s.id)}
+                        onClick={() => {
+                          setSelectedStudentId(s.id);
+                          setMobileView('chat');
+                        }}
                         className={`w-full p-2.5 rounded-xl border text-left flex items-center gap-2.5 transition cursor-pointer ${
                           isSelected 
                             ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs' 
                             : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                         }`}
                       >
-                        <span className="text-xl shrink-0">{s.avatar || '🎓'}</span>
+                        {s.avatar && (s.avatar.startsWith('data:image') || s.avatar.startsWith('http') || s.avatar.startsWith('/')) ? (
+                          <div className="w-7 h-7 rounded-lg overflow-hidden shrink-0 border border-slate-200">
+                            <img 
+                              src={s.avatar} 
+                              alt="" 
+                              className="w-full h-full object-cover" 
+                              referrerPolicy="no-referrer" 
+                            />
+                          </div>
+                        ) : (
+                          <span className="text-xl shrink-0">{s.avatar || '🎓'}</span>
+                        )}
                         <div className="min-w-0 flex-1">
                           <h4 className="text-xs font-bold leading-none truncate">{s.name}</h4>
                           <span className={`text-[9px] font-mono leading-none ${isSelected ? 'text-indigo-200' : 'text-slate-400'}`}>
@@ -408,14 +477,28 @@ export default function MessageInbox({
                       <button
                         key={s.id}
                         type="button"
-                        onClick={() => setSelectedStudentId(s.id)}
+                        onClick={() => {
+                          setSelectedStudentId(s.id);
+                          setMobileView('chat');
+                        }}
                         className={`w-full p-3.5 text-left flex gap-3 transition cursor-pointer border-l-3 ${
                           isSelected 
-                            ? 'bg-indigo-50/50 border-l-indigo-600 text-indigo-950 shadow-2xs' 
+                            ? 'bg-indigo-50/50 border-l-indigo-600 text-indigo-955 shadow-2xs' 
                             : 'border-l-transparent text-slate-700 hover:bg-slate-50/60'
                         }`}
                       >
-                        <span className="text-2xl pt-1 shrink-0">{s.avatar || '👦'}</span>
+                        {s.avatar && (s.avatar.startsWith('data:image') || s.avatar.startsWith('http') || s.avatar.startsWith('/')) ? (
+                          <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-slate-200 mt-0.5">
+                            <img 
+                              src={s.avatar} 
+                              alt="" 
+                              className="w-full h-full object-cover" 
+                              referrerPolicy="no-referrer" 
+                            />
+                          </div>
+                        ) : (
+                          <span className="text-2xl pt-1 shrink-0">{s.avatar || '👦'}</span>
+                        )}
                         <div className="min-w-0 flex-1 space-y-1">
                           <div className="flex items-center justify-between gap-1">
                             <h4 className="text-xs font-black truncate">{s.name}</h4>
@@ -450,7 +533,7 @@ export default function MessageInbox({
                 <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Responsables Référents</h3>
                 
                 {/* 1. Classroom Main Teacher */}
-                <div className="p-3 bg-white rounded-2xl border border-slate-150 space-y-2 text-left">
+                <div className="p-3 bg-white rounded-2xl border border-slate-150 space-y-2 text-left shadow-2xs">
                   <div className="flex items-center gap-2">
                     <span className="text-xl">🧑‍🏫</span>
                     <div className="min-w-0">
@@ -463,8 +546,8 @@ export default function MessageInbox({
                   <div className="pt-2 border-t border-slate-100 flex flex-wrap gap-2 text-[10px] font-mono select-none">
                     <a
                       href={`tel:${currentTeacherInfo.phone}`}
-                      className="px-2 py-1 bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 rounded-lg flex items-center gap-1 cursor-pointer transition"
-                      title="Appeler l'enseignant par téléphone"
+                      className="px-2 py-1 bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 rounded-lg flex items-center gap-1 cursor-pointer transition font-bold"
+                      title="Appeler l'enseignant"
                     >
                       <Phone className="h-3 w-3" /> Appeler
                     </a>
@@ -480,27 +563,64 @@ export default function MessageInbox({
                   </div>
                 </div>
 
-                {/* 2. Educational Superintendent Details */}
-                <div className="p-3 bg-white rounded-2xl border border-slate-150 space-y-2.5 text-left">
+                {/* 2. Educational Superintendent Details (Censeur & Surveillant) */}
+                <div className="p-3 bg-white rounded-2xl border border-slate-150 space-y-2 text-left shadow-2xs">
                   <div className="flex items-center gap-2">
-                    <span className="text-xl">🏛️</span>
-                    <div>
-                      <h4 className="text-xs font-black text-slate-850 truncate">
-                        {apeeSettings?.pedManagerName || 'Responsable Pédagogique'}
-                      </h4>
-                      <p className="text-[9px] text-slate-400">Administration & Discipline</p>
+                    <span className="text-xl">🗣️</span>
+                    <div className="min-w-0">
+                      <h4 className="text-xs font-black text-slate-800 truncate">{censorInfo.name}</h4>
+                      <p className="text-[9px] text-slate-400 font-medium">Censeur / Surveillant Général</p>
                     </div>
                   </div>
-                  {apeeSettings?.pedManagerPhone && (
-                    <div className="pt-1.5 border-t border-slate-100 flex gap-2 text-[10px] font-mono select-none">
-                      <a
-                        href={`tel:${apeeSettings.pedManagerPhone}`}
-                        className="px-2 py-1 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg flex items-center gap-1 cursor-pointer transition"
-                      >
-                        <Phone className="h-3 w-3" /> Administration
-                      </a>
+                  
+                  <div className="pt-2 border-t border-slate-100 flex flex-wrap gap-2 text-[10px] font-mono select-none">
+                    <a
+                      href={`tel:${censorInfo.phone}`}
+                      className="px-2 py-1 bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 rounded-lg flex items-center gap-1 cursor-pointer transition font-bold"
+                      title="Appeler le censeur ou surveillant"
+                    >
+                      <Phone className="h-3 w-3" /> Appeler
+                    </a>
+                    
+                    <a
+                      href={formatWhatsAppUri(censorInfo.phone, `Bonjour, je suis le parent de l'élève ${currentStudent?.name || ''}.`)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2 py-1 bg-green-50 hover:bg-green-100 text-green-700 rounded-lg flex items-center gap-1 cursor-pointer transition font-bold"
+                    >
+                      <MessageCircle className="h-3 w-3" /> WhatsApp
+                    </a>
+                  </div>
+                </div>
+
+                {/* 3. Directeur / Proviseur */}
+                <div className="p-3 bg-white rounded-2xl border border-slate-150 space-y-2 text-left shadow-2xs">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">🏛️</span>
+                    <div className="min-w-0">
+                      <h4 className="text-xs font-black text-slate-800 truncate">{directorInfo.name}</h4>
+                      <p className="text-[9px] text-slate-400 font-medium">Directeur / Proviseur</p>
                     </div>
-                  )}
+                  </div>
+                  
+                  <div className="pt-2 border-t border-slate-100 flex flex-wrap gap-2 text-[10px] font-mono select-none">
+                    <a
+                      href={`tel:${directorInfo.phone}`}
+                      className="px-2 py-1 bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 rounded-lg flex items-center gap-1 cursor-pointer transition font-bold"
+                      title="Appeler le Directeur ou Proviseur"
+                    >
+                      <Phone className="h-3 w-3" /> Appeler
+                    </a>
+                    
+                    <a
+                      href={formatWhatsAppUri(directorInfo.phone, `Bonjour, je suis le parent de l'élève ${currentStudent?.name || ''}.`)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2 py-1 bg-green-50 hover:bg-green-100 text-green-700 rounded-lg flex items-center gap-1 cursor-pointer transition font-bold"
+                    >
+                      <MessageCircle className="h-3 w-3" /> WhatsApp
+                    </a>
+                  </div>
                 </div>
               </div>
             )}
@@ -513,14 +633,40 @@ export default function MessageInbox({
           </div>
 
           {/* MAIN COLUMN & RIGHT SIDE COLUMN DETAILS (COMPOUND) */}
-          <div className="lg:col-span-2 flex flex-col justify-between h-full bg-slate-50 relative overflow-hidden">
+          <div className={`lg:col-span-2 flex flex-col justify-between bg-slate-50 relative overflow-hidden h-full ${
+            mobileView === 'list' ? 'hidden lg:flex' : 'flex h-full'
+          }`}>
             
             {/* THREAD HEADER */}
             <div className="p-4 bg-white border-b border-slate-150 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shrink-0">
               <div className="flex items-center gap-3">
-                <span className="text-3xl bg-slate-100 p-1.5 rounded-2xl block shrink-0">
-                  {currentStudent?.avatar || '👦'}
-                </span>
+                {/* Mobile Back Button to list of discussions */}
+                {mobileView === 'chat' && (
+                  <button
+                    type="button"
+                    onClick={() => setMobileView('list')}
+                    className="lg:hidden p-1.5 -ml-1 text-slate-500 hover:text-indigo-600 hover:bg-slate-100 rounded-xl transition cursor-pointer flex items-center gap-1 font-black text-xs"
+                    title={t('msg.back')}
+                  >
+                    <ArrowLeft className="h-4.5 w-4.5" />
+                    <span>{t('msg.back')}</span>
+                  </button>
+                )}
+
+                {currentStudent?.avatar && (currentStudent.avatar.startsWith('data:image') || currentStudent.avatar.startsWith('http') || currentStudent.avatar.startsWith('/')) ? (
+                  <div className="w-12 h-12 bg-slate-100 rounded-2xl overflow-hidden block shrink-0 border border-slate-200">
+                    <img 
+                      src={currentStudent.avatar} 
+                      alt="" 
+                      className="w-full h-full object-cover" 
+                      referrerPolicy="no-referrer" 
+                    />
+                  </div>
+                ) : (
+                  <span className="text-3xl bg-slate-100 p-1.5 rounded-2xl block shrink-0">
+                    {currentStudent?.avatar || '👦'}
+                  </span>
+                )}
                 <div>
                   <div className="flex items-center gap-1.5">
                     <h3 className="font-black text-sm text-slate-900 leading-tight">
@@ -546,7 +692,7 @@ export default function MessageInbox({
               {/* PHONE DISPATCHER BOX (DEEP TELEPHONY INTERACTION CARD) */}
               {matchingParent && (
                 <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-auto">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest hidden xl:inline">Contact Direct :</span>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest hidden xl:inline">{t('msg.contact_direct')}</span>
                   
                   {/* Real Phone dialing */}
                   <a
@@ -555,7 +701,7 @@ export default function MessageInbox({
                     title="Déclencher un appel vocal direct"
                   >
                     <Phone className="h-3.5 w-3.5 text-emerald-600" />
-                    <span>Appeler</span>
+                    <span>{t('msg.call')}</span>
                   </a>
 
                   {/* SMS dispatch */}
@@ -589,7 +735,7 @@ export default function MessageInbox({
               {threadMessages.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-center p-8 text-slate-400">
                   <MessageSquare className="h-12 w-12 text-slate-300 stroke-1 mb-2 animate-pulse" />
-                  <p className="text-xs font-bold text-slate-700">Aucun message échangé pour le moment.</p>
+                  <p className="text-xs font-bold text-slate-700">{t('msg.no_messages')}</p>
                   <p className="text-[10px] text-slate-500 mt-1 max-w-xs mx-auto">
                     {isAdmin 
                       ? "Vous pouvez envoyer un premier mot d'information au parent d'élève ci-dessous."
@@ -617,11 +763,33 @@ export default function MessageInbox({
                             ? 'bg-indigo-600 text-white rounded-tr-none'
                             : 'bg-white text-slate-800 border border-slate-150 rounded-tl-none'
                         }`}>
-                          <div className={`text-[9px] font-bold uppercase tracking-wider mb-1 flex items-center justify-between gap-4 opacity-75 ${
-                            isMyOwn ? 'text-indigo-200' : 'text-slate-400'
+                          <div className={`text-[9px] font-bold uppercase tracking-wider mb-1 flex items-center justify-between gap-4 opacity-90 ${
+                            isMyOwn ? 'text-indigo-100' : 'text-slate-550'
                           }`}>
-                            <span>
-                              {isParentMsg ? 'Parent (Tuteur)' : msg.teacherName || 'Enseignant principal'}
+                            <span className="flex items-center gap-1 flex-wrap">
+                              {isParentMsg ? (
+                                <>
+                                  <span className="text-amber-500">👤</span>
+                                  <span>Tuteur</span>
+                                  {(msg as any).recipientRole && (
+                                    <span className={`text-[8px] font-black uppercase tracking-widest rounded-md px-1.5 py-0.5 ${
+                                      isMyOwn ? 'bg-indigo-700 text-indigo-200 border border-indigo-500/30' : 'bg-indigo-50 text-indigo-700 border border-indigo-100/50'
+                                    }`}>
+                                      ➔ {(msg as any).recipientRole}
+                                    </span>
+                                  )}
+                                </>
+                              ) : (
+                                <>
+                                  <span className="text-indigo-500">🏫</span>
+                                  <span>{(msg as any).senderRole || 'Prof. principal'}</span>
+                                  {msg.teacherName && (
+                                    <span className="font-sans text-[8px] font-semibold lowercase opacity-75">
+                                      ({msg.teacherName})
+                                    </span>
+                                  )}
+                                </>
+                              )}
                             </span>
                             <span className="font-mono font-normal">
                               {new Date(msg.timestamp).toLocaleTimeString('fr-FR', { hour: 'numeric', minute: '2-digit' })}
@@ -668,9 +836,9 @@ export default function MessageInbox({
                           : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-100'
                       }`}
                     >
-                      🗣️ Resp. Pédagogique ({apeeSettings?.pedManagerName || 'SGE'})
+                      🗣️ Resp. Pédagogique ({censorInfo.name})
                     </button>
-
+ 
                     <button
                       type="button"
                       onClick={() => setAdminSenderAlias('ClassTeacher')}
@@ -683,7 +851,7 @@ export default function MessageInbox({
                     >
                       🧑‍🏫 Prof. principal ({currentTeacherInfo.name})
                     </button>
-
+ 
                     <button
                       type="button"
                       onClick={() => setAdminSenderAlias('Director')}
@@ -693,7 +861,57 @@ export default function MessageInbox({
                           : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-100'
                       }`}
                     >
-                      🏛️ Direction / Censeur ({apeeSettings?.directorName || 'Directeur'})
+                      🏛️ Direction / Censeur ({directorInfo.name})
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* PARENT RECIPIENT SWITCH PANEL */}
+              {!isAdmin && currentStudent && (
+                <div className="mb-3 px-3 py-2 bg-slate-50 rounded-xl border border-slate-150 flex flex-wrap items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-1.5">
+                    <ArrowRightLeft className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                    <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
+                      Contacter l'officiel :
+                    </span>
+                  </div>
+                  
+                  <div className="flex flex-wrap gap-1.5 text-[10px] font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setParentRecipientRole('Teacher')}
+                      className={`px-2 py-1 rounded-lg border transition cursor-pointer flex items-center gap-1 ${
+                        parentRecipientRole === 'Teacher'
+                          ? 'bg-indigo-600 border-indigo-600 text-white shadow-3xs'
+                          : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-100'
+                      }`}
+                    >
+                      🧑‍🏫 Prof. principal ({currentTeacherInfo.name})
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setParentRecipientRole('Censor')}
+                      className={`px-2 py-1 rounded-lg border transition cursor-pointer flex items-center gap-1 ${
+                        parentRecipientRole === 'Censor'
+                          ? 'bg-indigo-600 border-indigo-600 text-white shadow-3xs'
+                          : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-100'
+                      }`}
+                    >
+                      🗣️ Censeur / Surveillant ({censorInfo.name})
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setParentRecipientRole('Director')}
+                      className={`px-2 py-1 rounded-lg border transition cursor-pointer flex items-center gap-1 ${
+                        parentRecipientRole === 'Director'
+                          ? 'bg-indigo-600 border-indigo-600 text-white shadow-3xs'
+                          : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-100'
+                      }`}
+                    >
+                      🏛️ Directeur / Proviseur ({directorInfo.name})
                     </button>
                   </div>
                 </div>
@@ -707,8 +925,12 @@ export default function MessageInbox({
                   onChange={(e) => setTextInput(e.target.value)}
                   placeholder={
                     isAdmin 
-                      ? `Écrire au parent de ${currentStudent?.name || "l'élève"}...` 
-                      : `Poser une question à ${currentTeacherInfo.name || "l'enseignant"}...`
+                      ? t('msg.write_to_parent', { name: currentStudent?.name || (t('header.role.parent') === 'Parent Area' ? 'pupil' : "l'élève") })
+                      : parentRecipientRole === 'Teacher' 
+                        ? t('msg.write_to_teacher', { name: currentStudent?.name || (t('header.role.parent') === 'Parent Area' ? 'pupil' : "l'élève"), teacher: currentTeacherInfo.name })
+                        : parentRecipientRole === 'Censor'
+                          ? t('msg.write_to_censor', { censor: censorInfo.name })
+                          : t('msg.write_to_director', { director: directorInfo.name })
                   }
                   className="flex-1 px-4 py-2 border border-slate-200 rounded-2xl text-xs sm:text-sm focus:outline-hidden focus:border-indigo-500 bg-slate-50 focus:bg-white text-slate-800"
                 />

@@ -1,18 +1,26 @@
 import React from 'react';
-import { Landmark, TrendingUp, Users, GraduationCap, Percent, AlertCircle, Coins, ArrowRight, Sparkles } from 'lucide-react';
+import { Landmark, TrendingUp, Users, GraduationCap, Percent, AlertCircle, Coins, ArrowRight, Sparkles, Search, Activity, History, Plus, Wallet2 } from 'lucide-react';
 import { ComposedChart, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend, Cell, Line, ReferenceLine, PieChart, Pie } from 'recharts';
-import { ApeeParent, ApeeExpense, ApeeSettings } from '../../types';
+import { ApeeParent, ApeeExpense, ApeeSettings, ApeeActivityLog, ApeeOtherRevenue } from '../../types';
 import ApeeFinancialOverview from './ApeeFinancialOverview';
+import { useLanguage } from '../../utils/TranslationContext';
 
 interface ApeeDashboardProps {
   parents: ApeeParent[];
   expenses: ApeeExpense[];
   settings: ApeeSettings;
   onNavigate: (tab: string) => void;
+  logs?: ApeeActivityLog[];
+  otherRevenues?: ApeeOtherRevenue[];
 }
 
-export default function ApeeDashboard({ parents, expenses, settings, onNavigate }: ApeeDashboardProps) {
+export default function ApeeDashboard({ parents, expenses, settings, onNavigate, logs = [], otherRevenues = [] }: ApeeDashboardProps) {
+  const { t, language } = useLanguage();
   const [isMounted, setIsMounted] = React.useState(false);
+  const [searchLogQuery, setSearchLogQuery] = React.useState('');
+  const [selectedActionFilter, setSelectedActionFilter] = React.useState('all');
+  const [visibleLogsCount, setVisibleLogsCount] = React.useState(10);
+  
   React.useEffect(() => {
     setIsMounted(true);
   }, []);
@@ -20,18 +28,29 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate 
   // Calculations
   const parentsCount = parents.length;
   const pupilsCount = parents.reduce((sum, p) => sum + p.students.length, 0);
+  const expectedStudents = settings.expectedStudents || 100;
+  const expectedParentCotisations = expectedStudents * (settings.cotisationAmount || 12500);
   
-  const totalDueAmount = parents.reduce((sum, p) => sum + p.totalDue, 0);
+  const totalDueAmount = expectedParentCotisations;
   const honorary = settings.honoraryContributions || 0;
   const subventions = settings.subventionsAndAids || 0;
-  const totalPaidRevenue = parents.reduce((sum, p) => sum + p.totalPaid, 0) + honorary + subventions;
+  const financialGoal = settings.financialGoal || (expectedParentCotisations + honorary + subventions);
+
+  const actualParentsPaid = parents.reduce((sum, p) => sum + p.totalPaid, 0);
+  const actualHonorary = otherRevenues && otherRevenues.length > 0
+    ? otherRevenues.filter(r => r.status === 'membre_honneur').reduce((sum, r) => sum + r.amount, 0)
+    : (settings.actualHonoraryContributions || 0);
+  const actualSubventions = otherRevenues && otherRevenues.length > 0
+    ? otherRevenues.filter(r => r.status === 'institution' || r.status === 'autre').reduce((sum, r) => sum + r.amount, 0)
+    : (settings.actualSubventionsAndAids || 0);
+  const totalPaidRevenue = actualParentsPaid + actualHonorary + actualSubventions;
   
-  const totalDeficit = Math.max(0, totalDueAmount - parents.reduce((sum, p) => sum + p.totalPaid, 0));
-  const realizationRate = totalDueAmount > 0 ? (parents.reduce((sum, p) => sum + p.totalPaid, 0) / totalDueAmount) * 100 : 0;
+  const totalDeficit = Math.max(0, financialGoal - totalPaidRevenue);
+  const realizationRate = financialGoal > 0 ? (totalPaidRevenue / financialGoal) * 100 : 0;
   
   // Progress against the APEE General Financial Goal Target
-  const goalPercent = settings.financialGoal > 0 ? Math.min(100, (totalPaidRevenue / settings.financialGoal) * 100) : 0;
-  const averagePayment = parentsCount > 0 ? parents.reduce((sum, p) => sum + p.totalPaid, 0) / parentsCount : 0;
+  const goalPercent = financialGoal > 0 ? Math.min(100, (totalPaidRevenue / financialGoal) * 100) : 0;
+  const averagePayment = parentsCount > 0 ? actualParentsPaid / parentsCount : 0;
 
   // Expenses summary
   const totalExecutedExpenses = expenses
@@ -88,10 +107,15 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate 
   });
 
   // Map month names
-  const monthNames: { [m: string]: string } = {
+  const monthNamesFR: { [m: string]: string } = {
     '01': 'Jan', '02': 'Fév', '03': 'Mar', '04': 'Avr', '05': 'Mai', '06': 'Juin',
     '07': 'Juil', '08': 'Août', '09': 'Sept', '10': 'Oct', '11': 'Nov', '12': 'Déc'
   };
+  const monthNamesEN: { [m: string]: string } = {
+    '01': 'Jan', '02': 'Feb', '03': 'Mar', '04': 'Apr', '05': 'May', '06': 'Jun',
+    '07': 'Jul', '08': 'Aug', '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dec'
+  };
+  const monthNames = language === 'en' ? monthNamesEN : monthNamesFR;
 
   const monthlyChartData = Object.keys(monthlyDataMap)
     .sort()
@@ -136,15 +160,15 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate 
 
   const fallbackGoal = settings.financialGoal || 5000000;
   const displayProgressionData = progressionData.length > 0 ? progressionData : [
-    { name: 'Sept 2025', "Collecte Mensuelle": Math.round(fallbackGoal * 0.12), "Cumul Recouvré": Math.round(fallbackGoal * 0.12), "Objectif Financier": fallbackGoal },
-    { name: 'Oct 2025', "Collecte Mensuelle": Math.round(fallbackGoal * 0.20), "Cumul Recouvré": Math.round(fallbackGoal * 0.32), "Objectif Financier": fallbackGoal },
-    { name: 'Nov 2025', "Collecte Mensuelle": Math.round(fallbackGoal * 0.15), "Cumul Recouvré": Math.round(fallbackGoal * 0.47), "Objectif Financier": fallbackGoal },
-    { name: 'Déc 2025', "Collecte Mensuelle": Math.round(fallbackGoal * 0.08), "Cumul Recouvré": Math.round(fallbackGoal * 0.55), "Objectif Financier": fallbackGoal },
-    { name: 'Jan 2026', "Collecte Mensuelle": Math.round(fallbackGoal * 0.18), "Cumul Recouvré": Math.round(fallbackGoal * 0.73), "Objectif Financier": fallbackGoal },
-    { name: 'Fév 2026', "Collecte Mensuelle": Math.round(fallbackGoal * 0.10), "Cumul Recouvré": Math.round(fallbackGoal * 0.83), "Objectif Financier": fallbackGoal },
-    { name: 'Mar 2026', "Collecte Mensuelle": Math.round(fallbackGoal * 0.08), "Cumul Recouvré": Math.round(fallbackGoal * 0.91), "Objectif Financier": fallbackGoal },
-    { name: 'Avr 2026', "Collecte Mensuelle": Math.round(fallbackGoal * 0.05), "Cumul Recouvré": Math.round(fallbackGoal * 0.96), "Objectif Financier": fallbackGoal },
-    { name: 'Mai 2026', "Collecte Mensuelle": Math.round(fallbackGoal * 0.04), "Cumul Recouvré": Math.round(fallbackGoal * 1.00), "Objectif Financier": fallbackGoal },
+    { name: 'Sept 2025', "Collecte Mensuelle": 0, "Cumul Recouvré": 0, "Objectif Financier": fallbackGoal },
+    { name: 'Oct 2025', "Collecte Mensuelle": 0, "Cumul Recouvré": 0, "Objectif Financier": fallbackGoal },
+    { name: 'Nov 2025', "Collecte Mensuelle": 0, "Cumul Recouvré": 0, "Objectif Financier": fallbackGoal },
+    { name: 'Déc 2025', "Collecte Mensuelle": 0, "Cumul Recouvré": 0, "Objectif Financier": fallbackGoal },
+    { name: 'Jan 2026', "Collecte Mensuelle": 0, "Cumul Recouvré": 0, "Objectif Financier": fallbackGoal },
+    { name: 'Fév 2026', "Collecte Mensuelle": 0, "Cumul Recouvré": 0, "Objectif Financier": fallbackGoal },
+    { name: 'Mar 2026', "Collecte Mensuelle": 0, "Cumul Recouvré": 0, "Objectif Financier": fallbackGoal },
+    { name: 'Avr 2026', "Collecte Mensuelle": 0, "Cumul Recouvré": 0, "Objectif Financier": fallbackGoal },
+    { name: 'Mai 2026', "Collecte Mensuelle": 0, "Cumul Recouvré": 0, "Objectif Financier": fallbackGoal },
   ];
 
   // Class level breakdown
@@ -176,42 +200,50 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate 
 
   // If no data yet, create starter mock labels
   const displayClassData = classChartData.length > 0 ? classChartData : [
-    { name: '6ème', "Payé (FCFA)": 150000, "Exigible (FCFA)": 250000, Élèves: 10 },
-    { name: '5ème', "Payé (FCFA)": 100000, "Exigible (FCFA)": 200000, Élèves: 8 },
-    { name: '4ème', "Payé (FCFA)": 75000, "Exigible (FCFA)": 125000, Élèves: 5 },
-    { name: '3ème', "Payé (FCFA)": 50000, "Exigible (FCFA)": 150000, Élèves: 6 },
+    { name: '6ème', "Payé (FCFA)": 0, "Exigible (FCFA)": 0, Élèves: 0 },
+    { name: '5ème', "Payé (FCFA)": 0, "Exigible (FCFA)": 0, Élèves: 0 },
+    { name: '4ème', "Payé (FCFA)": 0, "Exigible (FCFA)": 0, Élèves: 0 },
+    { name: '3ème', "Payé (FCFA)": 0, "Exigible (FCFA)": 0, Élèves: 0 },
   ];
 
   const statCards = [
     {
       id: 'stat_revenue',
-      title: 'Dépôts APEE Enregistrés',
-      value: `${totalPaidRevenue.toLocaleString()} FCFA`,
-      description: `Cotis: ${parents.reduce((sum, p) => sum + p.totalPaid, 0).toLocaleString()} F | Hors-Cotis: ${(honorary + subventions).toLocaleString()} F`,
+      title: language === 'en' ? 'Parent Contribution Revenues' : 'Recettes Cotisations Parents',
+      value: `${actualParentsPaid.toLocaleString()} ${settings.currency || 'FCFA'}`,
+      description: language === 'en' ? `Household Target: ${totalDueAmount.toLocaleString()} ${settings.currency || 'FCFA'}` : `Objectif Parent: ${totalDueAmount.toLocaleString()} F`,
       icon: Landmark,
-      colorClass: 'text-emerald-600 bg-emerald-50 border-emerald-100',
+      colorClass: 'text-emerald-650 bg-emerald-50 border-emerald-100',
+    },
+    {
+      id: 'stat_other_revenue',
+      title: t('dash.stats.other_revenues'),
+      value: `${(actualHonorary + actualSubventions).toLocaleString()} ${settings.currency || 'FCFA'}`,
+      description: language === 'en' ? `Sponsors: ${actualHonorary.toLocaleString()} | Grants: ${actualSubventions.toLocaleString()}` : `Honneur: ${actualHonorary.toLocaleString()} F | Aides: ${actualSubventions.toLocaleString()} F`,
+      icon: Wallet2,
+      colorClass: 'text-cyan-600 bg-cyan-50 border-cyan-100/80',
     },
     {
       id: 'stat_parents',
-      title: 'Familles Enregistrées',
-      value: `${parentsCount} Parents`,
-      description: `Élèves inscrits: ${pupilsCount} enfants`,
+      title: t('dash.stats.registered_parents'),
+      value: language === 'en' ? `${parentsCount} Households` : `${parentsCount} Parents`,
+      description: language === 'en' ? `Enrolled pupils: ${pupilsCount}` : `Élèves inscrits: ${pupilsCount} enfants`,
       icon: Users,
       colorClass: 'text-indigo-600 bg-indigo-50 border-indigo-100',
     },
     {
       id: 'stat_realization',
-      title: 'Taux de Recouvrement',
+      title: t('dash.stats.rate_recette'),
       value: `${realizationRate.toFixed(1)}%`,
-      description: `Moyenne payée: ${Math.round(averagePayment).toLocaleString()} FCFA`,
+      description: language === 'en' ? `Average fee: ${Math.round(averagePayment).toLocaleString()} ${settings.currency || 'FCFA'}` : `Moyenne payée: ${Math.round(averagePayment).toLocaleString()} F`,
       icon: Percent,
       colorClass: 'text-amber-600 bg-amber-50 border-amber-100',
     },
     {
       id: 'stat_expenses',
-      title: 'Caisse Active / Dépenses',
-      value: `${activeBalance.toLocaleString()} FCFA`,
-      description: `Total décaissé: ${totalExecutedExpenses.toLocaleString()} FCFA`,
+      title: language === 'en' ? 'Cash Box Balance / Spent' : 'Caisse Active / Dépenses',
+      value: `${activeBalance.toLocaleString()} ${settings.currency || 'FCFA'}`,
+      description: language === 'en' ? `Total Spent: ${totalExecutedExpenses.toLocaleString()} ${settings.currency || 'FCFA'}` : `Caisse réelle : ${totalExecutedExpenses.toLocaleString()} F décaissés`,
       icon: Coins,
       colorClass: 'text-blue-600 bg-blue-50 border-blue-100',
     }
@@ -224,21 +256,21 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate 
       <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-6 rounded-3xl border border-slate-800 shadow-sm relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div className="space-y-2 relative z-10">
           <div className="inline-flex items-center gap-1 bg-indigo-500/20 text-indigo-350 text-[10px] uppercase font-mono px-2 py-0.5 rounded-full font-bold select-none border border-indigo-500/30">
-            <Sparkles className="h-3 w-3 text-indigo-400" /> Mode Hors Ligne PWA & Cloud Actifs
+            <Sparkles className="h-3 w-3 text-indigo-400" /> {language === 'en' ? 'PWA Offline & Cloud Sync Active' : 'Mode Hors Ligne PWA & Cloud Actifs'}
           </div>
           <h1 className="text-xl md:text-2xl font-bold font-sans tracking-tight">
             {settings.associationName}
           </h1>
           <p className="text-xs text-slate-300 font-medium">
-            Tableau de bord financier pour l'année scolaire <strong className="text-white font-semibold">{settings.schoolYear}</strong>.
+            {language === 'en' ? 'Financial tracker dashboard for school year' : 'Tableau de bord financier pour l\'année scolaire'} <strong className="text-white font-semibold">{settings.schoolYear}</strong>.
           </p>
         </div>
         
         {/* Dynamic target bar on the banner itself */}
         <div className="w-full md:w-64 space-y-2 bg-slate-950/60 p-3.5 rounded-2xl border border-slate-800/80 relative z-10">
           <div className="flex justify-between items-center text-[10px] font-mono text-slate-300">
-            <span>OBJECTIF DU BUDGET :</span>
-            <span className="text-slate-100 font-bold">{settings.financialGoal.toLocaleString()} FCFA</span>
+            <span>{language === 'en' ? 'BUDGETARY TARGET :' : 'OBJECTIF DU BUDGET :'}</span>
+            <span className="text-slate-100 font-bold">{settings.financialGoal.toLocaleString()} {settings.currency || 'FCFA'}</span>
           </div>
           <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden">
             <div 
@@ -247,14 +279,14 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate 
             />
           </div>
           <div className="flex justify-between text-[10px] font-mono font-medium text-slate-400">
-            <span>Atteint : {goalPercent.toFixed(1)}%</span>
-            <span>{totalPaidRevenue.toLocaleString()} FCFA</span>
+            <span>{language === 'en' ? 'Reached' : 'Atteint'} : {goalPercent.toFixed(1)}%</span>
+            <span>{totalPaidRevenue.toLocaleString()} {settings.currency || 'FCFA'}</span>
           </div>
         </div>
       </div>
 
       {/* Grid of Key Numerical Metrics */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         {statCards.map((card) => {
           const Icon = card.icon;
           return (
@@ -383,7 +415,213 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate 
       )}
 
       {/* Financial Overview (Recharts totalExecutedExpenses vs totalRevenue over last 6 months) */}
-      <ApeeFinancialOverview parents={parents} expenses={expenses} settings={settings} />
+      <ApeeFinancialOverview parents={parents} expenses={expenses} settings={settings} otherRevenues={otherRevenues} />
+
+      {/* Journal d'Audit Financier Automatique (Temps Réel) */}
+      <div id="financial_logs_audit_trail" className="bg-white border border-slate-150 rounded-2xl p-5 space-y-4 shadow-3xs">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-100 pb-3">
+          <div className="space-y-0.5">
+            <h3 className="text-xs font-bold text-slate-900 tracking-wider uppercase flex items-center gap-2 font-mono">
+              <Activity className="h-4.5 w-4.5 text-indigo-600 animate-pulse" />
+              🛡️ Journal d'Audit Financier Automatique (Temps Réel)
+            </h3>
+            <p className="text-[10px] text-gray-400 font-sans">
+              Historique immuable généré automatiquement lors de chaque modification financière sur les fiches des parents.
+            </p>
+          </div>
+          <div className="text-[9.5px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-md px-2.5 py-1 font-mono">
+            Total : {logs.length} Événements
+          </div>
+        </div>
+
+        {/* Filters bar */}
+        <div className="flex flex-col sm:flex-row gap-3 items-center select-none text-xs">
+          <div className="relative w-full sm:w-72">
+            <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-gray-405" />
+            <input 
+              type="text" 
+              placeholder="Rechercher un parent, opérateur, montant..."
+              value={searchLogQuery}
+              onChange={(e) => {
+                setSearchLogQuery(e.target.value);
+                setVisibleLogsCount(10); // reset page count
+              }}
+              className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-1 focus:ring-indigo-500 font-sans text-xs"
+            />
+            {searchLogQuery && (
+              <button 
+                onClick={() => setSearchLogQuery('')}
+                className="absolute right-2 top-2.5 text-[10px] text-slate-400 hover:text-slate-600 font-bold"
+              >
+                Vider
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <span className="text-[10px] text-slate-400 font-bold uppercase whitespace-nowrap">Filtrer par action:</span>
+            <select
+              value={selectedActionFilter}
+              onChange={(e) => {
+                setSelectedActionFilter(e.target.value);
+                setVisibleLogsCount(10); // reset page count
+              }}
+              className="px-2.5 py-2 border border-slate-200 rounded-xl bg-white focus:outline-hidden focus:ring-1 focus:ring-indigo-500 text-xs text-slate-700"
+            >
+              <option value="all">Toutes les actions</option>
+              <option value="CREATE_PARENT">Nouveau dossier parent</option>
+              <option value="UPDATE_PARENT">Mise à jour des fiches</option>
+              <option value="ADD_PAYMENT">Nouveau versement (acompte)</option>
+              <option value="REMOVE_PAYMENT">Annulation de versement</option>
+              <option value="DELETE_PARENT">Suppression complète</option>
+              <option value="MANUAL_ENTRY">Saisie administrative</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Live Logs stream list */}
+        <div className="space-y-2">
+          {(() => {
+            const sortedLogsList = [...logs].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+            const filtered = sortedLogsList.filter(log => {
+              const query = searchLogQuery.toLowerCase();
+              const termMatches = 
+                log.parentName.toLowerCase().includes(query) ||
+                log.description.toLowerCase().includes(query) ||
+                (log.operatorName || '').toLowerCase().includes(query) ||
+                log.id.toLowerCase().includes(query);
+              
+              const actionMatches = selectedActionFilter === 'all' || log.actionType === selectedActionFilter;
+              return termMatches && actionMatches;
+            });
+
+            if (filtered.length === 0) {
+              return (
+                <div className="text-center py-8 bg-slate-50 border border-slate-150 rounded-xl space-y-2 select-none">
+                  <History className="h-7 w-7 text-gray-300 mx-auto" />
+                  <p className="text-xs text-slate-500 font-medium">Aucun événement de log financier ne correspond à vos filtres.</p>
+                  <p className="text-[10px] text-slate-400 font-mono">Modifiez vos critères de recherche.</p>
+                </div>
+              );
+            }
+
+            const pageLogs = filtered.slice(0, visibleLogsCount);
+
+            return (
+              <div className="space-y-2.5">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-slate-700 border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-100 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
+                        <th className="py-2.5 px-3">Date & Heure</th>
+                        <th className="py-2.5 px-3">Type d'opération</th>
+                        <th className="py-2.5 px-3">Parent d'élève</th>
+                        <th className="py-2.5 px-3">Détails de l'action</th>
+                        <th className="py-2.5 px-3 text-right">Mouvement</th>
+                        <th className="py-2.5 px-3">Auteur / Opérateur</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {pageLogs.map((log) => {
+                        let actionLabel = 'Audit';
+                        let actionClass = 'text-slate-700 bg-slate-50 border-slate-200';
+                        
+                        switch (log.actionType) {
+                          case 'CREATE_PARENT':
+                            actionLabel = 'Création Fiche';
+                            actionClass = 'text-blue-700 bg-blue-50 border-blue-150';
+                            break;
+                          case 'UPDATE_PARENT':
+                            actionLabel = 'Mise à jour';
+                            actionClass = 'text-indigo-700 bg-indigo-50 border-indigo-150';
+                            break;
+                          case 'ADD_PAYMENT':
+                            actionLabel = 'Versement';
+                            actionClass = 'text-emerald-700 bg-emerald-50 border-emerald-150';
+                            break;
+                          case 'REMOVE_PAYMENT':
+                            actionLabel = 'Suppr. Versement';
+                            actionClass = 'text-amber-700 bg-amber-50 border-amber-150';
+                            break;
+                          case 'DELETE_PARENT':
+                            actionLabel = 'Suppression Fiche';
+                            actionClass = 'text-rose-700 bg-rose-50 border-rose-150';
+                            break;
+                          case 'MANUAL_ENTRY':
+                            actionLabel = 'Administratif';
+                            actionClass = 'text-purple-700 bg-purple-50 border-purple-150';
+                            break;
+                        }
+
+                        // Format timestamp nicely
+                        let finalDateStr = log.timestamp;
+                        try {
+                          const dateObj = new Date(log.timestamp);
+                          if (!isNaN(dateObj.getTime())) {
+                            finalDateStr = dateObj.toLocaleDateString('fr-FR', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric'
+                            }) + ' à ' + dateObj.toLocaleTimeString('fr-FR', {
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            });
+                          }
+                        } catch (e) {
+                          // fallback to raw
+                        }
+
+                        return (
+                          <tr key={log.id} className="hover:bg-slate-50/50 transition">
+                            <td className="py-3 px-3 font-mono text-[10.5px] text-slate-500 whitespace-nowrap">{finalDateStr}</td>
+                            <td className="py-3 px-3">
+                              <span className={`px-2 py-0.5 rounded border text-[9.5px] font-bold inline-block whitespace-nowrap ${actionClass}`}>
+                                {actionLabel}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3">
+                              <div className="font-extrabold text-slate-900 leading-none whitespace-nowrap">{log.parentName}</div>
+                              <span className="text-[9.5px] text-gray-400 font-mono tracking-wider">Réf: {log.parentId}</span>
+                            </td>
+                            <td className="py-3 px-3 text-slate-650 leading-relaxed max-w-sm shrink-0 min-w-[200px]">{log.description}</td>
+                            <td className="py-3 px-3 text-right">
+                              {log.amount > 0 ? (
+                                <span className={`font-mono font-bold text-[11px] px-1.5 py-0.5 rounded ${
+                                  log.actionType === 'REMOVE_PAYMENT' || log.actionType === 'DELETE_PARENT'
+                                    ? 'text-red-700 bg-red-50'
+                                    : 'text-emerald-700 bg-emerald-50'
+                                }`}>
+                                  {log.actionType === 'REMOVE_PAYMENT' || log.actionType === 'DELETE_PARENT' ? '-' : '+'} {log.amount.toLocaleString()} F
+                                </span>
+                              ) : (
+                                <span className="font-mono text-slate-350 text-[11px]">—</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 font-sans text-[11px] text-slate-500 font-medium whitespace-nowrap">
+                              🧑‍💻 {log.operatorName || 'Jacques Béné'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {filtered.length > visibleLogsCount && (
+                  <div className="pt-2 flex justify-center">
+                    <button
+                      onClick={() => setVisibleLogsCount(prev => prev + 15)}
+                      className="text-[10px] font-black bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-xl px-4 py-2 transition flex items-center gap-1.5 cursor-pointer shadow-3xs"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Charger plus de logs
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+      </div>
 
       {/* Visual Analytics Block (Charts) */}
       <h3 className="text-xs font-bold text-slate-700 tracking-wider uppercase pt-2">Graphiques et Indicateurs de Collecte</h3>
