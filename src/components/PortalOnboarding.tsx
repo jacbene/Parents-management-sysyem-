@@ -373,6 +373,49 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
         } catch (dbErr) {
           console.warn("Could not query invoices from Firestore (permission or offline issue). Bypassing via mock data validation.", dbErr);
         }
+
+        // Also fetch from local storage cache to support instant matching of newly registered parents (even if offline or during sync)
+        try {
+          const cachedParentsStr = localStorage.getItem(`apee_parents_${selectedSchoolId}`) || 
+                                   localStorage.getItem(`pasma_invoices_${selectedSchoolId}`);
+          if (cachedParentsStr) {
+            const parsed = JSON.parse(cachedParentsStr);
+            if (Array.isArray(parsed)) {
+              parsed.forEach((p: any) => {
+                // If it is in ApeeParent structure, normalize to Invoice shape
+                if (p.students && p.name) {
+                  const lastPayment = p.payments && p.payments.length > 0 ? p.payments[p.payments.length - 1] : null;
+                  const normalized: any = {
+                    id: p.id,
+                    studentId: 'apee_ces_ekali_1',
+                    parentId: selectedSchoolId,
+                    title: p.name,
+                    phone: p.phone,
+                    amount: p.totalDue,
+                    amountPaid: p.totalPaid,
+                    studentsList: JSON.stringify(p.students),
+                    paymentsHistory: JSON.stringify(p.payments || []),
+                    transactionId: lastPayment?.transactionId || '',
+                    provider: lastPayment?.provider || '',
+                    note: p.note,
+                    status: p.status === 'soldé' ? 'Paid' : 'Unpaid'
+                  };
+                  // Add if not already present from Firestore
+                  if (!parentInvoices.some(inv => inv.id === normalized.id)) {
+                    parentInvoices.push(normalized);
+                  }
+                } else if (p.studentId === 'apee_ces_ekali_1') {
+                  // If it's already in Invoice shape
+                  if (!parentInvoices.some(inv => inv.id === p.id)) {
+                    parentInvoices.push(p);
+                  }
+                }
+              });
+            }
+          }
+        } catch (localErr) {
+          console.warn("Failed to load local parent login cache:", localErr);
+        }
         
         let matchedInvoice: any = null;
 

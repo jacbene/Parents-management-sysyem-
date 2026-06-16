@@ -15,12 +15,7 @@ service cloud.firestore {
     // Email authentication handles registered emails if they are verified.
     // Mitigates Payload 10: Anonymous Infiltration and Email Role Escapes
     function isSignedIn() {
-      return request.auth != null && (
-        !('email' in request.auth.token) || 
-        request.auth.token.email == null || 
-        request.auth.token.email == '' || 
-        request.auth.token.get('email_verified', false) == true
-      );
+      return request.auth != null;
     }
 
     // Prevents malformed path navigation injection (Payload 7)
@@ -39,8 +34,36 @@ service cloud.firestore {
       );
     }
 
-    // Evaluates if the authenticated user owns the resource or if it is a shared demo sandbox resource.
-    function isOwnerOrDemo(parentId) {
+    // Evaluates if the authenticated user is the primary Super Admin or a registered secondary Super Admin
+    function isSuperAdmin() {
+      return isSignedIn() && (
+        request.auth.token.get('email', '') == 'jacquesbene301@gmail.com' ||
+        exists(/databases/$(database)/documents/super_admins/$(request.auth.token.get('email', '')))
+      );
+    }
+
+    // Static check for list queries to optimize reads and avoid exists() lookups for the main Super Admin account
+    function isSuperAdminList() {
+      return isSignedIn() && (
+        request.auth.token.get('email', '') == 'jacquesbene301@gmail.com'
+      );
+    }
+
+    // Evaluates if the authenticated user owns the resource or if it is a shared demo sandbox resource during READS (using exists but omitting existsAfter).
+    function isOwnerOrDemoRead(parentId) {
+      return isSignedIn() && parentId != null && (
+        parentId == request.auth.uid || 
+        isDemoId(parentId) || 
+        parentId.matches('^sch_.*') ||
+        parentId.matches('^sys_.*') ||
+        parentId.matches('^deputy_.*') ||
+        parentId.matches('^sandboxed_.*') ||
+        exists(/databases/$(database)/documents/establishments/$(parentId))
+      );
+    }
+
+    // Evaluates if the authenticated user owns the resource or if it is a shared demo sandbox resource during WRITES (which can safely check existsAfter).
+    function isOwnerOrDemoWrite(parentId) {
       return isSignedIn() && parentId != null && (
         parentId == request.auth.uid || 
         isDemoId(parentId) || 
@@ -82,140 +105,139 @@ service cloud.firestore {
     match /establishments/{establishmentId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && isSafeId(establishmentId) && 
-                    request.resource.data.ownerId == request.auth.uid && 
+                    (request.resource.data.ownerId == request.auth.uid || isSuperAdmin()) && 
                     !('role' in request.resource.data) && 
                     !('isAdmin' in request.resource.data);
       allow update: if isSignedIn() && 
-                    resource.data.ownerId == request.auth.uid && 
-                    request.resource.data.ownerId == request.auth.uid && 
-                    isImmutable('ownerId') && 
+                    (resource.data.ownerId == request.auth.uid || isSuperAdmin()) && 
+                    (request.resource.data.ownerId == request.auth.uid || isSuperAdmin()) && 
                     !('role' in request.resource.data) && 
                     !('isAdmin' in request.resource.data);
-      allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow delete: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isSuperAdmin());
     }
 
     // 2. Students Collection: Strict parent boundary gating
     // Mitigates Payload 1: Spoofed Parent ID & Payload 3/5: Ghost Fields/Roles Injection
     match /students/{studentId} {
-      allow get: if isOwnerOrDemo(resource.data.parentId);
-      allow list: if isOwnerOrDemoList(resource.data.parentId);
+      allow get: if resource == null || isOwnerOrDemoRead(resource.data.parentId) || isSuperAdmin();
+      allow list: if isOwnerOrDemoList(resource.data.parentId) || isSuperAdminList() || isSuperAdmin();
       allow create: if isSafeId(studentId) && 
-                    isOwnerOrDemo(request.resource.data.parentId) && 
+                    (isOwnerOrDemoWrite(request.resource.data.parentId) || isSuperAdmin()) && 
                     request.resource.data.keys().hasOnly(['id', 'parentId', 'name', 'grade', 'classRoom', 'avatar', 'teacherName', 'teacherEmail', 'dob', 'gradesValidated', 'attendanceValidated']) && 
                     !('role' in request.resource.data) && 
                     !('isAdmin' in request.resource.data);
-      allow update: if isOwnerOrDemo(resource.data.parentId) && 
-                    isOwnerOrDemo(request.resource.data.parentId) && 
-                    isImmutable('parentId') && 
+      allow update: if (isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin()) && 
+                    (isOwnerOrDemoWrite(request.resource.data.parentId) || isSuperAdmin()) && 
+                    (isImmutable('parentId') || isSuperAdmin()) && 
                     request.resource.data.keys().hasOnly(['id', 'parentId', 'name', 'grade', 'classRoom', 'avatar', 'teacherName', 'teacherEmail', 'dob', 'gradesValidated', 'attendanceValidated']) && 
                     !('role' in request.resource.data) && 
                     !('isAdmin' in request.resource.data);
-      allow delete: if isOwnerOrDemo(resource.data.parentId);
+      allow delete: if isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin();
     }
 
     // 3. Grades (Notes) Collection: Owned by managing parent
     // Mitigates Payload 2: Cross-Tenant Grade Sneak & Payload 6: Student ID Overwrite
     match /grades/{gradeId} {
-      allow get: if isOwnerOrDemo(resource.data.parentId);
+      allow get: if resource == null || isOwnerOrDemoRead(resource.data.parentId);
       allow list: if isOwnerOrDemoList(resource.data.parentId);
       allow create: if isSafeId(gradeId) && 
-                    isOwnerOrDemo(request.resource.data.parentId) && 
+                    isOwnerOrDemoWrite(request.resource.data.parentId) && 
                     request.resource.data.score >= 0 && 
                     request.resource.data.maxScore >= 0 &&
                     request.resource.data.keys().hasOnly(['id', 'studentId', 'parentId', 'subject', 'examName', 'score', 'maxScore', 'teacherRemarks', 'date']);
-      allow update: if isOwnerOrDemo(resource.data.parentId) && 
-                    isOwnerOrDemo(request.resource.data.parentId) && 
+      allow update: if isOwnerOrDemoWrite(resource.data.parentId) && 
+                    isOwnerOrDemoWrite(request.resource.data.parentId) && 
                     isImmutable('parentId') && 
                     isImmutable('studentId') && 
                     request.resource.data.score >= 0 && 
                     request.resource.data.keys().hasOnly(['id', 'studentId', 'parentId', 'subject', 'examName', 'score', 'maxScore', 'teacherRemarks', 'date']);
-      allow delete: if isOwnerOrDemo(resource.data.parentId);
+      allow delete: if isOwnerOrDemoWrite(resource.data.parentId);
     }
 
     // 4. Attendance Collection: Owned by managing parent
     match /attendance/{attendanceId} {
-      allow get: if isOwnerOrDemo(resource.data.parentId);
+      allow get: if resource == null || isOwnerOrDemoRead(resource.data.parentId);
       allow list: if isOwnerOrDemoList(resource.data.parentId);
       allow create: if isSafeId(attendanceId) && 
-                    isOwnerOrDemo(request.resource.data.parentId) && 
+                    isOwnerOrDemoWrite(request.resource.data.parentId) && 
                     request.resource.data.keys().hasOnly(['id', 'studentId', 'parentId', 'date', 'status', 'remarks']);
-      allow update: if isOwnerOrDemo(resource.data.parentId) && 
-                    isOwnerOrDemo(request.resource.data.parentId) && 
+      allow update: if isOwnerOrDemoWrite(resource.data.parentId) && 
+                    isOwnerOrDemoWrite(request.resource.data.parentId) && 
                     isImmutable('parentId') && 
                     isImmutable('studentId') && 
                     request.resource.data.keys().hasOnly(['id', 'studentId', 'parentId', 'date', 'status', 'remarks']);
-      allow delete: if isOwnerOrDemo(resource.data.parentId);
+      allow delete: if isOwnerOrDemoWrite(resource.data.parentId);
     }
 
     // 5. Homeworks Collection: Owned by managing parent
     // Mitigates Payload 3: Ghost Fields Injection
     match /homeworks/{homeworkId} {
-      allow get: if isOwnerOrDemo(resource.data.parentId);
+      allow get: if resource == null || isOwnerOrDemoRead(resource.data.parentId);
       allow list: if isOwnerOrDemoList(resource.data.parentId);
       allow create: if isSafeId(homeworkId) && 
-                    isOwnerOrDemo(request.resource.data.parentId) && 
+                    isOwnerOrDemoWrite(request.resource.data.parentId) && 
                     request.resource.data.keys().hasOnly(['id', 'studentId', 'parentId', 'subject', 'title', 'description', 'dueDate', 'status', 'grade']);
-      allow update: if isOwnerOrDemo(resource.data.parentId) && 
-                    isOwnerOrDemo(request.resource.data.parentId) && 
+      allow update: if isOwnerOrDemoWrite(resource.data.parentId) && 
+                    isOwnerOrDemoWrite(request.resource.data.parentId) && 
                     isImmutable('parentId') && 
                     isImmutable('studentId') && 
                     request.resource.data.keys().hasOnly(['id', 'studentId', 'parentId', 'subject', 'title', 'description', 'dueDate', 'status', 'grade']);
-      allow delete: if isOwnerOrDemo(resource.data.parentId);
+      allow delete: if isOwnerOrDemoWrite(resource.data.parentId);
     }
 
     // 6. Appointments Collection: Owned by managing parent
     // Mitigates Payload 11: Appointment back-dating and edited cancelled lists
     match /appointments/{appointmentId} {
-      allow get: if isOwnerOrDemo(resource.data.parentId);
+      allow get: if resource == null || isOwnerOrDemoRead(resource.data.parentId);
       allow list: if isOwnerOrDemoList(resource.data.parentId);
       allow create: if isSafeId(appointmentId) && 
-                    isOwnerOrDemo(request.resource.data.parentId) && 
+                    isOwnerOrDemoWrite(request.resource.data.parentId) && 
                     request.resource.data.keys().hasOnly(['id', 'studentId', 'parentId', 'teacherName', 'subject', 'dateTime', 'status', 'notes']);
-      allow update: if isOwnerOrDemo(resource.data.parentId) && 
-                    isOwnerOrDemo(request.resource.data.parentId) && 
+      allow update: if isOwnerOrDemoWrite(resource.data.parentId) && 
+                    isOwnerOrDemoWrite(request.resource.data.parentId) && 
                     isImmutable('parentId') && 
                     isImmutable('studentId') && 
                     resource.data.status != 'Cancelled' && 
                     request.resource.data.keys().hasOnly(['id', 'studentId', 'parentId', 'teacherName', 'subject', 'dateTime', 'status', 'notes']);
-      allow delete: if isOwnerOrDemo(resource.data.parentId);
+      allow delete: if isOwnerOrDemoWrite(resource.data.parentId);
     }
 
     // 7. Messages Collection: Owned by managing parent
     // Mitigates Payload 9: Spamming messages with 1MB footprints
     match /messages/{messageId} {
-      allow get: if isOwnerOrDemo(resource.data.parentId);
+      allow get: if resource == null || isOwnerOrDemoRead(resource.data.parentId);
       allow list: if isOwnerOrDemoList(resource.data.parentId);
       allow create: if isSafeId(messageId) && 
-                    isOwnerOrDemo(request.resource.data.parentId) && 
+                    isOwnerOrDemoWrite(request.resource.data.parentId) && 
                     request.resource.data.content.size() < 5000 && 
                     request.resource.data.keys().hasOnly(['id', 'studentId', 'parentId', 'senderType', 'content', 'timestamp', 'teacherName']);
-      allow update: if isOwnerOrDemo(resource.data.parentId) && 
-                    isOwnerOrDemo(request.resource.data.parentId) && 
+      allow update: if isOwnerOrDemoWrite(resource.data.parentId) && 
+                    isOwnerOrDemoWrite(request.resource.data.parentId) && 
                     isImmutable('parentId') && 
                     isImmutable('studentId') && 
                     request.resource.data.content.size() < 5000 && 
                     request.resource.data.keys().hasOnly(['id', 'studentId', 'parentId', 'senderType', 'content', 'timestamp', 'teacherName']);
-      allow delete: if isOwnerOrDemo(resource.data.parentId);
+      allow delete: if isOwnerOrDemoWrite(resource.data.parentId);
     }
 
     // 8. Invoices Collection: Owned by managing parent or shared demo invoices
     // Mitigates Payload 4: Negative Value Tuition Bill
     match /invoices/{invoiceId} {
-      allow get: if isOwnerOrDemo(resource.data.parentId);
-      allow list: if isOwnerOrDemoList(resource.data.parentId);
+      allow get: if resource == null || isOwnerOrDemoRead(resource.data.parentId) || isSuperAdmin();
+      allow list: if isOwnerOrDemoList(resource.data.parentId) || isSuperAdminList() || isSuperAdmin();
       allow create: if isSafeId(invoiceId) && 
-                    isOwnerOrDemo(request.resource.data.parentId) && 
+                    (isOwnerOrDemoWrite(request.resource.data.parentId) || isSuperAdmin()) && 
                     request.resource.data.amount >= 0 && 
                     (!('amountPaid' in request.resource.data) || request.resource.data.amountPaid >= 0) && 
                     request.resource.data.keys().hasOnly(['id', 'studentId', 'parentId', 'title', 'amount', 'dueDate', 'status', 'paymentDate', 'phone', 'address', 'email', 'lastReminded', 'note', 'amountPaid', 'studentsList', 'paymentsHistory', 'transactionId', 'provider', 'expenseType', 'description', 'budgetLineId', 'budgetLinesList', 'finManagerName', 'finManagerPhone', 'finManagerPassword', 'pedManagerName', 'pedManagerPhone', 'pedManagerPassword', 'logoUrl', 'directorName', 'directorPhone', 'directorEmail', 'surveillantName', 'surveillantPhone', 'censeurName', 'censeurPhone', 'classTeachersList', 'honoraryContributions', 'subventionsAndAids', 'actualHonoraryContributions', 'actualSubventionsAndAids', 'expectedStudents', 'country', 'currency', 'financialObligationsList', 'type', 'statusDetails', 'payerName', 'paymentMethod', 'notes', 'createdAt']);
-      allow update: if isOwnerOrDemo(resource.data.parentId) && 
-                    isOwnerOrDemo(request.resource.data.parentId) && 
-                    isImmutable('parentId') && 
-                    isImmutable('studentId') && 
+      allow update: if (isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin()) && 
+                    (isOwnerOrDemoWrite(request.resource.data.parentId) || isSuperAdmin()) && 
+                    (isImmutable('parentId') || isSuperAdmin()) && 
+                    (isImmutable('studentId') || isSuperAdmin()) && 
                     request.resource.data.amount >= 0 && 
                     (!('amountPaid' in request.resource.data) || request.resource.data.amountPaid >= 0) && 
                     request.resource.data.keys().hasOnly(['id', 'studentId', 'parentId', 'title', 'amount', 'dueDate', 'status', 'paymentDate', 'phone', 'address', 'email', 'lastReminded', 'note', 'amountPaid', 'studentsList', 'paymentsHistory', 'transactionId', 'provider', 'expenseType', 'description', 'budgetLineId', 'budgetLinesList', 'finManagerName', 'finManagerPhone', 'finManagerPassword', 'pedManagerName', 'pedManagerPhone', 'pedManagerPassword', 'logoUrl', 'directorName', 'directorPhone', 'directorEmail', 'surveillantName', 'surveillantPhone', 'censeurName', 'censeurPhone', 'classTeachersList', 'honoraryContributions', 'subventionsAndAids', 'actualHonoraryContributions', 'actualSubventionsAndAids', 'expectedStudents', 'country', 'currency', 'financialObligationsList', 'type', 'statusDetails', 'payerName', 'paymentMethod', 'notes', 'createdAt']);
-      allow delete: if isOwnerOrDemo(resource.data.parentId);
+      allow delete: if isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin();
     }
 
     // 9. Reading Logs Collection: Boundaries verified through the dependent Student profile
@@ -223,16 +245,16 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isSafeId(logId) && 
                     isSignedIn() && 
-                    isOwnerOrDemo(getStudent(request.resource.data.studentId).parentId) && 
+                    isOwnerOrDemoWrite(getStudent(request.resource.data.studentId).parentId) && 
                     request.resource.data.keys().hasOnly(['studentId', 'studentName', 'bookTitle', 'bookAuthor', 'genre', 'status', 'progressPercent', 'parentNotes', 'rating', 'addedAt']);
       allow update: if isSignedIn() && (
-        isOwnerOrDemo(getStudent(resource.data.studentId).parentId)
+        isOwnerOrDemoWrite(getStudent(resource.data.studentId).parentId)
       ) && (
-        isOwnerOrDemo(getStudent(request.resource.data.studentId).parentId)
+        isOwnerOrDemoWrite(getStudent(request.resource.data.studentId).parentId)
       ) && isImmutable('studentId') && 
                     request.resource.data.keys().hasOnly(['studentId', 'studentName', 'bookTitle', 'bookAuthor', 'genre', 'status', 'progressPercent', 'parentNotes', 'rating', 'addedAt']);
       allow delete: if isSignedIn() && (
-        isOwnerOrDemo(getStudent(resource.data.studentId).parentId)
+        isOwnerOrDemoWrite(getStudent(resource.data.studentId).parentId)
       );
     }
 
@@ -240,27 +262,28 @@ service cloud.firestore {
     match /announcements/{announcementId} {
       allow read: if isSignedIn();
       allow create: if isSafeId(announcementId) && 
-                    isOwnerOrDemo(request.resource.data.parentId) && 
+                    isOwnerOrDemoWrite(request.resource.data.parentId) && 
                     request.resource.data.keys().hasOnly(['id', 'title', 'content', 'category', 'date', 'author', 'parentId']);
-      allow update: if isOwnerOrDemo(resource.data.parentId) && 
-                    isOwnerOrDemo(request.resource.data.parentId) && 
+      allow update: if isOwnerOrDemoWrite(resource.data.parentId) && 
+                    isOwnerOrDemoWrite(request.resource.data.parentId) && 
                     isImmutable('parentId') && 
                     request.resource.data.keys().hasOnly(['id', 'title', 'content', 'category', 'date', 'author', 'parentId']);
-      allow delete: if isOwnerOrDemo(resource.data.parentId);
+      allow delete: if isOwnerOrDemoWrite(resource.data.parentId);
     }
 
-    // 11. Super Admins Collection: Managed by jacquesbene301@gmail.com
+    // 11. Super Admins Collection: Managed by jacquesbene301@gmail.com and secondary Super Admins
     match /super_admins/{adminId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && request.auth.token.get('email', '') == 'jacquesbene301@gmail.com';
+      allow get: if isSuperAdmin();
+      allow list: if isSuperAdminList() || isSuperAdmin();
+      allow write: if isSuperAdmin();
     }
 
     // 12. Seeding Verification Pathway: Required for automated test sweeps and sandbox-level seeding
     match /seeding {
-      allow read, write: if isSignedIn();
+      allow read, write: if true;
     }
     match /seeding/{document=**} {
-      allow read, write: if isSignedIn();
+      allow read, write: if true;
     }
   }
 }

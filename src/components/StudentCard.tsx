@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Student, ApeeSettings, ApeeParent, Grade, Attendance, Message } from '../types';
-import { Mail, GraduationCap, Calendar, User, UserCheck, Camera, Printer, Phone, TrendingUp, TrendingDown, Clock, MessageSquare, Send, X, Check, AlertCircle } from 'lucide-react';
+import { Mail, GraduationCap, Calendar, User, UserCheck, Camera, Printer, Phone, TrendingUp, TrendingDown, Clock, MessageSquare, Send, X, Check, AlertCircle, QrCode } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import StudentCameraModal from './StudentCameraModal';
+import StudentIDCardModal from './StudentIDCardModal';
 import { useLanguage } from '../utils/TranslationContext';
 import { doc, setDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
@@ -40,6 +41,7 @@ export default function StudentCard({
   onAddMessage
 }: StudentCardProps) {
   const [showCamera, setShowCamera] = useState(false);
+  const [showIDCard, setShowIDCard] = useState(false);
   const [showQuickContact, setShowQuickContact] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState('absence');
   const [messageText, setMessageText] = useState('');
@@ -300,6 +302,20 @@ export default function StudentCard({
                     <span>Imprimer fiche</span>
                   </button>
                 )}
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowIDCard(true);
+                  }}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[10px] px-3 py-1.5 rounded-xl border border-indigo-500 shadow-xs cursor-pointer flex items-center justify-center gap-1.5 transition-all flex-1 active:scale-97"
+                  title="Afficher la carte scolaire officielle avec QR code"
+                >
+                  <QrCode className="h-3.5 w-3.5 shrink-0" />
+                  <span>Carte ID (QR)</span>
+                </button>
+
                 {portalUserRole === 'parent' && onAddMessage && (
                   <button
                     type="button"
@@ -327,6 +343,15 @@ export default function StudentCard({
           isOpen={showCamera}
           onClose={() => setShowCamera(false)}
           onUpdate={onUpdateStudent}
+        />
+      )}
+
+      {showIDCard && (
+        <StudentIDCardModal
+          student={student}
+          isOpen={showIDCard}
+          onClose={() => setShowIDCard(false)}
+          settings={settings}
         />
       )}
 

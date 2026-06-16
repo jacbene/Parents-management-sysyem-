@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Attendance, AttendanceStatus, Student } from '../types';
-import { Calendar, CheckCircle2, XCircle, AlertCircle, Clock, Plus, Trash2, Lock, Unlock, Printer, Download } from 'lucide-react';
+import { Calendar, CheckCircle2, XCircle, AlertCircle, Clock, Plus, Trash2, Lock, Unlock, Printer, Download, Scan, QrCode } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import QRScannerModal from './QRScannerModal';
 
 interface AttendanceTrackerProps {
   attendanceLogs: Attendance[];
@@ -14,6 +15,7 @@ interface AttendanceTrackerProps {
   activeStudent?: Student | null;
   onUpdateStudent?: (updated: Student) => Promise<boolean>;
   onPrintReport?: () => void;
+  allStudents?: Student[];
 }
 
 export default function AttendanceTracker({
@@ -27,8 +29,10 @@ export default function AttendanceTracker({
   activeStudent,
   onUpdateStudent,
   onPrintReport,
+  allStudents = [],
 }: AttendanceTrackerProps) {
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showQRScanner, setShowQRScanner] = useState(false);
   const [status, setStatus] = useState<AttendanceStatus>('Absent');
   const [remarks, setRemarks] = useState('');
   const [attDate, setAttDate] = useState('');
@@ -220,6 +224,22 @@ export default function AttendanceTracker({
               className="px-4 py-2 bg-white text-gray-700 border border-gray-250 hover:bg-gray-50 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs"
             >
               <Printer className="h-4 w-4" /> Imprimer le Registre
+            </button>
+          )}
+
+          {onAddAttendance && (
+            <button
+              onClick={() => {
+                if (hasPedPassword && !isPedAuthorized && onPromptUnlockPed) {
+                  onPromptUnlockPed();
+                  return;
+                }
+                setShowQRScanner(true);
+              }}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs active:scale-97"
+              title="Scanner de badge d'élève par QR code"
+            >
+              <QrCode className="h-4 w-4" /> Scanner QR Badge
             </button>
           )}
 
@@ -481,6 +501,16 @@ export default function AttendanceTracker({
           </div>
         </>
       )}
+      {/* QR Code Scanner Modal */}
+      {showQRScanner && onAddAttendance && (
+        <QRScannerModal
+          isOpen={showQRScanner}
+          onClose={() => setShowQRScanner(false)}
+          allStudents={allStudents}
+          onAddAttendance={onAddAttendance}
+        />
+      )}
     </div>
   );
 }
+

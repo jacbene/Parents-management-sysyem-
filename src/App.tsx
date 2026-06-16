@@ -1192,61 +1192,69 @@ export default function App() {
 
       let loadedAnyFromDb = false;
 
-      // Map back collections safely
-      if (studentSnapshot && !studentSnapshot.empty) {
-        const studentList = studentSnapshot.docs.map(doc => doc.data() as Student);
+      // Update each collection safely depending on fetch outcome
+      const didConnectToDb = studentSnapshot !== null || 
+                             gradeSnapshot !== null || 
+                             attendanceSnapshot !== null || 
+                             homeworkSnapshot !== null || 
+                             appointmentSnapshot !== null || 
+                             messageSnapshot !== null || 
+                             invoiceSnapshot !== null || 
+                             announcementSnapshot !== null;
+
+      if (studentSnapshot !== null) {
+        const studentList = studentSnapshot.empty ? [] : studentSnapshot.docs.map(doc => doc.data() as Student);
         setStudents(studentList);
         setSelectedStudentId(studentList[0]?.id || '');
         localStorage.setItem(`pasma_students_${uid}`, JSON.stringify(studentList));
         localBackupFound = true;
         loadedAnyFromDb = true;
       }
-
-      if (gradeSnapshot && !gradeSnapshot.empty) {
-        const list = gradeSnapshot.docs.map(doc => doc.data() as Grade);
+      if (gradeSnapshot !== null) {
+        const list = gradeSnapshot.empty ? [] : gradeSnapshot.docs.map(doc => doc.data() as Grade);
         setGrades(list);
         localStorage.setItem(`pasma_grades_${uid}`, JSON.stringify(list));
         loadedAnyFromDb = true;
       }
-      if (attendanceSnapshot && !attendanceSnapshot.empty) {
-        const list = attendanceSnapshot.docs.map(doc => doc.data() as Attendance);
+      if (attendanceSnapshot !== null) {
+        const list = attendanceSnapshot.empty ? [] : attendanceSnapshot.docs.map(doc => doc.data() as Attendance);
         setAttendanceLogs(list);
         localStorage.setItem(`pasma_attendance_${uid}`, JSON.stringify(list));
         loadedAnyFromDb = true;
       }
-      if (homeworkSnapshot && !homeworkSnapshot.empty) {
-        const list = homeworkSnapshot.docs.map(doc => doc.data() as Homework);
+      if (homeworkSnapshot !== null) {
+        const list = homeworkSnapshot.empty ? [] : homeworkSnapshot.docs.map(doc => doc.data() as Homework);
         setHomeworks(list);
         localStorage.setItem(`pasma_homeworks_${uid}`, JSON.stringify(list));
         loadedAnyFromDb = true;
       }
-      if (appointmentSnapshot && !appointmentSnapshot.empty) {
-        const list = appointmentSnapshot.docs.map(doc => doc.data() as Appointment);
+      if (appointmentSnapshot !== null) {
+        const list = appointmentSnapshot.empty ? [] : appointmentSnapshot.docs.map(doc => doc.data() as Appointment);
         setAppointments(list);
         localStorage.setItem(`pasma_appointments_${uid}`, JSON.stringify(list));
         loadedAnyFromDb = true;
       }
-      if (messageSnapshot && !messageSnapshot.empty) {
-        const list = messageSnapshot.docs.map(doc => doc.data() as Message);
+      if (messageSnapshot !== null) {
+        const list = messageSnapshot.empty ? [] : messageSnapshot.docs.map(doc => doc.data() as Message);
         setMessages(list);
         localStorage.setItem(`pasma_messages_${uid}`, JSON.stringify(list));
         loadedAnyFromDb = true;
       }
-      if (invoiceSnapshot && !invoiceSnapshot.empty) {
-        const list = invoiceSnapshot.docs.map(doc => doc.data() as Invoice);
+      if (invoiceSnapshot !== null) {
+        const list = invoiceSnapshot.empty ? [] : invoiceSnapshot.docs.map(doc => doc.data() as Invoice);
         setInvoices(list);
         localStorage.setItem(`pasma_invoices_${uid}`, JSON.stringify(list));
         loadedAnyFromDb = true;
       }
-      if (announcementSnapshot && !announcementSnapshot.empty) {
-        const list = announcementSnapshot.docs.map(doc => doc.data() as Announcement);
+      if (announcementSnapshot !== null) {
+        const list = announcementSnapshot.empty ? [] : announcementSnapshot.docs.map(doc => doc.data() as Announcement);
         setAnnouncements(list);
         localStorage.setItem(`pasma_announcements_${uid}`, JSON.stringify(list));
         loadedAnyFromDb = true;
       }
 
-      // If we got nothing from DB and nothing in local storage backup, load offline seed mockups!
-      if (!loadedAnyFromDb && !localBackupFound) {
+      // If we are completely offline and have nothing in local storage backup, load offline seed mockups!
+      if (!didConnectToDb && !localBackupFound) {
         console.log("No DB connection and no local backup found. Triggering instant local preview seed...");
         const offlineData = getOfflineMockData(uid);
         if (offlineData.students.length > 0) {
@@ -1903,6 +1911,16 @@ export default function App() {
         localStorage.removeItem(`backup_messages_${userId}`);
         localStorage.removeItem(`backup_invoices_${userId}`);
         localStorage.removeItem(`backup_announcements_${userId}`);
+
+        // Also remove live runtime local storage caches to fully clear the system for new real entries
+        localStorage.removeItem(`pasma_students_${userId}`);
+        localStorage.removeItem(`pasma_grades_${userId}`);
+        localStorage.removeItem(`pasma_attendance_${userId}`);
+        localStorage.removeItem(`pasma_homeworks_${userId}`);
+        localStorage.removeItem(`pasma_appointments_${userId}`);
+        localStorage.removeItem(`pasma_messages_${userId}`);
+        localStorage.removeItem(`pasma_invoices_${userId}`);
+        localStorage.removeItem(`pasma_announcements_${userId}`);
       }
 
       // Format core application states locally
@@ -2999,6 +3017,7 @@ export default function App() {
                           activeStudent={activeStudent}
                           onUpdateStudent={handleUpdateStudent}
                           onPrintReport={() => setPrintingStudent(activeStudent)}
+                          allStudents={students}
                         />
                       </motion.div>
                     )}

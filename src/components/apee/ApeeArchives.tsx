@@ -311,16 +311,16 @@ export default function ApeeArchives({ parents, expenses, settings, onImportBack
       </div>
 
       {onPurgeFullDatabase && (
-        <div className="bg-rose-50/50 border border-rose-150 p-6 rounded-2xl space-y-4">
+        <div className="bg-rose-50 border border-rose-250 p-6 rounded-2xl space-y-4">
           <div className="flex items-start gap-3">
             <div className="p-2.5 bg-rose-100 text-rose-700 rounded-xl border border-rose-200 shrink-0">
               <AlertTriangle className="h-6 w-6 animate-bounce" />
             </div>
             <div className="space-y-1">
-              <h3 className="text-sm font-black text-rose-950 uppercase tracking-wider">
+              <h3 className="text-sm font-black text-rose-900 uppercase tracking-wider">
                 🚨 ZONE ROUGE CRITIQUE : PURGE EXTRÊME DE LA BASE DE DONNÉES (USINE)
               </h3>
-              <p className="text-xs text-rose-850 leading-relaxed font-semibold">
+              <p className="text-xs text-rose-800 leading-relaxed font-semibold">
                 Cette option supprime absolument TOUTES les fiches de l'établissement liées à votre compte : fiches d'élèves, relevés de notes complets, absences, devoirs, rendez-vous, messages, annonces, et TOUTES les cotisations administratives d'APEE.
               </p>
               <p className="text-[10px] text-rose-600 font-bold">
@@ -334,7 +334,7 @@ export default function ApeeArchives({ parents, expenses, settings, onImportBack
               onClick={() => {
                 onPurgeFullDatabase();
               }}
-              className="px-6 py-3 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-rose-250 hover:shadow-lg transition duration-200"
+              className="px-6 py-3 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-rose-200 hover:shadow-lg transition duration-200"
             >
               <Trash2 className="h-4.5 w-4.5 shrink-0" />
               <span>Effacer l'intégralité du système & recommencer à zéro</span>
