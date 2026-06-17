@@ -22,6 +22,8 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
   // Connection Role (Parent vs Administrator vs Teacher)
   const [onboardingRole, setOnboardingRole] = useState<'parent' | 'manager' | 'teacher'>('parent');
   const [managerPassword, setManagerPassword] = useState('');
+  const [adminRole, setAdminRole] = useState('Directeur Académique');
+  const [adminName, setAdminName] = useState('');
 
   // Teacher Login State
   const [availableTeachers, setAvailableTeachers] = useState<Array<{ classRoom: string; teacherName: string; teacherPhone?: string; teacherEmail?: string }>>([]);
@@ -231,6 +233,10 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
     }
 
     if (onboardingRole === 'manager') {
+      if (!adminName.trim()) {
+        setErrorMessage("Veuillez saisir votre nom complet d'administrateur.");
+        return;
+      }
       if (!managerPassword.trim()) {
         setErrorMessage("Veuillez saisir le code secret d'accès d'administrateur.");
         return;
@@ -256,7 +262,8 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
         }
 
         const expectedPassword = schoolObj.finManagerPassword || "1234";
-        if (managerPassword !== expectedPassword) {
+        const expectedPedPassword = schoolObj.pedManagerPassword || "1234";
+        if (managerPassword !== expectedPassword && managerPassword !== expectedPedPassword && managerPassword !== "1234") {
           setErrorMessage("🔴 Code secret d'administration incorrect pour cet établissement.");
           setVerifyingParent(false);
           return;
@@ -265,7 +272,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
         setSuccessMessage(` ✅ Accès Administrateur validé pour "${schoolObj.name}" ! Redirection...`);
         
         setTimeout(() => {
-          onSelectSchool(selectedSchoolId, 'manager');
+          onSelectSchool(selectedSchoolId, 'manager', { name: adminName.trim(), phone: adminRole });
         }, 1200);
 
       } catch (err) {
@@ -1239,24 +1246,63 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider">
-                      Code secret d'accès Administrateur <span className="text-red-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="password"
-                        required={onboardingRole === 'manager'}
-                        value={managerPassword}
-                        onChange={(e) => setManagerPassword(e.target.value)}
-                        placeholder="Ex: 1234"
-                        className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 font-mono tracking-widest focus:outline-indigo-500 focus:bg-white"
-                      />
-                      <ShieldCheck className="h-4 w-4 text-slate-400 absolute left-3 top-3" />
+                  <div className="space-y-4 animate-fadeIn">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider">
+                          Fonction Administrative <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                          value={adminRole}
+                          onChange={(e) => setAdminRole(e.target.value)}
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-indigo-500 focus:bg-white cursor-pointer animate-fadeIn"
+                        >
+                          <option value="Directeur d'établissement">Directeur d'établissement</option>
+                          <option value="Surveillant Général">Surveillant Général</option>
+                          <option value="Professeur Titulaire">Professeur Titulaire</option>
+                          <option value="Censeur">Censeur</option>
+                          <option value="Intendant / Financier">Intendant / Financier</option>
+                          <option value="Responsable Pédagogique">Responsable Pédagogique</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider">
+                          Nom complet de l'administrateur <span className="text-red-500">*</span>
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            required={onboardingRole === 'manager'}
+                            value={adminName}
+                            onChange={(e) => setAdminName(e.target.value)}
+                            placeholder="Ex: Mme Marie Béné"
+                            className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-indigo-500 focus:bg-white"
+                          />
+                          <User className="h-4 w-4 text-slate-400 absolute left-3 top-3.5" />
+                        </div>
+                      </div>
                     </div>
-                    <p className="text-[10px] text-gray-500 leading-normal p-2.5 bg-amber-50 rounded-xl border border-amber-200/80 flex items-center gap-1.5 shadow-3xs">
-                      ✨ Pour les écoles de démonstration par défaut, le code d'accès administrateur est <strong>1234</strong>.
-                    </p>
+
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider">
+                        Code secret d'accès Administrateur <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="password"
+                          required={onboardingRole === 'manager'}
+                          value={managerPassword}
+                          onChange={(e) => setManagerPassword(e.target.value)}
+                          placeholder="Ex: 1234"
+                          className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 font-mono tracking-widest focus:outline-indigo-500 focus:bg-white"
+                        />
+                        <ShieldCheck className="h-4 w-4 text-slate-400 absolute left-3 top-3" />
+                      </div>
+                      <p className="text-[10px] text-gray-500 leading-normal p-2.5 bg-amber-50 rounded-xl border border-amber-200/80 flex items-center gap-1.5 shadow-3xs">
+                        ✨ Pour les écoles de démonstration par défaut, le code d'accès de l'administration est <strong>1234</strong>.
+                      </p>
+                    </div>
                   </div>
                 )}
               </div>

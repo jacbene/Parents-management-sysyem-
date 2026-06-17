@@ -103,7 +103,7 @@ service cloud.firestore {
     // 1. Establishments: Public-read, authenticated write/onboarding permission matching
     // Mitigates Payload 5: Admin role escape lockout & Payload 7 path traversals
     match /establishments/{establishmentId} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow create: if isSignedIn() && isSafeId(establishmentId) && 
                     (request.resource.data.ownerId == request.auth.uid || isSuperAdmin()) && 
                     !('role' in request.resource.data) && 
@@ -123,13 +123,13 @@ service cloud.firestore {
       allow list: if isOwnerOrDemoList(resource.data.parentId) || isSuperAdminList() || isSuperAdmin();
       allow create: if isSafeId(studentId) && 
                     (isOwnerOrDemoWrite(request.resource.data.parentId) || isSuperAdmin()) && 
-                    request.resource.data.keys().hasOnly(['id', 'parentId', 'name', 'grade', 'classRoom', 'avatar', 'teacherName', 'teacherEmail', 'dob', 'gradesValidated', 'attendanceValidated']) && 
+                    request.resource.data.diff({}).affectedKeys().hasOnly(['id', 'parentId', 'name', 'grade', 'classRoom', 'avatar', 'teacherName', 'teacherEmail', 'dob', 'gradesValidated', 'attendanceValidated']) && 
                     !('role' in request.resource.data) && 
                     !('isAdmin' in request.resource.data);
       allow update: if (isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin()) && 
                     (isOwnerOrDemoWrite(request.resource.data.parentId) || isSuperAdmin()) && 
                     (isImmutable('parentId') || isSuperAdmin()) && 
-                    request.resource.data.keys().hasOnly(['id', 'parentId', 'name', 'grade', 'classRoom', 'avatar', 'teacherName', 'teacherEmail', 'dob', 'gradesValidated', 'attendanceValidated']) && 
+                    request.resource.data.diff({}).affectedKeys().hasOnly(['id', 'parentId', 'name', 'grade', 'classRoom', 'avatar', 'teacherName', 'teacherEmail', 'dob', 'gradesValidated', 'attendanceValidated']) && 
                     !('role' in request.resource.data) && 
                     !('isAdmin' in request.resource.data);
       allow delete: if isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin();
@@ -144,13 +144,13 @@ service cloud.firestore {
                     isOwnerOrDemoWrite(request.resource.data.parentId) && 
                     request.resource.data.score >= 0 && 
                     request.resource.data.maxScore >= 0 &&
-                    request.resource.data.keys().hasOnly(['id', 'studentId', 'parentId', 'subject', 'examName', 'score', 'maxScore', 'teacherRemarks', 'date']);
+                    request.resource.data.diff({}).affectedKeys().hasOnly(['id', 'studentId', 'parentId', 'subject', 'examName', 'score', 'maxScore', 'teacherRemarks', 'date']);
       allow update: if isOwnerOrDemoWrite(resource.data.parentId) && 
                     isOwnerOrDemoWrite(request.resource.data.parentId) && 
                     isImmutable('parentId') && 
                     isImmutable('studentId') && 
                     request.resource.data.score >= 0 && 
-                    request.resource.data.keys().hasOnly(['id', 'studentId', 'parentId', 'subject', 'examName', 'score', 'maxScore', 'teacherRemarks', 'date']);
+                    request.resource.data.diff({}).affectedKeys().hasOnly(['id', 'studentId', 'parentId', 'subject', 'examName', 'score', 'maxScore', 'teacherRemarks', 'date']);
       allow delete: if isOwnerOrDemoWrite(resource.data.parentId);
     }
 
@@ -160,12 +160,12 @@ service cloud.firestore {
       allow list: if isOwnerOrDemoList(resource.data.parentId);
       allow create: if isSafeId(attendanceId) && 
                     isOwnerOrDemoWrite(request.resource.data.parentId) && 
-                    request.resource.data.keys().hasOnly(['id', 'studentId', 'parentId', 'date', 'status', 'remarks']);
+                    request.resource.data.diff({}).affectedKeys().hasOnly(['id', 'studentId', 'parentId', 'date', 'status', 'remarks']);
       allow update: if isOwnerOrDemoWrite(resource.data.parentId) && 
                     isOwnerOrDemoWrite(request.resource.data.parentId) && 
                     isImmutable('parentId') && 
                     isImmutable('studentId') && 
-                    request.resource.data.keys().hasOnly(['id', 'studentId', 'parentId', 'date', 'status', 'remarks']);
+                    request.resource.data.diff({}).affectedKeys().hasOnly(['id', 'studentId', 'parentId', 'date', 'status', 'remarks']);
       allow delete: if isOwnerOrDemoWrite(resource.data.parentId);
     }
 
@@ -176,12 +176,12 @@ service cloud.firestore {
       allow list: if isOwnerOrDemoList(resource.data.parentId);
       allow create: if isSafeId(homeworkId) && 
                     isOwnerOrDemoWrite(request.resource.data.parentId) && 
-                    request.resource.data.keys().hasOnly(['id', 'studentId', 'parentId', 'subject', 'title', 'description', 'dueDate', 'status', 'grade']);
+                    request.resource.data.diff({}).affectedKeys().hasOnly(['id', 'studentId', 'parentId', 'subject', 'title', 'description', 'dueDate', 'status', 'grade']);
       allow update: if isOwnerOrDemoWrite(resource.data.parentId) && 
                     isOwnerOrDemoWrite(request.resource.data.parentId) && 
                     isImmutable('parentId') && 
                     isImmutable('studentId') && 
-                    request.resource.data.keys().hasOnly(['id', 'studentId', 'parentId', 'subject', 'title', 'description', 'dueDate', 'status', 'grade']);
+                    request.resource.data.diff({}).affectedKeys().hasOnly(['id', 'studentId', 'parentId', 'subject', 'title', 'description', 'dueDate', 'status', 'grade']);
       allow delete: if isOwnerOrDemoWrite(resource.data.parentId);
     }
 
@@ -192,13 +192,13 @@ service cloud.firestore {
       allow list: if isOwnerOrDemoList(resource.data.parentId);
       allow create: if isSafeId(appointmentId) && 
                     isOwnerOrDemoWrite(request.resource.data.parentId) && 
-                    request.resource.data.keys().hasOnly(['id', 'studentId', 'parentId', 'teacherName', 'subject', 'dateTime', 'status', 'notes']);
+                    request.resource.data.diff({}).affectedKeys().hasOnly(['id', 'studentId', 'parentId', 'teacherName', 'subject', 'dateTime', 'status', 'notes']);
       allow update: if isOwnerOrDemoWrite(resource.data.parentId) && 
                     isOwnerOrDemoWrite(request.resource.data.parentId) && 
                     isImmutable('parentId') && 
                     isImmutable('studentId') && 
                     resource.data.status != 'Cancelled' && 
-                    request.resource.data.keys().hasOnly(['id', 'studentId', 'parentId', 'teacherName', 'subject', 'dateTime', 'status', 'notes']);
+                    request.resource.data.diff({}).affectedKeys().hasOnly(['id', 'studentId', 'parentId', 'teacherName', 'subject', 'dateTime', 'status', 'notes']);
       allow delete: if isOwnerOrDemoWrite(resource.data.parentId);
     }
 
@@ -210,13 +210,13 @@ service cloud.firestore {
       allow create: if isSafeId(messageId) && 
                     isOwnerOrDemoWrite(request.resource.data.parentId) && 
                     request.resource.data.content.size() < 5000 && 
-                    request.resource.data.keys().hasOnly(['id', 'studentId', 'parentId', 'senderType', 'content', 'timestamp', 'teacherName']);
+                    request.resource.data.diff({}).affectedKeys().hasOnly(['id', 'studentId', 'parentId', 'senderType', 'content', 'timestamp', 'teacherName']);
       allow update: if isOwnerOrDemoWrite(resource.data.parentId) && 
                     isOwnerOrDemoWrite(request.resource.data.parentId) && 
                     isImmutable('parentId') && 
                     isImmutable('studentId') && 
                     request.resource.data.content.size() < 5000 && 
-                    request.resource.data.keys().hasOnly(['id', 'studentId', 'parentId', 'senderType', 'content', 'timestamp', 'teacherName']);
+                    request.resource.data.diff({}).affectedKeys().hasOnly(['id', 'studentId', 'parentId', 'senderType', 'content', 'timestamp', 'teacherName']);
       allow delete: if isOwnerOrDemoWrite(resource.data.parentId);
     }
 
@@ -229,14 +229,14 @@ service cloud.firestore {
                     (isOwnerOrDemoWrite(request.resource.data.parentId) || isSuperAdmin()) && 
                     request.resource.data.amount >= 0 && 
                     (!('amountPaid' in request.resource.data) || request.resource.data.amountPaid >= 0) && 
-                    request.resource.data.keys().hasOnly(['id', 'studentId', 'parentId', 'title', 'amount', 'dueDate', 'status', 'paymentDate', 'phone', 'address', 'email', 'lastReminded', 'note', 'amountPaid', 'studentsList', 'paymentsHistory', 'transactionId', 'provider', 'expenseType', 'description', 'budgetLineId', 'budgetLinesList', 'finManagerName', 'finManagerPhone', 'finManagerPassword', 'pedManagerName', 'pedManagerPhone', 'pedManagerPassword', 'logoUrl', 'directorName', 'directorPhone', 'directorEmail', 'surveillantName', 'surveillantPhone', 'censeurName', 'censeurPhone', 'classTeachersList', 'honoraryContributions', 'subventionsAndAids', 'actualHonoraryContributions', 'actualSubventionsAndAids', 'expectedStudents', 'country', 'currency', 'financialObligationsList', 'type', 'statusDetails', 'payerName', 'paymentMethod', 'notes', 'createdAt']);
+                    request.resource.data.diff({}).affectedKeys().hasOnly(['id', 'studentId', 'parentId', 'title', 'amount', 'dueDate', 'status', 'paymentDate', 'phone', 'address', 'email', 'lastReminded', 'note', 'amountPaid', 'studentsList', 'paymentsHistory', 'transactionId', 'provider', 'expenseType', 'description', 'budgetLineId', 'budgetLinesList', 'finManagerName', 'finManagerPhone', 'finManagerPassword', 'pedManagerName', 'pedManagerPhone', 'pedManagerPassword', 'logoUrl', 'directorName', 'directorPhone', 'directorEmail', 'surveillantName', 'surveillantPhone', 'censeurName', 'censeurPhone', 'classTeachersList', 'honoraryContributions', 'subventionsAndAids', 'actualHonoraryContributions', 'actualSubventionsAndAids', 'expectedStudents', 'country', 'currency', 'financialObligationsList', 'type', 'statusDetails', 'payerName', 'paymentMethod', 'notes', 'createdAt']);
       allow update: if (isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin()) && 
                     (isOwnerOrDemoWrite(request.resource.data.parentId) || isSuperAdmin()) && 
                     (isImmutable('parentId') || isSuperAdmin()) && 
                     (isImmutable('studentId') || isSuperAdmin()) && 
                     request.resource.data.amount >= 0 && 
                     (!('amountPaid' in request.resource.data) || request.resource.data.amountPaid >= 0) && 
-                    request.resource.data.keys().hasOnly(['id', 'studentId', 'parentId', 'title', 'amount', 'dueDate', 'status', 'paymentDate', 'phone', 'address', 'email', 'lastReminded', 'note', 'amountPaid', 'studentsList', 'paymentsHistory', 'transactionId', 'provider', 'expenseType', 'description', 'budgetLineId', 'budgetLinesList', 'finManagerName', 'finManagerPhone', 'finManagerPassword', 'pedManagerName', 'pedManagerPhone', 'pedManagerPassword', 'logoUrl', 'directorName', 'directorPhone', 'directorEmail', 'surveillantName', 'surveillantPhone', 'censeurName', 'censeurPhone', 'classTeachersList', 'honoraryContributions', 'subventionsAndAids', 'actualHonoraryContributions', 'actualSubventionsAndAids', 'expectedStudents', 'country', 'currency', 'financialObligationsList', 'type', 'statusDetails', 'payerName', 'paymentMethod', 'notes', 'createdAt']);
+                    request.resource.data.diff({}).affectedKeys().hasOnly(['id', 'studentId', 'parentId', 'title', 'amount', 'dueDate', 'status', 'paymentDate', 'phone', 'address', 'email', 'lastReminded', 'note', 'amountPaid', 'studentsList', 'paymentsHistory', 'transactionId', 'provider', 'expenseType', 'description', 'budgetLineId', 'budgetLinesList', 'finManagerName', 'finManagerPhone', 'finManagerPassword', 'pedManagerName', 'pedManagerPhone', 'pedManagerPassword', 'logoUrl', 'directorName', 'directorPhone', 'directorEmail', 'surveillantName', 'surveillantPhone', 'censeurName', 'censeurPhone', 'classTeachersList', 'honoraryContributions', 'subventionsAndAids', 'actualHonoraryContributions', 'actualSubventionsAndAids', 'expectedStudents', 'country', 'currency', 'financialObligationsList', 'type', 'statusDetails', 'payerName', 'paymentMethod', 'notes', 'createdAt']);
       allow delete: if isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin();
     }
 
@@ -246,13 +246,13 @@ service cloud.firestore {
       allow create: if isSafeId(logId) && 
                     isSignedIn() && 
                     isOwnerOrDemoWrite(getStudent(request.resource.data.studentId).parentId) && 
-                    request.resource.data.keys().hasOnly(['studentId', 'studentName', 'bookTitle', 'bookAuthor', 'genre', 'status', 'progressPercent', 'parentNotes', 'rating', 'addedAt']);
+                    request.resource.data.diff({}).affectedKeys().hasOnly(['studentId', 'studentName', 'bookTitle', 'bookAuthor', 'genre', 'status', 'progressPercent', 'parentNotes', 'rating', 'addedAt']);
       allow update: if isSignedIn() && (
         isOwnerOrDemoWrite(getStudent(resource.data.studentId).parentId)
       ) && (
         isOwnerOrDemoWrite(getStudent(request.resource.data.studentId).parentId)
       ) && isImmutable('studentId') && 
-                    request.resource.data.keys().hasOnly(['studentId', 'studentName', 'bookTitle', 'bookAuthor', 'genre', 'status', 'progressPercent', 'parentNotes', 'rating', 'addedAt']);
+                    request.resource.data.diff({}).affectedKeys().hasOnly(['studentId', 'studentName', 'bookTitle', 'bookAuthor', 'genre', 'status', 'progressPercent', 'parentNotes', 'rating', 'addedAt']);
       allow delete: if isSignedIn() && (
         isOwnerOrDemoWrite(getStudent(resource.data.studentId).parentId)
       );
@@ -263,25 +263,27 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isSafeId(announcementId) && 
                     isOwnerOrDemoWrite(request.resource.data.parentId) && 
-                    request.resource.data.keys().hasOnly(['id', 'title', 'content', 'category', 'date', 'author', 'parentId']);
+                    request.resource.data.diff({}).affectedKeys().hasOnly(['id', 'title', 'content', 'category', 'date', 'author', 'parentId']);
       allow update: if isOwnerOrDemoWrite(resource.data.parentId) && 
                     isOwnerOrDemoWrite(request.resource.data.parentId) && 
                     isImmutable('parentId') && 
-                    request.resource.data.keys().hasOnly(['id', 'title', 'content', 'category', 'date', 'author', 'parentId']);
+                    request.resource.data.diff({}).affectedKeys().hasOnly(['id', 'title', 'content', 'category', 'date', 'author', 'parentId']);
       allow delete: if isOwnerOrDemoWrite(resource.data.parentId);
     }
 
     // 11. Super Admins Collection: Managed by jacquesbene301@gmail.com and secondary Super Admins
     match /super_admins/{adminId} {
-      allow get: if isSuperAdmin();
+      allow get: if isSignedIn() && (request.auth.token.get('email', '') == adminId || isSuperAdmin());
       allow list: if isSuperAdminList() || isSuperAdmin();
       allow write: if isSuperAdmin();
     }
 
-    // 12. Seeding Verification Pathway: Required for automated test sweeps and sandbox-level seeding
-    match /seeding {
+    // Active Sessions for concurrency check
+    match /active_sessions/{sessionId} {
       allow read, write: if true;
     }
+
+    // 12. Seeding Verification Pathway: Required for automated test sweeps and sandbox-level seeding
     match /seeding/{document=**} {
       allow read, write: if true;
     }

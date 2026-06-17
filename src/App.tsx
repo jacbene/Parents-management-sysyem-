@@ -298,6 +298,10 @@ export default function App() {
     const t = localStorage.getItem('portal_teacher_details');
     return t ? JSON.parse(t) : null;
   });
+  const [portalManagerDetails, setPortalManagerDetails] = useState<{ name: string; phone: string } | null>(() => {
+    const m = localStorage.getItem('portal_manager_details');
+    return m ? JSON.parse(m) : null;
+  });
 
   // Persistent role, device registration and school state are preserved across reloads with no overrides
   const [showMainLogin, setShowMainLogin] = useState<boolean>(() => {
@@ -511,17 +515,30 @@ export default function App() {
       localStorage.setItem('portal_parent_details', JSON.stringify(details));
       setPortalParentDetails(details);
       setPortalTeacherDetails(null);
+      setPortalManagerDetails(null);
       localStorage.removeItem('portal_teacher_details');
+      localStorage.removeItem('portal_manager_details');
     } else if (role === 'teacher' && details) {
       localStorage.setItem('portal_teacher_details', JSON.stringify(details));
       setPortalTeacherDetails(details as any);
       setPortalParentDetails(null);
+      setPortalManagerDetails(null);
       localStorage.removeItem('portal_parent_details');
+      localStorage.removeItem('portal_manager_details');
+    } else if (role === 'manager' && details) {
+      localStorage.setItem('portal_manager_details', JSON.stringify(details));
+      setPortalManagerDetails(details as any);
+      setPortalParentDetails(null);
+      setPortalTeacherDetails(null);
+      localStorage.removeItem('portal_parent_details');
+      localStorage.removeItem('portal_teacher_details');
     } else {
       localStorage.removeItem('portal_parent_details');
       localStorage.removeItem('portal_teacher_details');
+      localStorage.removeItem('portal_manager_details');
       setPortalParentDetails(null);
       setPortalTeacherDetails(null);
+      setPortalManagerDetails(null);
     }
     
     setSelectedSchoolId(schoolId);
@@ -535,11 +552,13 @@ export default function App() {
     localStorage.removeItem('portal_user_role');
     localStorage.removeItem('portal_parent_details');
     localStorage.removeItem('portal_teacher_details');
+    localStorage.removeItem('portal_manager_details');
     localStorage.removeItem('portal_login_timestamp');
     setSelectedSchoolId(null);
     setPortalUserRole(null);
     setPortalParentDetails(null);
     setPortalTeacherDetails(null);
+    setPortalManagerDetails(null);
     setShowMainLogin(true);
   };
 
@@ -770,23 +789,22 @@ export default function App() {
         
         let isDeputy = false;
         try {
-          // Check super_admins to verify if this email is an assistant/deputy
-          const q = query(collection(db, 'super_admins'));
-          const snap = await getDocs(q);
-          const list: any[] = [];
-          snap.forEach((doc) => {
-            const data = doc.data();
-            if (data.email) {
-              list.push(data.email.toLowerCase().trim());
-            }
-          });
-          isDeputy = list.includes(email) || email === 'adjoint@pasma.sys';
+          // Check super_admins to verify if this email is an assistant/deputy using a direct get
+          const adminDocRef = doc(db, 'super_admins', email);
+          const adminDocSnap = await getDoc(adminDocRef);
+          if (adminDocSnap.exists()) {
+            isDeputy = true;
+          } else {
+            isDeputy = email === 'adjoint@pasma.sys';
+          }
         } catch (e) {
-          console.warn("Could not retrieve collection 'super_admins' during validation:", e);
+          console.warn("Could not retrieve specific super_admin document during validation:", e);
           const cached = localStorage.getItem('pasma_secondary_admins');
           if (cached) {
             const list = JSON.parse(cached);
-            isDeputy = list.some((admin: any) => admin.email?.toLowerCase().trim() === email);
+            isDeputy = list.some((admin: any) => admin.email?.toLowerCase().trim() === email) || email === 'adjoint@pasma.sys';
+          } else {
+            isDeputy = email === 'adjoint@pasma.sys';
           }
         }
 
@@ -802,6 +820,10 @@ export default function App() {
       } else if (currentUser) {
         // Anonymous/Guest user
         console.log("Anonymous guest logged in:", currentUser.uid);
+      } else {
+        // Forced login redirection for non-authenticated guests
+        setShowMainLogin(true);
+        setShowSuperAdmin(false);
       }
       setUser(currentUser);
       setLoading(false);
@@ -827,6 +849,37 @@ export default function App() {
         return;
       }
 
+      const email = user.email.toLowerCase().trim();
+      const isPrimary = email === 'jacquesbene301@gmail.com';
+      const isDefaultAdjoint = email === 'adjoint@pasma.sys';
+      
+      const cached = localStorage.getItem('pasma_secondary_admins');
+      let isCachedDeputy = false;
+      if (cached) {
+        try {
+          const list = JSON.parse(cached);
+          if (Array.isArray(list)) {
+            isCachedDeputy = list.some((admin: any) => admin.email?.toLowerCase().trim() === email);
+          }
+        } catch (ee) {
+          console.warn("Failed to parse cached pasma_secondary_admins", ee);
+        }
+      }
+
+      if (!isPrimary && !isDefaultAdjoint && !isCachedDeputy) {
+        // Not a super-admin or deputy. Do not attempt Firestore list query to prevent security rule violations on client.
+        if (cached) {
+          setSecondaryAdmins(JSON.parse(cached));
+        } else {
+          const defaultAdmins = [
+            { id: 'admin_sec_1', email: 'adjoint@pasma.sys', name: 'Alain Ndzie', createdAt: new Date().toISOString(), addedBy: 'jacquesbene301@gmail.com' }
+          ];
+          setSecondaryAdmins(defaultAdmins);
+          localStorage.setItem('pasma_secondary_admins', JSON.stringify(defaultAdmins));
+        }
+        return;
+      }
+
       try {
         const q = query(collection(db, 'super_admins'));
         const snap = await getDocs(q);
@@ -838,7 +891,6 @@ export default function App() {
           setSecondaryAdmins(list);
           localStorage.setItem('pasma_secondary_admins', JSON.stringify(list));
         } else {
-          const cached = localStorage.getItem('pasma_secondary_admins');
           if (cached) {
             setSecondaryAdmins(JSON.parse(cached));
           } else {
@@ -851,7 +903,6 @@ export default function App() {
         }
       } catch (e) {
         console.warn("Could not retrieve collection 'super_admins' from Firestore. Checking local cache.", e);
-        const cached = localStorage.getItem('pasma_secondary_admins');
         if (cached) {
           setSecondaryAdmins(JSON.parse(cached));
         } else {
@@ -1095,49 +1146,44 @@ export default function App() {
     };
   }, [userId, user?.uid, isOffline, loading]);
 
-  // 1.6 Monitor for Parent Multi-Device session change
+  // 1.6 Monitor for Session Concurrency and Device mismatch (All roles)
   useEffect(() => {
-    if (portalUserRole === 'parent' && selectedSchoolId && invoices.length > 0 && portalParentDetails) {
-      const myParentInvoice = invoices.find(inv => 
-        inv.studentId === 'apee_ces_ekali_1' && 
-        (inv.phone === portalParentDetails.phone || inv.title === portalParentDetails.name)
-      );
-      if (myParentInvoice && myParentInvoice.notes) {
-        if (myParentInvoice.notes.startsWith('DEVICE_ID:')) {
-          const dbDeviceId = myParentInvoice.notes.replace('DEVICE_ID:', '');
-          const localDeviceId = localStorage.getItem('pasma_device_id');
-          if (dbDeviceId && localDeviceId && dbDeviceId !== localDeviceId) {
-            console.warn("Device mismatch detected for Parent! Local:", localDeviceId, "DB:", dbDeviceId);
-            setDeviceChanged(true);
-          }
+    if (!selectedSchoolId || !portalUserRole) return;
+
+    let targetKey = "";
+    if (portalUserRole === 'parent' && portalParentDetails) {
+      targetKey = `parent_${selectedSchoolId}_${portalParentDetails.phone || portalParentDetails.name}`;
+    } else if (portalUserRole === 'teacher' && portalTeacherDetails) {
+      targetKey = `teacher_${selectedSchoolId}_${portalTeacherDetails.name}`;
+    } else if (portalUserRole === 'manager' && portalManagerDetails) {
+      targetKey = `manager_${selectedSchoolId}_${portalManagerDetails.name}`;
+    }
+
+    if (!targetKey) return;
+
+    const currentDeviceId = localStorage.getItem('pasma_device_id') || 'dev_' + Math.random().toString(36).substring(2, 11);
+    localStorage.setItem('pasma_device_id', currentDeviceId);
+
+    // Register active session in the database
+    const sessionRef = doc(db, 'active_sessions', targetKey);
+    setDoc(sessionRef, { deviceId: currentDeviceId, updatedAt: Date.now() }, { merge: true }).catch(err => {
+      console.warn("Session device registration failed or offline:", err);
+    });
+
+    const unsub = onSnapshot(sessionRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const val = snapshot.data();
+        if (val.deviceId && val.deviceId !== currentDeviceId) {
+          console.warn("Device mismatch session invalidation for:", targetKey);
+          setDeviceChanged(true);
         }
       }
-    }
-  }, [invoices, portalUserRole, selectedSchoolId, portalParentDetails]);
+    }, (err) => {
+      console.warn("Session listener issue (expected for offline or initial sweeps):", err);
+    });
 
-  // 1.7 Monitor for School Manager Multi-Device session change
-  useEffect(() => {
-    if (portalUserRole === 'manager' && selectedSchoolId) {
-      const unsub = onSnapshot(
-        doc(db, 'establishments', selectedSchoolId),
-        (snapshot) => {
-          if (snapshot.exists()) {
-            const data = snapshot.data();
-            const dbManagerDeviceId = data.lastManagerDeviceId;
-            const localDeviceId = localStorage.getItem('pasma_device_id');
-            if (dbManagerDeviceId && localDeviceId && dbManagerDeviceId !== localDeviceId) {
-              console.warn("Device mismatch detected for School Manager! Local:", localDeviceId, "DB:", dbManagerDeviceId);
-              setDeviceChanged(true);
-            }
-          }
-        },
-        (err) => {
-          console.warn("Failed school manager device id monitoring snap:", err);
-        }
-      );
-      return unsub;
-    }
-  }, [portalUserRole, selectedSchoolId]);
+    return unsub;
+  }, [portalUserRole, selectedSchoolId, portalParentDetails, portalTeacherDetails, portalManagerDetails]);
 
   const fetchAllData = async (uid: string) => {
     // 1. Load offline cache values first for instant loading
@@ -2186,30 +2232,6 @@ export default function App() {
                     {submittingEmailLogin ? "Authentification..." : "Se connecter par adresse mail"}
                   </button>
                 </form>
-
-                {/* Separator */}
-                <div className="relative flex py-1 items-center">
-                  <div className="flex-grow border-t border-gray-150"></div>
-                  <span className="flex-shrink mx-4 text-gray-400 text-[9px] font-black uppercase tracking-widest bg-white px-2">PORTAIL PUBLIC</span>
-                  <div className="flex-grow border-t border-gray-150"></div>
-                </div>
-
-                {/* Button for general portal */}
-                <div className="space-y-2">
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await handleGuestLogin();
-                      setShowMainLogin(false);
-                    }}
-                    className="w-full py-3.5 bg-indigo-900 border border-indigo-750 text-indigo-100 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-slate-900 transition active:scale-98 shadow-md shadow-indigo-950/15 cursor-pointer flex items-center justify-center gap-1.5"
-                  >
-                    🎒 Accéder Directement au Portail Scolaire & Parents
-                  </button>
-                  <p className="text-[10px] text-gray-400 font-medium text-center leading-relaxed">
-                    Pour tuteurs/parents (OTP), directeurs d'école (Code d'accès) ou pour créer un nouvel établissement.
-                  </p>
-                </div>
               </div>
             </div>
           </motion.div>
@@ -2370,7 +2392,11 @@ export default function App() {
                 
                 <div className="text-right hidden sm:block">
                   <div className="text-xs font-black text-indigo-950">
-                    {portalUserRole === 'parent' ? `${t('header.role.parent')} : ${portalParentDetails?.name}` : t('header.role.manager')}
+                    {portalUserRole === 'parent' 
+                      ? `${t('header.role.parent')} : ${portalParentDetails?.name}` 
+                      : portalUserRole === 'teacher' 
+                        ? `Enseignant : ${portalTeacherDetails?.name}` 
+                        : `${portalManagerDetails?.phone || 'Administrateur'} : ${portalManagerDetails?.name || 'Responsable'}`}
                   </div>
                   <div className="text-[10px] text-indigo-600 font-bold flex items-center gap-1 justify-end">
                     <span className="h-1.5 w-1.5 bg-indigo-500 rounded-full animate-pulse" /> {apeeSettings.associationName || "Établissement Actif"}
