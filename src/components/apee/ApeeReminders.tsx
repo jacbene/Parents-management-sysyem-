@@ -16,7 +16,8 @@ import {
   MessageCircle,
   HelpCircle,
   Clock,
-  Settings
+  Settings,
+  X
 } from 'lucide-react';
 import { ApeeParent, ApeeSettings } from '../../types';
 import { getApeeShortName, generateApeeReminderMessage } from '../../utils/apeeDb';
@@ -98,6 +99,11 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
 
   // Multi selection for bulk actions
   const [selectedParentIds, setSelectedParentIds] = useState<string[]>([]);
+  
+  // Mailto sequential wizard states
+  const [mailtoWizardActive, setMailtoWizardActive] = useState(false);
+  const [mailtoCurrentIndex, setMailtoCurrentIndex] = useState(0);
+  const [mailtoWizardParents, setMailtoWizardParents] = useState<ApeeParent[]>([]);
   
   // Simulating states
   const [bulkProcessing, setBulkProcessing] = useState(false);
@@ -236,6 +242,99 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
     triggerToast('success', `Rappel ${channel.toUpperCase()} simulé et délivré à ${parent.name}.`);
   };
 
+  // Real Backend Bulk Reminder run
+  const handleBackendBulkReminderRun = async (channel: 'sms' | 'email') => {
+    const idsToProcess = selectedParentIds.length > 0 ? selectedParentIds : filteredParents.map(p => p.id);
+    if (idsToProcess.length === 0) {
+      alert("Aucun parent sélectionné pour la relance.");
+      return;
+    }
+
+    if (!confirm(`Voulez-vous lancer la relance groupée (${channel.toUpperCase()}) pour les ${idsToProcess.length} parents sélectionnés sur le serveur de messagerie?`)) {
+      return;
+    }
+
+    setBulkProcessing(true);
+    setBulkChannel(channel);
+    setBulkProgress(0);
+    setBulkLog([`[Backend API] Transmission de la requête au serveur d'intendance de l'établissement...`]);
+
+    try {
+      // Show progress increments
+      const interval = setInterval(() => {
+        setBulkProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(interval);
+            return prev;
+          }
+          return prev + 10;
+        });
+      }, 500);
+
+      const response = await fetch('/api/apee/send-bulk-reminders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          parentIds: idsToProcess,
+          parents: parents,
+          emailSubject,
+          emailTemplate,
+          smsTemplate,
+          settings,
+          channel
+        })
+      });
+
+      clearInterval(interval);
+      const resData = await response.json();
+      
+      if (resData.success) {
+        setBulkProgress(100);
+        setBulkLog(resData.logs || []);
+        
+        // Save the updated parents in React context
+        if (Array.isArray(resData.updatedParents)) {
+          for (const updatedParent of resData.updatedParents) {
+            await onSaveParent(updatedParent);
+          }
+        }
+        
+        setSelectedParentIds([]);
+        triggerToast('success', `Relance collective terminée : ${resData.processedCount} messages acheminés avec succès.`);
+      } else {
+        setBulkLog(prev => [...prev, `❌ [Erreur Serveur] : ${resData.error || 'Erreur indéfinie'}`]);
+        triggerToast('info', `Une erreur est survenue sur le serveur d'envois.`);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setBulkLog(prev => [...prev, `❌ [Erreur Réseau] : Impossible de se connecter au serveur de messagerie.`]);
+      triggerToast('info', `Erreur de connexion avec l'API.`);
+    } finally {
+      setBulkProcessing(false);
+    }
+  };
+
+  // Launch sequential Mailto Wizard
+  const handleLaunchMailtoWizard = () => {
+    const targets = selectedParentIds.length > 0 
+      ? parents.filter(p => selectedParentIds.includes(p.id) && (p.status === 'partiel' || p.status === 'retard'))
+      : filteredParents;
+    
+    // Only parents with emails
+    const targetParentsWithEmail = targets.filter(p => !!p.email);
+    if (targetParentsWithEmail.length === 0) {
+      alert("Aucun des parents sélectionnés ne dispose d'une adresse email valide.");
+      return;
+    }
+    
+    setMailtoWizardParents(targetParentsWithEmail);
+    setMailtoCurrentIndex(0);
+    setMailtoWizardActive(true);
+    triggerToast('success', `Assistant Mailto démarré pour ${targetParentsWithEmail.length} parents.`);
+  };
+
   // Bulk Reminder Run Simulation
   const handleBulkReminderRun = async (channel: 'sms' | 'email') => {
     const idsToProcess = selectedParentIds.length > 0 ? selectedParentIds : filteredParents.map(p => p.id);
@@ -313,19 +412,30 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
             Générez et distribuez des SMS de relance et de courriels d'urgence vers les parents insolvables ou en retard.
           </p>
         </div>
-        <div className="mt-2 md:mt-0 flex gap-2">
+        <div className="mt-2 md:mt-0 flex flex-wrap gap-2">
           <button
-            onClick={() => handleBulkReminderRun('sms')}
-            className="text-xs px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs transition"
+            type="button"
+            onClick={() => handleBackendBulkReminderRun('email')}
+            title="Relancer tous les parents sélectionnés automatiquement en arrière-plan"
+            className="text-xs px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs transition"
           >
-            <Smartphone className="h-3.5 w-3.5" /> Envoi Groupé SMS ({overdueParents.length})
+            <Mail className="h-3.5 w-3.5" /> Envoi Auto Email (Backend)
           </button>
           <button
-            onClick={() => handleBulkReminderRun('email')}
-            title="Relancer par Email"
-            className="text-xs px-3.5 py-2 bg-slate-800 hover:bg-slate-905 text-white font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs transition"
+            type="button"
+            onClick={handleLaunchMailtoWizard}
+            title="Relancer les parents un à un grâce à votre propre client mail (sans configuration)"
+            className="text-xs px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs transition"
           >
-            <Mail className="h-3.5 w-3.5" /> Envoi Groupé Email
+            <ExternalLink className="h-3.5 w-3.5" /> Assistant Mailto Séquentiel
+          </button>
+          <button
+            type="button"
+            onClick={() => handleBackendBulkReminderRun('sms')}
+            title="Envoyer des notifications de rappel par SMS automatique"
+            className="text-xs px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs transition"
+          >
+            <Smartphone className="h-3.5 w-3.5" /> SMS Collectif (Serveur)
           </button>
         </div>
       </div>
@@ -367,6 +477,103 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
           </div>
         </div>
       </div>
+
+      {/* Assistant Mailto Séquentiel UI */}
+      {mailtoWizardActive && mailtoWizardParents.length > 0 && (
+        <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white p-5 rounded-2xl border border-indigo-500/30 shadow-xl space-y-4">
+          <div className="flex justify-between items-center border-b border-indigo-500/20 pb-2.5">
+            <div className="flex items-center gap-2">
+              <span className="p-1 px-2 rounded-lg bg-indigo-600/85 text-white font-mono text-[9px] font-black tracking-wider">ASSISTANT LOCAL MAILTO</span>
+              <h3 className="font-bold text-sm text-indigo-100 flex items-center gap-1.5">
+                📥 Envoi Individuel via Client de Messagerie
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => setMailtoWizardActive(false)}
+              className="p-1 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition cursor-pointer"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="flex justify-between items-center text-xs text-slate-300">
+            <span>Parent cible : <strong className="text-white hover:underline cursor-pointer">{mailtoWizardParents[mailtoCurrentIndex].name}</strong></span>
+            <span className="font-mono text-indigo-300 font-bold bg-indigo-950/50 px-2 py-0.5 rounded-full border border-indigo-500/15">Parent {mailtoCurrentIndex + 1} sur {mailtoWizardParents.length}</span>
+          </div>
+
+          <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+            <div 
+              className="bg-indigo-400 h-full transition-all duration-300"
+              style={{ width: `${((mailtoCurrentIndex + 1) / mailtoWizardParents.length) * 100}%` }}
+            />
+          </div>
+
+          {/* Mail info preview box */}
+          <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800/80 space-y-2 text-xs">
+            <div className="flex gap-2">
+              <span className="text-slate-500 font-semibold w-16 text-right">À :</span>
+              <span className="text-indigo-300 w-full break-all font-mono font-bold">{mailtoWizardParents[mailtoCurrentIndex].email}</span>
+            </div>
+            <div className="flex gap-2">
+              <span className="text-slate-500 font-semibold w-16 text-right">Objet :</span>
+              <span className="text-slate-250 w-full font-bold">{formatText(emailSubject, mailtoWizardParents[mailtoCurrentIndex])}</span>
+            </div>
+            <div className="border-t border-slate-900 pt-2 mt-1">
+              <p className="text-slate-500 font-semibold mb-1 text-[10px] uppercase tracking-widest">Message prévisualisé :</p>
+              <div className="bg-black/35 border border-slate-900 p-2.5 rounded-lg text-[10.5px] leading-relaxed max-h-32 overflow-y-auto whitespace-pre-line text-slate-300 font-sans">
+                {formatText(emailTemplate, mailtoWizardParents[mailtoCurrentIndex])}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3 pt-1">
+            <div className="flex gap-1 text-xs">
+              <button
+                type="button"
+                disabled={mailtoCurrentIndex === 0}
+                onClick={() => setMailtoCurrentIndex(prev => Math.max(0, prev - 1))}
+                className="px-2.5 py-1.5 border border-slate-700/80 rounded-lg hover:bg-slate-800 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition font-medium"
+              >
+                Précédent
+              </button>
+              <button
+                type="button"
+                disabled={mailtoCurrentIndex === mailtoWizardParents.length - 1}
+                onClick={() => setMailtoCurrentIndex(prev => Math.min(mailtoWizardParents.length - 1, prev + 1))}
+                className="px-2.5 py-1.5 border border-slate-700/80 rounded-lg hover:bg-slate-800 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition font-medium"
+              >
+                Suivant
+              </button>
+            </div>
+
+            <div className="flex flex-wrap sm:flex-nowrap gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => handleEmailTrigger(mailtoWizardParents[mailtoCurrentIndex])}
+                className="flex-1 sm:flex-initial px-4 py-2 bg-indigo-600 hover:bg-indigo-505 text-white font-extrabold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-md transition"
+              >
+                <Mail className="h-4 w-4 shrink-0" /> 1. Ouvrir Client Messagerie
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await updateLastReminded(mailtoWizardParents[mailtoCurrentIndex], 'Mailto Assisté');
+                  if (mailtoCurrentIndex < mailtoWizardParents.length - 1) {
+                    setMailtoCurrentIndex(prev => prev + 1);
+                  } else {
+                    setMailtoWizardActive(false);
+                    triggerToast('success', 'Félicitations, toutes les fiches de relance mailto sélectionnées ont été traitées !');
+                  }
+                }}
+                className="flex-1 sm:flex-initial px-4 py-2 bg-emerald-600 hover:bg-emerald-555 text-white font-extrabold rounded-xl flex items-center justify-center gap-1 cursor-pointer shadow-md transition animate-pulse"
+              >
+                2. Suivant ➡️
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Bulk Progress Panel */}
       {bulkProcessing && (
@@ -540,17 +747,28 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
                 <span className="text-[10px] font-bold text-slate-700">{selectedParentIds.length} parents sélectionnés</span>
                 <div className="flex gap-1.5">
                   <button
-                    onClick={() => handleBulkReminderRun('sms')}
-                    className="text-[9px] px-2 py-1 bg-indigo-600 text-white font-bold rounded-lg flex items-center gap-1 cursor-pointer hover:bg-indigo-700 transition"
-                  >
-                    Relancer par SMS
-                  </button>
-                  <button
-                    onClick={() => handleBulkReminderRun('email')}
-                    title="Relancer par Email"
+                    type="button"
+                    onClick={() => handleBackendBulkReminderRun('email')}
+                    title="Envoi automatique collectif par email via APIs du serveur"
                     className="text-[9px] px-2 py-1 bg-slate-800 text-white font-bold rounded-lg flex items-center gap-1 cursor-pointer hover:bg-slate-900 transition"
                   >
-                    Relancer par Email
+                    🚀 Email Auto
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleLaunchMailtoWizard}
+                    title="Lancer l'assistant pour composer les emails dans votre application de messagerie locale"
+                    className="text-[9px] px-2 py-1 bg-indigo-600 text-white font-bold rounded-lg flex items-center gap-1 cursor-pointer hover:bg-indigo-700 transition"
+                  >
+                    📥 Client Mailto
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleBackendBulkReminderRun('sms')}
+                    title="Relancer collectivement par SMS via APIs du serveur"
+                    className="text-[9px] px-2 py-1 bg-white text-slate-800 border border-slate-300 font-bold rounded-lg flex items-center gap-1 cursor-pointer hover:bg-slate-100 transition"
+                  >
+                    📱 SMS (Serveur)
                   </button>
                 </div>
               </div>

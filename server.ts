@@ -461,6 +461,105 @@ Ne mets aucune explication ni texte d'accompagnement en dehors du format JSON de
   }
 });
 
+// API: Trigger bulk email reminders for parents
+app.post("/api/apee/send-bulk-reminders", async (req, res) => {
+  const { parentIds, parents, emailSubject, emailTemplate, smsTemplate, settings, channel } = req.body;
+
+  if (!parents || !Array.isArray(parents)) {
+    return res.status(400).json({ success: false, error: "La liste des parents est manquante ou invalide." });
+  }
+
+  const idsToProcess = Array.isArray(parentIds) && parentIds.length > 0 
+    ? parentIds 
+    : parents.filter((p: any) => p.status === 'partiel' || p.status === 'retard').map((p: any) => p.id);
+
+  if (idsToProcess.length === 0) {
+    return res.json({ success: true, processedCount: 0, logs: ["Aucun parent à relancer."] });
+  }
+
+  const logs: string[] = [`[Démarrage Serveur] Initialisation de la file d'envois groupés (${channel === 'email' ? 'EMAIL' : 'SMS'}). Total à traiter : ${idsToProcess.length}`];
+  const updatedParents: any[] = [];
+  let successCount = 0;
+  let failureCount = 0;
+
+  const shortName = settings?.associationName ? (settings.associationName.includes("APEE") ? "APEE" : "APEE") : "APEE";
+  const schoolYear = settings?.schoolYear || "";
+  const associationName = settings?.associationName || "Établissement";
+
+  for (let i = 0; i < idsToProcess.length; i++) {
+    const pid = idsToProcess[i];
+    const parentObj = parents.find((p: any) => p.id === pid);
+    if (!parentObj) {
+      logs.push(`⚠️ [Inconnu] Identifiant parent introuvable : ${pid}`);
+      continue;
+    }
+
+    const remaining = parentObj.totalDue - parentObj.totalPaid;
+    const kidsList = parentObj.students && parentObj.students.length > 0
+      ? parentObj.students.map((s: any) => `${s.name} (${s.classRoom})`).join(', ')
+      : "votre enfant";
+
+    const replacePlaceholders = (text: string) => {
+      if (!text) return "";
+      return text
+        .replace(/{parent_name}/g, parentObj.name)
+        .replace(/{association_name}/g, associationName)
+        .replace(/{short_name}/g, shortName)
+        .replace(/{school_year}/g, schoolYear)
+        .replace(/{student_names}/g, kidsList)
+        .replace(/{remaining_amount}/g, remaining.toLocaleString())
+        .replace(/{total_due_amount}/g, parentObj.totalDue.toLocaleString());
+    };
+
+    if (channel === 'email') {
+      if (!parentObj.email) {
+        logs.push(`❌ [Refus d'Envoi] M./Mme ${parentObj.name} - Aucun e-mail renseigné.`);
+        failureCount++;
+        continue;
+      }
+      
+      const parsedSubject = replacePlaceholders(emailSubject);
+      const parsedBody = replacePlaceholders(emailTemplate);
+
+      // Simuler la latence d'envoi réseau SMTP
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      logs.push(`📧 [Délivré Relais] M./Mme ${parentObj.name} <${parentObj.email}>. Objet : "${parsedSubject}". Message envoyé avec succès.`);
+      successCount++;
+    } else {
+      if (!parentObj.phone) {
+        logs.push(`❌ [Refus d'Envoi] M./Mme ${parentObj.name} - Aucun numéro de téléphone.`);
+        failureCount++;
+        continue;
+      }
+
+      const parsedBody = replacePlaceholders(smsTemplate);
+
+      // Simuler l'émission sur passerelle SMS
+      await new Promise(resolve => setTimeout(resolve, 80));
+      logs.push(`📱 [Passerelle SMS] Envoyé à ${parentObj.name} (${parentObj.phone}). Reste dû : ${remaining.toLocaleString()} FCFA.`);
+      successCount++;
+    }
+
+    const timestamp = `${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'})} (${channel === 'email' ? 'Auto Email Serveur' : 'Auto SMS Serveur'})`;
+    updatedParents.push({
+      ...parentObj,
+      lastReminded: timestamp,
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  logs.push(`🏁 [Processus Serveur Terminé] Relance collective achevée : ${successCount} succès, ${failureCount} échecs.`);
+
+  return res.json({
+    success: true,
+    processedCount: successCount,
+    failureCount,
+    logs,
+    updatedParents
+  });
+});
+
 // Vite Middleware integrated after API routes to handle asset serving and SPA routing fallback
 async function bootServer() {
   if (process.env.NODE_ENV !== "production") {

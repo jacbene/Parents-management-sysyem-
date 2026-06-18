@@ -37,16 +37,14 @@ service cloud.firestore {
     // Evaluates if the authenticated user is the primary Super Admin or a registered secondary Super Admin
     function isSuperAdmin() {
       return isSignedIn() && (
-        request.auth.token.get('email', '') == 'jacquesbene301@gmail.com' ||
-        exists(/databases/$(database)/documents/super_admins/$(request.auth.token.get('email', '')))
+        request.auth.token.email == 'jacquesbene301@gmail.com' ||
+        (request.auth.token.email != null && exists(/databases/$(database)/documents/super_admins/$(request.auth.token.email)))
       );
     }
 
     // Static check for list queries to optimize reads and avoid exists() lookups for the main Super Admin account
     function isSuperAdminList() {
-      return isSignedIn() && (
-        request.auth.token.get('email', '') == 'jacquesbene301@gmail.com'
-      );
+      return isSignedIn() && request.auth.token.email == 'jacquesbene301@gmail.com';
     }
 
     // Evaluates if the authenticated user owns the resource or if it is a shared demo sandbox resource during READS (using exists but omitting existsAfter).
@@ -76,7 +74,7 @@ service cloud.firestore {
       );
     }
 
-    // Evaluates if the parentId corresponds to the authenticated user or to a demo/school workspace (without exists() reads for list queries)
+    // Evaluates if the parentId corresponds to the authenticated user or to a demo/school workspace
     function isOwnerOrDemoList(parentId) {
       return isSignedIn() && parentId != null && (
         parentId == request.auth.uid || 
@@ -84,7 +82,8 @@ service cloud.firestore {
         parentId.matches('^sch_.*') ||
         parentId.matches('^sys_.*') ||
         parentId.matches('^deputy_.*') ||
-        parentId.matches('^sandboxed_.*')
+        parentId.matches('^sandboxed_.*') ||
+        exists(/databases/$(database)/documents/establishments/$(parentId))
       );
     }
 
@@ -273,7 +272,7 @@ service cloud.firestore {
 
     // 11. Super Admins Collection: Managed by jacquesbene301@gmail.com and secondary Super Admins
     match /super_admins/{adminId} {
-      allow get: if isSignedIn() && (request.auth.token.get('email', '') == adminId || isSuperAdmin());
+      allow get: if isSignedIn() && (request.auth.token.email == adminId || isSuperAdmin());
       allow list: if isSuperAdminList() || isSuperAdmin();
       allow write: if isSuperAdmin();
     }
@@ -284,6 +283,9 @@ service cloud.firestore {
     }
 
     // 12. Seeding Verification Pathway: Required for automated test sweeps and sandbox-level seeding
+    match /seeding {
+      allow read, write: if true;
+    }
     match /seeding/{document=**} {
       allow read, write: if true;
     }

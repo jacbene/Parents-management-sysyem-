@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, query, where, getDocs, doc, setDoc, deleteDoc, writeBatch, getDoc, onSnapshot } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
-import { auth, loginWithGoogle, logout, db, handleFirestoreError, OperationType, loginAnonymously, goOffline, goOnline, isOffline as isOfflineCheck, queuePendingAction } from './firebase';
+import { auth, loginWithGoogle, logout, db, handleFirestoreError, OperationType, loginAnonymously, goOffline, goOnline, isOffline as isOfflineCheck, queuePendingAction, signUpWithEmail, loginWithEmail, resetPassword } from './firebase';
 import { isDatabaseSeeded, seedUserData, getOfflineMockData, purgeUserData } from './seeder';
 import { Student, Grade, Attendance, Homework, Appointment, Message, Invoice, ApeeParent, ApeeExpense, ApeeSettings, Announcement, AnnouncementCategory, ApeeActivityLog, ApeeOtherRevenue, PendingAction } from './types';
 
@@ -119,6 +119,7 @@ interface PushNotificationSyncerProps {
   isOffline: boolean;
   setGrades: React.Dispatch<React.SetStateAction<Grade[]>>;
   setHomeworks: React.Dispatch<React.SetStateAction<Homework[]>>;
+  invoices: Invoice[];
 }
 
 function PushNotificationSyncer({
@@ -128,10 +129,11 @@ function PushNotificationSyncer({
   portalUserRole,
   isOffline,
   setGrades,
-  setHomeworks
+  setHomeworks,
+  invoices
 }: PushNotificationSyncerProps) {
   const { triggerNotification } = useLocalNotifications();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
 
   // Create stable refs for changing callback dependencies
   const studentsRef = useRef(students);
@@ -142,6 +144,77 @@ function PushNotificationSyncer({
   studentsRef.current = students;
   triggerNotificationRef.current = triggerNotification;
   tRef.current = t;
+
+  // Overdue Invoices / Cotisations local push notifications checking
+  const notifiedInvoicesRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!userId || !user || portalUserRole !== 'parent' || !invoices || invoices.length === 0) return;
+
+    // Filter relevant parent invoices
+    const parentInvoices = invoices.filter(inv => {
+      // Skip administrative entries
+      if (inv.studentId === 'apee_expense' || inv.studentId === 'apee_settings' || inv.id.endsWith('_settings')) {
+        return false;
+      }
+      return (
+        studentsRef.current.some(s => s.id === inv.studentId) ||
+        inv.id === 'apee_par_bene_jacques' ||
+        (inv.email && inv.email.toLowerCase() === user?.email?.toLowerCase())
+      );
+    });
+
+    parentInvoices.forEach(inv => {
+      let overdue = false;
+      if (inv.status === 'Overdue') {
+        overdue = true;
+      } else if (inv.status !== 'Paid' && inv.dueDate && typeof inv.dueDate === 'string') {
+        if (inv.dueDate.includes('-') || (inv.dueDate.includes('/') && inv.dueDate.length <= 10 && !isNaN(Date.parse(inv.dueDate)))) {
+          const parsedDate = new Date(inv.dueDate);
+          if (!isNaN(parsedDate.getTime())) {
+            overdue = parsedDate < new Date();
+          }
+        } else if (inv.dueDate.includes('/')) {
+          // School year: e.g. 2025/2026. Extract ending year.
+          const parts = inv.dueDate.split('/');
+          if (parts.length === 2) {
+            const endYear = parseInt(parts[1], 10);
+            if (!isNaN(endYear)) {
+              const currentYear = new Date().getFullYear();
+              if (currentYear > endYear || (currentYear === endYear && new Date().getMonth() >= 5)) { // June is month 5 (0-indexed)
+                overdue = true;
+              }
+            }
+          }
+        }
+      }
+
+      if (overdue && !notifiedInvoicesRef.current.has(inv.id)) {
+        notifiedInvoicesRef.current.add(inv.id);
+
+        let dueDateFormatted = inv.dueDate;
+        if (inv.dueDate && typeof inv.dueDate === 'string' && (inv.dueDate.includes('-') || inv.dueDate.includes('/'))) {
+          const parsed = new Date(inv.dueDate);
+          if (!isNaN(parsed.getTime())) {
+            dueDateFormatted = parsed.toLocaleDateString(language === 'en' ? 'en-US' : 'fr-FR');
+          }
+        }
+
+        // Trigger local notification!
+        triggerNotificationRef.current(
+          tRef.current('notif.invoice_overdue_title'),
+          tRef.current('notif.invoice_overdue_body', {
+            title: inv.title,
+            dueDate: dueDateFormatted
+          }),
+          'invoice',
+          inv.title,
+          'Cotisation',
+          'billing'
+        );
+      }
+    });
+  }, [invoices, userId, user, portalUserRole, language]);
 
   useEffect(() => {
     if (!userId || !user || portalUserRole !== 'parent') return;
@@ -324,6 +397,8 @@ export default function App() {
   const [passwordInput, setPasswordInput] = useState('');
   const [submittingEmailLogin, setSubmittingEmailLogin] = useState(false);
   const [emailLoginError, setEmailLoginError] = useState<string | null>(null);
+  const [authMode, setAuthMode] = useState<'login' | 'signup' | 'forgot'>('login');
+  const [authSuccessMessage, setAuthSuccessMessage] = useState<string | null>(null);
 
   // Device ID generation on startup
   useEffect(() => {
@@ -2060,48 +2135,68 @@ export default function App() {
     }
   };
 
+  const mapAuthErrorToFrench = (code: string) => {
+    switch (code) {
+      case 'auth/invalid-email':
+        return "Adresse e-mail de format invalide.";
+      case 'auth/user-disabled':
+        return "Ce compte a été désactivé.";
+      case 'auth/user-not-found':
+        return "Aucun compte trouvé pour cette adresse e-mail. Vérifiez ou créez un compte.";
+      case 'auth/wrong-password':
+        return "Mot de passe de session incorrect.";
+      case 'auth/email-already-in-use':
+        return "Cette adresse e-mail est déjà associée à un compte existant. Connectez-vous.";
+      case 'auth/weak-password':
+        return "Le mot de passe doit contenir au moins 6 caractères.";
+      case 'auth/missing-password':
+        return "Veuillez entrer un mot de passe.";
+      case 'auth/invalid-credential':
+        return "Identifiants invalides ou incorrects. Veuillez réessayer.";
+      case 'auth/too-many-requests':
+        return "Trop de tentatives infructueuses sur ce compte. Veuillez réessayer plus tard.";
+      default:
+        return "Une erreur s'est produite lors de l'authentification. Veuillez réessayer.";
+    }
+  };
+
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setEmailLoginError(null);
-    if (!emailInput.trim() || !passwordInput.trim()) {
-      setEmailLoginError("Veuillez remplir l'adresse email et le code secret.");
+    setAuthSuccessMessage(null);
+    const email = emailInput.trim();
+
+    if (!email) {
+      setEmailLoginError("Veuillez remplir l'adresse e-mail.");
+      return;
+    }
+
+    if (authMode !== 'forgot' && !passwordInput.trim()) {
+      setEmailLoginError("Veuillez saisir votre mot de passe.");
       return;
     }
     
     setSubmittingEmailLogin(true);
     try {
-      const email = emailInput.trim().toLowerCase();
-      
-      // Checked permissions for Jacques Béné and deputies
-      const isPrimary = email === 'jacquesbene301@gmail.com';
-      const isDeputy = email === 'adjoint@pasma.sys';
-      const isRegisteredDeputy = secondaryAdmins.some(admin => admin.email?.toLowerCase().trim() === email);
-      
-      if (isPrimary || isDeputy || isRegisteredDeputy) {
-        const adminName = isPrimary ? "Jacques Béné (Super-Admin)" : "Alain Ndzie (Adjoint)";
-        setUser({
-          uid: isPrimary ? 'sys_admin_jacques' : 'deputy_admin_alain_' + Math.floor(Math.random()*1000),
-          email: email,
-          displayName: adminName,
-          photoURL: '',
-          isAnonymous: false
-        } as any);
-        setShowSuperAdmin(true);
-        setShowMainLogin(false);
-      } else {
-        // Redirect general email logins to school portal selection
-        setUser({
-          uid: 'sandboxed_guest_user_' + Math.random().toString(36).substring(2, 9),
-          email: email,
-          displayName: "Tuteur / Établissement Saisi",
-          photoURL: '',
-          isAnonymous: true
-        } as any);
-        setShowMainLogin(false);
+      if (authMode === 'login') {
+        const userCred = await loginWithEmail(email, passwordInput);
+        if (userCred) {
+          setShowMainLogin(false);
+        }
+      } else if (authMode === 'signup') {
+        const userCred = await signUpWithEmail(email, passwordInput);
+        if (userCred) {
+          setAuthSuccessMessage("Votre compte a été créé avec succès et vous êtes maintenant connecté !");
+          setShowMainLogin(false);
+        }
+      } else if (authMode === 'forgot') {
+        await resetPassword(email);
+        setAuthSuccessMessage("Un e-mail de réinitialisation de mot de passe a été envoyé à l'adresse " + email + ". Veuillez vérifier votre boîte de réception.");
       }
     } catch (err: any) {
-      console.error(err);
-      setEmailLoginError("Une erreur est survenue lors de l'authentification.");
+      console.error("Firebase auth error details:", err);
+      const errorMessage = err?.code ? mapAuthErrorToFrench(err.code) : (err?.message || "Une erreur inattendue est survenue.");
+      setEmailLoginError(errorMessage);
     } finally {
       setSubmittingEmailLogin(false);
     }
@@ -2138,6 +2233,7 @@ export default function App() {
         isOffline={isOffline}
         setGrades={setGrades}
         setHomeworks={setHomeworks}
+        invoices={invoices}
       />
       <div className="min-h-screen bg-slate-50/50 flex flex-col text-slate-900 selection:bg-indigo-100 selection:text-indigo-900">
       <AnimatePresence mode="wait">
@@ -2150,12 +2246,12 @@ export default function App() {
             exit={{ opacity: 0, y: -15 }}
             className="flex-grow flex items-center justify-center p-4 min-h-screen bg-slate-100/40"
           >
-            <div className="w-full max-w-lg bg-white rounded-3xl border border-gray-150 shadow-2xl overflow-hidden flex flex-col justify-between">
+            <div className="w-full max-w-lg bg-white rounded-3xl border border-gray-150 shadow-2xl overflow-hidden flex flex-col justify-between animate-fade-in">
               <div className="p-8 space-y-2 text-center bg-slate-950 text-white flex flex-col items-center">
                 <img
                   src="/icon-512.png"
                   alt="Logo"
-                  className="h-14 w-14 object-contain rounded-2xl mb-1 bg-white p-1 border border-slate-700 shadow-sm"
+                  className="h-14 w-14 object-contain rounded-2xl mb-1 bg-white p-1 border border-slate-700 shadow-sm animate-pulse"
                 />
                 <h1 className="text-xl font-extrabold tracking-tight">Pasma-sys</h1>
                 <p className="text-[10px] text-indigo-200 font-bold">Parents Management System (Système de gestion parentale)</p>
@@ -2163,7 +2259,7 @@ export default function App() {
 
               <div className="p-8 space-y-6">
                 <div>
-                  <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider mb-3">Se connecter</h3>
+                  <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider mb-3">Authentification Rapide</h3>
                   
                   {/* Google Login Trigger */}
                   <div className="space-y-4">
@@ -2192,11 +2288,42 @@ export default function App() {
                   <div className="flex-grow border-t border-gray-150"></div>
                 </div>
 
+                {/* Interactive Mode Tabs */}
+                <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl text-[10px] font-black uppercase tracking-wider text-center">
+                  <button
+                    type="button"
+                    onClick={() => { setAuthMode('login'); setEmailLoginError(null); setAuthSuccessMessage(null); }}
+                    className={`py-2 rounded-lg transition-all duration-200 cursor-pointer ${authMode === 'login' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-850'}`}
+                  >
+                    Connexion
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setAuthMode('signup'); setEmailLoginError(null); setAuthSuccessMessage(null); }}
+                    className={`py-2 rounded-lg transition-all duration-200 cursor-pointer ${authMode === 'signup' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-850'}`}
+                  >
+                    Inscription
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setAuthMode('forgot'); setEmailLoginError(null); setAuthSuccessMessage(null); }}
+                    className={`py-2 rounded-lg transition-all duration-200 cursor-pointer ${authMode === 'forgot' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-855'}`}
+                  >
+                    Mot de Passe
+                  </button>
+                </div>
+
                 {/* Email Login Form */}
                 <form onSubmit={handleEmailSubmit} className="space-y-3.5">
                   {emailLoginError && (
                     <div className="p-3 bg-red-50 border border-red-150 text-red-700 text-xs rounded-xl font-medium">
                       ⚠️ {emailLoginError}
+                    </div>
+                  )}
+
+                  {authSuccessMessage && (
+                    <div className="p-3 bg-green-50 border border-green-150 text-green-800 text-xs rounded-xl font-medium">
+                      ✅ {authSuccessMessage}
                     </div>
                   )}
 
@@ -2212,25 +2339,55 @@ export default function App() {
                     />
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-555">Mot de passe / Code d'accès</label>
-                    <input
-                      required
-                      type="password"
-                      value={passwordInput}
-                      onChange={(e) => setPasswordInput(e.target.value)}
-                      placeholder="Saisissez votre code d'accès"
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs placeholder:text-slate-400 outline-none focus:border-indigo-600 focus:bg-white transition"
-                    />
-                  </div>
+                  {authMode !== 'forgot' && (
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center">
+                        <label className="text-[10px] font-black uppercase tracking-wider text-slate-555">
+                          {authMode === 'signup' ? "Créer un mot de passe" : "Mot de passe"}
+                        </label>
+                        {authMode === 'login' && (
+                          <button
+                            type="button"
+                            onClick={() => { setAuthMode('forgot'); setEmailLoginError(null); setAuthSuccessMessage(null); }}
+                            className="text-[9px] font-bold text-indigo-600 hover:underline cursor-pointer"
+                          >
+                            Mot de passe oublié ?
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        required
+                        type="password"
+                        value={passwordInput}
+                        onChange={(e) => setPasswordInput(e.target.value)}
+                        placeholder={authMode === 'signup' ? "Minimum 6 caractères" : "Saisissez votre mot de passe"}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs placeholder:text-slate-400 outline-none focus:border-indigo-600 focus:bg-white transition"
+                      />
+                    </div>
+                  )}
+
+                  {authMode === 'forgot' && (
+                    <p className="text-[10.5px] text-slate-500 leading-normal">
+                      Saisissez votre adresse e-mail ci-dessus et cliquez sur le bouton ci-dessous. Un lien sécurisé de réinitialisation vous sera envoyé par e-mail.
+                    </p>
+                  )}
 
                   <button
                     type="submit"
                     disabled={submittingEmailLogin}
                     className="w-full py-3 bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-slate-950 transition active:scale-98 cursor-pointer disabled:opacity-50"
                   >
-                    {submittingEmailLogin ? "Authentification..." : "Se connecter par adresse mail"}
+                    {submittingEmailLogin ? "Traitement..." : 
+                     authMode === 'login' ? "Se connecter par adresse mail" :
+                     authMode === 'signup' ? "Créer un compte e-mail" :
+                     "Envoyer le lien de réinitialisation"}
                   </button>
+
+                  {authMode === 'signup' && (
+                    <p className="text-[10px] text-slate-400 text-center font-bold">
+                      En créant un compte, vous acceptez les conditions d'utilisation de Pasma-sys.
+                    </p>
+                  )}
                 </form>
               </div>
             </div>

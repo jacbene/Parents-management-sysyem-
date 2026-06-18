@@ -1,5 +1,5 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, signInAnonymously } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, signInAnonymously, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { initializeFirestore, setLogLevel, getFirestore } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
@@ -185,6 +185,35 @@ export async function loginAnonymously() {
     return result.user;
   } catch (error) {
     console.error("Anonymous Auth Error:", error);
+    throw error;
+  }
+}
+
+export async function signUpWithEmail(email: string, password: string) {
+  try {
+    const result = await createUserWithEmailAndPassword(auth, email, password);
+    return result.user;
+  } catch (error) {
+    console.error("SignUp Email Error:", error);
+    throw error;
+  }
+}
+
+export async function loginWithEmail(email: string, password: string) {
+  try {
+    const result = await signInWithEmailAndPassword(auth, email, password);
+    return result.user;
+  } catch (error) {
+    console.error("Login Email Error:", error);
+    throw error;
+  }
+}
+
+export async function resetPassword(email: string) {
+  try {
+    await sendPasswordResetEmail(auth, email);
+  } catch (error) {
+    console.error("Password Reset Error:", error);
     throw error;
   }
 }

@@ -1,18 +1,18 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Bell, GraduationCap, BookOpen, Volume2, X, Check } from 'lucide-react';
+import { Bell, GraduationCap, BookOpen, Volume2, X, Check, CreditCard } from 'lucide-react';
 import { useLanguage } from './TranslationContext';
 
 export interface LocalNotification {
   id: string;
   title: string;
   body: string;
-  type: 'grade' | 'homework';
+  type: 'grade' | 'homework' | 'invoice';
   studentName: string;
   subject: string;
   timestamp: string;
   read: boolean;
-  targetTab: 'grades' | 'homework';
+  targetTab: 'grades' | 'homework' | 'billing';
 }
 
 interface LocalNotificationContextType {
@@ -23,10 +23,10 @@ interface LocalNotificationContextType {
   triggerNotification: (
     title: string,
     body: string,
-    type: 'grade' | 'homework',
+    type: 'grade' | 'homework' | 'invoice',
     studentName: string,
     subject: string,
-    targetTab: 'grades' | 'homework'
+    targetTab: 'grades' | 'homework' | 'billing'
   ) => void;
   markAsRead: (id: string) => void;
   markAllAsRead: () => void;
@@ -34,7 +34,7 @@ interface LocalNotificationContextType {
   clearAll: () => void;
   activeToast: LocalNotification | null;
   setActiveToast: (toast: LocalNotification | null) => void;
-  onNavigateToTab?: (tab: 'grades' | 'homework') => void;
+  onNavigateToTab?: (tab: 'grades' | 'homework' | 'billing') => void;
 }
 
 const LocalNotificationContext = createContext<LocalNotificationContextType | undefined>(undefined);
@@ -49,7 +49,7 @@ export function useLocalNotifications() {
 
 interface LocalNotificationProviderProps {
   children: React.ReactNode;
-  onNavigateToTab?: (tab: 'grades' | 'homework') => void;
+  onNavigateToTab?: (tab: 'grades' | 'homework' | 'billing') => void;
 }
 
 export function LocalNotificationProvider({ children, onNavigateToTab }: LocalNotificationProviderProps) {
@@ -149,10 +149,10 @@ export function LocalNotificationProvider({ children, onNavigateToTab }: LocalNo
   const triggerNotification = (
     title: string,
     body: string,
-    type: 'grade' | 'homework',
+    type: 'grade' | 'homework' | 'invoice',
     studentName: string,
     subject: string,
-    targetTab: 'grades' | 'homework'
+    targetTab: 'grades' | 'homework' | 'billing'
   ) => {
     const newNotif: LocalNotification = {
       id: `notif_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
@@ -267,15 +267,17 @@ export function LocalNotificationProvider({ children, onNavigateToTab }: LocalNo
               <div className="mt-0.5 shrink-0 p-2.5 rounded-xl bg-indigo-650 text-indigo-100 shadow-sm">
                 {activeToast.type === 'grade' ? (
                   <GraduationCap className="h-5 w-5" />
-                ) : (
+                ) : activeToast.type === 'homework' ? (
                   <BookOpen className="h-5 w-5" />
+                ) : (
+                  <CreditCard className="h-5 w-5" />
                 )}
               </div>
               
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-1.5">
                   <span className="text-[10px] font-black uppercase tracking-wider text-indigo-400">
-                    {activeToast.type === 'grade' ? '📝 ' + t('tab.grades') : '📚 ' + t('tab.homework')}
+                    {activeToast.type === 'grade' ? '📝 ' + t('tab.grades') : activeToast.type === 'homework' ? '📚 ' + t('tab.homework') : '💳 ' + t('tab.billing')}
                   </span>
                   <span className="text-[9px] font-medium text-slate-400 font-mono">
                     {new Date(activeToast.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
