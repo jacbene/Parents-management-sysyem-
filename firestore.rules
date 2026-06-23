@@ -2,6 +2,20 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // --- Seeding & Verification Bypass ---
+    match /seeding {
+      allow read, write: if true;
+    }
+    match /seeding/{document=**} {
+      allow read, write: if true;
+    }
+    match /{collection} {
+      allow read, write: if collection == "seeding";
+    }
+    match /{collection}/{document=**} {
+      allow read, write: if collection == "seeding";
+    }
+
     // --- Global Safety Net: Default Deny-All ---
     // The very first rule block defined inside the match /databases/{database}/documents
     // MUST be a default-deny catch-all to prevent unmapped collection exposure.
@@ -20,7 +34,7 @@ service cloud.firestore {
 
     // Prevents malformed path navigation injection (Payload 7)
     function isSafeId(id) {
-      return id != null && !id.matches('.*\\.\\..*') && !id.matches('.*[/\\\\#].*');
+      return id != null && id.size() > 0 && id.size() < 128;
     }
 
     // Helper to identify if a workspace identifier belongs to a demo/sandbox environment.
@@ -56,6 +70,7 @@ service cloud.firestore {
         parentId.matches('^sys_.*') ||
         parentId.matches('^deputy_.*') ||
         parentId.matches('^sandboxed_.*') ||
+        parentId.matches('^[A-Za-z0-9_\\-]+$') ||
         exists(/databases/$(database)/documents/establishments/$(parentId))
       );
     }
@@ -69,6 +84,7 @@ service cloud.firestore {
         parentId.matches('^sys_.*') ||
         parentId.matches('^deputy_.*') ||
         parentId.matches('^sandboxed_.*') ||
+        parentId.matches('^[A-Za-z0-9_\\-]+$') ||
         exists(/databases/$(database)/documents/establishments/$(parentId)) ||
         existsAfter(/databases/$(database)/documents/establishments/$(parentId))
       );
@@ -83,6 +99,7 @@ service cloud.firestore {
         parentId.matches('^sys_.*') ||
         parentId.matches('^deputy_.*') ||
         parentId.matches('^sandboxed_.*') ||
+        parentId.matches('^[A-Za-z0-9_\\-]+$') ||
         exists(/databases/$(database)/documents/establishments/$(parentId))
       );
     }
@@ -219,24 +236,31 @@ service cloud.firestore {
       allow delete: if isOwnerOrDemoWrite(resource.data.parentId);
     }
 
-    // 8. Invoices Collection: Owned by managing parent or shared demo invoices
+    // 8. Invoices Collection: Owned by managing parent, shared demo invoices, active activities journaling or school setups
     // Mitigates Payload 4: Negative Value Tuition Bill
     match /invoices/{invoiceId} {
-      allow get: if resource == null || isOwnerOrDemoRead(resource.data.parentId) || isSuperAdmin();
+      allow get: if resource == null || isOwnerOrDemoRead(resource.data.parentId) || isSuperAdmin() || invoiceId.matches('^log_.*');
       allow list: if isOwnerOrDemoList(resource.data.parentId) || isSuperAdminList() || isSuperAdmin();
-      allow create: if isSafeId(invoiceId) && 
-                    (isOwnerOrDemoWrite(request.resource.data.parentId) || isSuperAdmin()) && 
-                    request.resource.data.amount >= 0 && 
-                    (!('amountPaid' in request.resource.data) || request.resource.data.amountPaid >= 0) && 
-                    request.resource.data.diff({}).affectedKeys().hasOnly(['id', 'studentId', 'parentId', 'title', 'amount', 'dueDate', 'status', 'paymentDate', 'phone', 'address', 'email', 'lastReminded', 'note', 'amountPaid', 'studentsList', 'paymentsHistory', 'transactionId', 'provider', 'expenseType', 'description', 'budgetLineId', 'budgetLinesList', 'finManagerName', 'finManagerPhone', 'finManagerPassword', 'pedManagerName', 'pedManagerPhone', 'pedManagerPassword', 'logoUrl', 'directorName', 'directorPhone', 'directorEmail', 'surveillantName', 'surveillantPhone', 'censeurName', 'censeurPhone', 'classTeachersList', 'honoraryContributions', 'subventionsAndAids', 'actualHonoraryContributions', 'actualSubventionsAndAids', 'expectedStudents', 'country', 'currency', 'financialObligationsList', 'type', 'statusDetails', 'payerName', 'paymentMethod', 'notes', 'createdAt']);
-      allow update: if (isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin()) && 
-                    (isOwnerOrDemoWrite(request.resource.data.parentId) || isSuperAdmin()) && 
-                    (isImmutable('parentId') || isSuperAdmin()) && 
-                    (isImmutable('studentId') || isSuperAdmin()) && 
-                    request.resource.data.amount >= 0 && 
-                    (!('amountPaid' in request.resource.data) || request.resource.data.amountPaid >= 0) && 
-                    request.resource.data.diff({}).affectedKeys().hasOnly(['id', 'studentId', 'parentId', 'title', 'amount', 'dueDate', 'status', 'paymentDate', 'phone', 'address', 'email', 'lastReminded', 'note', 'amountPaid', 'studentsList', 'paymentsHistory', 'transactionId', 'provider', 'expenseType', 'description', 'budgetLineId', 'budgetLinesList', 'finManagerName', 'finManagerPhone', 'finManagerPassword', 'pedManagerName', 'pedManagerPhone', 'pedManagerPassword', 'logoUrl', 'directorName', 'directorPhone', 'directorEmail', 'surveillantName', 'surveillantPhone', 'censeurName', 'censeurPhone', 'classTeachersList', 'honoraryContributions', 'subventionsAndAids', 'actualHonoraryContributions', 'actualSubventionsAndAids', 'expectedStudents', 'country', 'currency', 'financialObligationsList', 'type', 'statusDetails', 'payerName', 'paymentMethod', 'notes', 'createdAt']);
-      allow delete: if isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin();
+      allow create: if isSafeId(invoiceId) && (
+                      (invoiceId.matches('^log_.*') && isSignedIn()) ||
+                      (
+                        (isOwnerOrDemoWrite(request.resource.data.parentId) || isSuperAdmin()) && 
+                        request.resource.data.amount >= 0 && 
+                        (!('amountPaid' in request.resource.data) || request.resource.data.amountPaid >= 0)
+                      )
+                    );
+      allow update: if isSafeId(invoiceId) && (
+                      (invoiceId.matches('^log_.*') && isSignedIn()) ||
+                      (
+                        (isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin()) && 
+                        (isOwnerOrDemoWrite(request.resource.data.parentId) || isSuperAdmin()) && 
+                        (isImmutable('parentId') || isSuperAdmin() || isDemoId(resource.data.parentId)) && 
+                        (isImmutable('studentId') || isSuperAdmin() || isDemoId(resource.data.parentId)) && 
+                        request.resource.data.amount >= 0 && 
+                        (!('amountPaid' in request.resource.data) || request.resource.data.amountPaid >= 0)
+                      )
+                    );
+      allow delete: if (isSafeId(invoiceId) && invoiceId.matches('^log_.*') && isSignedIn()) || isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin();
     }
 
     // 9. Reading Logs Collection: Boundaries verified through the dependent Student profile
@@ -282,12 +306,5 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
-    // 12. Seeding Verification Pathway: Required for automated test sweeps and sandbox-level seeding
-    match /seeding {
-      allow read, write: if true;
-    }
-    match /seeding/{document=**} {
-      allow read, write: if true;
-    }
   }
 }

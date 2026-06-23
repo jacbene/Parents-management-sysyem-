@@ -595,7 +595,7 @@ export async function seedUserData(userId: string): Promise<void> {
     // 6. Invoices (Facturation comptable APEE)
     const invoices: Invoice[] = [
       {
-        id: `apee_par_bene_jacques`,
+        id: `apee_par_bene_jacques_${userId.slice(0, 6)}`,
         studentId: 'apee_ces_ekali_1',
         parentId: userId,
         title: 'Bene Jacques',
@@ -965,7 +965,7 @@ export function getOfflineMockData(userId: string) {
 
   const invoices: Invoice[] = [
     {
-      id: `apee_par_bene_jacques`,
+      id: `apee_par_bene_jacques_${userId.slice(0, 6)}`,
       studentId: 'apee_ces_ekali_1',
       parentId: userId,
       title: 'Bene Jacques',

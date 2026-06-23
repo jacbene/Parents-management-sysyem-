@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { Grade, Student } from '../types';
-import { Award, BookOpen, TrendingUp, Sparkles, Filter, Plus, Trash2, Lock, Unlock, CheckCircle, Printer, Download } from 'lucide-react';
+import { Award, BookOpen, TrendingUp, TrendingDown, Sparkles, Filter, Plus, Trash2, Lock, Unlock, CheckCircle, Printer, Download, Activity, AlertCircle, BarChart2, Check, HelpCircle } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { motion, AnimatePresence } from 'motion/react';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine } from 'recharts';
+import { ResponsiveContainer, LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, Legend, Cell } from 'recharts';
 import { useLanguage } from '../utils/TranslationContext';
 
 interface GradesDashboardProps {
@@ -36,6 +36,7 @@ export default function GradesDashboard({
   const { t, language } = useLanguage();
   const [selectedSubject, setSelectedSubject] = useState<string>('all');
   const [isMounted, setIsMounted] = useState(false);
+  const [activeVisualTab, setActiveVisualTab] = useState<'trends' | 'subjects' | 'distribution' | 'diagnostic'>('trends');
   
   React.useEffect(() => {
     setIsMounted(true);
@@ -74,6 +75,77 @@ export default function GradesDashboard({
     subject: g.subject,
     examName: g.examName
   }));
+
+  // --- ADVANCED METRICS FOR PERFORMANCE DASHBOARD ---
+  // 1. Subject averages (using all student grades)
+  const subjectAveragesMap = new Map<string, { total: number; count: number }>();
+  grades.forEach(g => {
+    const score20 = (g.score / g.maxScore) * 20;
+    const existing = subjectAveragesMap.get(g.subject) || { total: 0, count: 0 };
+    subjectAveragesMap.set(g.subject, {
+      total: existing.total + score20,
+      count: existing.count + 1
+    });
+  });
+  
+  const subjectAveragesData = Array.from(subjectAveragesMap.entries()).map(([subj, data]) => ({
+    subject: subj,
+    average: Number((data.total / data.count).toFixed(1)),
+    count: data.count
+  })).sort((a, b) => b.average - a.average);
+
+  const strongestSubject = subjectAveragesData.length > 0 ? subjectAveragesData[0] : null;
+  const weakestSubject = subjectAveragesData.length > 0 ? subjectAveragesData[subjectAveragesData.length - 1] : null;
+
+  // 2. Grade Bracket Distribution
+  let bracketUnder10 = 0;
+  let bracket10to12 = 0;
+  let bracket12to14 = 0;
+  let bracket14to16 = 0;
+  let bracket16to20 = 0;
+
+  grades.forEach(g => {
+    const val = (g.score / g.maxScore) * 20;
+    if (val < 10) bracketUnder10++;
+    else if (val < 12) bracket10to12++;
+    else if (val < 14) bracket12to14++;
+    else if (val < 16) bracket14to16++;
+    else bracket16to20++;
+  });
+
+  const distributionData = [
+    { range: '< 10', count: bracketUnder10, label: language === 'fr' ? 'Insuffisant' : 'Weak', fill: '#ef4444' },
+    { range: '10 - 12', count: bracket10to12, label: language === 'fr' ? 'Passable' : 'Fair', fill: '#f59e0b' },
+    { range: '12 - 14', count: bracket12to14, label: language === 'fr' ? 'Assez Bien' : 'Good', fill: '#3b82f6' },
+    { range: '14 - 16', count: bracket14to16, label: language === 'fr' ? 'Bien' : 'Very Good', fill: '#6366f1' },
+    { range: '16 - 20', count: bracket16to20, label: language === 'fr' ? 'Très Bien' : 'Excellent', fill: '#10b981' },
+  ];
+
+  // 3. Volatility / Standard Deviation
+  const meanVal = grades.length > 0 ? (grades.reduce((acc, g) => acc + (g.score / g.maxScore) * 20, 0) / grades.length) : 0;
+  const varianceVal = grades.length > 0 ? (grades.reduce((acc, g) => {
+    const score20 = (g.score / g.maxScore) * 20;
+    return acc + Math.pow(score20 - meanVal, 2);
+  }, 0) / grades.length) : 0;
+  const stdDevVal = Math.sqrt(varianceVal);
+
+  // 4. Semester trend direction (comparing chronological halves)
+  const fullSortedGrades = [...grades].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const halfLen = Math.floor(fullSortedGrades.length / 2);
+  const firstHalf = fullSortedGrades.slice(0, halfLen);
+  const secondHalf = fullSortedGrades.slice(halfLen);
+  const firstHalfAvg = firstHalf.length > 0 ? (firstHalf.reduce((acc, g) => acc + (g.score / g.maxScore) * 20, 0) / firstHalf.length) : 0;
+  const secondHalfAvg = secondHalf.length > 0 ? (secondHalf.reduce((acc, g) => acc + (g.score / g.maxScore) * 20, 0) / secondHalf.length) : 0;
+  const trendDiffVal = secondHalfAvg - firstHalfAvg;
+
+  // 5. Honors Mention Estimation
+  const getHonorsMention = (avg: number) => {
+    if (avg >= 16) return language === 'fr' ? 'Très Bien' : 'Highest Honors';
+    if (avg >= 14) return language === 'fr' ? 'Bien' : 'High Honors';
+    if (avg >= 12) return language === 'fr' ? 'Assez Bien' : 'Honors';
+    if (avg >= 10) return language === 'fr' ? 'Passable' : 'Pass';
+    return language === 'fr' ? 'Insuffisant' : 'Incomplete';
+  };
 
   // Average color mapping
   const getAverageBadgeColor = (avg: number) => {
@@ -889,118 +961,436 @@ export default function GradesDashboard({
           </div>
 
           {/* Graphic Section */}
-          {chartData.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.99 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="p-5 bg-white border border-gray-150 rounded-2xl space-y-4 shadow-sm"
-            >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl shrink-0">
-                    <TrendingUp className="h-4.5 w-4.5" />
+          {chartData.length > 0 && (() => {
+            const visualTabs = [
+              { id: 'trends', label: language === 'fr' ? 'Tendances de notes' : 'Grade Trends', icon: TrendingUp },
+              { id: 'subjects', label: language === 'fr' ? 'Matières & Comparatif' : 'Subjects Comparison', icon: BarChart2 },
+              { id: 'distribution', label: language === 'fr' ? 'Répartition / Distribution' : 'Grade Distribution', icon: Activity },
+              { id: 'diagnostic', label: language === 'fr' ? 'Diagnostic Académique' : 'Academic Insights', icon: Sparkles }
+            ] as const;
+
+            return (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.99 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="p-5 bg-white border border-gray-150 rounded-2xl space-y-4 shadow-sm"
+              >
+                {/* Header with Visual Tabs */}
+                <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl shrink-0 animate-pulse">
+                      <Activity className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900 tracking-tight">
+                        {language === 'fr' ? 'Tableau de Bord de Performance' : 'Student Performance Dashboard'}
+                      </h3>
+                      <p className="text-[10px] text-gray-500 font-medium">
+                        {language === 'fr' 
+                          ? 'Analyses visuelles de la progression et diagnostic complet.'
+                          : 'Visual analysis of student performance, trends, and diagnostic key points.'}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900 tracking-tight">Courbe de Progression • Performance Trend</h3>
-                    <p className="text-[10px] text-gray-500">Moyennes extrapolées sur base commune de 20 points pour suivre l'évolution académique globale.</p>
+
+                  {/* Tab Switchers */}
+                  <div className="flex flex-wrap bg-slate-50 p-1 rounded-xl border border-slate-100 gap-1 self-start xl:self-auto">
+                    {visualTabs.map((tab) => {
+                      const Icon = tab.icon;
+                      const isActive = activeVisualTab === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          onClick={() => setActiveVisualTab(tab.id)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer flex items-center gap-1.5 transition-all duration-200 ${
+                            isActive
+                              ? 'bg-white text-indigo-700 shadow-xs border border-indigo-100/80'
+                              : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100/50'
+                          }`}
+                        >
+                          <Icon className={`h-3.5 w-3.5 ${isActive ? 'text-indigo-600' : 'text-slate-400'}`} />
+                          <span>{tab.label}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
-                
-                {/* Visual Legend Key */}
-                <div className="flex items-center gap-4 text-[9px] font-sans font-semibold text-slate-500 pl-0.5 sm:pl-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-1.5 w-6 rounded bg-indigo-600"></span>
-                    <span>Note convertie (/20)</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-1.5 w-6 rounded border-t border-dashed border-rose-400"></span>
-                    <span className="text-rose-600">Moyenne de passage (10/20)</span>
-                  </div>
+
+                {/* Tab Contents */}
+                <div className="h-76 w-full pt-2">
+                  {isMounted ? (
+                    <AnimatePresence mode="wait">
+                      {activeVisualTab === 'trends' && (
+                        <motion.div
+                          key="trends"
+                          initial={{ opacity: 0, y: 5 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -5 }}
+                          className="h-full flex flex-col justify-between"
+                        >
+                          <div className="flex items-center justify-between text-[11px] font-medium text-slate-500 px-1 mb-2">
+                            <span>
+                              {language === 'fr'
+                                ? 'Évolution chronologique de toutes les évaluations converties sur 20.'
+                                : 'Chronological progression of evaluations normalized to 20.'}
+                            </span>
+                            <span className="text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded-md">
+                              {language === 'fr' ? 'Filtre matière : ' : 'Filter Subject: '}{selectedSubject === 'all' ? (language === 'fr' ? 'Toutes' : 'All') : selectedSubject}
+                            </span>
+                          </div>
+                          <div className="h-64">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                              <AreaChart data={chartData} margin={{ top: 15, right: 15, left: -22, bottom: 5 }}>
+                                <defs>
+                                  <linearGradient id="scoreColorGrad" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25}/>
+                                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0.00}/>
+                                  </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                <XAxis 
+                                  dataKey="date" 
+                                  tickLine={false}
+                                  axisLine={false}
+                                  tickStyle={{ fontSize: 10, fill: '#64748b', fontWeight: 500 }} 
+                                  dy={8}
+                                />
+                                <YAxis 
+                                  domain={[0, 20]} 
+                                  tickCount={11}
+                                  tickLine={false}
+                                  axisLine={false}
+                                  tickStyle={{ fontSize: 10, fill: '#64748b', fontWeight: 500 }} 
+                                  dx={-4}
+                                />
+                                <Tooltip
+                                  contentStyle={{
+                                    border: '1px solid #e2e8f0',
+                                    borderRadius: '14px',
+                                    boxShadow: '0 8px 16px -2px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05)',
+                                    fontSize: '11px',
+                                    padding: '10px 14px'
+                                  }}
+                                  formatter={(value: any, name: string, props: any) => {
+                                    const payload = props.payload;
+                                    const scoreColor = value >= 10 ? 'text-emerald-700 font-extrabold' : 'text-rose-600 font-extrabold';
+                                    return [
+                                      <div className="space-y-1" key="content">
+                                        <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                                          <span>{language === 'fr' ? 'Matière :' : 'Subject:'}</span>
+                                          <span className="bg-slate-100 px-2 py-0.5 rounded text-[10px] text-indigo-700 font-bold">{payload.subject}</span>
+                                        </div>
+                                        <div className="text-slate-600 font-medium">{language === 'fr' ? 'Éval :' : 'Exam:'} <span className="font-semibold text-slate-900">{payload.examName}</span></div>
+                                        <div className="pt-1 text-xs border-t border-slate-100 flex items-center justify-between gap-3">
+                                          <span className="text-gray-500 font-sans">{language === 'fr' ? 'Note :' : 'Grade:'}</span>
+                                          <span className={scoreColor}>{value} / 20</span>
+                                        </div>
+                                      </div>,
+                                      null
+                                    ];
+                                  }}
+                                  labelFormatter={(label) => `📅 ${language === 'fr' ? 'Date de l\'évaluation' : 'Assessment date'} : ${label}`}
+                                />
+                                
+                                <ReferenceLine 
+                                  y={10} 
+                                  stroke="#f43f5e" 
+                                  strokeDasharray="4 4" 
+                                  strokeWidth={1.25}
+                                  label={{ 
+                                    value: language === 'fr' ? 'Moyenne requise (10/20)' : 'Passing mark (10/20)', 
+                                    fill: '#f43f5e', 
+                                    fontSize: 8.5, 
+                                    position: 'insideBottomRight', 
+                                    offset: 7, 
+                                    fontWeight: 'bold' 
+                                  }} 
+                                />
+
+                                <Area
+                                  type="monotone"
+                                  dataKey="score"
+                                  stroke="#4f46e5"
+                                  strokeWidth={3}
+                                  fillOpacity={1}
+                                  fill="url(#scoreColorGrad)"
+                                  dot={{ r: 4, fill: '#4f46e5', stroke: '#ffffff', strokeWidth: 1.5 }}
+                                  activeDot={{ r: 6, stroke: '#4f46e5', strokeWidth: 2, fill: '#ffffff' }}
+                                  name="Note"
+                                />
+                              </AreaChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </motion.div>
+                      )}
+
+                      {activeVisualTab === 'subjects' && (
+                        <motion.div
+                          key="subjects"
+                          initial={{ opacity: 0, y: 5 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -5 }}
+                          className="h-full flex flex-col justify-between"
+                        >
+                          <div className="flex items-center justify-between text-[11px] font-medium text-slate-500 px-1 mb-2">
+                            <span>
+                              {language === 'fr' 
+                                ? 'Moyenne générale calculée par matière.' 
+                                : 'Calculated average for each subject.'}
+                            </span>
+                            <span className="text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-md text-[10px]">
+                              {language === 'fr' ? `${subjectAveragesData.length} Matière(s)` : `${subjectAveragesData.length} Subject(s)`}
+                            </span>
+                          </div>
+                          <div className="h-64">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                              <BarChart data={subjectAveragesData} margin={{ top: 15, right: 15, left: -22, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                <XAxis 
+                                  dataKey="subject" 
+                                  tickLine={false}
+                                  axisLine={false}
+                                  tickStyle={{ fontSize: 9, fill: '#64748b', fontWeight: 600 }} 
+                                  dy={8}
+                                />
+                                <YAxis 
+                                  domain={[0, 20]} 
+                                  tickCount={6}
+                                  tickLine={false}
+                                  axisLine={false}
+                                  tickStyle={{ fontSize: 10, fill: '#64748b', fontWeight: 500 }} 
+                                  dx={-4}
+                                />
+                                <Tooltip
+                                  contentStyle={{
+                                    border: '1px solid #e2e8f0',
+                                    borderRadius: '12px',
+                                    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+                                    fontSize: '11px',
+                                  }}
+                                  formatter={(value: any, name: string, props: any) => {
+                                    const payload = props.payload;
+                                    return [
+                                      <div className="space-y-1" key="content">
+                                        <div className="font-bold text-slate-800">{payload.subject}</div>
+                                        <div className="text-indigo-600 font-bold">Moyenne : {value} / 20</div>
+                                        <div className="text-[10px] text-gray-500">{payload.count} {language === 'fr' ? 'évaluation(s)' : 'evaluation(s)'}</div>
+                                      </div>,
+                                      null
+                                    ];
+                                  }}
+                                />
+                                <ReferenceLine 
+                                  y={10} 
+                                  stroke="#f43f5e" 
+                                  strokeDasharray="4 4" 
+                                  strokeWidth={1}
+                                />
+                                <Bar 
+                                  dataKey="average" 
+                                  radius={[8, 8, 0, 0]} 
+                                  maxBarSize={45}
+                                >
+                                  {subjectAveragesData.map((entry, idx) => {
+                                    const fillVal = entry.average >= 14 ? '#10b981' : entry.average >= 10 ? '#3b82f6' : '#ef4444';
+                                    return <Cell key={`cell-${idx}`} fill={fillVal} />;
+                                  })}
+                                </Bar>
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </motion.div>
+                      )}
+
+                      {activeVisualTab === 'distribution' && (
+                        <motion.div
+                          key="distribution"
+                          initial={{ opacity: 0, y: 5 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -5 }}
+                          className="h-full flex flex-col justify-between"
+                        >
+                          <div className="flex items-center justify-between text-[11px] font-medium text-slate-500 px-1 mb-2">
+                            <span>
+                              {language === 'fr' 
+                                ? 'Répartition des évaluations de l\'élève selon le barème officiel.' 
+                                : 'Grade frequency distribution within academic brackets.'}
+                            </span>
+                          </div>
+                          <div className="h-64">
+                            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                              <BarChart data={distributionData} margin={{ top: 15, right: 15, left: -22, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                <XAxis 
+                                  dataKey="range" 
+                                  tickLine={false}
+                                  axisLine={false}
+                                  tickStyle={{ fontSize: 10, fill: '#64748b', fontWeight: 600 }} 
+                                  dy={8}
+                                />
+                                <YAxis 
+                                  allowDecimals={false}
+                                  tickLine={false}
+                                  axisLine={false}
+                                  tickStyle={{ fontSize: 10, fill: '#64748b', fontWeight: 500 }} 
+                                  dx={-4}
+                                />
+                                <Tooltip
+                                  contentStyle={{
+                                    border: '1px solid #e2e8f0',
+                                    borderRadius: '12px',
+                                    fontSize: '11px',
+                                  }}
+                                  formatter={(value: any, name: string, props: any) => {
+                                    const payload = props.payload;
+                                    return [
+                                      <div className="space-y-0.5" key="content">
+                                        <div className="font-bold text-slate-800">{payload.label} ({payload.range})</div>
+                                        <div className="text-indigo-600 font-extrabold">{value} {language === 'fr' ? 'évaluations' : 'evaluations'}</div>
+                                      </div>,
+                                      null
+                                    ];
+                                  }}
+                                />
+                                <Bar 
+                                  dataKey="count" 
+                                  radius={[8, 8, 0, 0]} 
+                                  maxBarSize={55}
+                                >
+                                  {distributionData.map((entry, idx) => (
+                                    <Cell key={`cell-${idx}`} fill={entry.fill} />
+                                  ))}
+                                </Bar>
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </motion.div>
+                      )}
+
+                      {activeVisualTab === 'diagnostic' && (
+                        <motion.div
+                          key="diagnostic"
+                          initial={{ opacity: 0, y: 5 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -5 }}
+                          className="h-full grid grid-cols-1 md:grid-cols-3 gap-3.5 overflow-y-auto pr-1"
+                        >
+                          {/* Box 1: Strengths & Weaknesses */}
+                          <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-150 space-y-2">
+                            <h4 className="text-[10px] uppercase tracking-wider font-extrabold text-slate-500">
+                              {language === 'fr' ? 'Points Clés' : 'Key Areas'}
+                            </h4>
+                            
+                            <div className="space-y-1.5 pt-0.5">
+                              {strongestSubject && (
+                                <div className="flex items-center justify-between bg-white px-2.5 py-2 rounded-lg border border-slate-100 shadow-3xs">
+                                  <div className="space-y-0.5">
+                                    <div className="text-[9px] text-emerald-600 font-bold flex items-center gap-1">
+                                      <Sparkles className="h-3 w-3" /> {language === 'fr' ? 'Point fort' : 'Strength'}
+                                    </div>
+                                    <div className="text-xs font-bold text-slate-800 truncate max-w-[120px]">{strongestSubject.subject}</div>
+                                  </div>
+                                  <div className="text-sm font-black text-emerald-600">{strongestSubject.average} <span className="text-[9px] font-medium text-slate-400">/20</span></div>
+                                </div>
+                              )}
+
+                              {weakestSubject && strongestSubject?.subject !== weakestSubject.subject && (
+                                <div className="flex items-center justify-between bg-white px-2.5 py-2 rounded-lg border border-slate-100 shadow-3xs">
+                                  <div className="space-y-0.5">
+                                    <div className="text-[9px] text-rose-600 font-bold flex items-center gap-1">
+                                      <AlertCircle className="h-3 w-3" /> {language === 'fr' ? 'À consolider' : 'Needs Work'}
+                                    </div>
+                                    <div className="text-xs font-bold text-slate-800 truncate max-w-[120px]">{weakestSubject.subject}</div>
+                                  </div>
+                                  <div className="text-sm font-black text-rose-500">{weakestSubject.average} <span className="text-[9px] font-medium text-slate-400">/20</span></div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Box 2: Rigour & Volatility */}
+                          <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-150 space-y-2">
+                            <h4 className="text-[10px] uppercase tracking-wider font-extrabold text-slate-500">
+                              {language === 'fr' ? 'Régularité du Profil' : 'Academic Consistency'}
+                            </h4>
+                            <div className="space-y-1.5 pt-0.5">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-semibold text-slate-600">{language === 'fr' ? 'Écart-type' : 'Std Deviation'} :</span>
+                                <span className="text-xs font-mono font-bold text-slate-800">{stdDevVal.toFixed(2)}</span>
+                              </div>
+                              <div className="bg-white p-2 rounded-lg border border-slate-100 text-[10px] font-medium text-slate-500 shadow-3xs leading-relaxed">
+                                {stdDevVal < 1.5 ? (
+                                  <span className="text-emerald-700 font-semibold">
+                                    {language === 'fr' 
+                                      ? '✓ Résultats très homogènes. Le travail est régulier à chaque évaluation.'
+                                      : '✓ Highly consistent results across different tests.'}
+                                  </span>
+                                ) : stdDevVal < 3.0 ? (
+                                  <span className="text-indigo-700 font-semibold">
+                                    {language === 'fr' 
+                                      ? '⚠ Écart-type modéré. Des variations mineures selon les thématiques.'
+                                      : '⚠ Moderate consistency. Results vary slightly between chapters.'}
+                                  </span>
+                                ) : (
+                                  <span className="text-rose-600 font-semibold">
+                                    {language === 'fr' 
+                                      ? '⚡ Forte volatilité. Des pics d\'excellence alternés de notes plus fragiles.'
+                                      : '⚡ High grade volatility. Significant gaps between top and lower scores.'}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Box 3: Dynamics & Forecast */}
+                          <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-150 space-y-2">
+                            <h4 className="text-[10px] uppercase tracking-wider font-extrabold text-slate-500">
+                              {language === 'fr' ? 'Tendance & Appréciation' : 'Semester Trend'}
+                            </h4>
+                            <div className="space-y-1.5 pt-0.5">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-semibold text-slate-600">{language === 'fr' ? 'Tendance' : 'Trend'} :</span>
+                                <div className="flex items-center gap-1 text-xs font-bold">
+                                  {trendDiffVal > 0.5 ? (
+                                    <span className="text-emerald-600 flex items-center gap-0.5">
+                                      <TrendingUp className="h-3.5 w-3.5" /> +{trendDiffVal.toFixed(1)}
+                                    </span>
+                                  ) : trendDiffVal < -0.5 ? (
+                                    <span className="text-rose-600 flex items-center gap-0.5">
+                                      <TrendingDown className="h-3.5 w-3.5" /> {trendDiffVal.toFixed(1)}
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-500">
+                                      {language === 'fr' ? 'Stable' : 'Stable'} ({trendDiffVal >= 0 ? '+' : ''}{trendDiffVal.toFixed(1)})
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="bg-white p-2 rounded-lg border border-slate-100 text-[10px] font-medium text-slate-500 shadow-3xs leading-relaxed">
+                                <span className="text-slate-700 font-medium">
+                                  {language === 'fr' ? 'Mention indicative : ' : 'Indicative honor: '}
+                                  <span className="font-extrabold text-indigo-700">{getHonorsMention(Number(averageMark))}</span>
+                                </span>
+                                <p className="mt-1 border-t border-slate-100 pt-1 text-[9px] text-slate-400">
+                                  {language === 'fr' 
+                                    ? 'Analyse automatisée basée sur l\'évolution relative du trimestre.'
+                                    : 'Diagnostic analysis based on progress over consecutive periods.'}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  ) : (
+                    <div className="h-full w-full bg-slate-50 rounded-2xl animate-pulse flex items-center justify-center text-xs text-slate-400 font-medium font-sans">
+                      {language === 'fr' ? 'Chargement du tableau de bord...' : 'Loading performance dashboard...'}
+                    </div>
+                  )}
                 </div>
-              </div>
-
-              <div className="h-68 w-full pt-1">
-                {isMounted ? (
-                  <ResponsiveContainer width="100%" height={272} minWidth={0}>
-                    <LineChart data={chartData} margin={{ top: 15, right: 15, left: -22, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis 
-                        dataKey="date" 
-                        tickLine={false}
-                        axisLine={false}
-                        tickStyle={{ fontSize: 10, fill: '#64748b', fontWeight: 500 }} 
-                        dy={8}
-                      />
-                      <YAxis 
-                        domain={[0, 20]} 
-                        tickCount={11}
-                        tickLine={false}
-                        axisLine={false}
-                        tickStyle={{ fontSize: 10, fill: '#64748b', fontWeight: 500 }} 
-                        dx={-4}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          border: '1px solid #e2e8f0',
-                          borderRadius: '14px',
-                          boxShadow: '0 8px 16px -2px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05)',
-                          fontSize: '11px',
-                          padding: '10px 14px'
-                        }}
-                        formatter={(value: any, name: string, props: any) => {
-                          const payload = props.payload;
-                          const scoreColor = value >= 10 ? 'text-emerald-700 font-extrabold' : 'text-rose-600 font-extrabold';
-                          return [
-                            <div className="space-y-1" key="content">
-                              <div className="flex items-center gap-1.5 font-bold text-slate-800">
-                                <span>Matière :</span>
-                                <span className="bg-slate-100 px-2 py-0.5 rounded text-[10px] text-indigo-700 font-bold">{payload.subject}</span>
-                              </div>
-                              <div className="text-slate-600 font-medium">Éval : <span className="font-semibold text-slate-900">{payload.examName}</span></div>
-                              <div className="pt-1 text-xs border-t border-slate-100 flex items-center justify-between gap-3">
-                                <span className="text-gray-500 font-sans">Valuation :</span>
-                                <span className={scoreColor}>{value} / 20</span>
-                              </div>
-                            </div>,
-                            null
-                          ];
-                        }}
-                        labelFormatter={(label) => `📅 Date de l'Évaluation : ${label}`}
-                      />
-                      
-                      {/* passing average reference line */}
-                      <ReferenceLine 
-                        y={10} 
-                        stroke="#f43f5e" 
-                        strokeDasharray="4 4" 
-                        strokeWidth={1.25}
-                        label={{ 
-                          value: 'Moyenne requise (10/20)', 
-                          fill: '#f43f5e', 
-                          fontSize: 8.5, 
-                          position: 'insideBottomRight', 
-                          offset: 7, 
-                          fontWeight: 'bold' 
-                        }} 
-                      />
-
-                      <Line
-                        type="monotone"
-                        dataKey="score"
-                        stroke="#4f46e5"
-                        strokeWidth={3}
-                        dot={{ r: 4, fill: '#4f46e5', stroke: '#ffffff', strokeWidth: 1.5 }}
-                        activeDot={{ r: 6, stroke: '#4f46e5', strokeWidth: 2, fill: '#ffffff' }}
-                        animationDuration={805}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="h-full w-full bg-slate-50 rounded-2xl animate-pulse flex items-center justify-center text-xs text-slate-400 font-medium font-sans">Chargement de la courbe de progression...</div>
-                )}
-              </div>
-            </motion.div>
-          )}
+              </motion.div>
+            );
+          })()}
 
           {/* Select and Filter Row */}
           <div className="space-y-3">

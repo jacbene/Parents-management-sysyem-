@@ -160,6 +160,7 @@ function PushNotificationSyncer({
       return (
         studentsRef.current.some(s => s.id === inv.studentId) ||
         inv.id === 'apee_par_bene_jacques' ||
+        inv.id.startsWith('apee_par_bene_jacques') ||
         (inv.email && inv.email.toLowerCase() === user?.email?.toLowerCase())
       );
     });
@@ -446,13 +447,33 @@ export default function App() {
     }
   });
 
+  const syncBackoffDelayRef = useRef(1000);
+  const syncTimeoutRef = useRef<any>(null);
+
+  useEffect(() => {
+    return () => {
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const syncPendingActions = async () => {
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current);
+      syncTimeoutRef.current = null;
+    }
+
     try {
       const saved = localStorage.getItem('pasma_pending_actions');
       const actions: PendingAction[] = saved ? JSON.parse(saved) : [];
-      if (actions.length === 0) return;
+      if (actions.length === 0) {
+        syncBackoffDelayRef.current = 1000;
+        return;
+      }
 
       let successCount = 0;
+      let networkErrorEncountered = false;
       const remaining: PendingAction[] = [];
 
       for (const action of actions) {
@@ -463,9 +484,24 @@ export default function App() {
             await setDoc(doc(db, action.collection, action.targetId), action.data);
           }
           successCount++;
-        } catch (err) {
+        } catch (err: any) {
           console.error("Failed syncing item, keeping in queue:", action, err);
           remaining.push(action);
+
+          const errMsg = String(err?.message || err || '').toLowerCase();
+          const errCode = String(err?.code || '').toLowerCase();
+          if (
+            errCode === 'unavailable' ||
+            errCode === 'deadline-exceeded' ||
+            errMsg.includes('offline') ||
+            errMsg.includes('network') ||
+            errMsg.includes('failed to fetch') ||
+            errMsg.includes('internet') ||
+            errMsg.includes('failed to connect') ||
+            !navigator.onLine
+          ) {
+            networkErrorEncountered = true;
+          }
         }
       }
 
@@ -476,8 +512,31 @@ export default function App() {
       if (successCount > 0) {
         console.log(`[Pasma-sys Sync] Synchronisé avec succès ${successCount} modification(s) !`);
       }
+
+      if (remaining.length > 0) {
+        if (networkErrorEncountered) {
+          const currentDelay = syncBackoffDelayRef.current;
+          const nextDelay = Math.min(currentDelay * 2, 30000);
+          syncBackoffDelayRef.current = nextDelay;
+          console.warn(`[Pasma-sys Sync] Network error during sync. Backing off for ${currentDelay}ms before retry...`);
+
+          syncTimeoutRef.current = setTimeout(() => {
+            syncPendingActions();
+          }, currentDelay);
+        } else {
+          syncBackoffDelayRef.current = 1000;
+        }
+      } else {
+        syncBackoffDelayRef.current = 1000;
+      }
     } catch (e) {
       console.error("Error during syncPendingActions:", e);
+      const currentDelay = syncBackoffDelayRef.current;
+      syncBackoffDelayRef.current = Math.min(currentDelay * 2, 30000);
+      console.warn(`[Pasma-sys Sync] General error during sync. Backing off for ${currentDelay}ms before retry...`);
+      syncTimeoutRef.current = setTimeout(() => {
+        syncPendingActions();
+      }, currentDelay);
     }
   };
 

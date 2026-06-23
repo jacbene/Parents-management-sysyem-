@@ -70,6 +70,18 @@ export function getApeeShortName(settings?: { associationName?: string; shortNam
 }
 
 /**
+ * Ensures document IDs are unique per parent/tenant to prevent Firestore permission and collision issues
+ */
+function getScopedApeeDocId(id: string, parentId: string): string {
+  if (!id) return id;
+  if (!parentId) return id;
+  if (id.includes(parentId) || id === 'apee_settings' || id.startsWith(parentId)) {
+    return id;
+  }
+  return `${id}_${parentId}`;
+}
+
+/**
  * Normalizes Firestore Invoice document to ApeeParent
  */
 function normalizeToApeeParent(inv: Invoice): ApeeParent {
@@ -114,25 +126,32 @@ function normalizeToApeeParent(inv: Invoice): ApeeParent {
  */
 function normalizeToInvoice(parent: ApeeParent, parentId: string): Invoice {
   const lastPayment = parent.payments && parent.payments.length > 0 ? parent.payments[parent.payments.length - 1] : null;
+  const name = parent.name || (parent as any).title || '';
+  const amount = parent.totalDue !== undefined ? parent.totalDue : ((parent as any).amount !== undefined ? (parent as any).amount : 0);
+  const amountPaid = parent.totalPaid !== undefined ? parent.totalPaid : ((parent as any).amountPaid !== undefined ? (parent as any).amountPaid : 0);
+  const dueDate = parent.createdAt || (parent as any).dueDate || new Date().toISOString();
+  const paymentDate = parent.updatedAt || (parent as any).paymentDate || new Date().toISOString();
+  const status = parent.status === 'soldé' || (parent as any).status === 'Paid' ? 'Paid' : 'Unpaid';
+  
   return {
     id: parent.id,
     studentId: 'apee_ces_ekali_1', // Marker for parent cotisation
     parentId,
-    title: parent.name,
-    amount: parent.totalDue,
-    dueDate: parent.createdAt || new Date().toISOString(),
-    status: parent.status === 'soldé' ? 'Paid' : 'Unpaid',
-    paymentDate: parent.updatedAt || new Date().toISOString(),
+    title: name,
+    amount,
+    dueDate,
+    status,
+    paymentDate,
     phone: parent.phone,
     address: parent.address || '',
     email: parent.email || '',
     lastReminded: parent.lastReminded || '',
     note: parent.note || '',
-    amountPaid: parent.totalPaid,
-    studentsList: JSON.stringify(parent.students),
-    paymentsHistory: JSON.stringify(parent.payments),
-    transactionId: lastPayment?.transactionId || '',
-    provider: lastPayment?.provider || '',
+    amountPaid,
+    studentsList: parent.students ? JSON.stringify(parent.students) : ((parent as any).studentsList || '[]'),
+    paymentsHistory: parent.payments ? JSON.stringify(parent.payments) : ((parent as any).paymentsHistory || '[]'),
+    transactionId: lastPayment?.transactionId || (parent as any).transactionId || '',
+    provider: lastPayment?.provider || (parent as any).provider || '',
   };
 }
 
@@ -382,7 +401,7 @@ export async function fetchApeeData(parentId: string) {
       cachedParents.forEach(async (cp) => {
         try {
           const invData = normalizeToInvoice(cp, parentId);
-          await setDoc(doc(db, 'invoices', cp.id), invData);
+          await setDoc(doc(db, 'invoices', getScopedApeeDocId(cp.id, parentId)), invData);
         } catch (e) {
           console.error("Auto background sync failed for parent", cp.name, e);
         }
@@ -395,7 +414,7 @@ export async function fetchApeeData(parentId: string) {
           console.log("Rescuing newly-added offline parent:", cp.name);
           try {
             const invData = normalizeToInvoice(cp, parentId);
-            await setDoc(doc(db, 'invoices', cp.id), invData);
+            await setDoc(doc(db, 'invoices', getScopedApeeDocId(cp.id, parentId)), invData);
           } catch (e) {
             console.error("Auto rescue failed for parent", cp.name, e);
           }
@@ -451,15 +470,17 @@ export async function saveApeeOtherRevenue(parentId: string, revenue: ApeeOtherR
 
   const invoiceData = normalizeOtherRevenueToInvoice(revenue, parentId);
 
+  const scopedId = getScopedApeeDocId(revenue.id, parentId);
+
   if (isOffline()) {
-    queuePendingAction('UPDATE', 'invoices', revenue.id, `Enregistrer autre recette de ${revenue.payerName} (${revenue.amount} FCFA)`, invoiceData);
+    queuePendingAction('UPDATE', 'invoices', scopedId, `Enregistrer autre recette de ${revenue.payerName} (${revenue.amount} FCFA)`, invoiceData);
     return;
   }
 
   try {
-    await setDoc(doc(db, 'invoices', revenue.id), invoiceData);
+    await setDoc(doc(db, 'invoices', scopedId), invoiceData);
   } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, `invoices/${revenue.id}`);
+    handleFirestoreError(err, OperationType.WRITE, `invoices/${scopedId}`);
   }
 }
 
@@ -480,15 +501,17 @@ export async function deleteApeeOtherRevenue(parentId: string, id: string) {
 
   if (!parentId) return;
 
+  const scopedId = getScopedApeeDocId(id, parentId);
+
   if (isOffline()) {
-    queuePendingAction('DELETE', 'invoices', id, `Supprimer autre recette : ${id}`);
+    queuePendingAction('DELETE', 'invoices', scopedId, `Supprimer autre recette : ${id}`);
     return;
   }
 
   try {
-    await deleteDoc(doc(db, 'invoices', id));
+    await deleteDoc(doc(db, 'invoices', scopedId));
   } catch (err) {
-    handleFirestoreError(err, OperationType.DELETE, `invoices/${id}`);
+    handleFirestoreError(err, OperationType.DELETE, `invoices/${scopedId}`);
   }
 }
 
@@ -569,16 +592,17 @@ export async function saveApeeParent(parentId: string, parent: ApeeParent) {
   if (!parentId) return;
 
   const invoiceData = normalizeToInvoice(parent, parentId);
+  const scopedId = getScopedApeeDocId(parent.id, parentId);
 
   if (isOffline()) {
-    queuePendingAction('UPDATE', 'invoices', parent.id, `Enregistrer le parent : ${parent.name}`, invoiceData);
+    queuePendingAction('UPDATE', 'invoices', scopedId, `Enregistrer le parent : ${parent.name}`, invoiceData);
     return;
   }
 
   try {
-    await setDoc(doc(db, 'invoices', parent.id), invoiceData);
+    await setDoc(doc(db, 'invoices', scopedId), invoiceData);
   } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, `invoices/${parent.id}`);
+    handleFirestoreError(err, OperationType.WRITE, `invoices/${scopedId}`);
   }
 }
 
@@ -599,15 +623,17 @@ export async function deleteApeeParent(parentId: string, id: string) {
 
   if (!parentId) return;
 
+  const scopedId = getScopedApeeDocId(id, parentId);
+
   if (isOffline()) {
-    queuePendingAction('DELETE', 'invoices', id, `Supprimer le parent : ${id}`);
+    queuePendingAction('DELETE', 'invoices', scopedId, `Supprimer le parent : ${id}`);
     return;
   }
 
   try {
-    await deleteDoc(doc(db, 'invoices', id));
+    await deleteDoc(doc(db, 'invoices', scopedId));
   } catch (err) {
-    handleFirestoreError(err, OperationType.DELETE, `invoices/${id}`);
+    handleFirestoreError(err, OperationType.DELETE, `invoices/${scopedId}`);
   }
 }
 
@@ -632,16 +658,17 @@ export async function saveApeeExpense(parentId: string, expense: ApeeExpense) {
   if (!parentId) return;
 
   const invoiceData = normalizeExpenseToInvoice(expense, parentId);
+  const scopedId = getScopedApeeDocId(expense.id, parentId);
 
   if (isOffline()) {
-    queuePendingAction('UPDATE', 'invoices', expense.id, `Enregistrer la dépense : ${expense.title}`, invoiceData);
+    queuePendingAction('UPDATE', 'invoices', scopedId, `Enregistrer la dépense : ${expense.title}`, invoiceData);
     return;
   }
 
   try {
-    await setDoc(doc(db, 'invoices', expense.id), invoiceData);
+    await setDoc(doc(db, 'invoices', scopedId), invoiceData);
   } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, `invoices/${expense.id}`);
+    handleFirestoreError(err, OperationType.WRITE, `invoices/${scopedId}`);
   }
 }
 
@@ -662,15 +689,17 @@ export async function deleteApeeExpense(parentId: string, id: string) {
 
   if (!parentId) return;
 
+  const scopedId = getScopedApeeDocId(id, parentId);
+
   if (isOffline()) {
-    queuePendingAction('DELETE', 'invoices', id, `Supprimer la dépense : ${id}`);
+    queuePendingAction('DELETE', 'invoices', scopedId, `Supprimer la dépense : ${id}`);
     return;
   }
 
   try {
-    await deleteDoc(doc(db, 'invoices', id));
+    await deleteDoc(doc(db, 'invoices', scopedId));
   } catch (err) {
-    handleFirestoreError(err, OperationType.DELETE, `invoices/${id}`);
+    handleFirestoreError(err, OperationType.DELETE, `invoices/${scopedId}`);
   }
 }
 
@@ -700,16 +729,17 @@ export async function saveApeeLog(parentId: string, log: ApeeActivityLog) {
   if (!parentId) return;
 
   const invoiceData = normalizeLogToInvoice(log, parentId);
+  const scopedId = getScopedApeeDocId(log.id, parentId);
 
   if (isOffline()) {
-    queuePendingAction('UPDATE', 'invoices', log.id, `Journaliser : ${log.description}`, invoiceData);
+    queuePendingAction('UPDATE', 'invoices', scopedId, `Journaliser : ${log.description}`, invoiceData);
     return;
   }
 
   try {
-    await setDoc(doc(db, 'invoices', log.id), invoiceData);
+    await setDoc(doc(db, 'invoices', scopedId), invoiceData);
   } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, `invoices/${log.id}`);
+    handleFirestoreError(err, OperationType.WRITE, `invoices/${scopedId}`);
   }
 }
 
@@ -760,19 +790,19 @@ export async function importFullBackup(
     // Write parents
     finalParents.forEach((p) => {
       const parentInvoice = normalizeToInvoice(p, parentId);
-      batch.set(doc(db, 'invoices', p.id), parentInvoice);
+      batch.set(doc(db, 'invoices', getScopedApeeDocId(p.id, parentId)), parentInvoice);
     });
 
     // Write expenses
     finalExpenses.forEach((exp) => {
       const expInvoice = normalizeExpenseToInvoice(exp, parentId);
-      batch.set(doc(db, 'invoices', exp.id), expInvoice);
+      batch.set(doc(db, 'invoices', getScopedApeeDocId(exp.id, parentId)), expInvoice);
     });
 
     // Write logs
     finalLogs.forEach((log) => {
       const logInvoice = normalizeLogToInvoice(log, parentId);
-      batch.set(doc(db, 'invoices', log.id), logInvoice);
+      batch.set(doc(db, 'invoices', getScopedApeeDocId(log.id, parentId)), logInvoice);
     });
 
     await batch.commit();
