@@ -1,6 +1,6 @@
 {
-  "name": "Parents Management System",
-  "description": "A comprehensive, modern school management portal for parents (Pasma-sys) to track student grades, school attendance, homework tasks, billing statements, schedules, and real-time communications powered by Firebase.",
+  "name": "Parents-Schools Management System (Pasma-sys)",
+  "description": "A comprehensive, modern portal bridging parents and schools (Pasma-sys) to track student grades, school attendance, homework tasks, billing statements, schedules, and real-time communications powered by Firebase.",
   "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

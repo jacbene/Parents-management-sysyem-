@@ -685,7 +685,7 @@ export async function seedUserData(userId: string): Promise<void> {
       console.warn("[Pasma-sys Seeder] Messages seeding skipped or blocked by rules:", err);
     }
 
-    console.log('Seeding of Parents Management System (Pasma-sys) process ended.');
+    console.log('Seeding of Parents-Schools Management System (Pasma-sys) process ended.');
   } catch (err) {
     console.warn('[Pasma-sys Seeder] General seeding process exception caught:', err);
   }
@@ -1012,6 +1012,31 @@ export function getOfflineMockData(userId: string) {
     }
   ];
 
+  const lessons = [
+    {
+      id: `les_1_${userId.slice(0, 6)}`,
+      parentId: userId,
+      classRoom: 'CE2',
+      subject: 'Mathématiques',
+      title: 'Introduction aux Fractions Décimales',
+      content: `I. Qu'est-ce qu'une fraction décimale ?\nUne fraction décimale est une fraction dont le dénominateur est égal à 10, 100, 1000, etc.\nExemples : \n- 3/10 (trois dixièmes)\n- 45/100 (quarante-cinq centièmes)\n- 125/1000 (cent vingt-cinq millièmes)\n\nII. Écritures équivalentes\nUne fraction décimale peut être écrite sous la forme d'un nombre à virgule (nombre décimal).\nExemples : \n- 3/10 = 0,3 (trois dixièmes)\n- 45/100 = 0,45 (quarante-cinq centièmes)\n- 15/10 = 1 + 5/10 = 1,5 (une unité et cinq dixièmes)\n\nIII. Exercice d'échauffement : \nPlace les fractions suivantes sur une ligne graduée : 2/10, 8/10, 12/10.`,
+      teacherName: 'Mme Sophie Laurent',
+      date: '2026-05-24',
+      createdAt: '2026-05-24T08:00:00Z'
+    },
+    {
+      id: `les_2_${userId.slice(0, 6)}`,
+      parentId: userId,
+      classRoom: 'CM2',
+      subject: 'Français',
+      title: 'L\'accord du participe passé',
+      content: `I. La règle de base avec l'auxiliaire ÊTRE\nLe participe passé employé avec l'auxiliaire "être" s'accorde en genre (féminin/masculin) et en nombre (singulier/pluriel) avec le sujet de la phrase.\nExemples : \n- Les élèves (masculin, pluriel) sont partis à la mer.\n- Elles (féminin, pluriel) sont restées à la maison.\n\nII. La règle avec l'auxiliaire AVOIR\nLe participe passé employé avec l'auxiliaire "avoir" ne s'accorde jamais avec le sujet de la phrase.\nExemples : \n- Chloé a mangé une délicieuse pomme.\n- Les garçons ont lu le roman.\nAttention ! Le participe passé s'accorde en genre et en nombre avec le COD s'il est placé AVANT le verbe.\nExemple : La pomme que Chloé a mangée était délicieuse.`,
+      teacherName: 'M. Jean Picard',
+      date: '2026-05-23',
+      createdAt: '2026-05-23T09:00:00Z'
+    }
+  ];
+
   return {
     students,
     grades,
@@ -1019,7 +1044,8 @@ export function getOfflineMockData(userId: string) {
     homeworks,
     appointments,
     invoices,
-    messages
+    messages,
+    lessons
   };
 }
 

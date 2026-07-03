@@ -34,74 +34,49 @@ service cloud.firestore {
 
     // Prevents malformed path navigation injection (Payload 7)
     function isSafeId(id) {
-      return id != null && id.size() > 0 && id.size() < 128;
+      return id != null && id.size() > 0 && id.size() < 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
     // Helper to identify if a workspace identifier belongs to a demo/sandbox environment.
     // Handles 'demo_school_ekali', 'demo_school_vogt', 'demo_school_bilingue', and general demo prefixed keys.
     function isDemoId(id) {
       return id != null && (
-        id == 'demo_school_ekali' || 
-        id == 'demo_school_vogt' || 
-        id == 'demo_school_bilingue' || 
-        id.matches('^demo_.*')
+        id == 'demo_school_ekali' ||
+        id == 'demo_school_vogt' ||
+        id == 'demo_school_bilingue' ||
+        id.startsWith('demo_school_')
       );
     }
 
     // Evaluates if the authenticated user is the primary Super Admin or a registered secondary Super Admin
     function isSuperAdmin() {
-      return isSignedIn() && (
-        request.auth.token.email == 'jacquesbene301@gmail.com' ||
-        (request.auth.token.email != null && exists(/databases/$(database)/documents/super_admins/$(request.auth.token.email)))
-      );
+      return isSignedIn() && 
+             'email' in request.auth.token && (
+               request.auth.token.email == 'jacquesbene301@gmail.com' ||
+               exists(/databases/$(database)/documents/super_admins/$(request.auth.token.email))
+             );
     }
 
     // Static check for list queries to optimize reads and avoid exists() lookups for the main Super Admin account
     function isSuperAdminList() {
-      return isSignedIn() && request.auth.token.email == 'jacquesbene301@gmail.com';
+      return isSignedIn() && 
+             'email' in request.auth.token && 
+             request.auth.token.email == 'jacquesbene301@gmail.com';
     }
 
     // Evaluates if the authenticated user owns the resource or if it is a shared demo sandbox resource during READS (using exists but omitting existsAfter).
     function isOwnerOrDemoRead(parentId) {
-      return isSignedIn() && parentId != null && (
-        parentId == request.auth.uid || 
-        isDemoId(parentId) || 
-        parentId.matches('^sch_.*') ||
-        parentId.matches('^sys_.*') ||
-        parentId.matches('^deputy_.*') ||
-        parentId.matches('^sandboxed_.*') ||
-        parentId.matches('^[A-Za-z0-9_\\-]+$') ||
-        exists(/databases/$(database)/documents/establishments/$(parentId))
-      );
+      return isDemoId(parentId) || (isSignedIn() && parentId == request.auth.uid);
     }
 
     // Evaluates if the authenticated user owns the resource or if it is a shared demo sandbox resource during WRITES (which can safely check existsAfter).
     function isOwnerOrDemoWrite(parentId) {
-      return isSignedIn() && parentId != null && (
-        parentId == request.auth.uid || 
-        isDemoId(parentId) || 
-        parentId.matches('^sch_.*') ||
-        parentId.matches('^sys_.*') ||
-        parentId.matches('^deputy_.*') ||
-        parentId.matches('^sandboxed_.*') ||
-        parentId.matches('^[A-Za-z0-9_\\-]+$') ||
-        exists(/databases/$(database)/documents/establishments/$(parentId)) ||
-        existsAfter(/databases/$(database)/documents/establishments/$(parentId))
-      );
+      return isDemoId(parentId) || (isSignedIn() && parentId == request.auth.uid);
     }
 
     // Evaluates if the parentId corresponds to the authenticated user or to a demo/school workspace
     function isOwnerOrDemoList(parentId) {
-      return isSignedIn() && parentId != null && (
-        parentId == request.auth.uid || 
-        isDemoId(parentId) || 
-        parentId.matches('^sch_.*') ||
-        parentId.matches('^sys_.*') ||
-        parentId.matches('^deputy_.*') ||
-        parentId.matches('^sandboxed_.*') ||
-        parentId.matches('^[A-Za-z0-9_\\-]+$') ||
-        exists(/databases/$(database)/documents/establishments/$(parentId))
-      );
+      return isDemoId(parentId) || (isSignedIn() && parentId == request.auth.uid);
     }
 
     // Ensures that a critical identification field is not altered during an update operation.
@@ -294,9 +269,20 @@ service cloud.firestore {
       allow delete: if isOwnerOrDemoWrite(resource.data.parentId);
     }
 
+    // 12. Lessons Collection: Teachers publish, parents and students read
+    match /lessons/{lessonId} {
+      allow read: if isSignedIn();
+      allow create: if isSafeId(lessonId) && 
+                    isOwnerOrDemoWrite(request.resource.data.parentId);
+      allow update: if isOwnerOrDemoWrite(resource.data.parentId) && 
+                    isOwnerOrDemoWrite(request.resource.data.parentId) && 
+                    isImmutable('parentId');
+      allow delete: if isOwnerOrDemoWrite(resource.data.parentId);
+    }
+
     // 11. Super Admins Collection: Managed by jacquesbene301@gmail.com and secondary Super Admins
     match /super_admins/{adminId} {
-      allow get: if isSignedIn() && (request.auth.token.email == adminId || isSuperAdmin());
+      allow get: if isSignedIn() && 'email' in request.auth.token && (request.auth.token.email == adminId || isSuperAdmin());
       allow list: if isSuperAdminList() || isSuperAdmin();
       allow write: if isSuperAdmin();
     }

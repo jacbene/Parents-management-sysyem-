@@ -49,6 +49,18 @@ export interface Homework {
   grade?: string;
 }
 
+export interface Lesson {
+  id: string;
+  parentId: string;
+  classRoom: string;
+  subject: string;
+  title: string;
+  content: string;
+  teacherName: string;
+  date: string;
+  createdAt: string;
+}
+
 export type AnnouncementCategory = 'General' | 'Academic' | 'Event' | 'Urgent';
 
 export interface Announcement {

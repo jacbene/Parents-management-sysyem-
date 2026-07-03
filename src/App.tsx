@@ -4,7 +4,7 @@ import { collection, query, where, getDocs, doc, setDoc, deleteDoc, writeBatch, 
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, loginWithGoogle, logout, db, handleFirestoreError, OperationType, loginAnonymously, goOffline, goOnline, isOffline as isOfflineCheck, queuePendingAction, signUpWithEmail, loginWithEmail, resetPassword } from './firebase';
 import { isDatabaseSeeded, seedUserData, getOfflineMockData, purgeUserData } from './seeder';
-import { Student, Grade, Attendance, Homework, Appointment, Message, Invoice, ApeeParent, ApeeExpense, ApeeSettings, Announcement, AnnouncementCategory, ApeeActivityLog, ApeeOtherRevenue, PendingAction } from './types';
+import { Student, Grade, Attendance, Homework, Lesson, Appointment, Message, Invoice, ApeeParent, ApeeExpense, ApeeSettings, Announcement, AnnouncementCategory, ApeeActivityLog, ApeeOtherRevenue, PendingAction } from './types';
 
 // Notifications Push
 import { LocalNotificationProvider, useLocalNotifications } from './utils/LocalNotificationContext';
@@ -40,6 +40,7 @@ import ApeeLegal from './components/ApeeLegal';
 import ApeeSharePortal from './components/apee/ApeeSharePortal';
 import { useLanguage } from './utils/TranslationContext';
 import DrivePortal from './components/DrivePortal';
+import FirebaseConsole from './components/FirebaseConsole';
 
 // Components
 import StudentCard from './components/StudentCard';
@@ -47,6 +48,7 @@ import AnnouncementsFeed from './components/AnnouncementsFeed';
 import GradesDashboard from './components/GradesDashboard';
 import AttendanceTracker from './components/AttendanceTracker';
 import HomeworkBoard from './components/HomeworkBoard';
+import LessonsBoard from './components/LessonsBoard';
 import BillingPortal from './components/BillingPortal';
 import AppointmentsScheduler from './components/AppointmentsScheduler';
 import MessageInbox from './components/MessageInbox';
@@ -89,7 +91,9 @@ import {
   Clock,
   AlertCircle,
   WifiOff,
-  CheckCircle
+  CheckCircle,
+  Sun,
+  Moon
 } from 'lucide-react';
 
 type TabType = 
@@ -103,8 +107,10 @@ type TabType =
   | 'apee_reminders'
   | 'apee_legal'
   | 'google_drive'
+  | 'firebase_console'
   | 'announcements' 
   | 'homework' 
+  | 'lessons'
   | 'grades' 
   | 'attendance' 
   | 'billing' 
@@ -426,6 +432,21 @@ export default function App() {
     const interval = setInterval(checkExpiration, 30000); // Check every 30 seconds
     return () => clearInterval(interval);
   }, [selectedSchoolId, portalUserRole]);
+
+  // Theme dark state and sync to document class list
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    return localStorage.getItem('theme') === 'dark';
+  });
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [isDarkMode]);
 
   // Nav tab control
   const [activeTab, setActiveTab] = useState<TabType>(() => {
@@ -869,6 +890,15 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [lessons, setLessons] = useState<Lesson[]>([]);
+
+  const handleAddLesson = (newLesson: Lesson) => {
+    setLessons(prev => [newLesson, ...prev]);
+  };
+
+  const handleDeleteLesson = (id: string) => {
+    setLessons(prev => prev.filter(l => l.id !== id));
+  };
 
   // Filter students based on Parent authorized subset for Visitor role
   const filteredStudents = students.filter(s => {
@@ -954,6 +984,7 @@ export default function App() {
       } else if (currentUser) {
         // Anonymous/Guest user
         console.log("Anonymous guest logged in:", currentUser.uid);
+        setShowMainLogin(false);
       } else {
         // Forced login redirection for non-authenticated guests
         setShowMainLogin(true);
@@ -1246,6 +1277,20 @@ export default function App() {
               )
             );
 
+            unsubscribers.push(
+              onSnapshot(
+                query(collection(db, 'lessons'), where('parentId', '==', userId)),
+                (snapshot) => {
+                  const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Lesson);
+                  setLessons(list);
+                  localStorage.setItem(`pasma_lessons_${userId}`, JSON.stringify(list));
+                },
+                (err) => {
+                  console.warn("Real-time lessons listener failed:", err);
+                }
+              )
+            );
+
             // D. Setup real-time APEE subscription
             const unsubApee = subscribeApeeData(
               userId,
@@ -1331,6 +1376,7 @@ export default function App() {
       const cachedMessages = localStorage.getItem(`pasma_messages_${uid}`);
       const cachedInvoices = localStorage.getItem(`pasma_invoices_${uid}`);
       const cachedAnnouncements = localStorage.getItem(`pasma_announcements_${uid}`);
+      const cachedLessons = localStorage.getItem(`pasma_lessons_${uid}`);
 
       if (cachedStudents) {
         const studentList = JSON.parse(cachedStudents);
@@ -1345,6 +1391,7 @@ export default function App() {
       if (cachedMessages) setMessages(JSON.parse(cachedMessages));
       if (cachedInvoices) setInvoices(JSON.parse(cachedInvoices));
       if (cachedAnnouncements) setAnnouncements(JSON.parse(cachedAnnouncements));
+      if (cachedLessons) setLessons(JSON.parse(cachedLessons));
     } catch (e) {
       console.warn("Loading local storage cached pasma data failed:", e);
     }
@@ -1359,6 +1406,7 @@ export default function App() {
       const messageQuery = query(collection(db, 'messages'), where('parentId', '==', uid));
       const invoiceQuery = query(collection(db, 'invoices'), where('parentId', '==', uid));
       const announcementQuery = query(collection(db, 'announcements'), where('parentId', '==', uid));
+      const lessonQuery = query(collection(db, 'lessons'), where('parentId', '==', uid));
 
       // Fetch collections sequentially to strictly reuse and keep connections alive under browser limits
       const studentSnapshot = await getDocs(studentQuery).catch(err => { console.warn("Error fetching students:", err); return null; });
@@ -1369,6 +1417,7 @@ export default function App() {
       const messageSnapshot = await getDocs(messageQuery).catch(err => { console.warn("Error fetching messages:", err); return null; });
       const invoiceSnapshot = await getDocs(invoiceQuery).catch(err => { console.warn("Error fetching invoices:", err); return null; });
       const announcementSnapshot = await getDocs(announcementQuery).catch(err => { console.warn("Error fetching announcements:", err); return null; });
+      const lessonSnapshot = await getDocs(lessonQuery).catch(err => { console.warn("Error fetching lessons:", err); return null; });
 
       let loadedAnyFromDb = false;
 
@@ -1380,7 +1429,8 @@ export default function App() {
                              appointmentSnapshot !== null || 
                              messageSnapshot !== null || 
                              invoiceSnapshot !== null || 
-                             announcementSnapshot !== null;
+                             announcementSnapshot !== null ||
+                             lessonSnapshot !== null;
 
       if (studentSnapshot !== null) {
         const studentList = studentSnapshot.empty ? [] : studentSnapshot.docs.map(doc => doc.data() as Student);
@@ -1432,6 +1482,12 @@ export default function App() {
         localStorage.setItem(`pasma_announcements_${uid}`, JSON.stringify(list));
         loadedAnyFromDb = true;
       }
+      if (lessonSnapshot !== null) {
+        const list = lessonSnapshot.empty ? [] : lessonSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Lesson);
+        setLessons(list);
+        localStorage.setItem(`pasma_lessons_${uid}`, JSON.stringify(list));
+        loadedAnyFromDb = true;
+      }
 
       // If we are completely offline and have nothing in local storage backup, load offline seed mockups!
       if (!didConnectToDb && !localBackupFound) {
@@ -1454,6 +1510,10 @@ export default function App() {
         localStorage.setItem(`pasma_messages_${uid}`, JSON.stringify(offlineData.messages));
         setInvoices(offlineData.invoices);
         localStorage.setItem(`pasma_invoices_${uid}`, JSON.stringify(offlineData.invoices));
+        if ((offlineData as any).lessons) {
+          setLessons((offlineData as any).lessons);
+          localStorage.setItem(`pasma_lessons_${uid}`, JSON.stringify((offlineData as any).lessons));
+        }
       }
     } catch (error) {
       console.error("Critical fetching issue occurred:", error);
@@ -1610,7 +1670,9 @@ export default function App() {
   };
 
   const handleAddHomework = async (homework: Homework) => {
-    if (!await checkPedAuthorization()) return false;
+    if (portalUserRole !== 'parent') {
+      if (!await checkPedAuthorization()) return false;
+    }
     setHomeworks(prev => [homework, ...prev]);
     if (userId) {
       await runFirestoreWrite(
@@ -2155,6 +2217,7 @@ export default function App() {
     setAuthError(null);
     try {
       await loginWithGoogle();
+      setShowMainLogin(false);
     } catch (e: any) {
       console.error("Google authentication process rejected, auto-fallback to guest session for sandbox compatibility:", e);
       let errorMsg = "La connexion a échoué. Les popups ou les cookies tiers peuvent être bloqués.";
@@ -2175,6 +2238,7 @@ export default function App() {
         isAnonymous: true
       } as any);
       setAuthError(errorMsg);
+      setShowMainLogin(false);
     }
   };
 
@@ -2182,6 +2246,7 @@ export default function App() {
     setAuthError(null);
     try {
       await loginAnonymously();
+      setShowMainLogin(false);
     } catch (e: any) {
       console.error("Anonymous authentication process failed, falling back to local simulation:", e);
       setUser({
@@ -2191,6 +2256,7 @@ export default function App() {
         photoURL: '',
         isAnonymous: true
       } as any);
+      setShowMainLogin(false);
     }
   };
 
@@ -2294,7 +2360,7 @@ export default function App() {
         setHomeworks={setHomeworks}
         invoices={invoices}
       />
-      <div className="min-h-screen bg-slate-50/50 flex flex-col text-slate-900 selection:bg-indigo-100 selection:text-indigo-900">
+      <div className="min-h-screen bg-slate-50/50 dark:bg-slate-950 flex flex-col text-slate-900 dark:text-slate-100 selection:bg-indigo-100 dark:selection:bg-indigo-900 selection:text-indigo-900 dark:selection:text-indigo-100 transition-colors">
       <AnimatePresence mode="wait">
         {showMainLogin && !showSuperAdmin ? (
           /* Main welcome & login screen with Google or Email address */
@@ -2303,17 +2369,17 @@ export default function App() {
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -15 }}
-            className="flex-grow flex items-center justify-center p-4 min-h-screen bg-slate-100/40"
+            className="flex-grow flex items-center justify-center p-4 min-h-screen bg-slate-100/40 dark:bg-slate-950/40"
           >
-            <div className="w-full max-w-lg bg-white rounded-3xl border border-gray-150 shadow-2xl overflow-hidden flex flex-col justify-between animate-fade-in">
-              <div className="p-8 space-y-2 text-center bg-slate-950 text-white flex flex-col items-center">
+            <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl border border-gray-150 dark:border-slate-805 shadow-2xl overflow-hidden flex flex-col justify-between animate-fade-in">
+              <div className="p-8 space-y-2 text-center bg-slate-950 dark:bg-slate-950 text-white flex flex-col items-center">
                 <img
                   src="/icon-512.png"
                   alt="Logo"
                   className="h-14 w-14 object-contain rounded-2xl mb-1 bg-white p-1 border border-slate-700 shadow-sm animate-pulse"
                 />
                 <h1 className="text-xl font-extrabold tracking-tight">Pasma-sys</h1>
-                <p className="text-[10px] text-indigo-200 font-bold">Parents Management System (Système de gestion parentale)</p>
+                <p className="text-[10px] text-indigo-200 font-bold">Parents-Schools Management System (Système de Gestion Parents-Écoles)</p>
               </div>
 
               <div className="p-8 space-y-6">
@@ -2334,8 +2400,21 @@ export default function App() {
                       </svg>
                       Continuer avec Google
                     </button>
+                    
+                    <button
+                      onClick={handleGuestLogin}
+                      className="w-full py-3 bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition active:scale-98 shadow-sm cursor-pointer hover:bg-indigo-100 hover:border-indigo-300"
+                    >
+                      <span className="flex items-center gap-1.5 font-bold">
+                        <svg className="h-4 w-4 text-indigo-600 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        Accéder au Mode Démo (Sans compte)
+                      </span>
+                    </button>
+
                     <p className="text-[10px] text-gray-400 font-bold text-center leading-relaxed">
-                      La connexion Google est disponible pour le Super-Admin (Jacques Béné) et ses adjoints.
+                      La connexion Google est disponible pour le Super-Admin (Jacques Béné) et ses adjoints. Le Mode Démo est recommandé pour l'exploration libre.
                     </p>
                   </div>
                 </div>
@@ -2464,8 +2543,8 @@ export default function App() {
                 setShowSuperAdmin(false);
                 setShowMainLogin(true);
               }}
-              onSelectSchool={(schoolId, role) => {
-                handleSelectSchool(schoolId, role);
+              onSelectSchool={(schoolId, role, details) => {
+                handleSelectSchool(schoolId, role, details);
                 setShowSuperAdmin(false);
               }}
               currentUserUid={user?.uid || null}
@@ -2521,25 +2600,25 @@ export default function App() {
             className="flex-1 flex flex-col"
           >
             {/* Top Navigation Bar */}
-            <header className="bg-white border-b border-gray-150 py-2.5 md:py-3.5 px-3 md:px-6 sticky top-0 z-30 flex items-center justify-between">
+            <header className="bg-white dark:bg-slate-900 border-b border-gray-150 dark:border-slate-800 py-2.5 md:py-3.5 px-3 md:px-6 sticky top-0 z-30 flex items-center justify-between transition-colors">
               <div className="flex items-center gap-1.5 md:gap-2.5">
                 {apeeSettings.logoUrl ? (
                   <img
                     src={apeeSettings.logoUrl}
                     alt="Logo Établissement"
-                    className="h-8 w-8 md:h-10 md:w-10 object-contain rounded-xl p-0.5 bg-slate-50 border border-slate-150 shrink-0"
+                    className="h-8 w-8 md:h-10 md:w-10 object-contain rounded-xl p-0.5 bg-slate-50 dark:bg-slate-800 border border-slate-150 dark:border-slate-700 shrink-0"
                     referrerPolicy="no-referrer"
                   />
                 ) : (
                   <img
                     src="/icon-512.png"
                     alt="Logo"
-                    className="h-8 w-8 md:h-10 md:w-10 object-contain rounded-xl p-0.5 bg-indigo-50 border border-indigo-100 shrink-0"
+                    className="h-8 w-8 md:h-10 md:w-10 object-contain rounded-xl p-0.5 bg-indigo-50 dark:bg-slate-800 border border-indigo-100 dark:border-slate-700 shrink-0"
                   />
                 )}
                 <div>
-                  <h1 className="text-xs md:text-base font-black tracking-tight text-gray-950 flex items-center gap-1 md:gap-1.5 flex-wrap">
-                    Pasma-sys <span className="text-[8px] md:text-[10px] bg-slate-900 text-white font-mono px-1 md:px-1.5 py-0.25 md:py-0.5 rounded-full uppercase scale-90">ENT</span>
+                  <h1 className="text-xs md:text-base font-black tracking-tight text-gray-950 dark:text-white flex items-center gap-1 md:gap-1.5 flex-wrap">
+                    Pasma-sys <span className="text-[8px] md:text-[10px] bg-slate-900 dark:bg-slate-850 text-white dark:text-slate-200 font-mono px-1 md:px-1.5 py-0.25 md:py-0.5 rounded-full uppercase scale-90">ENT</span>
                     {isOffline ? (
                       <span className="text-[8px] md:text-[9px] bg-amber-50 hover:bg-amber-105 text-amber-700 border border-amber-200 font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-0.5 md:gap-1 transition" title="Le serveur Firestore n'est pas joignable. Vos modifications sont conservées localement dans la cache.">
                         <span className="h-1.5 w-1.5 bg-amber-500 rounded-full animate-pulse shrink-0" />
@@ -2552,7 +2631,7 @@ export default function App() {
                       </span>
                     )}
                   </h1>
-                  <p className="text-[8px] md:text-[10px] text-gray-400 font-medium">{t('header.school_portal')}</p>
+                  <p className="text-[8px] md:text-[10px] text-gray-400 dark:text-slate-400 font-medium">{t('header.school_portal')}</p>
                 </div>
               </div>
 
@@ -2566,7 +2645,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setShowPendingDrawer(true)}
-                  className="relative p-1.5 md:p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition cursor-pointer border border-transparent hover:border-slate-200"
+                  className="relative p-1.5 md:p-2 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-250 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
                   title="Actions en attente de synchronisation"
                 >
                   <RefreshCw className={`h-4 w-4 md:h-5 md:w-5 ${pendingActions.length > 0 ? 'animate-spin text-amber-500' : ''}`} />
@@ -2577,9 +2656,23 @@ export default function App() {
                   )}
                 </button>
 
+                {/* Theme Toggle Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsDarkMode(!isDarkMode)}
+                  className="p-1.5 md:p-2 text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
+                  title={isDarkMode ? (language === 'en' ? "Switch to light theme" : "Activer le thème clair") : (language === 'en' ? "Switch to dark theme" : "Activer le thème sombre")}
+                >
+                  {isDarkMode ? (
+                    <Sun className="h-4 w-4 md:h-5 md:w-5 text-amber-400 animate-pulse" />
+                  ) : (
+                    <Moon className="h-4 w-4 md:h-5 md:w-5 text-slate-500" />
+                  )}
+                </button>
+
                 {/* Language Picker Toggle (Stacked vertically on small screens, horizontal on md+) */}
                 <div 
-                  className="flex flex-col md:flex-row items-center bg-slate-100 p-0.5 rounded-xl md:gap-0.5 shrink-0 border border-slate-200/85"
+                  className="flex flex-col md:flex-row items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl md:gap-0.5 shrink-0 border border-slate-200/85 dark:border-slate-700"
                   title={isAutoDetected ? "Langue détectée automatiquement selon votre région / Language auto-detected by region" : "Changer de langue / Change language"}
                 >
                   <button
@@ -2587,8 +2680,8 @@ export default function App() {
                     onClick={() => setLanguage('fr')}
                     className={`px-1.5 md:px-2 py-0.5 md:py-1 text-[9px] md:text-[10.5px] font-black rounded-lg transition-all cursor-pointer ${
                       language === 'fr'
-                        ? 'bg-white text-indigo-700 shadow-3xs font-black'
-                        : 'text-slate-550 hover:text-slate-850'
+                        ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-amber-400 shadow-3xs font-black'
+                        : 'text-slate-550 dark:text-slate-400 hover:text-slate-850 dark:hover:text-slate-250'
                     }`}
                   >
                     FR
@@ -2598,8 +2691,8 @@ export default function App() {
                     onClick={() => setLanguage('en')}
                     className={`px-1.5 md:px-2 py-0.5 md:py-1 text-[9px] md:text-[10.5px] font-black rounded-lg transition-all cursor-pointer ${
                       language === 'en'
-                        ? 'bg-white text-indigo-700 shadow-3xs font-black'
-                        : 'text-slate-550 hover:text-slate-850'
+                        ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-amber-400 shadow-3xs font-black'
+                        : 'text-slate-550 dark:text-slate-400 hover:text-slate-850 dark:hover:text-slate-250'
                     }`}
                   >
                     EN
@@ -2607,14 +2700,14 @@ export default function App() {
                 </div>
                 
                 <div className="text-right hidden sm:block">
-                  <div className="text-xs font-black text-indigo-950">
+                  <div className="text-xs font-black text-indigo-950 dark:text-indigo-200">
                     {portalUserRole === 'parent' 
                       ? `${t('header.role.parent')} : ${portalParentDetails?.name}` 
                       : portalUserRole === 'teacher' 
                         ? `Enseignant : ${portalTeacherDetails?.name}` 
                         : `${portalManagerDetails?.phone || 'Administrateur'} : ${portalManagerDetails?.name || 'Responsable'}`}
                   </div>
-                  <div className="text-[10px] text-indigo-600 font-bold flex items-center gap-1 justify-end">
+                  <div className="text-[10px] text-indigo-600 dark:text-slate-400 font-bold flex items-center gap-1 justify-end">
                     <span className="h-1.5 w-1.5 bg-indigo-500 rounded-full animate-pulse" /> {apeeSettings.associationName || "Établissement Actif"}
                   </div>
                 </div>
@@ -2635,10 +2728,10 @@ export default function App() {
 
                 <button
                   onClick={handleExitSchool}
-                  className="p-1.5 md:px-3 md:py-1.5 bg-slate-50 hover:bg-slate-200 text-slate-850 text-[10.5px] font-bold rounded-xl transition flex items-center justify-center gap-1 border border-slate-200 cursor-pointer shrink-0"
+                  className="p-1.5 md:px-3 md:py-1.5 bg-slate-50 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-850 dark:text-slate-200 text-[10.5px] font-bold rounded-xl transition flex items-center justify-center gap-1 border border-slate-200 dark:border-slate-700 cursor-pointer shrink-0"
                   title={t('header.change_school')}
                 >
-                  <GraduationCap className="h-3.5 w-3.5 text-slate-600 animate-pulse" />
+                  <GraduationCap className="h-3.5 w-3.5 text-slate-600 dark:text-slate-400 animate-pulse" />
                   <span className="hidden md:inline">{t('header.change_school')}</span>
                 </button>
 
@@ -2829,7 +2922,7 @@ export default function App() {
                   )}
 
                   {/* Desktop Unified Nav Menu Card */}
-                  <div className="bg-white border border-gray-150 rounded-2xl p-4 space-y-1 block shadow-2xs select-none">
+                  <div className="bg-white dark:bg-slate-900 border border-gray-150 dark:border-slate-800 rounded-2xl p-4 space-y-1 block shadow-2xs dark:shadow-none select-none">
                     
                     {portalUserRole === 'manager' ? (
                       <>
@@ -2940,6 +3033,18 @@ export default function App() {
                             {t('tab.google_drive')}
                           </span>
                         </button>
+
+                        <button
+                          onClick={() => setActiveTab('firebase_console')}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
+                            activeTab === 'firebase_console' ? 'bg-indigo-600 text-white shadow-xs' : 'text-gray-650 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <Database className="h-4 w-4" /> 
+                            {t('tab.firebase_console')}
+                          </span>
+                        </button>
                       </>
                     ) : portalUserRole === 'teacher' ? (
                       <>
@@ -2996,6 +3101,17 @@ export default function App() {
                         >
                           <span className="flex items-center gap-2"><BookOpen className="h-4 w-4" /> {t('tab.homework')}</span>
                           {pendingHomeworkCount > 0 && <span className="bg-amber-100 text-amber-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full">{pendingHomeworkCount}</span>}
+                        </button>
+
+                        <button
+                          onClick={() => setActiveTab('lessons')}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
+                            activeTab === 'lessons'
+                              ? 'bg-slate-900 text-white'
+                              : 'text-gray-650 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2"><GraduationCap className="h-4 w-4" /> {t('tab.lessons')}</span>
                         </button>
 
                         <button
@@ -3198,6 +3314,12 @@ export default function App() {
                       </motion.div>
                     )}
 
+                    {activeTab === 'firebase_console' && (
+                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="firebase_console">
+                        <FirebaseConsole />
+                      </motion.div>
+                    )}
+
                     {/* CLASSIC PÉDAGOGIQUE CHANNELS */}
                     {activeTab === 'announcements' && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="announcements">
@@ -3225,6 +3347,21 @@ export default function App() {
                           pedManagerName={apeeSettings.pedManagerName}
                           hasPedPassword={!!apeeSettings.pedManagerPassword}
                           activeStudent={activeStudent}
+                        />
+                      </motion.div>
+                    )}
+
+                    {activeTab === 'lessons' && (
+                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="lessons">
+                        <LessonsBoard
+                          lessons={lessons}
+                          onAddLesson={handleAddLesson}
+                          onDeleteLesson={handleDeleteLesson}
+                          portalUserRole={portalUserRole}
+                          portalTeacherDetails={portalTeacherDetails}
+                          activeStudent={activeStudent}
+                          onAddHomework={handleAddHomework}
+                          language={language}
                         />
                       </motion.div>
                     )}

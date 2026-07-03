@@ -33,7 +33,7 @@ import { motion, AnimatePresence } from 'motion/react';
 
 interface SuperAdminDashboardProps {
   onBackToPortal: () => void;
-  onSelectSchool: (schoolId: string, role: 'manager' | 'parent') => void;
+  onSelectSchool: (schoolId: string, role: 'manager' | 'parent', details?: any) => void;
   currentUserUid: string | null;
 }
 
@@ -72,6 +72,9 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
   // Manual log state
   const [manualLogTitle, setManualLogTitle] = useState('');
   const [manualLogType, setManualLogType] = useState('SYSTEM_UPDATE');
+
+  // Impersonation state
+  const [selectedSchoolForParentImpersonation, setSelectedSchoolForParentImpersonation] = useState<Establishment | null>(null);
 
   const fallbackSchools: Establishment[] = [
     {
@@ -798,11 +801,18 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                                 <td className="px-6 py-4.5 text-right font-sans">
                                   <div className="flex items-center justify-end gap-1.5">
                                     <button
-                                      onClick={() => onSelectSchool(school.id, 'manager')}
-                                      className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 hover:text-indigo-850 rounded-lg text-[10.5px] font-black transition flex items-center gap-0.5 cursor-pointer"
-                                      title="Superviser en s'authentifiant en tant que directeur pédagogique ou financier"
+                                      onClick={() => onSelectSchool(school.id, 'manager', { name: school.finManagerName || school.directorName || 'Gérant Administratif', phone: school.finManagerPhone || 'Administrateur' })}
+                                      className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-105 text-indigo-700 hover:text-indigo-850 rounded-lg text-[10.5px] font-black transition cursor-pointer"
+                                      title="Se connecter en tant que responsable administratif ou financier de cet établissement"
                                     >
-                                      Superviser <ChevronRight className="h-3 w-3" />
+                                      Accès Administratif
+                                    </button>
+                                    <button
+                                      onClick={() => setSelectedSchoolForParentImpersonation(school)}
+                                      className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-105 text-emerald-700 hover:text-emerald-850 rounded-lg text-[10.5px] font-black transition cursor-pointer"
+                                      title="Se connecter en tant que parent d'élève de cet établissement"
+                                    >
+                                      Accès Parent
                                     </button>
                                     {school.id !== 'demo_school_ekali' && (
                                       <button
@@ -1408,6 +1418,110 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                 </div>
 
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* SELECT PARENT FOR IMPERSONATION MODAL DIALOG */}
+      <AnimatePresence>
+        {selectedSchoolForParentImpersonation && (
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white border border-slate-200 p-6 rounded-3xl w-full max-w-lg shadow-xl max-h-[80vh] overflow-y-auto space-y-4"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-1.5">
+                  <Users className="h-5 w-5 text-emerald-600" />
+                  <h3 className="font-black text-slate-950 text-[14px] truncate">
+                    Accès Parent : {selectedSchoolForParentImpersonation.name}
+                  </h3>
+                </div>
+                <button 
+                  onClick={() => setSelectedSchoolForParentImpersonation(null)} 
+                  className="p-1.5 hover:bg-slate-50 border border-slate-200 text-slate-400 hover:text-slate-600 rounded-xl transition cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <p className="text-[11px] text-slate-500 leading-relaxed font-semibold">
+                Veuillez sélectionner le compte d'un parent d'élève de cet établissement pour vous connecter en tant que tel et vérifier sa situation comptable :
+              </p>
+
+              <div className="space-y-2 max-h-[45vh] overflow-y-auto pr-1">
+                {allInvoices.filter(inv => inv.parentId === selectedSchoolForParentImpersonation.id && inv.studentId === 'apee_ces_ekali_1').length === 0 ? (
+                  <div className="p-6 border border-dashed border-slate-200 rounded-2xl text-center text-slate-400 text-xs font-semibold space-y-3">
+                    <p>Aucun dossier de parent enregistré dans cet établissement.</p>
+                    <button
+                      onClick={() => {
+                        onSelectSchool(selectedSchoolForParentImpersonation.id, 'parent', {
+                          name: 'Parent Test de Supervision',
+                          phone: '699000111',
+                          invoiceId: 'parent_test_super_admin',
+                          studentSubsetNames: ['Élève de Test 1', 'Élève de Test 2']
+                        });
+                        setSelectedSchoolForParentImpersonation(null);
+                      }}
+                      className="px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-[11px] font-black transition cursor-pointer"
+                    >
+                      Accéder avec un Parent Test de Supervision
+                    </button>
+                  </div>
+                ) : (
+                  allInvoices.filter(inv => inv.parentId === selectedSchoolForParentImpersonation.id && inv.studentId === 'apee_ces_ekali_1').map((parentDoc) => {
+                    let kids: string[] = [];
+                    try {
+                      if (parentDoc.studentsList) {
+                        kids = JSON.parse(parentDoc.studentsList).map((s: any) => s.name);
+                      }
+                    } catch (e) {
+                      console.warn("Failed to parse kids in impersonation", e);
+                    }
+                    return (
+                      <div 
+                        key={parentDoc.id}
+                        className="p-3.5 border border-slate-100 hover:border-emerald-100 bg-slate-50/50 hover:bg-emerald-50/20 rounded-2xl flex items-center justify-between gap-3 transition"
+                      >
+                        <div className="space-y-0.5 min-w-0 flex-1">
+                          <h4 className="font-black text-slate-900 text-xs truncate">{parentDoc.title}</h4>
+                          <p className="text-[10px] text-slate-500 font-mono">📞 {parentDoc.phone || "Non renseigné"}</p>
+                          {kids.length > 0 && (
+                            <p className="text-[9.5px] text-indigo-600 font-extrabold truncate">👦 Pupilles : {kids.join(', ')}</p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => {
+                            onSelectSchool(selectedSchoolForParentImpersonation.id, 'parent', {
+                              name: parentDoc.title,
+                              phone: parentDoc.phone || '',
+                              invoiceId: parentDoc.id,
+                              studentSubsetNames: kids
+                            });
+                            setSelectedSchoolForParentImpersonation(null);
+                          }}
+                          className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10.5px] rounded-xl transition cursor-pointer shadow-xs shrink-0"
+                        >
+                          Accéder
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className="flex items-center justify-end border-t border-slate-100 pt-3">
+                <button
+                  onClick={() => setSelectedSchoolForParentImpersonation(null)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition cursor-pointer"
+                >
+                  Fermer
+                </button>
+              </div>
+
             </motion.div>
           </div>
         )}

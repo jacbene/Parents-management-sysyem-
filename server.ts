@@ -560,6 +560,258 @@ app.post("/api/apee/send-bulk-reminders", async (req, res) => {
   });
 });
 
+// API: Generate AI-powered homework based on lesson content
+app.post("/api/gemini/generate-homework-from-lesson", async (req, res) => {
+  const { lessonTitle, lessonContent, subject, studentName, grade, homeworkType } = req.body;
+
+  const typeLabel = homeworkType === "quiz" ? "un Quiz de révision" : homeworkType === "deep" ? "des Exercices d'approfondissement" : "des Exercices d'application directe";
+
+  const prompt = `Génère ${typeLabel} adapté au niveau de classe de "${grade || "scolaire"}" pour l'élève nommé "${studentName || "l'élève"}".
+Ce devoir doit être entièrement basé sur la leçon ci-dessous publiée par son enseignant titulaire.
+
+=== TITRE DE LA LEÇON : ${lessonTitle || "Leçon générale"} ===
+=== MATIÈRE : ${subject || "Général"} ===
+=== CONTENU DE LA LEÇON ===
+${lessonContent || "Pas de contenu spécifique."}
+
+Critères importants :
+1. Le devoir doit comporter 2 à 3 exercices progressifs adaptés à la classe de ${grade}.
+2. Chaque exercice doit proposer des questions concrètes et précises.
+3. Fournis les solutions de chaque exercice de manière rédigée et claire pour que le parent puisse corriger le travail facilement.
+4. Ajoute une section de conseils pédagogiques bienveillants pour aider le parent à accompagner son enfant dans ce devoir.
+
+Tu dois impérativement retourner le résultat au format JSON structuré correspondant au schéma fourni.`;
+
+  try {
+    const aiInstance = getAi();
+    const response = await aiInstance.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        systemInstruction: "Tu es un tuteur et conseiller d'apprentissage d'élite spécialisé dans le suivi des élèves en école primaire et secondaire. Tu conçois des devoirs ludiques, instructifs et stimulants qui renforcent l'autonomie.",
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            title: { type: Type.STRING, description: "Titre général du devoir généré." },
+            objectives: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: "Objectifs pédagogiques."
+            },
+            exercises: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  title: { type: Type.STRING, description: "Titre de l'exercice." },
+                  instruction: { type: Type.STRING, description: "Consignes claires." },
+                  questions: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING }
+                  },
+                  solutions: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING }
+                  }
+                },
+                required: ["title", "instruction", "questions", "solutions"]
+              }
+            },
+            parentTips: { type: Type.STRING, description: "Conseils pour le parent." }
+          },
+          required: ["title", "objectives", "exercises", "parentTips"]
+        }
+      }
+    });
+
+    const parsedData = JSON.parse(response.text?.trim() || "{}");
+    return res.json({ success: true, source: "gemini", data: parsedData });
+
+  } catch (error) {
+    console.error("AI Homework Generation Error, engaging fallback heuristics:", error);
+
+    // High quality local fallback structured response
+    const fallbackHomework = {
+      title: `Devoir de révision : ${lessonTitle || "Assimilation du cours"}`,
+      objectives: [
+        `Consolider les notions clés de la leçon de ${subject || "cours"}`,
+        "S'entraîner à appliquer la méthode vue en classe",
+        "Encourager la reformulation et l'esprit d'analyse"
+      ],
+      exercises: [
+        {
+          title: "Exercice 1 : Questions d'assimilation",
+          instruction: `Lisez attentivement la leçon "${lessonTitle || "le cours"}" avec votre enfant, puis répondez aux questions ci-dessous sur une feuille d'exercices :`,
+          questions: [
+            "Quel est le mot-clé principal ou le concept central de cette leçon ?",
+            "Explique avec tes propres mots la règle ou l'idée la plus importante.",
+            "Cite un exemple ou une illustration concrète que l'enseignant a mentionné."
+          ],
+          solutions: [
+            "L'élève doit citer le concept central (ex: les fractions, la grammaire, la géographie).",
+            "La réponse doit être structurée avec ses propres mots pour vérifier la compréhension.",
+            "L'élève doit retrouver l'exemple donné dans le texte de la leçon ou en proposer un similaire."
+          ]
+        },
+        {
+          title: "Exercice 2 : Exercice d'application pratique",
+          instruction: "Effectuez cette activité pratique pour valider vos acquis :",
+          questions: [
+            "Faites un court résumé écrit (en 3 à 5 phrases) des points essentiels du cours.",
+            "Imaginez que vous devez expliquer cette leçon à un camarade de classe qui était absent : que lui diriez-vous ?"
+          ],
+          solutions: [
+            "Le résumé doit être soigné, sans fautes d'accord simples, et contenir les définitions clés.",
+            "Cette activité orale favorise l'ancrage mémoriel à long terme !"
+          ]
+        }
+      ],
+      parentTips: "Encouragez votre enfant à lire la leçon à haute voix avant de commencer. Laissez-le chercher seul pendant 10 à 15 minutes avant de regarder les solutions ensemble pour le guider pas à pas sans faire à sa place !"
+    };
+
+    return res.json({
+      success: true,
+      source: "local-heuristic",
+      data: fallbackHomework,
+      message: "Base de repli locale activée (Gemini indisponible ou hors-ligne)."
+    });
+  }
+});
+
+// API: Proxy request to Google Firebase Management API to fetch projects
+app.get("/api/firebase/projects", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ success: false, error: "Missing authorization token in headers" });
+  }
+
+  try {
+    const response = await fetch("https://firebase.googleapis.com/v1beta1/projects", {
+      method: "GET",
+      headers: {
+        "Authorization": authHeader,
+        "Accept": "application/json"
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Firebase Projects API failed:", response.status, errorText);
+      return res.status(response.status).json({
+        success: false,
+        error: `Firebase API error: ${response.statusText}`,
+        details: errorText
+      });
+    }
+
+    const data = await response.json();
+    return res.json({ success: true, projects: data.projects || [] });
+  } catch (error: any) {
+    console.error("Firebase Projects API exception:", error);
+    return res.status(500).json({ success: false, error: error.message || "Failed to fetch Firebase projects" });
+  }
+});
+
+// API: Proxy to fetch Web Apps under a Firebase project
+app.get("/api/firebase/projects/:projectId/web-apps", async (req, res) => {
+  const { projectId } = req.params;
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ success: false, error: "Missing authorization token" });
+  }
+
+  try {
+    const response = await fetch(`https://firebase.googleapis.com/v1beta1/projects/${projectId}/webApps`, {
+      method: "GET",
+      headers: {
+        "Authorization": authHeader,
+        "Accept": "application/json"
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return res.status(response.status).json({
+        success: false,
+        error: `Failed to fetch web apps: ${response.statusText}`,
+        details: errorText
+      });
+    }
+
+    const data = await response.json();
+    return res.json({ success: true, apps: data.apps || [] });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// API: Proxy to fetch Web App SDK Configuration
+app.get("/api/firebase/projects/:projectId/web-apps/:appId/config", async (req, res) => {
+  const { projectId, appId } = req.params;
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ success: false, error: "Missing authorization token" });
+  }
+
+  try {
+    const response = await fetch(`https://firebase.googleapis.com/v1beta1/projects/${projectId}/webApps/${appId}/config`, {
+      method: "GET",
+      headers: {
+        "Authorization": authHeader,
+        "Accept": "application/json"
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return res.status(response.status).json({
+        success: false,
+        error: `Failed to fetch app config: ${response.statusText}`,
+        details: errorText
+      });
+    }
+
+    const data = await response.json();
+    return res.json({ success: true, config: data });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// API: Proxy to fetch Android Apps under a Firebase project
+app.get("/api/firebase/projects/:projectId/android-apps", async (req, res) => {
+  const { projectId } = req.params;
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ success: false, error: "Missing authorization token" });
+  }
+
+  try {
+    const response = await fetch(`https://firebase.googleapis.com/v1beta1/projects/${projectId}/androidApps`, {
+      method: "GET",
+      headers: {
+        "Authorization": authHeader,
+        "Accept": "application/json"
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return res.status(response.status).json({
+        success: false,
+        error: `Failed to fetch android apps: ${response.statusText}`,
+        details: errorText
+      });
+    }
+
+    const data = await response.json();
+    return res.json({ success: true, apps: data.apps || [] });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Vite Middleware integrated after API routes to handle asset serving and SPA routing fallback
 async function bootServer() {
   if (process.env.NODE_ENV !== "production") {

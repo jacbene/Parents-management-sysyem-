@@ -51,6 +51,9 @@ export default function ApeeReporting({
   
   // Visual action alerts
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  
+  // State for selected parent accounting situation
+  const [selectedParentId, setSelectedParentId] = useState<string>('');
 
   // States for 'Annual Financial Summary' Recharts Report
   const [chartType, setChartType] = useState<'bar' | 'line' | 'area'>('bar');
@@ -363,6 +366,307 @@ export default function ApeeReporting({
     }).catch(err => {
       alert("Échec de la copie automatique: " + err);
     });
+  };
+
+  const handlePrintParentReportPdf = (parent: ApeeParent) => {
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    let y = 15;
+    const margin = 15;
+    const pageWidth = 210;
+    const pageHeight = 297;
+    const contentWidth = pageWidth - (2 * margin); // 180mm
+    let pageCount = 1;
+
+    const drawPageHeaderFooter = (num: number) => {
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.3);
+      doc.line(margin, 12, margin + contentWidth, 12);
+      
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184); // Slate 400
+      const headerTitle = isEn 
+        ? `Individual PTA Accounting Statement - ${getApeeShortName(settings)} • Academic Year: ${settings.schoolYear || ""}`
+        : `Relevé de Situation Comptable Individuelle - ${getApeeShortName(settings)} • Année : ${settings.schoolYear || ""}`;
+      doc.text(headerTitle, margin, 9);
+      
+      doc.line(margin, pageHeight - 12, margin + contentWidth, pageHeight - 12);
+      doc.text(`Page ${num}`, margin + contentWidth - 12, pageHeight - 8);
+      const printDateLabel = isEn ? "Généré via PASMA-SYS" : "Généré via PASMA-SYS";
+      doc.text(`${printDateLabel} • ${new Date().toLocaleDateString('fr-FR')} ${new Date().toLocaleTimeString('fr-FR')}`, margin, pageHeight - 8);
+    };
+
+    drawPageHeaderFooter(pageCount);
+
+    // Republic of Cameroon Official alignment with Motto
+    const actCountry = settings?.country || "Cameroun";
+    const countryLabel = isEn 
+      ? (actCountry === "Cameroun" ? "REPUBLIC OF CAMEROON" : actCountry.toUpperCase())
+      : (actCountry === "Cameroun" ? "RÉPUBLIQUE DU CAMEROUN" : actCountry.toUpperCase());
+    const yearLabel = isEn ? "Academic Year" : "Année Académique";
+
+    if (actCountry === "Cameroun") {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text("RÉPUBLIQUE DU CAMEROUN", margin, y + 4);
+      doc.text("REPUBLIC OF CAMEROON", margin + contentWidth, y + 4, { align: 'right' });
+
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(6.5);
+      doc.setTextColor(148, 163, 184); // Slate 400
+      doc.text("Paix - Travail - Patrie", margin, y + 7.5);
+      doc.text("Peace - Work - Fatherland", margin + contentWidth, y + 7.5, { align: 'right' });
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text(`${yearLabel} : ${settings?.schoolYear || "2025/2026"}`, margin + contentWidth, y + 11.5, { align: 'right' });
+      
+      y += 18;
+    } else {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text(countryLabel, margin, y + 4);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.text(`${yearLabel} : ${settings?.schoolYear || "2025/2026"}`, margin + contentWidth, y + 4, { align: 'right' });
+      
+      y += 12;
+    }
+
+    // Title Block
+    doc.setFillColor(30, 41, 59); // Slate 800
+    doc.rect(margin, y, contentWidth, 14, 'F');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10.5);
+    doc.setTextColor(255, 255, 255);
+    const reportTitle = isEn 
+      ? `INDIVIDUAL ACCOUNTING STATEMENT: PTA CONTRIBUTIONS`
+      : `RELEVÉ DE SITUATION COMPTABLE INDIVIDUELLE : COTISATIONS APEE`;
+    doc.text(reportTitle, margin + 5, y + 9);
+
+    y += 20;
+
+    // Parent & Students Cards
+    doc.setFillColor(248, 250, 252);
+    doc.rect(margin, y, contentWidth, 38, 'F');
+    doc.setDrawColor(226, 232, 240);
+    doc.rect(margin, y, contentWidth, 38, 'D');
+
+    // Left Column: Parent Details
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text(isEn ? "PARENT IDENTIFICATION" : "COORDONNÉES DU PARENT D'ÉLÈVE", margin + 6, y + 7);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`${isEn ? "Full Name" : "Nom complet"} :`, margin + 6, y + 14);
+    doc.text(`${isEn ? "Phone" : "Téléphone"} :`, margin + 6, y + 20);
+    doc.text(`${isEn ? "Address" : "Adresse"} :`, margin + 6, y + 26);
+    doc.text(`${isEn ? "Email" : "Email"} :`, margin + 6, y + 32);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.text(parent.name.toUpperCase(), margin + 30, y + 14);
+    doc.text(parent.phone || '-', margin + 30, y + 20);
+    doc.text(parent.address || '-', margin + 30, y + 26);
+    doc.text(parent.email || '-', margin + 30, y + 32);
+
+    // Vertical separator
+    doc.setDrawColor(226, 232, 240);
+    doc.line(margin + 92, y + 4, margin + 92, y + 34);
+
+    // Right Column: Student Details
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.text(isEn ? "LINKED STUDENTS" : "ÉLÈVES / ENFANTS ASSOCIÉS", margin + 98, y + 7);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(71, 85, 105);
+    if (!parent.students || parent.students.length === 0) {
+      doc.setFont('helvetica', 'italic');
+      doc.text(isEn ? "No students linked to this parent record." : "Aucun élève n'est lié à ce dossier parent.", margin + 98, y + 14);
+    } else {
+      parent.students.forEach((stud, idx) => {
+        if (idx < 4) { // limit height to avoid spill
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(51, 65, 85);
+          doc.text(`- ${stud.name.toUpperCase()}`, margin + 98, y + 14 + (idx * 6));
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(100, 116, 139);
+          doc.text(` (${stud.classRoom || "-"})`, margin + 148, y + 14 + (idx * 6));
+        }
+      });
+    }
+
+    y += 46;
+
+    // Financial Status Block
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text(isEn ? "I. FINANCIAL OBLIGATIONS & RECOVERY STATUS" : "I. BILAN DE LA SITUATION COMPTABLE", margin, y);
+    y += 4;
+    
+    doc.setDrawColor(226, 232, 240);
+    doc.line(margin, y, margin + contentWidth, y);
+    y += 5;
+
+    // KPI Summary Box
+    doc.setFillColor(248, 250, 252);
+    doc.rect(margin, y, contentWidth, 18, 'F');
+    doc.setDrawColor(226, 232, 240);
+    doc.rect(margin, y, contentWidth, 18, 'D');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor(100, 116, 139);
+    doc.text(isEn ? "TOTAL EXPECTED FEES" : "MONTANT DÛ / EXIGIBLE", margin + 4, y + 5);
+    doc.text(isEn ? "TOTAL AMOUNT PAID" : "CUMUL DES VERSEMENTS", margin + 50, y + 5);
+    doc.text(isEn ? "REMAINING BALANCE" : "RESTE À PAYER (SOLDE)", margin + 98, y + 5);
+    doc.text(isEn ? "ACCOUNT STATUS" : "STATUT DU COMPTE", margin + 144, y + 5);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`${parent.totalDue.toLocaleString()} FCFA`, margin + 4, y + 12);
+    
+    doc.setTextColor(16, 185, 129); // Green
+    doc.text(`${parent.totalPaid.toLocaleString()} FCFA`, margin + 50, y + 12);
+
+    const remainingDebt = parent.totalDue - parent.totalPaid;
+    doc.setTextColor(remainingDebt > 0 ? 239 : 16, remainingDebt > 0 ? 68 : 185, remainingDebt > 0 ? 68 : 129); // Red if has debt, green if settled
+    doc.text(`${remainingDebt.toLocaleString()} FCFA`, margin + 98, y + 12);
+
+    // Status format
+    let statusLabelFr = "En retard";
+    let statusColor = [239, 68, 68]; // Red
+    if (parent.status === 'soldé' || remainingDebt <= 0) {
+      statusLabelFr = "SOLDÉ";
+      statusColor = [16, 185, 129]; // Green
+    } else if (parent.status === 'partiel') {
+      statusLabelFr = "SOLDE PARTIEL";
+      statusColor = [79, 70, 229]; // Indigo
+    }
+    
+    let statusLabelEn = "OVERDUE";
+    if (parent.status === 'soldé' || remainingDebt <= 0) statusLabelEn = "SETTLED";
+    else if (parent.status === 'partiel') statusLabelEn = "PARTIAL";
+
+    doc.setTextColor(statusColor[0], statusColor[1], statusColor[2]);
+    doc.text(isEn ? statusLabelEn : statusLabelFr, margin + 144, y + 12);
+
+    y += 26;
+
+    // Section II: Payment History Ledger
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text(isEn ? "II. HISTORY OF TRANSACTIONS / DEPOSITS" : "II. HISTORIQUE DES ENCAISSEMENTS ET VERSEMENTS", margin, y);
+    y += 4;
+    doc.line(margin, y, margin + contentWidth, y);
+    y += 5;
+
+    // Ledger Headers
+    doc.setFillColor(241, 245, 249);
+    doc.rect(margin, y, contentWidth, 7, 'F');
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(isEn ? "Date" : "Date de versement", margin + 3, y + 5);
+    doc.text(isEn ? "Receipt ID / Ref" : "Référence / ID Versement", margin + 30, y + 5);
+    doc.text(isEn ? "Pymt Method" : "Moyen", margin + 85, y + 5);
+    doc.text(isEn ? "Observations / Notes" : "Observations", margin + 115, y + 5);
+    doc.text(isEn ? "Amount" : "Montant", margin + 175, y + 5, { align: 'right' });
+    y += 7;
+
+    const paymentsHistory = parent.payments || [];
+    if (paymentsHistory.length === 0) {
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text(isEn ? "No payment records found for this parent." : "Aucun historique de paiement enregistré pour ce parent.", margin + 3, y + 6);
+      y += 10;
+    } else {
+      paymentsHistory.forEach((pay) => {
+        if (y > pageHeight - 40) {
+          doc.addPage();
+          pageCount++;
+          drawPageHeaderFooter(pageCount);
+          y = 25;
+        }
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(71, 85, 105);
+
+        const dDate = pay.date ? new Date(pay.date).toLocaleDateString('fr-FR') : '-';
+        doc.text(dDate, margin + 3, y + 5);
+        doc.text(pay.id ? pay.id.substring(0, 12).toUpperCase() : '-', margin + 30, y + 5);
+        doc.text(pay.method || 'Espèces', margin + 85, y + 5);
+        
+        // Truncate note if too long
+        const payNote = pay.note || '-';
+        const displayNote = payNote.length > 35 ? payNote.substring(0, 32) + '...' : payNote;
+        doc.text(displayNote, margin + 115, y + 5);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(15, 23, 42);
+        doc.text(`${pay.amount.toLocaleString()} FCFA`, margin + 175, y + 5, { align: 'right' });
+
+        y += 7;
+
+        doc.setDrawColor(241, 245, 249);
+        doc.line(margin, y, margin + contentWidth, y);
+      });
+    }
+
+    y += 15;
+
+    // Signatures / Closing Box
+    if (y > pageHeight - 50) {
+      doc.addPage();
+      pageCount++;
+      drawPageHeaderFooter(pageCount);
+      y = 25;
+    }
+
+    // Fait à... Le...
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Relevé certifié exact et arrêté à la somme de ${parent.totalPaid.toLocaleString()} FCFA payés sur un exigible de ${parent.totalDue.toLocaleString()} FCFA.`, margin, y);
+    y += 6;
+    doc.text(`Fait à ${getApeeShortName(settings)}, le ${new Date().toLocaleDateString('fr-FR')}`, margin, y);
+
+    y += 12;
+
+    // Signature boxes
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(51, 65, 85);
+    doc.text(isEn ? "The Financial Secretary" : "Le Secrétaire Financier", margin + 10, y);
+    doc.text(isEn ? "The PTA President" : "Le Président de l'APEE", margin + 120, y);
+
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(7.5);
+    doc.setTextColor(148, 163, 184);
+    doc.text(isEn ? "(Signature & Stamp)" : "(Signature & Cachet)", margin + 10, y + 16);
+    doc.text(isEn ? "(Signature & Stamp)" : "(Signature & Cachet)", margin + 120, y + 16);
+
+    doc.save(`releve_comptable_${parent.name.replace(/\s+/g, '_').toLowerCase()}_${settings.schoolYear.replace(/\//g, '_')}.pdf`);
+    setSuccessMsg(isEn ? `Accounting report for ${parent.name} generated successfully!` : `Rapport de situation comptable pour ${parent.name} généré et téléchargé !`);
+    setTimeout(() => setSuccessMsg(null), 4000);
   };
 
   // Dynamically generate a gorgeous, formal PDF report of the currently selected period and active tab
@@ -2297,44 +2601,144 @@ export default function ApeeReporting({
           </div>
         </div>
 
-        {/* Class level breakdown list */}
-        <div className="lg:col-span-5 bg-white border border-slate-150 rounded-2xl p-4 space-y-3.5">
-          <div className="border-b pb-2 font-bold text-xs text-slate-800 flex items-center gap-1.5 uppercase tracking-wide">
-            <BarChart2 className="h-4 w-4 text-indigo-500" /> Performances par division de classe
+        {/* Right side panel containing stats and individual parent statements */}
+        <div className="lg:col-span-5 space-y-6">
+          
+          {/* Class level breakdown list */}
+          <div className="bg-white border border-slate-150 rounded-2xl p-4 space-y-3.5">
+            <div className="border-b pb-2 font-bold text-xs text-slate-800 flex items-center gap-1.5 uppercase tracking-wide">
+              <BarChart2 className="h-4 w-4 text-indigo-500" /> Performances par division de classe
+            </div>
+
+            <div className="space-y-2.5">
+              {Object.keys(classStatsMap).map(cls => {
+                const item = classStatsMap[cls];
+                if (item.pupilsCount === 0) return null; // Only show classes with students
+                const percent = item.expected > 0 ? (item.collected / item.expected) * 100 : 0;
+                
+                return (
+                  <div key={cls} className="space-y-1 text-xs">
+                    <div className="flex justify-between items-baseline font-medium text-slate-700">
+                      <span>
+                        <strong className="font-bold text-slate-900">{cls}</strong> ({item.pupilsCount} élève{item.pupilsCount > 1 ? 's' : ''})
+                      </span>
+                      <span className="font-mono text-[10px] font-bold text-indigo-700">
+                        {percent.toFixed(0)}% ({Math.round(item.collected).toLocaleString()} FCFA / {item.expected.toLocaleString()} FCFA)
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                      <div 
+                        className={`h-full rounded-full transition-all duration-700 ${
+                          percent >= 100 ? 'bg-emerald-500' : (percent >= 50 ? 'bg-indigo-500' : 'bg-red-500')
+                        }`}
+                        style={{ width: `${percent}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+
+              {parents.length === 0 && (
+                <p className="text-center text-gray-400 text-[11px] py-4">Aucune donnée disponible pour le comparatif par classe.</p>
+              )}
+            </div>
           </div>
 
-          <div className="space-y-2.5">
-            {Object.keys(classStatsMap).map(cls => {
-              const item = classStatsMap[cls];
-              if (item.pupilsCount === 0) return null; // Only show classes with students
-              const percent = item.expected > 0 ? (item.collected / item.expected) * 100 : 0;
+          {/* Individual Parent accounting PDF generator */}
+          <div className="bg-white border border-slate-150 rounded-2xl p-4 space-y-3.5">
+            <div className="border-b pb-2 font-bold text-xs text-slate-800 flex items-center gap-1.5 uppercase tracking-wide">
+              <Printer className="h-4 w-4 text-indigo-500" /> Situation Comptable par Parent
+            </div>
+            
+            <div className="space-y-3 text-xs">
+              <p className="text-[10px] text-gray-400 font-sans mt-0.5">
+                Générez instantanément un relevé de situation comptable certifié (PDF) au format officiel pour n'importe quel parent d'élève.
+              </p>
               
-              return (
-                <div key={cls} className="space-y-1 text-xs">
-                  <div className="flex justify-between items-baseline font-medium text-slate-700">
-                    <span>
-                      <strong className="font-bold text-slate-900">{cls}</strong> ({item.pupilsCount} élève{item.pupilsCount > 1 ? 's' : ''})
-                    </span>
-                    <span className="font-mono text-[10px] font-bold text-indigo-700">
-                      {percent.toFixed(0)}% ({Math.round(item.collected).toLocaleString()} FCFA / {item.expected.toLocaleString()} FCFA)
-                    </span>
-                  </div>
-                  <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                    <div 
-                      className={`h-full rounded-full transition-all duration-700 ${
-                        percent >= 100 ? 'bg-emerald-500' : (percent >= 50 ? 'bg-indigo-500' : 'bg-red-500')
-                      }`}
-                      style={{ width: `${percent}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
+              <div className="space-y-1">
+                <label className="text-[10px] uppercase font-black text-slate-500 tracking-wider block">Sélectionner un Parent d'Élève</label>
+                <select
+                  value={selectedParentId}
+                  onChange={(e) => setSelectedParentId(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-xl text-xs bg-slate-50 focus:bg-white focus:outline-indigo-500 font-semibold text-slate-705"
+                >
+                  <option value="">-- Choisir un parent d'élève ({parents.length}) --</option>
+                  {[...parents].sort((a, b) => a.name.localeCompare(b.name)).map((parent) => {
+                    const remaining = parent.totalDue - parent.totalPaid;
+                    const statusText = remaining <= 0 ? "Soldé" : `Reste: ${remaining.toLocaleString()} F`;
+                    return (
+                      <option key={parent.id} value={parent.id}>
+                        {parent.name.toUpperCase()} ({statusText})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
 
-            {parents.length === 0 && (
-              <p className="text-center text-gray-400 text-[11px] py-4">Aucune donnée disponible pour le comparatif par classe.</p>
-            )}
+              {selectedParentId ? (() => {
+                const parent = parents.find(p => p.id === selectedParentId);
+                if (!parent) return null;
+                const remaining = parent.totalDue - parent.totalPaid;
+                
+                return (
+                  <div className="bg-slate-50 border rounded-xl p-3 space-y-2.5 animate-in fade-in duration-150 mt-2">
+                    <div className="flex justify-between items-baseline border-b border-slate-100 pb-1.5">
+                      <span className="font-bold text-slate-850 truncate max-w-[170px]" title={parent.name}>
+                        👤 {parent.name.toUpperCase()}
+                      </span>
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                        remaining <= 0 
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
+                          : 'bg-amber-50 text-amber-700 border border-amber-100'
+                      }`}>
+                        {remaining <= 0 ? 'Soldé' : 'Partiel/Retard'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-[11px] font-medium text-slate-600 leading-relaxed font-sans">
+                      <div>
+                        <span className="text-[9px] text-gray-400 block uppercase font-bold">Téléphone</span>
+                        <span>{parent.phone || '-'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-gray-400 block uppercase font-bold">Élèves associés</span>
+                        <span className="font-bold text-slate-800">
+                          {parent.students?.length || 0} enfant{parent.students?.length > 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <div className="col-span-2 border-t border-slate-100 pt-1.5 grid grid-cols-3 gap-1 text-center mt-1">
+                        <div>
+                          <span className="text-[9px] text-gray-400 block uppercase font-bold">Exigible</span>
+                          <span className="font-mono text-slate-700 font-bold">{parent.totalDue.toLocaleString()} F</span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] text-gray-400 block uppercase font-bold">Réglé</span>
+                          <span className="font-mono text-emerald-600 font-bold">{parent.totalPaid.toLocaleString()} F</span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] text-gray-400 block uppercase font-bold">Reste dû</span>
+                          <span className="font-mono text-rose-600 font-extrabold">{remaining.toLocaleString()} F</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handlePrintParentReportPdf(parent)}
+                      className="w-full mt-2.5 py-2 px-3 text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl flex items-center justify-center gap-1.5 transition active:scale-97 cursor-pointer shadow-sm"
+                    >
+                      <Printer className="h-4 w-4 text-indigo-200" /> Générer le Rapport PDF (Situation)
+                    </button>
+                  </div>
+                );
+              })() : (
+                <div className="bg-slate-50/50 border border-dashed rounded-xl p-4 text-center text-gray-400 text-[10px] leading-relaxed">
+                  Aucun parent sélectionné. Sélectionnez un parent dans la liste ci-dessus pour inspecter sa situation comptable et éditer son relevé officiel de paiement de cotisations.
+                </div>
+              )}
+            </div>
           </div>
+
         </div>
 
       </div>
