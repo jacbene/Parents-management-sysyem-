@@ -154,6 +154,41 @@ export function LocalNotificationProvider({ children, onNavigateToTab }: LocalNo
     subject: string,
     targetTab: 'grades' | 'homework' | 'billing'
   ) => {
+    // 0. Filter based on parent notification preferences stored in localStorage
+    if (type === 'grade') {
+      const prefOnlyImportant = localStorage.getItem('pref_only_important_grades') === 'true';
+      if (prefOnlyImportant) {
+        // Parse grade score (e.g. "14/20", "18/20")
+        const match = body.match(/(\d+)\s*\/\s*20/);
+        if (match) {
+          const score = parseInt(match[1], 10);
+          if (score < 15) {
+            console.log(`[Notification System] Filtered out grade score of ${score}/20 (Important Grades only preference)`);
+            return; // Skip triggering this notification
+          }
+        }
+      }
+    } else if (type === 'invoice') {
+      const prefOnlyUrgentFinancials = localStorage.getItem('pref_only_urgent_financials') === 'true';
+      if (prefOnlyUrgentFinancials) {
+        const lowerBody = (body || '').toLowerCase();
+        const lowerTitle = (title || '').toLowerCase();
+        const isUrgent = lowerBody.includes('urgent') || 
+                         lowerBody.includes('retard') || 
+                         lowerBody.includes('impayé') || 
+                         lowerBody.includes('rappel') ||
+                         lowerBody.includes('notice') ||
+                         lowerTitle.includes('urgent') ||
+                         lowerTitle.includes('retard') ||
+                         lowerTitle.includes('impayé') ||
+                         lowerTitle.includes('rappel');
+        if (!isUrgent) {
+          console.log(`[Notification System] Filtered out non-urgent financial notice (Urgent Billing only preference)`);
+          return; // Skip triggering this notification
+        }
+      }
+    }
+
     const newNotif: LocalNotification = {
       id: `notif_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
       title,

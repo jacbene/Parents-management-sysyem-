@@ -1,9 +1,9 @@
-# Politique de Confidentialité - Portail Pasma-sys ENT & Trésorerie APEE
+# Politique de Confidentialité - Parents-Schools Management System (Pasma-sys) ENT & Trésorerie APEE
 
 **Dernière mise à jour : 23 mai 2026**
 
 ## 1. Introduction
-La protection de vos données personnelles est une priorité absolue. Cette politique de confidentialité détaille les pratiques relatives à la collecte, à l'utilisation, au traitement et à la sécurisation des données fournies par les parents, élèves, enseignants et personnels au sein du **Portail Pasma-sys ENT & Solution de Trésorerie APEE**.
+La protection de vos données personnelles est une priorité absolue. Cette politique de confidentialité détaille les pratiques relatives à la collecte, à l'utilisation, au traitement et à la sécurisation des données fournies par les parents, élèves, enseignants et personnels au sein du **Parents-Schools Management System (Pasma-sys) ENT & Solution de Trésorerie APEE**.
 
 ## 2. Responsable du Traitement
 Conformément à la réglementation sur la protection des données (notamment le Règlement Général sur la Protection des Données - RGPD), le responsable unique du traitement des données est :

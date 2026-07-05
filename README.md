@@ -1,4 +1,4 @@
-# Parents Management System (Pasma-sys)
+# Parents-Schools Management System (Pasma-sys)
 
 Un portail scolaire moderne et complet destiné aux parents d'élèves pour suivre l'activité de leurs enfants, gérer les cotisations de l'Association des Parents d'Élèves et d'Enseignants (APEE), et communiquer facilement avec l'établissement.
 

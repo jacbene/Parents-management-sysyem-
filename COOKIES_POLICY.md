@@ -1,4 +1,4 @@
-# Politique de Gestion des Cookies - Portail Pasma-sys ENT
+# Politique de Gestion des Cookies - Parents-Schools Management System (Pasma-sys) ENT
 
 **Mise à jour : 23 mai 2026**
 
@@ -6,7 +6,7 @@
 Un cookie ou traceur est un petit fichier texte déposé sur votre terminal (ordinateur, tablette, smartphone) lors de la visite d'un site ou portail internet. Il permet de retenir vos choix passés pour vous offrir un affichage stable et sécurisé.
 
 ## 2. Quels types de cookies utilisons-nous ?
-Le Portail Pasma-sys ENT limite au maximum l'utilisation de traceurs pour préserver votre bande passante et votre vie privée :
+Le Parents-Schools Management System (Pasma-sys) ENT limite au maximum l'utilisation de traceurs pour préserver votre bande passante et votre vie privée :
 
 ### A. Cookies Techniques & Fonctionnels (Indispensables)
 Ces cookies sont strictement nécessaires au fonctionnement du portail administratif. Ils ne requièrent pas de consentement préalable :

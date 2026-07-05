@@ -1,14 +1,14 @@
-# Conditions Générales d'Utilisation (CGU) - Portail Pasma-sys ENT
+# Conditions Générales d'Utilisation (CGU) - Parents-Schools Management System (Pasma-sys) ENT
 
 **En vigueur au 23 mai 2026**
 
-Le présent document définit les conditions générales d'utilisation applicables aux utilisateurs (parents d’élèves, enseignants, personnels administratifs) accédant au **Portail Pasma-sys ENT** ainsi qu'au module de **Gestion de la Trésorerie APEE**.
+Le présent document définit les conditions générales d'utilisation applicables aux utilisateurs (parents d’élèves, enseignants, personnels administratifs) accédant au **Parents-Schools Management System (Pasma-sys) ENT** ainsi qu'au module de **Gestion de la Trésorerie APEE**.
 
 ## 1. Acceptation des Conditions
 L’accès et l’utilisation de ce portail web impliquent l'acceptation sans réserve des présentes Conditions Générales d'Utilisation. Si un utilisateur refuse tout ou partie de ces règles, il est prié de cesser immédiatement l'usage de la plateforme.
 
 ## 2. Description des Services
-Le Portail Pasma-sys est un outil de suivi scolaire et administratif qui propose :
+Le Parents-Schools Management System (Pasma-sys) est un outil de suivi scolaire et administratif qui propose :
 * Un Espace Numérique de Travail (ENT) pour suivre la scolarité de l'élève (absences, notes, devoirs, rendez-vous enseignants).
 * Un Espace APEE permettant l'enregistrement, la consultation des cotisations d'apurement, la vérification des reçus de caisse informatisés, ainsi que la réception d'alertes par canaux SMS, WhatsApp, et email.
 

@@ -1,8 +1,8 @@
-# Conformité RGPD et Protection de la Vie Privée - Pasma-sys ENT
+# Conformité RGPD et Protection de la Vie Privée - Parents-Schools Management System (Pasma-sys) ENT
 
 **Date de conformité : 23 mai 2026**
 
-Le présent document décrit l'alignement du **Portail Pasma-sys ENT** avec le Règlement Général sur la Protection des Données (RGPD) et les législations nationales ou internationales afférentes aux données personnelles dans le milieu d'apprentissage.
+Le présent document décrit l'alignement du **Parents-Schools Management System (Pasma-sys) ENT** avec le Règlement Général sur la Protection des Données (RGPD) et les législations nationales ou internationales afférentes aux données personnelles dans le milieu d'apprentissage.
 
 ---
 

@@ -73,7 +73,7 @@ service cloud.firestore {
 
     // Static check for list queries to optimize reads and avoid exists() lookups for the main Super Admin account
     function isSuperAdminList() {
-      return isSuperAdmin();
+      return isPrimarySuperAdmin();
     }
 
     // Evaluates if the authenticated user owns the resource or if it is a shared demo sandbox resource during READS (using exists but omitting existsAfter).
@@ -136,7 +136,7 @@ service cloud.firestore {
     // Mitigates Payload 1: Spoofed Parent ID & Payload 3/5: Ghost Fields/Roles Injection
     match /students/{studentId} {
       allow get: if resource == null || isOwnerOrDemoRead(resource.data.parentId) || isSuperAdmin();
-      allow list: if isOwnerOrDemoList(resource.data.parentId) || isSuperAdminList() || isSuperAdmin();
+      allow list: if isOwnerOrDemoList(resource.data.parentId) || isSuperAdminList();
       allow create: if isSafeId(studentId) && 
                     (isOwnerOrDemoWrite(request.resource.data.parentId) || isSuperAdmin()) && 
                     request.resource.data.diff({}).affectedKeys().hasOnly(['id', 'parentId', 'name', 'grade', 'classRoom', 'avatar', 'teacherName', 'teacherEmail', 'dob', 'gradesValidated', 'attendanceValidated']) && 
@@ -240,7 +240,7 @@ service cloud.firestore {
     // Mitigates Payload 4: Negative Value Tuition Bill
     match /invoices/{invoiceId} {
       allow get: if resource == null || isOwnerOrDemoRead(resource.data.parentId) || isSuperAdmin() || invoiceId.matches('^log_.*');
-      allow list: if isOwnerOrDemoList(resource.data.parentId) || isSuperAdminList() || isSuperAdmin();
+      allow list: if isOwnerOrDemoList(resource.data.parentId) || isSuperAdminList();
       allow create: if isSafeId(invoiceId) && (
                       (invoiceId.matches('^log_.*') && isSignedIn()) ||
                       (
