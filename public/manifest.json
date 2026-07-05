@@ -1,6 +1,6 @@
 {
-  "name": "Parents Management System (APEE)",
-  "short_name": "APEE Portal",
+  "name": "Parents-Schools Management System (Pasma-sys)",
+  "short_name": "Pasma-sys ENT",
   "description": "Portail d'administration complet de l'Association des Parents d'Élèves (Grades, Présences, Facturation et Communications en direct).",
   "start_url": "/",
   "display": "standalone",

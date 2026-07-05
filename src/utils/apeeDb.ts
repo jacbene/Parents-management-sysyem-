@@ -479,6 +479,9 @@ export async function saveApeeOtherRevenue(parentId: string, revenue: ApeeOtherR
 
   try {
     await setDoc(doc(db, 'invoices', scopedId), invoiceData);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('pasma_save_success', { detail: { title: `Enregistrer autre recette de ${revenue.payerName} (${revenue.amount} FCFA)` } }));
+    }
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `invoices/${scopedId}`);
   }
@@ -510,6 +513,9 @@ export async function deleteApeeOtherRevenue(parentId: string, id: string) {
 
   try {
     await deleteDoc(doc(db, 'invoices', scopedId));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('pasma_save_success', { detail: { title: `Supprimer autre recette` } }));
+    }
   } catch (err) {
     handleFirestoreError(err, OperationType.DELETE, `invoices/${scopedId}`);
   }
@@ -565,6 +571,9 @@ export async function saveApeeSettings(parentId: string, settings: ApeeSettings)
 
   try {
     await setDoc(doc(db, 'invoices', `${parentId}_settings`), settingsInvoice);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('pasma_save_success', { detail: { title: `Ajuster les paramètres APEE : ${settings.associationName}` } }));
+    }
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `invoices/${parentId}_settings`);
   }
@@ -601,6 +610,9 @@ export async function saveApeeParent(parentId: string, parent: ApeeParent) {
 
   try {
     await setDoc(doc(db, 'invoices', scopedId), invoiceData);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('pasma_save_success', { detail: { title: `Enregistrer le parent : ${parent.name}` } }));
+    }
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `invoices/${scopedId}`);
   }
@@ -632,6 +644,9 @@ export async function deleteApeeParent(parentId: string, id: string) {
 
   try {
     await deleteDoc(doc(db, 'invoices', scopedId));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('pasma_save_success', { detail: { title: `Supprimer le parent : ${id}` } }));
+    }
   } catch (err) {
     handleFirestoreError(err, OperationType.DELETE, `invoices/${scopedId}`);
   }
@@ -667,6 +682,9 @@ export async function saveApeeExpense(parentId: string, expense: ApeeExpense) {
 
   try {
     await setDoc(doc(db, 'invoices', scopedId), invoiceData);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('pasma_save_success', { detail: { title: `Enregistrer la dépense : ${expense.title}` } }));
+    }
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `invoices/${scopedId}`);
   }
@@ -698,6 +716,9 @@ export async function deleteApeeExpense(parentId: string, id: string) {
 
   try {
     await deleteDoc(doc(db, 'invoices', scopedId));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('pasma_save_success', { detail: { title: `Supprimer la dépense : ${id}` } }));
+    }
   } catch (err) {
     handleFirestoreError(err, OperationType.DELETE, `invoices/${scopedId}`);
   }
@@ -738,6 +759,9 @@ export async function saveApeeLog(parentId: string, log: ApeeActivityLog) {
 
   try {
     await setDoc(doc(db, 'invoices', scopedId), invoiceData);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('pasma_save_success', { detail: { title: `Journaliser : ${log.description}` } }));
+    }
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `invoices/${scopedId}`);
   }

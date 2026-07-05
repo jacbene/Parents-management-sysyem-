@@ -44,39 +44,64 @@ service cloud.firestore {
         id == 'demo_school_ekali' ||
         id == 'demo_school_vogt' ||
         id == 'demo_school_bilingue' ||
-        id.startsWith('demo_school_')
+        id.matches('^demo_school_.*')
       );
+    }
+
+    // Helper to perform super_admin check with pre-validated email argument
+    function isSuperAdminDocExists(email) {
+      return exists(/databases/$(database)/documents/super_admins/$(email));
+    }
+
+    // Primary super admin check that doesn't trigger exists() lookup
+    function isPrimarySuperAdmin() {
+      return isSignedIn() && 
+             'email' in request.auth.token && (
+               request.auth.token.email == 'jacquesbene301@gmail.com' ||
+               request.auth.token.email == 'adjoint@pasma.sys'
+             );
     }
 
     // Evaluates if the authenticated user is the primary Super Admin or a registered secondary Super Admin
     function isSuperAdmin() {
-      return isSignedIn() && 
-             'email' in request.auth.token && (
-               request.auth.token.email == 'jacquesbene301@gmail.com' ||
-               exists(/databases/$(database)/documents/super_admins/$(request.auth.token.email))
+      return isPrimarySuperAdmin() || (
+               isSignedIn() && 
+               'email' in request.auth.token && 
+               isSuperAdminDocExists(request.auth.token.email)
              );
     }
 
     // Static check for list queries to optimize reads and avoid exists() lookups for the main Super Admin account
     function isSuperAdminList() {
-      return isSignedIn() && 
-             'email' in request.auth.token && 
-             request.auth.token.email == 'jacquesbene301@gmail.com';
+      return isSuperAdmin();
     }
 
     // Evaluates if the authenticated user owns the resource or if it is a shared demo sandbox resource during READS (using exists but omitting existsAfter).
     function isOwnerOrDemoRead(parentId) {
-      return isDemoId(parentId) || (isSignedIn() && parentId == request.auth.uid);
+      return isDemoId(parentId) || 
+             (isSignedIn() && (
+               parentId == request.auth.uid || 
+               exists(/databases/$(database)/documents/establishments/$(parentId))
+             ));
     }
 
     // Evaluates if the authenticated user owns the resource or if it is a shared demo sandbox resource during WRITES (which can safely check existsAfter).
     function isOwnerOrDemoWrite(parentId) {
-      return isDemoId(parentId) || (isSignedIn() && parentId == request.auth.uid);
+      return isDemoId(parentId) || 
+             (isSignedIn() && (
+               parentId == request.auth.uid || 
+               (exists(/databases/$(database)/documents/establishments/$(parentId)) && 
+                get(/databases/$(database)/documents/establishments/$(parentId)).data.ownerId == request.auth.uid)
+             ));
     }
 
     // Evaluates if the parentId corresponds to the authenticated user or to a demo/school workspace
     function isOwnerOrDemoList(parentId) {
-      return isDemoId(parentId) || (isSignedIn() && parentId == request.auth.uid);
+      return isDemoId(parentId) || 
+             (isSignedIn() && (
+               parentId == request.auth.uid || 
+               exists(/databases/$(database)/documents/establishments/$(parentId))
+             ));
     }
 
     // Ensures that a critical identification field is not altered during an update operation.
@@ -282,9 +307,9 @@ service cloud.firestore {
 
     // 11. Super Admins Collection: Managed by jacquesbene301@gmail.com and secondary Super Admins
     match /super_admins/{adminId} {
-      allow get: if isSignedIn() && 'email' in request.auth.token && (request.auth.token.email == adminId || isSuperAdmin());
-      allow list: if isSuperAdminList() || isSuperAdmin();
-      allow write: if isSuperAdmin();
+      allow get: if isSignedIn() && 'email' in request.auth.token && (request.auth.token.email == adminId || isPrimarySuperAdmin());
+      allow list: if isPrimarySuperAdmin() || (isSignedIn() && 'email' in request.auth.token && exists(/databases/$(database)/documents/super_admins/$(request.auth.token.email)));
+      allow write: if isPrimarySuperAdmin();
     }
 
     // Active Sessions for concurrency check

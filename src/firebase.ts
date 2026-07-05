@@ -78,6 +78,7 @@ export function queuePendingAction(
         localStorage.setItem('pasma_pending_actions', JSON.stringify(newList));
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new Event('pasma_actions_updated'));
+          window.dispatchEvent(new CustomEvent('pasma_save_offline', { detail: { title } }));
         }
         return;
       }
@@ -96,6 +97,7 @@ export function queuePendingAction(
     localStorage.setItem('pasma_pending_actions', JSON.stringify(newList));
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event('pasma_actions_updated'));
+      window.dispatchEvent(new CustomEvent('pasma_save_offline', { detail: { title } }));
     }
   } catch (err) {
     console.error("Failed to queue pending action:", err);

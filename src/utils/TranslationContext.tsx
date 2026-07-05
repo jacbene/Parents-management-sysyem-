@@ -11,6 +11,7 @@ interface TranslationContextType {
 
 const translations: Record<LanguageType, Record<string, string>> = {
   fr: {
+    'app.name': 'Parents-Schools Management System (Pasma-sys)',
     // Nav Tabs & General labels
     'tab.apee_dashboard': 'Tableau de bord',
     'tab.apee_recording': 'Saisie Cotisation',
@@ -26,14 +27,14 @@ const translations: Record<LanguageType, Record<string, string>> = {
     'drive.integration': 'Intégration Offizielle Cloud',
     'drive.security': 'Sécurité SSL',
     'drive.title': 'Espace Documentaire & Sauvegardes Google Drive™',
-    'drive.subtitle': "Exportez, sécurisez et partagez en temps réel les données de l'établissement (APEE, Régies Financières, Bulletins scolaires) directement de Pasma-sys vers votre espace cloud chiffré Google Drive.",
+    'drive.subtitle': "Exportez, sécurisez et partagez en temps réel les données de l'établissement (APEE, Régies Financières, Bulletins scolaires) directement du Parents-Schools Management System (Pasma-sys) vers votre espace cloud chiffré Google Drive.",
     'drive.connected': 'Google Drive Connecté',
     'drive.disconnect': 'Déconnexion',
     'drive.activate': 'Activer Google Drive',
     'drive.auth_notice_title': "Avis d'authentification Google",
-    'drive.auth_notice_desc': "Pour des raisons de sécurité, l'établissement Pasma-sys requiert un jeton OAuth sécurisé de Google pour pouvoir écrire et lister des fichiers sur votre cloud personnel.",
+    'drive.auth_notice_desc': "Pour des raisons de sécurité, l'établissement Parents-Schools Management System (Pasma-sys) requiert un jeton OAuth sécurisé de Google pour pouvoir écrire et lister des fichiers sur votre cloud personnel.",
     'drive.popup_blocked_title': 'Fenêtre pop-up de connexion bloquée',
-    'drive.popup_blocked_desc': "Comme l'application Pasma-sys s'exécute à l'intérieur d'un iframe d'aperçu d'AI Studio, votre navigateur bloque automatiquement l'autorisation popup de Google.",
+    'drive.popup_blocked_desc': "Comme l'application Parents-Schools Management System (Pasma-sys) s'exécute à l'intérieur d'un iframe d'aperçu d'AI Studio, votre navigateur bloque automatiquement l'autorisation popup de Google.",
     'drive.popup_solve_title': 'Pour résoudre ce problème et procéder :',
     'drive.popup_solve_step1': "Cliquez sur l'icône Ouvrir dans un nouvel onglet en haut à droite du cadre d'aperçu de l'éditeur ou dans votre barre d'adresse pour lancer l'application en mode autonome direct.",
     'drive.popup_solve_step2': "Autorisez explicitement les fenêtres pop-up de ce site dans la barre de recherche ou les réglages de votre système.",
@@ -306,6 +307,7 @@ const translations: Record<LanguageType, Record<string, string>> = {
     'notif.unsupported': "Le navigateur ne supporte pas les notifications système.",
   },
   en: {
+    'app.name': 'Parents-Schools Management System (Pasma-sys)',
     // Nav Tabs & General labels
     'tab.apee_dashboard': 'Dashboard',
     'tab.apee_recording': 'Record Payment',
@@ -321,14 +323,14 @@ const translations: Record<LanguageType, Record<string, string>> = {
     'drive.integration': 'Official Cloud Integration',
     'drive.security': 'SSL Security',
     'drive.title': 'Google Drive™ Documentary Space & Backups',
-    'drive.subtitle': 'Export, secure and share in real time school data (PTA, Financial Regimes, School Reports) directly from Pasma-sys to your Google Drive encrypted cloud space.',
+    'drive.subtitle': 'Export, secure and share in real time school data (PTA, Financial Regimes, School Reports) directly from Parents-Schools Management System (Pasma-sys) to your Google Drive encrypted cloud space.',
     'drive.connected': 'Google Drive Connected',
     'drive.disconnect': 'Disconnect',
     'drive.activate': 'Enable Google Drive',
     'drive.auth_notice_title': 'Google Authentication Notice',
-    'drive.auth_notice_desc': 'For security reasons, Pasma-sys requires a secure OAuth token from Google to write and list files on your personal cloud.',
+    'drive.auth_notice_desc': 'For security reasons, Parents-Schools Management System (Pasma-sys) requires a secure OAuth token from Google to write and list files on your personal cloud.',
     'drive.popup_blocked_title': 'Connection Pop-up Blocked',
-    'drive.popup_blocked_desc': 'As the Pasma-sys application runs inside an AI Studio preview iframe, your browser automatically blocks Google pop-up authorization.',
+    'drive.popup_blocked_desc': 'As the Parents-Schools Management System (Pasma-sys) application runs inside an AI Studio preview iframe, your browser automatically blocks Google pop-up authorization.',
     'drive.popup_solve_title': 'To resolve this issue and proceed:',
     'drive.popup_solve_step1': 'Click on the "Open in a new tab" icon at the top right of the editor preview frame or in your address bar to launch the app in standalone mode.',
     'drive.popup_solve_step2': 'Explicitly allow pop-ups for this site in your browser search bar or system settings.',

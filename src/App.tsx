@@ -41,6 +41,7 @@ import ApeeSharePortal from './components/apee/ApeeSharePortal';
 import { useLanguage } from './utils/TranslationContext';
 import DrivePortal from './components/DrivePortal';
 import FirebaseConsole from './components/FirebaseConsole';
+import SyncToastContainer from './components/SyncToastContainer';
 
 // Components
 import StudentCard from './components/StudentCard';
@@ -493,6 +494,8 @@ export default function App() {
         return;
       }
 
+      window.dispatchEvent(new CustomEvent('pasma_sync_started', { detail: { count: actions.length } }));
+
       let successCount = 0;
       let networkErrorEncountered = false;
       const remaining: PendingAction[] = [];
@@ -532,6 +535,7 @@ export default function App() {
 
       if (successCount > 0) {
         console.log(`[Pasma-sys Sync] Synchronisé avec succès ${successCount} modification(s) !`);
+        window.dispatchEvent(new CustomEvent('pasma_sync_success', { detail: { count: successCount } }));
       }
 
       if (remaining.length > 0) {
@@ -1169,6 +1173,14 @@ export default function App() {
         // B. Fetch cache/local storage backup first for instant loading
         try {
           await fetchAllData(userId);
+          const cachedApee = await fetchApeeData(userId);
+          if (cachedApee) {
+            if (cachedApee.settings) setApeeSettings(cachedApee.settings);
+            if (cachedApee.parents) setApeeParents(cachedApee.parents);
+            if (cachedApee.expenses) setApeeExpenses(cachedApee.expenses);
+            if (cachedApee.logs) setApeeLogs(cachedApee.logs);
+            if (cachedApee.otherRevenues) setApeeOtherRevenues(cachedApee.otherRevenues);
+          }
         } catch (e) {
           console.warn("Failure fetching initial backup or offline seed:", e);
         }
@@ -1604,6 +1616,7 @@ export default function App() {
         } else {
           await setDoc(doc(db, collectionName, docId), data);
         }
+        window.dispatchEvent(new CustomEvent('pasma_save_success', { detail: { title: friendlyTitle } }));
         return true;
       } catch (err) {
         console.warn("Firestore write failed, falling back to queueing offline:", err);
@@ -2378,8 +2391,8 @@ export default function App() {
                   alt="Logo"
                   className="h-14 w-14 object-contain rounded-2xl mb-1 bg-white p-1 border border-slate-700 shadow-sm animate-pulse"
                 />
-                <h1 className="text-xl font-extrabold tracking-tight">Pasma-sys</h1>
-                <p className="text-[10px] text-indigo-200 font-bold">Parents-Schools Management System (Système de Gestion Parents-Écoles)</p>
+                <h1 className="text-xl font-extrabold tracking-tight">{t('app.name')}</h1>
+                <p className="text-[10px] text-indigo-200 font-bold">Système de Gestion Parents-Écoles / Parents-Schools Management System</p>
               </div>
 
               <div className="p-8 space-y-6">
@@ -2523,7 +2536,10 @@ export default function App() {
 
                   {authMode === 'signup' && (
                     <p className="text-[10px] text-slate-400 text-center font-bold">
-                      En créant un compte, vous acceptez les conditions d'utilisation de Pasma-sys.
+                      {language === 'fr' 
+                        ? `En créant un compte, vous acceptez les conditions d'utilisation de ${t('app.name')}.`
+                        : `By creating an account, you accept the terms of use of ${t('app.name')}.`
+                      }
                     </p>
                   )}
                 </form>
@@ -2618,7 +2634,9 @@ export default function App() {
                 )}
                 <div>
                   <h1 className="text-xs md:text-base font-black tracking-tight text-gray-950 dark:text-white flex items-center gap-1 md:gap-1.5 flex-wrap">
-                    Pasma-sys <span className="text-[8px] md:text-[10px] bg-slate-900 dark:bg-slate-850 text-white dark:text-slate-200 font-mono px-1 md:px-1.5 py-0.25 md:py-0.5 rounded-full uppercase scale-90">ENT</span>
+                    <span className="hidden md:inline">{t('app.name')}</span>
+                    <span className="md:hidden">Pasma-sys</span>
+                    <span className="text-[8px] md:text-[10px] bg-slate-900 dark:bg-slate-850 text-white dark:text-slate-200 font-mono px-1 md:px-1.5 py-0.25 md:py-0.5 rounded-full uppercase scale-90">ENT</span>
                     {isOffline ? (
                       <span className="text-[8px] md:text-[9px] bg-amber-50 hover:bg-amber-105 text-amber-700 border border-amber-200 font-bold px-1.5 py-0.5 rounded-lg flex items-center gap-0.5 md:gap-1 transition" title="Le serveur Firestore n'est pas joignable. Vos modifications sont conservées localement dans la cache.">
                         <span className="h-1.5 w-1.5 bg-amber-500 rounded-full animate-pulse shrink-0" />
@@ -3463,7 +3481,7 @@ export default function App() {
                     <span className="flex items-baseline gap-1">
                       <Database className="h-3 w-3 text-indigo-500" /> Cloud Firestore Sync Active
                     </span>
-                    <span>© {new Date().getFullYear()} Pasma-sys ENT Portal</span>
+                    <span>© {new Date().getFullYear()} {t('app.name')} ENT Portal</span>
                   </div>
                 </div>
 
@@ -3603,6 +3621,17 @@ export default function App() {
 
               {/* Drawer Content */}
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {/* Educational persistence banner */}
+                <div id="offline-educational-banner" className="p-3.5 bg-indigo-50/70 border border-indigo-100 rounded-2xl flex gap-3 items-start text-left">
+                  <Cloud className="h-5 w-5 text-indigo-600 mt-0.5 shrink-0 animate-pulse" />
+                  <div className="space-y-0.5">
+                    <h4 className="text-xs font-extrabold text-indigo-950">Sauvegarde persistante garantie</h4>
+                    <p className="text-[10px] text-indigo-900/80 leading-normal font-medium">
+                      Vos modifications hors-ligne sont enregistrées de façon permanente dans la mémoire locale sécurisée de votre navigateur. <strong>Même si vous fermez l'onglet ou quittez l'application</strong>, vos données resteront intactes et seront synchronisées automatiquement dans le Cloud dès votre prochain retour en ligne.
+                    </p>
+                  </div>
+                </div>
+
                 {pendingActions.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-3">
                     <div className="p-4 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100">
@@ -3763,9 +3792,14 @@ export default function App() {
           <div className="bg-white rounded-3xl shadow-2xl border border-gray-150 w-full max-w-md p-8 text-center space-y-5 animate-in fade-in zoom-in-95 duration-200">
             <span className="inline-block p-4 bg-amber-50 text-amber-600 rounded-2xl text-3xl">⏳</span>
             <div className="space-y-1">
-              <h3 className="text-lg font-black text-slate-900 tracking-tight">Session Expirée</h3>
+              <h3 className="text-lg font-black text-slate-900 tracking-tight">
+                {language === 'fr' ? 'Session Expirée' : 'Session Expired'}
+              </h3>
               <p className="text-xs text-slate-500 font-semibold leading-relaxed">
-                Votre session de connexion à Pasma-sys (durée maximale de 24 heures) a expiré. Veuillez vous reconnecter pour rafraîchir vos accès sécurisés.
+                {language === 'fr' 
+                  ? `Votre session de connexion à ${t('app.name')} (durée maximale de 24 heures) a expiré. Veuillez vous reconnecter pour rafraîchir vos accès sécurisés.`
+                  : `Your connection session to ${t('app.name')} (maximum 24 hours duration) has expired. Please sign in again to refresh your secure access.`
+                }
               </p>
             </div>
             <button
@@ -3804,6 +3838,9 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Dynamic Sync Toast Notification System */}
+      <SyncToastContainer />
       </div>
     </LocalNotificationProvider>
   );
