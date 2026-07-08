@@ -15,6 +15,7 @@ interface StudentCameraModalProps {
 export default function StudentCameraModal({ student, isOpen, onClose, onUpdate }: StudentCameraModalProps) {
   const [activeTab, setActiveTab] = useState<'camera' | 'upload'>('camera');
   const [stream, setStream] = useState<MediaStream | null>(null);
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [photo, setPhoto] = useState<string | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -32,7 +33,7 @@ export default function StudentCameraModal({ student, isOpen, onClose, onUpdate 
       stopCamera();
     }
     return () => stopCamera();
-  }, [isOpen, activeTab]);
+  }, [isOpen, activeTab, facingMode]);
 
   const startCamera = async () => {
     setIsActivating(true);
@@ -42,7 +43,7 @@ export default function StudentCameraModal({ student, isOpen, onClose, onUpdate 
 
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 400, height: 400, facingMode: 'user' },
+        video: { width: 400, height: 400, facingMode: facingMode },
         audio: false
       });
       setStream(mediaStream);
@@ -88,6 +89,11 @@ export default function StudentCameraModal({ student, isOpen, onClose, onUpdate 
 
     if (ctx) {
       // Draw image cropped to a square center zone
+      if (facingMode === 'user') {
+        // Horizontally mirror the image on canvas to match user preview
+        ctx.translate(300, 0);
+        ctx.scale(-1, 1);
+      }
       ctx.drawImage(video, startX, startY, size, size, 0, 0, 300, 300);
       const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
       setPhoto(dataUrl);
@@ -332,7 +338,7 @@ export default function StudentCameraModal({ student, isOpen, onClose, onUpdate 
                           autoPlay
                           playsInline
                           muted
-                          className="w-full h-full object-cover scale-x-[-1]" // horizontal mirror flip for better feel
+                          className={`w-full h-full object-cover ${facingMode === 'user' ? 'scale-x-[-1]' : ''}`} // horizontal mirror flip for better feel only on front cam
                         />
                         
                         {/* Face aligner guideline circles */}
@@ -341,6 +347,20 @@ export default function StudentCameraModal({ student, isOpen, onClose, onUpdate 
                             Centrer le visage ici
                           </span>
                         </div>
+
+                        {/* Interactive Toggle for front/back camera (FacingMode switcher) */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
+                          }}
+                          className="absolute top-3 right-3 p-2 bg-indigo-600/90 hover:bg-indigo-700 text-white border border-indigo-400/30 rounded-xl shadow-md transition-all hover:scale-110 active:scale-95 cursor-pointer z-10 flex items-center gap-1.5 text-[10.5px] font-black tracking-wide font-sans backdrop-blur-xs"
+                          title="Changer d'appareil photo"
+                        >
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin-slow" />
+                          <span>{facingMode === 'user' ? 'Cam arrière' : 'Selfie'}</span>
+                        </button>
                       </>
                     )}
                   </div>

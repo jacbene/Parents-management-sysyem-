@@ -55,10 +55,12 @@ service cloud.firestore {
 
     // Primary super admin check that doesn't trigger exists() lookup
     function isPrimarySuperAdmin() {
-      return isSignedIn() && 
-             'email' in request.auth.token && (
-               request.auth.token.email == 'jacquesbene301@gmail.com' ||
-               request.auth.token.email == 'adjoint@pasma.sys'
+      return isSignedIn() && (
+               request.auth.uid == "sys_admin_jacques" ||
+               ('email' in request.auth.token && (
+                 request.auth.token.email.lower() == "jacquesbene301@gmail.com" ||
+                 request.auth.token.email.lower() == "adjoint@pasma.sys"
+               ))
              );
     }
 
@@ -67,13 +69,13 @@ service cloud.firestore {
       return isPrimarySuperAdmin() || (
                isSignedIn() && 
                'email' in request.auth.token && 
-               isSuperAdminDocExists(request.auth.token.email)
+               isSuperAdminDocExists(request.auth.token.email.lower())
              );
     }
 
     // Static check for list queries to optimize reads and avoid exists() lookups for the main Super Admin account
     function isSuperAdminList() {
-      return isPrimarySuperAdmin();
+      return isSuperAdmin();
     }
 
     // Evaluates if the authenticated user owns the resource or if it is a shared demo sandbox resource during READS (using exists but omitting existsAfter).
@@ -100,7 +102,7 @@ service cloud.firestore {
       return isDemoId(parentId) || 
              (isSignedIn() && (
                parentId == request.auth.uid || 
-               exists(/databases/$(database)/documents/establishments/$(parentId))
+               (parentId != request.auth.uid && exists(/databases/$(database)/documents/establishments/$(parentId)))
              ));
     }
 
@@ -136,7 +138,7 @@ service cloud.firestore {
     // Mitigates Payload 1: Spoofed Parent ID & Payload 3/5: Ghost Fields/Roles Injection
     match /students/{studentId} {
       allow get: if resource == null || isOwnerOrDemoRead(resource.data.parentId) || isSuperAdmin();
-      allow list: if isOwnerOrDemoList(resource.data.parentId) || isSuperAdminList();
+      allow list: if isSuperAdminList() || isOwnerOrDemoList(resource.data.parentId);
       allow create: if isSafeId(studentId) && 
                     (isOwnerOrDemoWrite(request.resource.data.parentId) || isSuperAdmin()) && 
                     request.resource.data.diff({}).affectedKeys().hasOnly(['id', 'parentId', 'name', 'grade', 'classRoom', 'avatar', 'teacherName', 'teacherEmail', 'dob', 'gradesValidated', 'attendanceValidated']) && 
@@ -240,7 +242,7 @@ service cloud.firestore {
     // Mitigates Payload 4: Negative Value Tuition Bill
     match /invoices/{invoiceId} {
       allow get: if resource == null || isOwnerOrDemoRead(resource.data.parentId) || isSuperAdmin() || invoiceId.matches('^log_.*');
-      allow list: if isOwnerOrDemoList(resource.data.parentId) || isSuperAdminList();
+      allow list: if isSuperAdminList() || isOwnerOrDemoList(resource.data.parentId);
       allow create: if isSafeId(invoiceId) && (
                       (invoiceId.matches('^log_.*') && isSignedIn()) ||
                       (
@@ -307,8 +309,8 @@ service cloud.firestore {
 
     // 11. Super Admins Collection: Managed by jacquesbene301@gmail.com and secondary Super Admins
     match /super_admins/{adminId} {
-      allow get: if isSignedIn() && 'email' in request.auth.token && (request.auth.token.email == adminId || isPrimarySuperAdmin());
-      allow list: if isPrimarySuperAdmin() || (isSignedIn() && 'email' in request.auth.token && exists(/databases/$(database)/documents/super_admins/$(request.auth.token.email)));
+      allow get: if isSignedIn() && (isPrimarySuperAdmin() || ('email' in request.auth.token && request.auth.token.email.lower() == adminId.lower()));
+      allow list: if isPrimarySuperAdmin() || (isSignedIn() && 'email' in request.auth.token && exists(/databases/$(database)/documents/super_admins/$(request.auth.token.email.lower())));
       allow write: if isPrimarySuperAdmin();
     }
 

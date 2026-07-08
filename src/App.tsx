@@ -57,6 +57,7 @@ import StudentPrintModal from './components/StudentPrintModal';
 import PortalOnboarding from './components/PortalOnboarding';
 import InstallPWA from './components/InstallPWA';
 import SuperAdminDashboard from './components/SuperAdminDashboard';
+import SyncIndicator from './components/SyncIndicator';
 // Reserved for future integration:
 // import LibraryDashboard from './components/LibraryDashboard';
 
@@ -478,6 +479,9 @@ export default function App() {
       }
     }
   };
+
+  // Search query for filtering students in left navigation pane
+  const [studentSearchQuery, setStudentSearchQuery] = useState<string>('');
 
   // Nav tab control
   const [activeTab, setActiveTab] = useState<TabType>(() => {
@@ -925,6 +929,41 @@ export default function App() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [lessons, setLessons] = useState<Lesson[]>([]);
+
+  // Synchronise state triggers to dispatcher for real-time Firestore sync tracking
+  useEffect(() => {
+    if (!isOffline && (
+      students.length > 0 || 
+      grades.length > 0 || 
+      attendanceLogs.length > 0 || 
+      homeworks.length > 0 || 
+      appointments.length > 0 || 
+      messages.length > 0 ||
+      lessons.length > 0 ||
+      announcements.length > 0 ||
+      apeeParents.length > 0 ||
+      apeeExpenses.length > 0 ||
+      apeeLogs.length > 0 ||
+      apeeOtherRevenues.length > 0
+    )) {
+      window.dispatchEvent(new Event('pasma_db_sync_update'));
+    }
+  }, [
+    students,
+    grades,
+    attendanceLogs,
+    homeworks,
+    appointments,
+    messages,
+    announcements,
+    lessons,
+    apeeSettings,
+    apeeParents,
+    apeeExpenses,
+    apeeLogs,
+    apeeOtherRevenues,
+    isOffline
+  ]);
 
   const handleAddLesson = (newLesson: Lesson) => {
     setLessons(prev => [newLesson, ...prev]);
@@ -1623,6 +1662,10 @@ export default function App() {
 
   const handleAddAppointmentInPlace = (newApt: Appointment) => {
     setAppointments(prev => [newApt, ...prev]);
+  };
+
+  const handleUpdateAppointmentInPlace = (updatedApt: Appointment) => {
+    setAppointments(prev => prev.map(a => a.id === updatedApt.id ? updatedApt : a));
   };
 
   const handleAddMessageInPlace = (newMsg: Message) => {
@@ -2685,6 +2728,8 @@ export default function App() {
 
               {/* User Profil card & logout */}
               <div className="flex items-center gap-1.5 md:gap-3.5">
+                <SyncIndicator language={language} />
+
                 <InstallPWA />
 
                 <NotificationBell portalUserRole={portalUserRole} selectedStudentName={students[0]?.name} />
@@ -2818,27 +2863,76 @@ export default function App() {
                   
                   {/* Supervised Pupils - Left panel - Only display if not in dedicated Apee workspace */}
                   {!activeTab.startsWith('apee_') ? (
-                    <div className="space-y-2">
-                      <h3 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
-                        <GraduationCap className="h-3.5 w-3.5" /> Éléves Supervisés (ENT)
-                      </h3>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-1.5">
+                          <GraduationCap className="h-3.5 w-3.5" /> Éléves Supervisés (ENT)
+                        </h3>
+                        {studentSearchQuery && (
+                          <span className="text-[9px] bg-slate-100 dark:bg-slate-800 text-slate-550 dark:text-slate-400 font-bold px-1.5 py-0.5 rounded-md animate-in fade-in duration-150">
+                            {filteredStudents.filter(stu => {
+                              const q = studentSearchQuery.toLowerCase().trim();
+                              return stu.name.toLowerCase().includes(q) || (stu.classRoom || '').toLowerCase().includes(q);
+                            }).length} {language === 'en' ? 'found' : 'trouvé(s)'}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Real-time Text Search Bar */}
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 dark:text-slate-550" />
+                        <input
+                          type="text"
+                          value={studentSearchQuery}
+                          onChange={(e) => setStudentSearchQuery(e.target.value)}
+                          placeholder={language === 'en' ? "Filter by name or class..." : "Filtrer par nom ou classe..."}
+                          className="w-full pl-9 pr-8 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-1.5 focus:ring-indigo-500 focus:border-indigo-500 transition-all font-medium"
+                        />
+                        {studentSearchQuery && (
+                          <button
+                            onClick={() => setStudentSearchQuery('')}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-md transition-colors"
+                          >
+                            <span className="text-sm font-bold font-sans">×</span>
+                          </button>
+                        )}
+                      </div>
+
                       <div className="grid grid-cols-1 gap-3">
-                        {filteredStudents.map((stu) => (
-                          <StudentCard
-                            key={stu.id}
-                            student={stu}
-                            isSelected={selectedStudentId === stu.id}
-                            onSelect={() => setSelectedStudentId(stu.id)}
-                            onUpdateStudent={handleUpdateStudentInPlace}
-                            onPrint={() => setPrintingStudent(stu)}
-                            settings={apeeSettings}
-                            apeeParents={apeeParents}
-                            grades={grades}
-                            attendanceLogs={attendanceLogs}
-                            portalUserRole={portalUserRole}
-                            onAddMessage={handleAddMessageInPlace}
-                          />
-                        ))}
+                        {filteredStudents
+                          .filter((stu) => {
+                            if (!studentSearchQuery.trim()) return true;
+                            const q = studentSearchQuery.toLowerCase().trim();
+                            return stu.name.toLowerCase().includes(q) || (stu.classRoom || '').toLowerCase().includes(q);
+                          })
+                          .map((stu) => (
+                            <StudentCard
+                              key={stu.id}
+                              student={stu}
+                              isSelected={selectedStudentId === stu.id}
+                              onSelect={() => setSelectedStudentId(stu.id)}
+                              onUpdateStudent={handleUpdateStudentInPlace}
+                              onPrint={() => setPrintingStudent(stu)}
+                              settings={apeeSettings}
+                              apeeParents={apeeParents}
+                              grades={grades}
+                              attendanceLogs={attendanceLogs}
+                              portalUserRole={portalUserRole}
+                              onAddMessage={handleAddMessageInPlace}
+                            />
+                          ))
+                        }
+                        {filteredStudents.filter((stu) => {
+                          if (!studentSearchQuery.trim()) return true;
+                          const q = studentSearchQuery.toLowerCase().trim();
+                          return stu.name.toLowerCase().includes(q) || (stu.classRoom || '').toLowerCase().includes(q);
+                        }).length === 0 && (
+                          <div className="text-center py-6 bg-slate-50/50 dark:bg-slate-950/20 rounded-xl border border-dashed border-slate-250 dark:border-slate-800/80 animate-in fade-in duration-200">
+                            <p className="text-[11px] font-bold text-slate-450 dark:text-slate-500">
+                              {language === 'en' ? "No pupils match this query." : "Aucun élève trouvé."}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ) : (
@@ -3569,7 +3663,7 @@ export default function App() {
 
                     {activeTab === 'appointments' && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="appointments">
-                        <AppointmentsScheduler appointments={appointments} students={students} onAddAppointment={handleAddAppointmentInPlace} />
+                        <AppointmentsScheduler appointments={appointments} students={students} onAddAppointment={handleAddAppointmentInPlace} onUpdateAppointment={handleUpdateAppointmentInPlace} />
                       </motion.div>
                     )}
 
