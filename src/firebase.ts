@@ -178,7 +178,7 @@ export async function loginWithGoogle() {
     }
     return result.user;
   } catch (error) {
-    console.error("Auth Error:", error);
+    console.warn("Auth Error:", error);
     throw error;
   }
 }
@@ -188,7 +188,7 @@ export async function loginAnonymously() {
     const result = await signInAnonymously(auth);
     return result.user;
   } catch (error) {
-    console.error("Anonymous Auth Error:", error);
+    console.warn("Anonymous Auth Error:", error);
     throw error;
   }
 }
@@ -198,7 +198,7 @@ export async function signUpWithEmail(email: string, password: string) {
     const result = await createUserWithEmailAndPassword(auth, email, password);
     return result.user;
   } catch (error) {
-    console.error("SignUp Email Error:", error);
+    console.warn("SignUp Email Error:", error);
     throw error;
   }
 }
@@ -208,7 +208,7 @@ export async function loginWithEmail(email: string, password: string) {
     const result = await signInWithEmailAndPassword(auth, email, password);
     return result.user;
   } catch (error) {
-    console.error("Login Email Error:", error);
+    console.warn("Login Email Error:", error);
     throw error;
   }
 }
@@ -217,7 +217,7 @@ export async function resetPassword(email: string) {
   try {
     await sendPasswordResetEmail(auth, email);
   } catch (error) {
-    console.error("Password Reset Error:", error);
+    console.warn("Password Reset Error:", error);
     throw error;
   }
 }

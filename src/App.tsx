@@ -2305,7 +2305,7 @@ export default function App() {
       await loginWithGoogle();
       setShowMainLogin(false);
     } catch (e: any) {
-      console.error("Google authentication process rejected, auto-fallback to guest session for sandbox compatibility:", e);
+      console.warn("Google authentication process rejected, auto-fallback to guest session for sandbox compatibility:", e);
       let errorMsg = "La connexion a échoué. Les popups ou les cookies tiers peuvent être bloqués.";
       if (e?.code === 'auth/popup-closed-by-user') {
         errorMsg = "La fenêtre d'authentification Google a été fermée avant la fin de la connexion. Session Invité démarrée automatiquement.";

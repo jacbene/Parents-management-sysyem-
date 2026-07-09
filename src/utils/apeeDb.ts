@@ -1084,7 +1084,7 @@ export function subscribeApeeData(
       });
     },
     (err) => {
-      console.error("Error in subscribeApeeData onSnapshot:", err);
+      console.warn("Error in subscribeApeeData onSnapshot:", err);
       if (onError) {
         onError(err);
       } else {
