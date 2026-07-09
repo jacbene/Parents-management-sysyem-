@@ -44,7 +44,9 @@ service cloud.firestore {
         id == 'demo_school_ekali' ||
         id == 'demo_school_vogt' ||
         id == 'demo_school_bilingue' ||
-        id.matches('^demo_school_.*')
+        id.matches('^demo_school_.*') ||
+        id == 'sandboxed_guest_user_ekali' ||
+        id.matches('^sandboxed_guest_.*')
       );
     }
 
