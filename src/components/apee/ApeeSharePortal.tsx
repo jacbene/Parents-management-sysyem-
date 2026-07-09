@@ -76,7 +76,7 @@ export default function ApeeSharePortal({ associationName, portalUserRole }: Ape
   const isEn = language === 'en';
 
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl p-4.5 space-y-3 shadow-2xs text-left" id="apee-share-portal">
+    <div className="bg-white border border-slate-200 rounded-2xl p-3.5 space-y-2.5 shadow-2xs text-left" id="apee-share-portal">
       <div className="flex items-center justify-between">
         <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5 leading-none">
           <Share2 className="h-3.5 w-3.5 text-indigo-650" />

@@ -105,7 +105,7 @@ export default function AppointmentsScheduler({ appointments, students, onAddApp
     if (!selectedStudentId || !teacherName || !subject || !dateStr || !timeStr) return;
 
     setProcessing(true);
-    const id = `apt_${Date.now().toString().slice(-6)}`;
+    const id = `apt_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
     const student = students.find(s => s.id === selectedStudentId);
     if (!student) return;
 
@@ -211,7 +211,14 @@ export default function AppointmentsScheduler({ appointments, students, onAddApp
             {getUpcomingDays().map((day) => {
               const dayStr = day.toDateString();
               const isOver = dragOverDateStr === dayStr;
-              const dayApts = appointments.filter(apt => isSameDay(day, apt.dateTime));
+              // Deduplicate appointments by ID
+              const uniqueDayAptsMap = new Map();
+              appointments.forEach(apt => {
+                if (isSameDay(day, apt.dateTime)) {
+                  uniqueDayAptsMap.set(apt.id, apt);
+                }
+              });
+              const dayApts = Array.from(uniqueDayAptsMap.values());
 
               // Format date
               const dayName = day.toLocaleDateString('fr-FR', { weekday: 'short' });
@@ -345,17 +352,21 @@ export default function AppointmentsScheduler({ appointments, students, onAddApp
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {appointments.map((apt, idx) => {
-            const studentRef = students.find(s => s.id === apt.studentId);
-            return (
-              <motion.div
-                key={apt.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.05 }}
-                className="p-5 bg-white dark:bg-slate-900 border border-gray-150 dark:border-slate-800 rounded-2xl flex flex-col justify-between hover:shadow-xs transition duration-200"
-              >
-                <div className="space-y-3">
+          {(() => {
+            const uniqueAptsMap = new Map();
+            appointments.forEach(apt => uniqueAptsMap.set(apt.id, apt));
+            const uniqueApts = Array.from(uniqueAptsMap.values()) as Appointment[];
+            return uniqueApts.map((apt, idx) => {
+              const studentRef = students.find(s => s.id === apt.studentId);
+              return (
+                <motion.div
+                  key={apt.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.05 }}
+                  className="p-5 bg-white dark:bg-slate-900 border border-gray-150 dark:border-slate-800 rounded-2xl flex flex-col justify-between hover:shadow-xs transition duration-200"
+                >
+                  <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <span className={`text-[10px] uppercase tracking-wider font-bold px-2.5 py-0.5 rounded-full border ${getStatusBadge(apt.status)}`}>
                       {apt.status === 'Completed' ? 'Réalisé' : apt.status === 'Cancelled' ? 'Annulé' : 'Planifié'}
@@ -400,7 +411,8 @@ export default function AppointmentsScheduler({ appointments, students, onAddApp
                 </div>
               </motion.div>
             );
-          })}
+          });
+        })()}
         </div>
       )}
 

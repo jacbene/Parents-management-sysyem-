@@ -216,7 +216,7 @@ export default function MessageInbox({
     if (!textInput.trim() || !selectedStudentId || !currentStudent) return;
 
     setSending(true);
-    const id = `msg_${Date.now().toString().slice(-6)}`;
+    const id = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
     // Resolve sender details based on context roles
     const senderTypeToUse = isAdmin ? 'Teacher' : 'Parent';

@@ -1084,7 +1084,41 @@ export function subscribeApeeData(
       });
     },
     (err) => {
-      console.warn("Error in subscribeApeeData onSnapshot:", err);
+      console.warn("Error in subscribeApeeData onSnapshot, falling back to local cache:", err);
+      
+      let cachedSettings: ApeeSettings = DEFAULT_SETTINGS;
+      let cachedParents: ApeeParent[] = [];
+      let cachedExpenses: ApeeExpense[] = [];
+      let cachedLogs: ApeeActivityLog[] = [];
+      let cachedOtherRevenues: ApeeOtherRevenue[] = [];
+
+      try {
+        const s = localStorage.getItem(`${CACHE_SETTINGS}_${parentId}`);
+        if (s) cachedSettings = JSON.parse(s);
+
+        const p = localStorage.getItem(`${CACHE_PARENTS}_${parentId}`);
+        if (p) cachedParents = JSON.parse(p);
+
+        const e = localStorage.getItem(`${CACHE_EXPENSES}_${parentId}`);
+        if (e) cachedExpenses = JSON.parse(e);
+
+        const l = localStorage.getItem(`${CACHE_LOGS}_${parentId}`);
+        if (l) cachedLogs = JSON.parse(l);
+
+        const r = localStorage.getItem(`${CACHE_OTHER_REVENUES}_${parentId}`);
+        if (r) cachedOtherRevenues = JSON.parse(r);
+      } catch (cacheErr) {
+        console.warn('LocalStorage subscription fallback load failed:', cacheErr);
+      }
+
+      onUpdate({
+        settings: cachedSettings,
+        parents: cachedParents,
+        expenses: cachedExpenses,
+        logs: cachedLogs,
+        otherRevenues: cachedOtherRevenues,
+      });
+
       if (onError) {
         onError(err);
       } else {

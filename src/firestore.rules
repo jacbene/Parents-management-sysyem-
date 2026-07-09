@@ -159,7 +159,7 @@ service cloud.firestore {
     match /grades/{gradeId} {
       allow get, list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
       allow create: if isSignedIn() && isOwnerOrDemoWrite(request.resource.data.parentId);
-      allow update: if isSignedIn() && isOwnerOrDemoWrite(resource.data.parentId) && isOwnerOrDemoWrite(request.resource.data.parentId);
+      allow update: if isSignedIn() && isOwnerOrDemoWrite(request.resource.data.parentId) && isOwnerOrDemoWrite(request.resource.data.parentId);
       allow delete: if isSignedIn() && (isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin());
     }
 

@@ -26,25 +26,24 @@ console.warn = function (...args) {
   originalConsoleWarn.apply(console, args);
 };
 
-// Nettoyage des Service Workers en mode développement pour éviter les conflits de cache et l'écran blanc (page blanche)
+// Enregistrement du Service Worker pour que l'application soit installable en PWA (en DEV et en PRE/PROD)
 if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then((registration) => {
+        console.log('PWA Service Worker enregistré avec succès:', registration.scope);
+      })
+      .catch((error) => {
+        console.log('Échec de l\'enregistrement du Service Worker:', error);
+      });
+  });
+
+  // En mode Dev, on vide les caches hérités pour éviter tout effet de page blanche
   if ((import.meta as any).env.DEV) {
-    navigator.serviceWorker.getRegistrations().then((registrations) => {
-      for (const registration of registrations) {
-        registration.unregister().then(() => {
-          console.log('💡 [Pasma-sys Dev Mode] Service Worker dé-enregistré pour prévenir l\'effet page blanche.');
-        });
+    caches.keys().then((names) => {
+      for (const name of names) {
+        caches.delete(name);
       }
-    });
-  } else {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js')
-        .then((registration) => {
-          console.log('PWA Service Worker enregistré avec succès:', registration.scope);
-        })
-        .catch((error) => {
-          console.log('Échec de l\'enregistrement du Service Worker:', error);
-        });
     });
   }
 }

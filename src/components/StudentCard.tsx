@@ -95,7 +95,7 @@ export default function StudentCard({
     if (!messageText.trim()) return;
     setSendingMessage(true);
 
-    const id = `msg_${Date.now().toString().slice(-6)}`;
+    const id = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
     const matchingParent = getMatchingParent();
     const newMsg: Message = {
       id,

@@ -3070,7 +3070,7 @@ export default function App() {
                       <>
                         {/* SECTION 1: GESTION TRÉSORERIE APEE */}
                         <h3 className="text-[10px] font-black text-indigo-650 uppercase tracking-widest mb-2 pl-1 flex items-center gap-1">
-                          💼 {getApeeShortName(apeeSettings)} (APEE)
+                          💼 {getApeeShortName(apeeSettings)} (Menu)
                         </h3>
                         
                         <button
@@ -3322,92 +3322,100 @@ export default function App() {
                   </div>
                   
                   {/* Parent Profile & Notification Preferences */}
-                  {portalUserRole === 'parent' && portalParentDetails && (
-                    <motion.div 
-                      initial={{ opacity: 0, y: 15 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 rounded-2xl p-4.5 space-y-4 shadow-3xs dark:shadow-none"
-                    >
-                      <div className="flex items-center gap-2 pb-2.5 border-b border-slate-100 dark:border-slate-800/80">
-                        <div className="p-1.5 bg-indigo-50 dark:bg-indigo-950/40 rounded-lg text-indigo-650 dark:text-indigo-400">
-                          <UserIcon className="h-4.5 w-4.5" />
-                        </div>
-                        <div className="min-w-0">
-                          <h4 className="text-xs font-black text-slate-850 dark:text-indigo-200 truncate">
-                            {language === 'en' ? "My Parent Profile" : "Mon Profil Parent"}
-                          </h4>
-                          <p className="text-[10px] text-slate-450 dark:text-slate-500 font-mono">
-                            {portalParentDetails.name} • {portalParentDetails.phone || "No Phone"}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="space-y-3.5">
-                        <h5 className="text-[9.5px] font-black text-indigo-650 dark:text-indigo-400 uppercase tracking-wider">
-                          {language === 'en' ? "Notification Preferences" : "Préférences Notifications"}
-                        </h5>
-
-                        {/* IMPORTANT GRADES PREFERENCE */}
-                        <div className="space-y-1.5">
-                          <label className="flex items-start gap-2.5 cursor-pointer select-none">
-                            <input
-                              type="checkbox"
-                              checked={prefOnlyImportantGrades}
-                              onChange={(e) => handleUpdatePreferences(e.target.checked, prefOnlyUrgentFinancials)}
-                              className="mt-0.5 rounded border-slate-300 dark:border-slate-700 text-indigo-650 focus:ring-indigo-500 h-4 w-4 cursor-pointer transition-colors"
-                            />
-                            <div className="space-y-0.5">
-                              <span className="text-[11px] font-extrabold text-slate-800 dark:text-slate-200 leading-tight block">
-                                {language === 'en' ? "Important grades only" : "Notes importantes uniquement"}
-                              </span>
-                              <span className="text-[9px] text-slate-450 dark:text-slate-500 leading-relaxed block">
-                                {language === 'en' 
-                                  ? "Receive push alerts only for grades 15/20 or higher."
-                                  : "Recevoir des alertes de notes uniquement si la note est ≥ 15/20."}
-                              </span>
+                  {portalUserRole === 'parent' ? (
+                    <div className="space-y-3">
+                      {portalParentDetails && (
+                        <motion.div 
+                          initial={{ opacity: 0, y: 15 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 rounded-2xl p-3.5 space-y-3 shadow-3xs dark:shadow-none"
+                        >
+                          <div className="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-800/80">
+                            <div className="p-1.5 bg-indigo-50 dark:bg-indigo-950/40 rounded-lg text-indigo-650 dark:text-indigo-400">
+                              <UserIcon className="h-4.5 w-4.5" />
                             </div>
-                          </label>
-                        </div>
-
-                        {/* URGENT FINANCIALS PREFERENCE */}
-                        <div className="space-y-1.5">
-                          <label className="flex items-start gap-2.5 cursor-pointer select-none">
-                            <input
-                              type="checkbox"
-                              checked={prefOnlyUrgentFinancials}
-                              onChange={(e) => handleUpdatePreferences(prefOnlyImportantGrades, e.target.checked)}
-                              className="mt-0.5 rounded border-slate-300 dark:border-slate-700 text-indigo-650 focus:ring-indigo-500 h-4 w-4 cursor-pointer transition-colors"
-                            />
-                            <div className="space-y-0.5">
-                              <span className="text-[11px] font-extrabold text-slate-800 dark:text-slate-200 leading-tight block">
-                                {language === 'en' ? "Urgent billing alerts only" : "Alertes financières urgentes"}
-                              </span>
-                              <span className="text-[9px] text-slate-450 dark:text-slate-500 leading-relaxed block">
-                                {language === 'en' 
-                                  ? "Receive alerts only for critical financial deadlines or late notices."
-                                  : "Recevoir des rappels uniquement pour les échéances ou retards critiques."}
-                              </span>
+                            <div className="min-w-0">
+                              <h4 className="text-xs font-black text-slate-850 dark:text-indigo-200 truncate">
+                                {language === 'en' ? "My Parent Profile" : "Mon Profil Parent"}
+                              </h4>
+                              <p className="text-[10px] text-slate-450 dark:text-slate-500 font-mono">
+                                {portalParentDetails.name} • {portalParentDetails.phone || "No Phone"}
+                              </p>
                             </div>
-                          </label>
-                        </div>
-                      </div>
+                          </div>
 
-                      {/* Sync status */}
-                      <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[9px] font-bold text-emerald-600 dark:text-emerald-400">
-                        <span className="flex items-center gap-1">
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          {language === 'en' ? "Preferences saved" : "Préférences enregistrées"}
-                        </span>
-                        <span className="text-slate-400 dark:text-slate-500 font-mono">Pasma-sys</span>
-                      </div>
-                    </motion.div>
+                          <div className="space-y-2.5">
+                            <h5 className="text-[9.5px] font-black text-indigo-650 dark:text-indigo-400 uppercase tracking-wider">
+                              {language === 'en' ? "Notification Preferences" : "Préférences Notifications"}
+                            </h5>
+
+                            {/* IMPORTANT GRADES PREFERENCE */}
+                            <div className="space-y-1">
+                              <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={prefOnlyImportantGrades}
+                                  onChange={(e) => handleUpdatePreferences(e.target.checked, prefOnlyUrgentFinancials)}
+                                  className="mt-0.5 rounded border-slate-300 dark:border-slate-700 text-indigo-650 focus:ring-indigo-500 h-4 w-4 cursor-pointer transition-colors"
+                                />
+                                <div className="space-y-0.5">
+                                  <span className="text-[11px] font-extrabold text-slate-800 dark:text-slate-200 leading-tight block">
+                                    {language === 'en' ? "Important grades only" : "Notes importantes uniquement"}
+                                  </span>
+                                  <span className="text-[9px] text-slate-450 dark:text-slate-500 leading-relaxed block">
+                                    {language === 'en' 
+                                      ? "Receive push alerts only for grades 15/20 or higher."
+                                      : "Recevoir des alertes de notes uniquement si la note est ≥ 15/20."}
+                                  </span>
+                                </div>
+                              </label>
+                            </div>
+
+                            {/* URGENT FINANCIALS PREFERENCE */}
+                            <div className="space-y-1">
+                              <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={prefOnlyUrgentFinancials}
+                                  onChange={(e) => handleUpdatePreferences(prefOnlyImportantGrades, e.target.checked)}
+                                  className="mt-0.5 rounded border-slate-300 dark:border-slate-700 text-indigo-650 focus:ring-indigo-500 h-4 w-4 cursor-pointer transition-colors"
+                                />
+                                <div className="space-y-0.5">
+                                  <span className="text-[11px] font-extrabold text-slate-800 dark:text-slate-200 leading-tight block">
+                                    {language === 'en' ? "Urgent billing alerts only" : "Alertes financières urgentes"}
+                                  </span>
+                                  <span className="text-[9px] text-slate-450 dark:text-slate-500 leading-relaxed block">
+                                    {language === 'en' 
+                                      ? "Receive alerts only for critical financial deadlines or late notices."
+                                      : "Recevoir des rappels uniquement pour les échéances ou retards critiques."}
+                                  </span>
+                                </div>
+                              </label>
+                            </div>
+                          </div>
+
+                          {/* Sync status */}
+                          <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[9px] font-bold text-emerald-600 dark:text-emerald-400">
+                            <span className="flex items-center gap-1">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              {language === 'en' ? "Preferences saved" : "Préférences enregistrées"}
+                            </span>
+                            <span className="text-slate-400 dark:text-slate-500 font-mono">Pasma-sys</span>
+                          </div>
+                        </motion.div>
+                      )}
+
+                      <ApeeSharePortal 
+                        associationName={apeeSettings.associationName}
+                        portalUserRole={portalUserRole || undefined}
+                      />
+                    </div>
+                  ) : (
+                    <ApeeSharePortal 
+                      associationName={apeeSettings.associationName}
+                      portalUserRole={portalUserRole || undefined}
+                    />
                   )}
-
-                  {/* Secure Share Space */}
-                  <ApeeSharePortal 
-                    associationName={apeeSettings.associationName}
-                    portalUserRole={portalUserRole || undefined}
-                  />
                 </div>
 
                 {/* Right Side / Centered: Main Screen Panel workspace */}

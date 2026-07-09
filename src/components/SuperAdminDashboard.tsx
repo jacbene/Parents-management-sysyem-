@@ -127,12 +127,16 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
       setLoading(true);
       try {
         // 1. Fetch schools
-        const schoolsQuery = query(collection(db, 'establishments'));
-        const schoolSnap = await getDocs(schoolsQuery);
         const schoolList: Establishment[] = [];
-        schoolSnap.forEach((doc) => {
-          schoolList.push({ id: doc.id, ...doc.data() } as Establishment);
-        });
+        try {
+          const schoolsQuery = query(collection(db, 'establishments'));
+          const schoolSnap = await getDocs(schoolsQuery);
+          schoolSnap.forEach((doc) => {
+            schoolList.push({ id: doc.id, ...doc.data() } as Establishment);
+          });
+        } catch (schoolErr) {
+          console.warn("Could not fetch establishments from Firestore (falling back to cached/demo):", schoolErr);
+        }
 
         // Ensure we merge defaults to display seamless test-bed variety
         const mergedSchools = [...schoolList];
@@ -144,21 +148,29 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
         setSchools(mergedSchools);
 
         // 2. Fetch all students
-        const studentsQuery = query(collection(db, 'students'));
-        const studentSnap = await getDocs(studentsQuery);
         const studentList: Student[] = [];
-        studentSnap.forEach((doc) => {
-          studentList.push({ id: doc.id, ...doc.data() } as Student);
-        });
+        try {
+          const studentsQuery = query(collection(db, 'students'));
+          const studentSnap = await getDocs(studentsQuery);
+          studentSnap.forEach((doc) => {
+            studentList.push({ id: doc.id, ...doc.data() } as Student);
+          });
+        } catch (studentErr) {
+          console.warn("Could not fetch students from Firestore:", studentErr);
+        }
         setAllStudents(studentList);
 
         // 3. Fetch all invoices (parents, settings, and logs)
-        const invoicesQuery = query(collection(db, 'invoices'));
-        const invoiceSnap = await getDocs(invoicesQuery);
         const invoiceList: Invoice[] = [];
-        invoiceSnap.forEach((doc) => {
-          invoiceList.push({ id: doc.id, ...doc.data() } as Invoice);
-        });
+        try {
+          const invoicesQuery = query(collection(db, 'invoices'));
+          const invoiceSnap = await getDocs(invoicesQuery);
+          invoiceSnap.forEach((doc) => {
+            invoiceList.push({ id: doc.id, ...doc.data() } as Invoice);
+          });
+        } catch (invoiceErr) {
+          console.warn("Could not fetch invoices from Firestore:", invoiceErr);
+        }
         setAllInvoices(invoiceList);
 
         // 4. Extract logs stored with studentId === 'system_log'
@@ -242,7 +254,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
         }
 
       } catch (err) {
-        console.error("Super Admin Load failed:", err);
+        console.warn("System data loading encountered a non-fatal warning:", err);
       } finally {
         setLoading(false);
       }

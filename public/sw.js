@@ -5,8 +5,21 @@ const ASSETS_TO_CACHE = [
   '/manifest.json'
 ];
 
+// Detect development environment (localhost, 127.0.0.1, or ais-dev subdomain)
+const isDevEnv = () => {
+  return self.location.hostname.includes('ais-dev') || 
+         self.location.hostname === 'localhost' || 
+         self.location.hostname === '127.0.0.1';
+};
+
 // Install Event
 self.addEventListener('install', (event) => {
+  if (isDevEnv()) {
+    console.log('[sw] Dev Mode: skipping cache population');
+    self.skipWaiting();
+    return;
+  }
+
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(ASSETS_TO_CACHE);
@@ -33,6 +46,11 @@ self.addEventListener('activate', (event) => {
 
 // Fetch Event
 self.addEventListener('fetch', (event) => {
+  // In dev environment, bypass caching to avoid white pages or stale code
+  if (isDevEnv()) {
+    return; // Leaving request to be handled natively by browser
+  }
+
   // Only handle GET requests and local domains
   if (event.request.method !== 'GET' || !event.request.url.startsWith(self.location.origin)) {
     return;
