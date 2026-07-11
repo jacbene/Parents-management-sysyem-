@@ -45,6 +45,7 @@ import SyncToastContainer from './components/SyncToastContainer';
 
 // Components
 import StudentCard from './components/StudentCard';
+import StudentsByClass from './components/StudentsByClass';
 import AnnouncementsFeed from './components/AnnouncementsFeed';
 import GradesDashboard from './components/GradesDashboard';
 import AttendanceTracker from './components/AttendanceTracker';
@@ -96,7 +97,8 @@ import {
   WifiOff,
   CheckCircle,
   Sun,
-  Moon
+  Moon,
+  Users
 } from 'lucide-react';
 
 type TabType = 
@@ -112,6 +114,7 @@ type TabType =
   | 'google_drive'
   | 'firebase_console'
   | 'announcements' 
+  | 'students_by_class'
   | 'homework' 
   | 'lessons'
   | 'grades' 
@@ -1649,7 +1652,8 @@ export default function App() {
             actionType: 'ADD_PAYMENT',
             description: payDesc,
             amount: addedAmount,
-            operatorName: operator
+            operatorName: operator,
+            transactionId: newPayment.transactionId,
           };
           await saveApeeLog(userId, logObj);
           setApeeLogs(prev => [logObj, ...prev]);
@@ -1955,7 +1959,10 @@ export default function App() {
             if (parent.payments && parent.payments.length > 0) {
               for (const pay of parent.payments) {
                 const payLogId = 'log_' + Date.now() + '_pay_' + Math.random().toString(36).substr(2, 4);
-                const payDesc = `Versement de ${pay.amount.toLocaleString()} FCFA enregistré par ${pay.method} pour ${parent.name} (Réf : ${pay.transactionId || 'N/A'}${pay.note ? ' - Note : ' + pay.note : ''})`;
+                const refPart = pay.transactionId 
+                  ? ` (Réf : ${pay.transactionId}${pay.note ? ' - Note : ' + pay.note : ''})` 
+                  : (pay.note ? ` (Note : ${pay.note})` : '');
+                const payDesc = `Versement de ${pay.amount.toLocaleString()} FCFA enregistré par ${pay.method} pour ${parent.name}${refPart}`;
                 const payLogObj: ApeeActivityLog = {
                   id: payLogId,
                   parentId: userId,
@@ -1964,7 +1971,8 @@ export default function App() {
                   actionType: 'ADD_PAYMENT',
                   description: payDesc,
                   amount: pay.amount,
-                  operatorName: operator
+                  operatorName: operator,
+                  transactionId: pay.transactionId || '',
                 };
                 await saveApeeLog(userId, payLogObj);
                 setApeeLogs(prev => [payLogObj, ...prev]);
@@ -1992,7 +2000,10 @@ export default function App() {
             const addedPayments = (parent.payments || []).filter(p => !oldPaymentIds.has(p.id));
             for (const pay of addedPayments) {
               const payLogId = 'log_' + Date.now() + '_pay_' + Math.random().toString(36).substr(2, 4);
-              const payDesc = `Nouveau versement de ${pay.amount.toLocaleString()} FCFA enregistré par ${pay.method} pour les les redevances de ${parent.name} (Réf : ${pay.transactionId || 'N/A'}${pay.note ? ' - Note : ' + pay.note : ''}).`;
+              const refPart = pay.transactionId 
+                ? ` (Réf : ${pay.transactionId}${pay.note ? ' - Note : ' + pay.note : ''})` 
+                : (pay.note ? ` (Note : ${pay.note})` : '');
+              const payDesc = `Nouveau versement de ${pay.amount.toLocaleString()} FCFA enregistré par ${pay.method} pour les les redevances de ${parent.name}${refPart}.`;
               const payLogObj: ApeeActivityLog = {
                 id: payLogId,
                 parentId: userId,
@@ -2001,7 +2012,8 @@ export default function App() {
                 actionType: 'ADD_PAYMENT',
                 description: payDesc,
                 amount: pay.amount,
-                operatorName: operator
+                operatorName: operator,
+                transactionId: pay.transactionId || '',
               };
               await saveApeeLog(userId, payLogObj);
               setApeeLogs(prev => [payLogObj, ...prev]);
@@ -2020,7 +2032,8 @@ export default function App() {
                 actionType: 'REMOVE_PAYMENT',
                 description: payDesc,
                 amount: pay.amount,
-                operatorName: operator
+                operatorName: operator,
+                transactionId: pay.transactionId || '',
               };
               await saveApeeLog(userId, payLogObj);
               setApeeLogs(prev => [payLogObj, ...prev]);
@@ -3232,6 +3245,19 @@ export default function App() {
                     </button>
 
                     {filteredStudents.length > 0 && (
+                      <button
+                        onClick={() => setActiveTab('students_by_class')}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
+                          activeTab === 'students_by_class'
+                            ? 'bg-slate-900 text-white'
+                            : 'text-gray-650 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2"><Users className="h-4 w-4" /> {t('tab.students_by_class')}</span>
+                      </button>
+                    )}
+
+                    {filteredStudents.length > 0 && (
                       <>
                         <button
                           onClick={() => setActiveTab('homework')}
@@ -3440,17 +3466,18 @@ export default function App() {
                       </motion.div>
                     )}
 
-                    {activeTab === 'apee_recording' && (
-                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="apee_recording">
-                        <ApeeForm
-                          settings={apeeSettings}
-                          onSaveParent={handleSaveApeeParentInPlace}
-                          activeParentToEdit={activeParentToEdit}
-                          onCancelEdit={() => setActiveParentToEdit(null)}
-                          onSaveOtherRevenue={handleSaveApeeOtherRevenueInPlace}
-                        />
-                      </motion.div>
-                    )}
+                     {activeTab === 'apee_recording' && (
+                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="apee_recording">
+                         <ApeeForm
+                           settings={apeeSettings}
+                           onSaveParent={handleSaveApeeParentInPlace}
+                           activeParentToEdit={activeParentToEdit}
+                           onCancelEdit={() => setActiveParentToEdit(null)}
+                           onSaveOtherRevenue={handleSaveApeeOtherRevenueInPlace}
+                           parents={apeeParents}
+                         />
+                       </motion.div>
+                     )}
 
                     {activeTab === 'apee_search' && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="apee_search">
@@ -3579,6 +3606,23 @@ export default function App() {
                           pedManagerName={apeeSettings.pedManagerName}
                           hasPedPassword={!!apeeSettings.pedManagerPassword}
                           activeStudent={activeStudent}
+                        />
+                      </motion.div>
+                    )}
+
+                    {activeTab === 'students_by_class' && (
+                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="students_by_class">
+                        <StudentsByClass
+                          students={students}
+                          apeeParents={apeeParents}
+                          grades={grades}
+                          attendanceLogs={attendanceLogs}
+                          messages={messages}
+                          settings={apeeSettings}
+                          onSelectStudent={(studentId) => {
+                            setSelectedStudentId(studentId);
+                          }}
+                          onUpdateStudent={handleUpdateStudent}
                         />
                       </motion.div>
                     )}

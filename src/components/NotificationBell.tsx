@@ -26,6 +26,38 @@ export default function NotificationBell({ portalUserRole, selectedStudentName =
   
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const { language } = useLanguage();
+  const isEn = language === 'en';
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
+
+  // Stop talking when dropdown closes or on unmount
+  useEffect(() => {
+    return () => {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
+
+  const handleSpeak = (id: string, title: string, body: string) => {
+    if (!('speechSynthesis' in window)) {
+      alert(isEn ? 'Speech synthesis is not supported on this browser.' : 'La synthèse vocale n\'est pas supportée par votre appareil.');
+      return;
+    }
+
+    if (speakingId === id) {
+      window.speechSynthesis.cancel();
+      setSpeakingId(null);
+    } else {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(`${title}. ${body}`);
+      utterance.lang = language === 'en' ? 'en-US' : 'fr-FR';
+      utterance.onstart = () => setSpeakingId(id);
+      utterance.onend = () => setSpeakingId(null);
+      utterance.onerror = () => setSpeakingId(null);
+      window.speechSynthesis.speak(utterance);
+    }
+  };
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -231,16 +263,34 @@ export default function NotificationBell({ portalUserRole, selectedStudentName =
                       </p>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        clearNotification(notif.id);
-                      }}
-                      className="shrink-0 p-1 text-slate-350 hover:text-rose-500 rounded-lg hover:bg-slate-100 cursor-pointer self-start transition mt-0.5"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
+                    <div className="flex flex-col gap-2 shrink-0 self-start">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSpeak(notif.id, notif.title, notif.body);
+                        }}
+                        className={`p-1.5 rounded-lg cursor-pointer transition-all border shadow-2xs ${
+                          speakingId === notif.id 
+                            ? 'text-indigo-650 bg-indigo-50 border-indigo-200 animate-pulse' 
+                            : 'text-slate-500 hover:text-indigo-650 hover:bg-indigo-50/50 border-transparent hover:border-indigo-100'
+                        }`}
+                        title={isEn ? "Listen to notification (Text to Speech)" : "Écouter l'alerte (Synthèse Vocale)"}
+                      >
+                        <Volume2 className="h-3.5 w-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          clearNotification(notif.id);
+                        }}
+                        className="p-1.5 text-slate-350 hover:text-rose-500 rounded-lg hover:bg-rose-50/50 hover:border-rose-100 border border-transparent cursor-pointer self-center transition"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
                   </div>
                 ))
               )}

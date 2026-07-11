@@ -672,6 +672,19 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
                               </span>
                             )}
                           </div>
+                          {p.allocations && Object.keys(p.allocations).length > 0 && (
+                            <div className="text-[9px] font-sans text-slate-650 mt-1 flex flex-wrap gap-1">
+                              <span className="font-semibold text-slate-500">Affecté à :</span>
+                              {Object.entries(p.allocations).map(([oblId, amt]) => {
+                                const oblName = settings?.financialObligations?.find((o: any) => o.id === oblId)?.name || oblId;
+                                return (
+                                  <span key={oblId} className="bg-emerald-50 text-emerald-800 font-bold px-1 rounded">
+                                    {oblName} ({Number(amt).toLocaleString()} {settings?.currency || 'FCFA'})
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                         <span className="text-[10px] font-bold text-slate-400 font-sans">Versement #{idx + 1}</span>
                       </div>

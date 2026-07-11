@@ -214,6 +214,7 @@ export interface ApeeActivityLog {
   description: string;
   amount: number;
   operatorName: string;
+  transactionId?: string;
 }
 
 export interface ApeeBudgetLine {

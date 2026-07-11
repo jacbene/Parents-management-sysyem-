@@ -12,9 +12,10 @@ interface ApeeFormProps {
   activeParentToEdit?: ApeeParent | null;
   onCancelEdit?: () => void;
   onSaveOtherRevenue: (revenue: ApeeOtherRevenue) => Promise<boolean>;
+  parents?: ApeeParent[];
 }
 
-export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, onCancelEdit, onSaveOtherRevenue }: ApeeFormProps) {
+export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, onCancelEdit, onSaveOtherRevenue, parents = [] }: ApeeFormProps) {
   const { language } = useLanguage();
   const isEn = language === 'en';
   // Get dynamic classrooms configured in settings or fall back to standard high-school levels
@@ -52,6 +53,10 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
   const [payments, setPayments] = useState<ApeePaymentItem[]>([]);
   const [transactionId, setTransactionId] = useState('');
   const [provider, setProvider] = useState('MTN');
+
+  // Allocation states
+  const [selectedObligationId, setSelectedObligationId] = useState<string>('auto');
+  const [paymentAllocationType, setPaymentAllocationType] = useState<'full' | 'partial'>('partial');
   
   // Alert visual confirmations
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -59,6 +64,13 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [isSavedJustNow, setIsSavedJustNow] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [loadedParentId, setLoadedParentId] = useState<string | null>(null);
+
+  // Confirmation Modals State
+  const [showConfirmParentModal, setShowConfirmParentModal] = useState(false);
+  const [parentPayloadToConfirm, setParentPayloadToConfirm] = useState<ApeeParent | null>(null);
+  const [showConfirmOtherModal, setShowConfirmOtherModal] = useState(false);
+  const [otherPayloadToConfirm, setOtherPayloadToConfirm] = useState<ApeeOtherRevenue | null>(null);
 
   // Other revenues states
   const [formMode, setFormMode] = useState<'parent' | 'other_revenue'>('parent');
@@ -331,14 +343,22 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
       createdAt: new Date().toISOString(),
     };
 
+    setOtherPayloadToConfirm(payload);
+    setShowConfirmOtherModal(true);
+  };
+
+  const handleConfirmSaveOther = async () => {
+    if (!otherPayloadToConfirm) return;
     setIsSaving(true);
+    setShowConfirmOtherModal(false);
     try {
-      const savedSuccessfully = await onSaveOtherRevenue(payload);
+      const savedSuccessfully = await onSaveOtherRevenue(otherPayloadToConfirm);
       if (savedSuccessfully) {
         setSuccessMsg('Recette enregistrée et reçu de caisse édité avec succès !');
         // Instantly download PDF
-        handleDownloadOtherRevenueReceiptPDF(payload);
+        handleDownloadOtherRevenueReceiptPDF(otherPayloadToConfirm);
         clearOtherForm();
+        setOtherPayloadToConfirm(null);
         setTimeout(() => setSuccessMsg(null), 5000);
       }
     } catch (err) {
@@ -375,6 +395,7 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
       setPayAmount(0);
       setTransactionId('');
       setProvider('MTN');
+      setLoadedParentId(activeParentToEdit.id);
     } else {
       clearForm();
     }
@@ -393,6 +414,9 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
     setPayMethod('Espèces');
     setTransactionId('');
     setProvider('MTN');
+    setSelectedObligationId('auto');
+    setPaymentAllocationType('partial');
+    setLoadedParentId(null);
   };
 
   const handleAddStudent = () => {
@@ -414,13 +438,56 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
   // Get active currency
   const currency = settings?.currency || 'FCFA';
 
+  // Find matching existing parents to offer loading their history and avoiding duplicates
+  const matchingParents = (parents || []).filter(p => {
+    // If we've already loaded this parent, don't show it in suggestions
+    if (loadedParentId === p.id) return false;
+    
+    // Normalization of input values for high accuracy matches
+    const normalizedInputPhone = parentPhone.replace(/\s+/g, '').replace(/\+/g, '');
+    const pPhoneNorm = p.phone ? p.phone.replace(/\s+/g, '').replace(/\+/g, '') : '';
+    
+    // Exact or partial phone match (at least 5 digits to avoid matching on very short numbers)
+    if (normalizedInputPhone.length >= 5 && pPhoneNorm && pPhoneNorm.includes(normalizedInputPhone)) {
+      return true;
+    }
+    
+    // Match by name
+    const inputNameTrim = parentName.trim().toLowerCase();
+    if (inputNameTrim.length >= 3 && p.name && p.name.toLowerCase().includes(inputNameTrim)) {
+      return true;
+    }
+    
+    return false;
+  });
+
   // Automated dues calculator using global helper for breakdown of obligations
   const validStudentsCount = students.filter(s => s.name.trim() !== '').length;
   
+  // Calculate breakdown BEFORE any un-added typed payment
+  const currentParentForCalc = {
+    students: students.filter(s => s.name.trim() !== ''),
+    payments: payments
+  };
+  const currentBreakdown = calculateParentDebtBreakdown(currentParentForCalc, settings);
+
   // Calculate dynamic breakdown including any un-added typed payment
   const mockParentForCalc = {
     students: students.filter(s => s.name.trim() !== ''),
-    payments: [...payments, ...(payAmount > 0 ? [{ id: 'temp_input', amount: payAmount, date: '', method: '' }] : [])]
+    payments: [
+      ...payments,
+      ...(payAmount > 0
+        ? [
+            {
+              id: 'temp_input',
+              amount: payAmount,
+              date: '',
+              method: '',
+              allocations: selectedObligationId !== 'auto' ? { [selectedObligationId]: payAmount } : undefined
+            }
+          ]
+        : [])
+    ]
   };
   
   const {
@@ -429,6 +496,16 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
     globalPaid: currentTotalPaid,
     globalDebt: restToPay
   } = calculateParentDebtBreakdown(mockParentForCalc, settings);
+
+  // Auto pre-fill payment amount when "Payer complètement" is selected for a specific obligation
+  useEffect(() => {
+    if (selectedObligationId !== 'auto' && paymentAllocationType === 'full') {
+      const targetRub = currentBreakdown.rubricBreakdown.find(r => r.id === selectedObligationId);
+      if (targetRub) {
+        setPayAmount(targetRub.remainingDebt);
+      }
+    }
+  }, [selectedObligationId, paymentAllocationType, students, payments]);
 
   const handleAddPaymentNode = () => {
     if (payAmount <= 0) return;
@@ -439,19 +516,29 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
       return;
     }
 
+    const isSpecificObligation = selectedObligationId !== 'auto';
+    const targetObligationName = isSpecificObligation
+      ? settings.financialObligations?.find(o => o.id === selectedObligationId)?.name || selectedObligationId
+      : '';
+
     const newPayment: ApeePaymentItem = {
       id: 'pay_' + Date.now(),
       amount: payAmount,
       date: new Date().toISOString().slice(0, 10),
-      note: paymentNote.trim() || undefined,
+      note: paymentNote.trim() || (isSpecificObligation 
+        ? `${paymentAllocationType === 'full' ? 'Règlement complet' : 'Règlement partiel'} : ${targetObligationName}` 
+        : undefined),
       method: payMethod,
       transactionId: isDigitalMethod ? transactionId.trim() : undefined,
       provider: isDigitalMethod ? provider : undefined,
+      allocations: isSpecificObligation ? { [selectedObligationId]: payAmount } : undefined
     };
     setPayments([...payments, newPayment]);
     setPayAmount(0);
     setPaymentNote('');
     setTransactionId('');
+    setSelectedObligationId('auto');
+    setPaymentAllocationType('partial');
     setSuccessMsg('Versement validé et ajouté à la liste !');
     setTimeout(() => setSuccessMsg(null), 3500);
   };
@@ -481,14 +568,23 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
         alert("Veuillez renseigner le numéro de transaction pour les paiements numériques.");
         return;
       }
+
+      const isSpecificObligation = selectedObligationId !== 'auto';
+      const targetObligationName = isSpecificObligation
+        ? settings.financialObligations?.find(o => o.id === selectedObligationId)?.name || selectedObligationId
+        : '';
+
       finalPayments.push({
         id: 'pay_' + Date.now(),
         amount: payAmount,
         date: new Date().toISOString().slice(0, 10),
-        note: paymentNote.trim() || 'Versement direct à l\'enregistrement',
+        note: paymentNote.trim() || (isSpecificObligation 
+          ? `${paymentAllocationType === 'full' ? 'Règlement complet' : 'Règlement partiel'} : ${targetObligationName}` 
+          : 'Versement direct à l\'enregistrement'),
         method: payMethod,
         transactionId: isDigitalMethod ? transactionId.trim() : undefined,
         provider: isDigitalMethod ? provider : undefined,
+        allocations: isSpecificObligation ? { [selectedObligationId]: payAmount } : undefined
       });
     }
 
@@ -505,30 +601,40 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
       computedStatus = 'partiel';
     }
 
+    const matchedParent = loadedParentId ? parents.find(p => p.id === loadedParentId) : null;
+
     const parentPayload: ApeeParent = {
-      id: activeParentToEdit?.id || 'par_' + Date.now().toString(36),
+      id: loadedParentId || activeParentToEdit?.id || 'par_' + Date.now().toString(36),
       name: parentName.trim(),
       phone: parentPhone.trim(),
       address: parentAddress.trim(),
       email: parentEmail.trim(),
-      lastReminded: activeParentToEdit?.lastReminded || '',
+      lastReminded: activeParentToEdit?.lastReminded || matchedParent?.lastReminded || '',
       students: filteredStudents,
       totalDue: calculatedDue,
       totalPaid: sumPaid,
       status: computedStatus,
       note: note.trim(),
       payments: finalPayments,
-      createdAt: activeParentToEdit?.createdAt || new Date().toISOString(),
+      createdAt: activeParentToEdit?.createdAt || matchedParent?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
+    setParentPayloadToConfirm(parentPayload);
+    setShowConfirmParentModal(true);
+  };
+
+  const handleConfirmSaveParent = async () => {
+    if (!parentPayloadToConfirm) return;
     setIsSaving(true);
+    setShowConfirmParentModal(false);
     try {
-      const savedSuccessfully = await onSaveParent(parentPayload);
+      const savedSuccessfully = await onSaveParent(parentPayloadToConfirm);
       if (savedSuccessfully) {
         setSuccessMsg(activeParentToEdit ? 'Fiche parent mise à jour avec succès !' : 'Parent et cotisation enregistrés avec succès !');
         setIsSavedJustNow(true);
         setShowReceiptModal(true);
+        setParentPayloadToConfirm(null);
         setTimeout(() => setSuccessMsg(null), 5000);
       }
     } finally {
@@ -1035,13 +1141,26 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
                 </select>
               </div>
 
-              <div className="pt-4 border-t border-emerald-100">
+              <div className="pt-4 border-t border-emerald-100 grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (window.confirm(isEn ? "Are you sure you want to clear this form?" : "Êtes-vous sûr de vouloir annuler et réinitialiser ce formulaire ?")) {
+                      clearOtherForm();
+                    }
+                  }}
+                  disabled={isSaving}
+                  className="py-3 px-4 border border-emerald-250 hover:bg-emerald-50 text-emerald-800 font-bold rounded-xl text-xs uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  ❌ {isEn ? "Cancel" : "Annuler"}
+                </button>
+
                 <button
                   type="submit"
                   disabled={isSaving}
-                  className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition cursor-pointer disabled:opacity-50 select-none shadow-sm flex items-center justify-center gap-1.5"
+                  className="py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition cursor-pointer disabled:opacity-50 select-none shadow-sm flex items-center justify-center gap-1.5"
                 >
-                  {isSaving ? 'Enregistrement...' : '📥 Enregistrer la Recette & Délivrer Reçu'}
+                  {isSaving ? 'Enregistrement...' : '📥 Enregistrer'}
                 </button>
               </div>
             </div>
@@ -1050,12 +1169,81 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
       ) : (
         <form onSubmit={handleFormSubmit} className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           
+          {/* Financial summary bar at the very top of the parent form */}
+          <div className="lg:col-span-12 bg-gradient-to-r from-indigo-50/60 to-slate-50 border border-indigo-100 rounded-2xl p-4 md:p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-xs">
+            <div className="space-y-1">
+              <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider bg-indigo-100/50 px-2.5 py-1 rounded-full">
+                📊 Synthèse de l'Opération de Caisse
+              </span>
+              <h3 className="text-sm font-extrabold text-slate-850 flex items-center gap-1.5 mt-2">
+                Total des cotisations pour les élèves saisis
+              </h3>
+              <p className="text-xs text-slate-500 font-medium max-w-xl">
+                {validStudentsCount > 0 ? (
+                  <>
+                    Calculé pour <strong className="text-slate-850">{validStudentsCount} élève(s)</strong> :{" "}
+                    <span className="text-indigo-600 font-bold">
+                      {students.map(s => s.name).filter(n => n.trim() !== '').join(', ') || 'Noms non renseignés'}
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-amber-600 font-bold">⚠️ Veuillez ajouter au moins un élève ci-dessous pour calculer les cotisations.</span>
+                )}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3 w-full md:w-auto shrink-0">
+              <div className="bg-indigo-600 text-white p-3 rounded-xl text-center shadow-xs">
+                <div className="text-[9px] font-bold uppercase tracking-wide text-indigo-200">Montant attendu</div>
+                <div className="text-base font-black font-mono mt-0.5 whitespace-nowrap">
+                  {currentBreakdown.globalDue.toLocaleString()} <span className="text-xs font-normal">{currency}</span>
+                </div>
+              </div>
+
+              <div className="bg-emerald-600 text-white p-3 rounded-xl text-center shadow-xs">
+                <div className="text-[9px] font-bold uppercase tracking-wide text-emerald-200">Déjà réglé</div>
+                <div className="text-base font-black font-mono mt-0.5 whitespace-nowrap">
+                  {currentBreakdown.globalPaid.toLocaleString()} <span className="text-xs font-normal">{currency}</span>
+                </div>
+              </div>
+
+              <div className="bg-amber-600 text-white p-3 rounded-xl text-center shadow-xs">
+                <div className="text-[9px] font-bold uppercase tracking-wide text-amber-200">Reste à payer</div>
+                <div className="text-base font-black font-mono mt-0.5 whitespace-nowrap">
+                  {currentBreakdown.globalDebt.toLocaleString()} <span className="text-xs font-normal">{currency}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
           {/* Left half: Parent and Students */}
         <div className="lg:col-span-7 space-y-6">
           <div className="bg-slate-50/50 border border-slate-100 rounded-2xl p-4 md:p-5 space-y-4">
             <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-2">
               <User className="h-4 w-4 text-indigo-500" /> Identité du Parent Responsable
             </h3>
+
+            {loadedParentId && (
+              <div className="bg-emerald-50 border border-emerald-200/60 rounded-xl p-3 flex justify-between items-center text-xs text-emerald-800 font-medium">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>
+                    Dossier parent existant chargé : <strong className="font-extrabold">{parentName}</strong>
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearForm();
+                    setSuccessMsg("Formulaire réinitialisé. Prêt à saisir un nouveau parent.");
+                    setTimeout(() => setSuccessMsg(null), 3000);
+                  }}
+                  className="text-[9px] bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-extrabold px-2 py-1 rounded-md transition cursor-pointer"
+                >
+                  Nouveau parent
+                </button>
+              </div>
+            )}
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1">
@@ -1078,7 +1266,7 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
                 <div className="relative">
                   <Smartphone className="absolute left-3 top-2.5 h-3.5 w-3.5 text-gray-400" />
                   <input
-                    type="tel"
+                    type="text"
                     required
                     placeholder="Ex: +237 6xx xxx xxx"
                     value={parentPhone}
@@ -1118,6 +1306,61 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
                 </div>
               </div>
             </div>
+
+            {matchingParents.length > 0 && !loadedParentId && (
+              <div className="mt-4 bg-indigo-50/70 border border-indigo-100 rounded-xl p-3.5 space-y-2.5 text-slate-800 animate-in fade-in slide-in-from-top-1 duration-200">
+                <div className="text-[10px] font-bold text-indigo-800 uppercase tracking-wider flex items-center gap-1.5">
+                  <span>💡 Parent(s) similaire(s) détecté(s)</span>
+                  <span className="bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase">
+                    {matchingParents.length} trouvé(s)
+                  </span>
+                </div>
+                <p className="text-[10.5px] text-indigo-950 font-normal leading-relaxed">
+                  Un ou plusieurs parents enregistrés possèdent un nom ou un numéro similaire. Souhaitez-vous charger leur historique pour éviter les doublons et déduire leurs paiements partiels précédents ?
+                </p>
+                <div className="grid grid-cols-1 gap-2 mt-1">
+                  {matchingParents.slice(0, 3).map((p) => {
+                    const bdown = calculateParentDebtBreakdown(p, settings);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          setLoadedParentId(p.id);
+                          setParentName(p.name);
+                          setParentPhone(p.phone);
+                          setParentAddress(p.address);
+                          setParentEmail(p.email || '');
+                          setStudents(p.students.length > 0 ? p.students : [{ name: '', classRoom: defaultClassroom }]);
+                          setNote(p.note || '');
+                          setPayments(p.payments || []);
+                          setPayAmount(0);
+                          setTransactionId('');
+                          setSuccessMsg(`Dossier de "${p.name}" chargé avec succès ! Cotisations et versements précédents restaurés.`);
+                          setTimeout(() => setSuccessMsg(null), 4000);
+                        }}
+                        className="flex items-center justify-between text-left bg-white p-2.5 rounded-xl border border-indigo-150 hover:bg-indigo-100/50 hover:border-indigo-300 transition cursor-pointer text-xs shadow-3xs"
+                      >
+                        <div>
+                          <div className="font-extrabold text-slate-800">{p.name}</div>
+                          <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                            {p.phone} • {p.students.length} élève(s)
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-mono text-[11px] font-black text-amber-600">
+                            Reste dû : {bdown.globalDebt.toLocaleString()} {currency}
+                          </div>
+                          <div className="text-[9px] text-emerald-600 font-medium">
+                            Déjà versé : {bdown.globalPaid.toLocaleString()} {currency}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Students list block */}
@@ -1284,49 +1527,219 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
               <Plus className="h-4 w-4 text-indigo-500" /> Enregistrer un Versement (Acompte)
             </h3>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-600">Montant versé ({currency})</label>
-                <div className="relative">
-                  <span className="absolute left-2 text-xs top-2 font-mono text-gray-550">{currency}</span>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="0"
-                    value={payAmount || ''}
-                    onChange={(e) => setPayAmount(Number(e.target.value))}
-                    className="w-full pl-12 pr-3 py-1.5 text-xs text-right font-mono border border-slate-200 rounded-lg focus:outline-indigo-500 text-slate-800"
-                  />
+            {/* Obligation targeting selector */}
+            <div className="p-3.5 bg-indigo-50/30 rounded-xl border border-indigo-100/40 space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-700 tracking-wide uppercase flex items-center gap-1">
+                    🎯 Obligation financière visée
+                  </label>
+                  <select
+                    value={selectedObligationId}
+                    onChange={(e) => {
+                      setSelectedObligationId(e.target.value);
+                      if (e.target.value === 'auto') {
+                        setPaymentAllocationType('partial');
+                      }
+                    }}
+                    className="w-full px-2 py-1.5 text-xs border border-indigo-250 focus:border-indigo-500 rounded-lg bg-white font-semibold text-slate-800 cursor-pointer"
+                  >
+                    <option value="auto">📍 Distribution automatique (par ordre de priorité)</option>
+                    {currentBreakdown.rubricBreakdown.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        💼 {r.name} ({r.remainingDebt > 0 ? `Reste : ${r.remainingDebt.toLocaleString()} ${currency}` : 'Soldé ✅'})
+                      </option>
+                    ))}
+                  </select>
                 </div>
+
+                {selectedObligationId !== 'auto' && (
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-700 tracking-wide uppercase flex items-center gap-1">
+                      ⚙️ Option de règlement parent
+                    </label>
+                    <div className="flex bg-white rounded-lg p-0.5 border border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setPaymentAllocationType('partial')}
+                        className={`flex-1 text-center py-1.5 rounded-md text-[10px] font-bold transition cursor-pointer ${
+                          paymentAllocationType === 'partial'
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        Paiement partiel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPaymentAllocationType('full')}
+                        className={`flex-1 text-center py-1.5 rounded-md text-[10px] font-bold transition cursor-pointer ${
+                          paymentAllocationType === 'full'
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        Payer complètement (Solder)
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-600">Moyen de paiement</label>
-                <select
-                  value={payMethod}
-                  onChange={(e) => setPayMethod(e.target.value)}
-                  className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-indigo-500 bg-white cursor-pointer text-slate-700"
-                >
-                  <option value="Espèces">💵 Espèces (Physique)</option>
-                  <option value="Orange Money">🍊 Orange Money</option>
-                  <option value="MTN Mobile Money">💛 MTN Mobile Money</option>
-                  <option value="Wave">🌊 Wave</option>
-                  <option value="Moov Money">🟢 Moov Money</option>
-                  <option value="Chèque">✍️ Chèque</option>
-                  <option value="Virement">🏦 Virement</option>
-                </select>
-              </div>
+              {selectedObligationId !== 'auto' && (
+                (() => {
+                  const rub = currentBreakdown.rubricBreakdown.find(r => r.id === selectedObligationId);
+                  if (!rub) return null;
+                  return (
+                    <div className="space-y-2.5">
+                      <div className="bg-white/90 border border-slate-150 rounded-lg p-2.5 grid grid-cols-3 gap-2 text-[10px] shadow-2xs">
+                        <div className="text-center p-1 bg-slate-50/50 rounded-md">
+                          <div className="text-slate-400 font-medium">Montant Attendu</div>
+                          <div className="font-bold text-slate-800 font-mono mt-0.5">{rub.totalDue.toLocaleString()} {currency}</div>
+                        </div>
+                        <div className="text-center p-1 bg-emerald-50/30 rounded-md">
+                          <div className="text-emerald-700 font-medium">Déjà réglé</div>
+                          <div className="font-bold text-emerald-800 font-mono mt-0.5">{rub.totalPaid.toLocaleString()} {currency}</div>
+                        </div>
+                        <div className="text-center p-1 bg-indigo-50/40 rounded-md">
+                          <div className="text-indigo-700 font-bold">Reste à payer</div>
+                          <div className="font-bold text-indigo-900 font-mono mt-0.5">{rub.remainingDebt.toLocaleString()} {currency}</div>
+                        </div>
+                      </div>
 
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-600">Libellé / Note</label>
-                <input
-                  type="text"
-                  placeholder="Ex: Acompte 1"
-                  value={paymentNote}
-                  onChange={(e) => setPaymentNote(e.target.value)}
-                  className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-indigo-500"
-                />
-              </div>
+                      {/* Manual Payment Amount input specifically for this targeted obligation */}
+                      <div className="bg-white border border-indigo-150 rounded-xl p-3 space-y-2 shadow-2xs">
+                        <div className="flex justify-between items-center">
+                          <label className="text-[10px] font-black text-indigo-950 uppercase flex items-center gap-1">
+                            ✍️ Montant du paiement pour cette obligation ({currency}) <span className="text-red-500">*</span>
+                          </label>
+                        </div>
+                        <div className="relative">
+                          <span className="absolute left-2.5 text-xs top-2 font-mono font-bold text-slate-400">{currency}</span>
+                          <input
+                            type="number"
+                            min="1"
+                            placeholder="Saisir le montant de l'obligation..."
+                            value={payAmount || ''}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setPayAmount(val);
+                              if (val >= rub.remainingDebt) {
+                                setPaymentAllocationType('full');
+                              } else {
+                                setPaymentAllocationType('partial');
+                              }
+                            }}
+                            className="w-full pl-14 pr-3 py-1.5 text-xs font-mono font-bold border border-indigo-200 focus:outline-indigo-500 rounded-lg text-slate-800"
+                          />
+                        </div>
+                        <div className="flex gap-2 justify-end text-[9.5px]">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPayAmount(Math.round(rub.remainingDebt / 2));
+                              setPaymentAllocationType('partial');
+                            }}
+                            className="text-indigo-600 hover:underline font-bold transition cursor-pointer"
+                          >
+                            Déf. Moitié (50%) : {Math.round(rub.remainingDebt / 2).toLocaleString()} {currency}
+                          </button>
+                          <span className="text-slate-300">|</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPayAmount(rub.remainingDebt);
+                              setPaymentAllocationType('full');
+                            }}
+                            className="text-emerald-600 hover:underline font-black transition cursor-pointer"
+                          >
+                            Déf. Solde complet (100%) : {rub.remainingDebt.toLocaleString()} {currency}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {selectedObligationId === 'auto' ? (
+                <>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-600">Montant versé ({currency})</label>
+                    <div className="relative">
+                      <span className="absolute left-2 text-xs top-2 font-mono text-gray-550">{currency}</span>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="0"
+                        value={payAmount || ''}
+                        onChange={(e) => setPayAmount(Number(e.target.value))}
+                        className="w-full pl-12 pr-3 py-1.5 text-xs text-right font-mono border border-slate-200 rounded-lg focus:outline-indigo-500 text-slate-800"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-600">Moyen de paiement</label>
+                    <select
+                      value={payMethod}
+                      onChange={(e) => setPayMethod(e.target.value)}
+                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-indigo-500 bg-white cursor-pointer text-slate-700"
+                    >
+                      <option value="Espèces">💵 Espèces (Physique)</option>
+                      <option value="Orange Money">🍊 Orange Money</option>
+                      <option value="MTN Mobile Money">💛 MTN Mobile Money</option>
+                      <option value="Wave">🌊 Wave</option>
+                      <option value="Moov Money">🟢 Moov Money</option>
+                      <option value="Chèque">✍️ Chèque</option>
+                      <option value="Virement">🏦 Virement</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-600">Libellé / Note</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: Acompte 1"
+                      value={paymentNote}
+                      onChange={(e) => setPaymentNote(e.target.value)}
+                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-indigo-500"
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="md:col-span-1 space-y-1">
+                    <label className="text-[10px] font-bold text-slate-600">Moyen de paiement</label>
+                    <select
+                      value={payMethod}
+                      onChange={(e) => setPayMethod(e.target.value)}
+                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-indigo-500 bg-white cursor-pointer text-slate-700"
+                    >
+                      <option value="Espèces">💵 Espèces (Physique)</option>
+                      <option value="Orange Money">🍊 Orange Money</option>
+                      <option value="MTN Mobile Money">💛 MTN Mobile Money</option>
+                      <option value="Wave">🌊 Wave</option>
+                      <option value="Moov Money">🟢 Moov Money</option>
+                      <option value="Chèque">✍️ Chèque</option>
+                      <option value="Virement">🏦 Virement</option>
+                    </select>
+                  </div>
+
+                  <div className="md:col-span-2 space-y-1">
+                    <label className="text-[10px] font-bold text-slate-600">Libellé / Note</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: Acompte sur obligation"
+                      value={paymentNote}
+                      onChange={(e) => setPaymentNote(e.target.value)}
+                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-indigo-500"
+                    />
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Custom transaction metadata inputs */}
@@ -1387,6 +1800,19 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
                         <div className="text-[9px] text-gray-400 flex items-center gap-1 mt-0.5">
                           <Calendar className="h-2.5 w-2.5" /> {p.date} {p.note && `(${p.note})`}
                         </div>
+                        {p.allocations && Object.keys(p.allocations).length > 0 && (
+                          <div className="text-[9px] text-slate-650 mt-1.5 flex flex-wrap gap-1 font-sans">
+                            <span className="font-semibold text-slate-500">Affecté à :</span>
+                            {Object.entries(p.allocations).map(([oblId, amt]) => {
+                              const oblName = settings.financialObligations?.find(o => o.id === oblId)?.name || oblId;
+                              return (
+                                <span key={oblId} className="bg-emerald-50 text-emerald-800 font-bold px-1 rounded">
+                                  {oblName} ({Number(amt).toLocaleString()} {currency})
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
                         {p.transactionId && (
                           <div className="text-[9px] text-indigo-700 bg-indigo-50/50 rounded-md px-1.5 py-0.5 font-mono inline-block mt-1 border border-indigo-100/40">
                             Tx: <span className="font-bold">{p.transactionId}</span> ({p.provider || 'N/A'})
@@ -1445,24 +1871,43 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
               </div>
             )}
 
-            <button
-              type="submit"
-              disabled={isSaving}
-              className={`w-full text-center border text-white font-bold rounded-xl py-3 text-xs uppercase tracking-wide transition shadow-md ${
-                isSaving 
-                  ? 'bg-slate-400 border-slate-350 cursor-not-allowed' 
-                  : 'bg-slate-900 border-slate-800 hover:border-black hover:bg-black cursor-pointer'
-              }`}
-            >
-              {isSaving ? (
-                <span className="flex items-center justify-center gap-2">
-                  <span className="animate-spin inline-block h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full" />
-                  Enregistrement...
-                </span>
-              ) : (
-                <>🚀 {activeParentToEdit ? 'Enregistrer les Modifications' : 'Enregistrer la Fiche Cotisation'}</>
-              )}
-            </button>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm(isEn ? "Are you sure you want to cancel and clear the fields?" : "Êtes-vous sûr de vouloir annuler et réinitialiser la saisie ?")) {
+                    if (activeParentToEdit && onCancelEdit) {
+                      onCancelEdit();
+                    } else {
+                      clearForm();
+                    }
+                  }
+                }}
+                disabled={isSaving}
+                className="py-3 px-4 border border-slate-250 hover:bg-slate-100 text-slate-700 font-bold rounded-xl text-xs uppercase tracking-wide transition shadow-2xs cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                ❌ {isEn ? "Cancel" : "Annuler"}
+              </button>
+
+              <button
+                type="submit"
+                disabled={isSaving}
+                className={`text-center border text-white font-bold rounded-xl py-3 text-xs uppercase tracking-wide transition shadow-md cursor-pointer ${
+                  isSaving 
+                    ? 'bg-slate-400 border-slate-350 cursor-not-allowed' 
+                    : 'bg-slate-900 border-slate-800 hover:border-black hover:bg-black'
+                }`}
+              >
+                {isSaving ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="animate-spin inline-block h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full" />
+                    ...
+                  </span>
+                ) : (
+                  <>🚀 {activeParentToEdit ? (isEn ? 'Update' : 'Mettre à jour') : (isEn ? 'Save' : 'Enregistrer')}</>
+                )}
+              </button>
+            </div>
           </div>
 
         </div>
@@ -1698,6 +2143,170 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
               </div>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Save Confirmation Modal for Parents */}
+      {showConfirmParentModal && parentPayloadToConfirm && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 z-[10000] no-print">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden text-slate-800">
+            <div className="bg-slate-900 px-5 py-4 flex justify-between items-center text-white">
+              <div className="flex items-center gap-2 font-bold text-sm tracking-tight">
+                <CheckCircle className="h-5 w-5 text-indigo-400 animate-bounce" />
+                <span>{isEn ? "Confirm Save?" : "Confirmer l'Enregistrement ?"}</span>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => {
+                  setShowConfirmParentModal(false);
+                  setParentPayloadToConfirm(null);
+                }}
+                className="text-slate-400 hover:text-white transition font-black text-sm cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="p-5 space-y-4">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                {isEn 
+                  ? "Please double-check the values before saving. This will record the dues and payments, and generate a receipt."
+                  : "Veuillez revérifier les informations avant de valider l'enregistrement. Cette action enregistrera les cotisations et éditera le reçu."}
+              </p>
+              
+              <div className="bg-slate-50 border border-slate-150 rounded-xl p-4 space-y-2.5 text-xs">
+                <div className="flex justify-between border-b border-slate-200/60 pb-1.5">
+                  <span className="text-slate-500 font-medium">{isEn ? "Parent Name:" : "Nom du Parent :"}</span>
+                  <strong className="text-slate-900">{parentPayloadToConfirm.name}</strong>
+                </div>
+                {parentPayloadToConfirm.phone && (
+                  <div className="flex justify-between border-b border-slate-200/60 pb-1.5">
+                    <span className="text-slate-500 font-medium">{isEn ? "Phone:" : "Téléphone :"}</span>
+                    <span className="text-slate-800 font-mono">{parentPayloadToConfirm.phone}</span>
+                  </div>
+                )}
+                <div className="flex justify-between border-b border-slate-200/60 pb-1.5">
+                  <span className="text-slate-500 font-medium">{isEn ? "Students count:" : "Nombre d'élèves :"}</span>
+                  <strong className="text-slate-900">{parentPayloadToConfirm.students.length}</strong>
+                </div>
+                <div className="flex justify-between border-b border-slate-200/60 pb-1.5">
+                  <span className="text-slate-500 font-medium">{isEn ? "Total Due:" : "Total Exigible :"}</span>
+                  <strong className="text-slate-900 font-mono">{parentPayloadToConfirm.totalDue.toLocaleString()} {currency}</strong>
+                </div>
+                <div className="flex justify-between border-b border-slate-200/60 pb-1.5 bg-indigo-50/50 p-1 rounded">
+                  <span className="text-indigo-700 font-bold">{isEn ? "Total Paid:" : "Total Versé :"}</span>
+                  <strong className="text-indigo-900 font-mono font-extrabold">{parentPayloadToConfirm.totalPaid.toLocaleString()} {currency}</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500 font-medium">{isEn ? "Status:" : "Statut :"}</span>
+                  <strong className={`px-1.5 py-0.5 rounded text-[10px] uppercase font-extrabold ${
+                    parentPayloadToConfirm.status === 'soldé' 
+                      ? 'bg-emerald-100 text-emerald-800' 
+                      : parentPayloadToConfirm.status === 'partiel' 
+                        ? 'bg-amber-100 text-amber-800' 
+                        : 'bg-rose-100 text-rose-800'
+                  }`}>
+                    {parentPayloadToConfirm.status}
+                  </strong>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-slate-50 px-5 py-4 border-t border-slate-200 flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowConfirmParentModal(false);
+                  setParentPayloadToConfirm(null);
+                }}
+                className="flex-1 py-2.5 border border-slate-250 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold uppercase transition cursor-pointer select-none"
+              >
+                {isEn ? "Review" : "Corriger"}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSaveParent}
+                className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition cursor-pointer select-none shadow-sm"
+              >
+                {isEn ? "Confirm" : "Confirmer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Save Confirmation Modal for Other Revenues */}
+      {showConfirmOtherModal && otherPayloadToConfirm && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 z-[10000] no-print">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden text-slate-800">
+            <div className="bg-emerald-950 px-5 py-4 flex justify-between items-center text-white">
+              <div className="flex items-center gap-2 font-bold text-sm tracking-tight">
+                <CheckCircle className="h-5 w-5 text-emerald-400 animate-bounce" />
+                <span>{isEn ? "Confirm Other Revenue?" : "Confirmer la Recette ?"}</span>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => {
+                  setShowConfirmOtherModal(false);
+                  setOtherPayloadToConfirm(null);
+                }}
+                className="text-emerald-400 hover:text-white transition font-black text-sm cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="p-5 space-y-4">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                {isEn 
+                  ? "Please review the details before confirming this miscellaneous revenue entry."
+                  : "Veuillez vérifier les informations de cette recette de caisse diverse avant de la valider."}
+              </p>
+              
+              <div className="bg-emerald-50/20 border border-emerald-100 rounded-xl p-4 space-y-2.5 text-xs">
+                <div className="flex justify-between border-b border-emerald-100 pb-1.5">
+                  <span className="text-slate-500 font-medium">{isEn ? "Payer Name:" : "Nom du Bénéficiaire :"}</span>
+                  <strong className="text-slate-900">{otherPayloadToConfirm.payerName}</strong>
+                </div>
+                <div className="flex justify-between border-b border-emerald-100 pb-1.5">
+                  <span className="text-slate-500 font-medium">{isEn ? "Status / Category:" : "Statut / Nature :"}</span>
+                  <strong className="text-slate-800">
+                    {otherPayloadToConfirm.status === 'membre_honneur' ? (isEn ? "Honorary Member" : "Membre d'honneur") :
+                     otherPayloadToConfirm.status === 'institution' ? `${isEn ? "Institution" : "Organisme"} : ${otherPayloadToConfirm.statusDetails || ''}` :
+                     (isEn ? "Other" : "Autre versement")}
+                  </strong>
+                </div>
+                <div className="flex justify-between border-b border-emerald-100 pb-1.5 bg-emerald-50/50 p-1 rounded">
+                  <span className="text-emerald-750 font-bold">{isEn ? "Amount:" : "Montant Reçu :"}</span>
+                  <strong className="text-emerald-850 font-mono font-black">{otherPayloadToConfirm.amount.toLocaleString()} {currency}</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500 font-medium">{isEn ? "Payment Method:" : "Mode de Paiement :"}</span>
+                  <strong className="text-slate-800">{otherPayloadToConfirm.paymentMethod}</strong>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-slate-50 px-5 py-4 border-t border-slate-200 flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowConfirmOtherModal(false);
+                  setOtherPayloadToConfirm(null);
+                }}
+                className="flex-1 py-2.5 border border-slate-350 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold uppercase transition cursor-pointer select-none"
+              >
+                {isEn ? "Review" : "Corriger"}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSaveOther}
+                className="flex-1 py-2.5 bg-emerald-700 hover:bg-emerald-850 text-white rounded-xl text-xs font-black uppercase tracking-wider transition cursor-pointer select-none shadow-sm"
+              >
+                {isEn ? "Confirm" : "Confirmer"}
+              </button>
+            </div>
           </div>
         </div>
       )}

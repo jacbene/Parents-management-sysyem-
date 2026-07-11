@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download, FileSpreadsheet, Printer, Calendar, RefreshCw, BarChart2, DollarSign, Percent, TrendingUp, CheckCircle, Edit2, Trash2, X, TrendingDown, Coins, Activity, ArrowUpRight, ArrowDownRight, Eye, EyeOff } from 'lucide-react';
+import { Download, FileSpreadsheet, Printer, Calendar, RefreshCw, BarChart2, DollarSign, Percent, TrendingUp, CheckCircle, Edit2, Trash2, X, TrendingDown, Coins, Activity, ArrowUpRight, ArrowDownRight, Eye, EyeOff, ArrowUpDown, Filter } from 'lucide-react';
 import { ApeeParent, ApeeSettings, ApeeOtherRevenue, ApeeExpense } from '../../types';
 import { getApeeShortName } from '../../utils/apeeDb';
 import { jsPDF } from 'jspdf';
@@ -48,6 +48,8 @@ export default function ApeeReporting({
   const [activeSegment, setActiveSegment] = useState<'parents' | 'others' | 'expenses'>('parents');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+  const [specificDateFilter, setSpecificDateFilter] = useState<string>('');
   
   // Visual action alerts
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -64,10 +66,13 @@ export default function ApeeReporting({
   const [editingParentItem, setEditingParentItem] = useState<{ parentId: string; paymentId: string; parentName: string; amount: number; date: string; method?: string; note?: string } | null>(null);
   const [editingOtherItem, setEditingOtherItem] = useState<ApeeOtherRevenue | null>(null);
   const [editingExpenseItem, setEditingExpenseItem] = useState<ApeeExpense | null>(null);
+  const [deleteExpenseConfirmId, setDeleteExpenseConfirmId] = useState<string | null>(null);
+  const [deletePaymentConfirm, setDeletePaymentConfirm] = useState<{ parentId: string; paymentId: string } | null>(null);
+  const [deleteOtherRevenueConfirmId, setDeleteOtherRevenueConfirmId] = useState<string | null>(null);
   
   // Filter payments list based on active dates
   const getFilteredPayments = () => {
-    const list: { parentId: string; paymentId: string; parentName: string; parentPhone: string; amount: number; date: string; method?: string; note?: string }[] = [];
+    const list: { parentId: string; paymentId: string; parentName: string; parentPhone: string; amount: number; date: string; method?: string; note?: string; allocations?: { [obligationId: string]: number } }[] = [];
     
     parents.forEach(p => {
       p.payments.forEach(pay => {
@@ -86,6 +91,10 @@ export default function ApeeReporting({
           if (endDate && dateStr > endDate) include = false;
         }
         
+        if (specificDateFilter && dateStr !== specificDateFilter) {
+          include = false;
+        }
+        
         if (include) {
           list.push({
             parentId: p.id,
@@ -96,13 +105,18 @@ export default function ApeeReporting({
             date: pay.date,
             method: pay.method,
             note: pay.note,
+            allocations: pay.allocations
           });
         }
       });
     });
 
-    // Sort by date desc
-    return list.sort((a, b) => b.date.localeCompare(a.date));
+    // Sort by date desc or asc
+    return list.sort((a, b) => {
+      return sortOrder === 'desc' 
+        ? b.date.localeCompare(a.date) 
+        : a.date.localeCompare(b.date);
+    });
   };
 
   const getFilteredOtherRevenues = () => {
@@ -120,8 +134,17 @@ export default function ApeeReporting({
         if (startDate && dateStr < startDate) include = false;
         if (endDate && dateStr > endDate) include = false;
       }
+
+      if (specificDateFilter && dateStr !== specificDateFilter) {
+        include = false;
+      }
+
       return include;
-    }).sort((a, b) => b.date.localeCompare(a.date));
+    }).sort((a, b) => {
+      return sortOrder === 'desc' 
+        ? b.date.localeCompare(a.date) 
+        : a.date.localeCompare(b.date);
+    });
   };
 
   const getFilteredExpenses = () => {
@@ -139,8 +162,17 @@ export default function ApeeReporting({
         if (startDate && dateStr < startDate) include = false;
         if (endDate && dateStr > endDate) include = false;
       }
+
+      if (specificDateFilter && dateStr !== specificDateFilter) {
+        include = false;
+      }
+
       return include;
-    }).sort((a, b) => b.date.localeCompare(a.date));
+    }).sort((a, b) => {
+      return sortOrder === 'desc' 
+        ? b.date.localeCompare(a.date) 
+        : a.date.localeCompare(b.date);
+    });
   };
 
   // Save & delete processors inside ApeeReporting:
@@ -188,34 +220,7 @@ export default function ApeeReporting({
 
   const handleDeletePaymentItem = async (parentId: string, paymentId: string) => {
     if (!onSaveParent) return;
-    if (!window.confirm(isEn ? "Are you sure you want to delete this payment?" : "Êtes-vous sûr de vouloir supprimer cette cotisation d'élève ?")) return;
-
-    const parent = parents.find(p => p.id === parentId);
-    if (!parent) return;
-
-    const updatedPayments = parent.payments.filter(pay => pay.id !== paymentId);
-    const sumPaid = updatedPayments.reduce((sum, pay) => sum + pay.amount, 0);
-
-    let computedStatus: 'soldé' | 'partiel' | 'retard' = 'retard';
-    if (sumPaid >= parent.totalDue) {
-      computedStatus = 'soldé';
-    } else if (sumPaid > 0) {
-      computedStatus = 'partiel';
-    }
-
-    const updatedParent: ApeeParent = {
-      ...parent,
-      payments: updatedPayments,
-      totalPaid: sumPaid,
-      status: computedStatus,
-      updatedAt: new Date().toISOString()
-    };
-
-    const success = await onSaveParent(updatedParent);
-    if (success) {
-      setSuccessMsg(isEn ? "Payment deleted successfully." : "La cotisation a été supprimée avec succès.");
-      setTimeout(() => setSuccessMsg(null), 3000);
-    }
+    setDeletePaymentConfirm({ parentId, paymentId });
   };
 
   const handleSaveEditedOtherRevenueItem = async () => {
@@ -238,11 +243,7 @@ export default function ApeeReporting({
 
   const handleDeleteOtherRevenueItem = async (id: string) => {
     if (!onDeleteOtherRevenue) return;
-    if (!window.confirm(isEn ? "Are you sure you want to delete this revenue?" : "Êtes-vous sûr de vouloir supprimer cette recette d'appoint ?")) return;
-
-    await onDeleteOtherRevenue(id);
-    setSuccessMsg(isEn ? "Revenue deleted successfully." : "La recette d'appoint a été supprimée avec succès.");
-    setTimeout(() => setSuccessMsg(null), 3000);
+    setDeleteOtherRevenueConfirmId(id);
   };
 
   const handleSaveEditedExpenseItem = async () => {
@@ -265,11 +266,7 @@ export default function ApeeReporting({
 
   const handleDeleteExpenseItem = async (id: string) => {
     if (!onDeleteExpense) return;
-    if (!window.confirm(isEn ? "Are you sure you want to delete this expense?" : "Êtes-vous sûr de vouloir supprimer cette dépense ?")) return;
-
-    await onDeleteExpense(id);
-    setSuccessMsg(isEn ? "Expense deleted successfully." : "La dépense a été supprimée avec succès.");
-    setTimeout(() => setSuccessMsg(null), 3000);
+    setDeleteExpenseConfirmId(id);
   };
 
   const filteredPayments = getFilteredPayments();
@@ -2406,6 +2403,49 @@ export default function ApeeReporting({
             </button>
           </div>
 
+          {/* Tri et Filtrage par Date */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-50 border border-slate-200/60 rounded-xl p-3 text-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <span className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
+                <Filter className="h-3 w-3 text-indigo-500" /> {isEn ? "Filter by single date:" : "Filtrer par date précise :"}
+              </span>
+              <div className="relative flex items-center">
+                <input
+                  type="date"
+                  value={specificDateFilter}
+                  onChange={(e) => setSpecificDateFilter(e.target.value)}
+                  className="pl-2 pr-8 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-700 font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500 max-w-[160px]"
+                />
+                {specificDateFilter && (
+                  <button
+                    type="button"
+                    onClick={() => setSpecificDateFilter('')}
+                    className="absolute right-2 text-slate-400 hover:text-slate-650 font-bold p-0.5"
+                    title={isEn ? "Clear date" : "Effacer la date"}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 justify-between sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setSortOrder(prev => prev === 'desc' ? 'asc' : 'desc')}
+                className="px-3 py-1.5 font-bold text-[11px] bg-white border border-slate-205 hover:bg-slate-100 text-slate-700 rounded-lg flex items-center gap-1.5 cursor-pointer transition active:scale-95 shadow-2xs"
+                title={isEn ? "Toggle date sort order" : "Inverser l'ordre de tri des dates"}
+              >
+                <ArrowUpDown className="h-3.5 w-3.5 text-slate-500" />
+                <span>
+                  {isEn 
+                    ? `Sort: ${sortOrder === 'desc' ? 'Newest First' : 'Oldest First'}` 
+                    : `Tri : ${sortOrder === 'desc' ? 'Plus récents d\'abord ⬇️' : 'Plus anciens d\'abord ⬆️'}`}
+                </span>
+              </button>
+            </div>
+          </div>
+
           <div className="overflow-x-auto">
             {activeSegment === 'parents' ? (
               <table className="w-full text-xs text-left border-collapse">
@@ -2437,7 +2477,21 @@ export default function ApeeReporting({
                           </span>
                         </td>
                         <td className="py-2 px-2 text-right font-mono font-bold text-emerald-600">{p.amount.toLocaleString()} FCFA</td>
-                        <td className="py-2 px-2 text-gray-500 text-[10px] truncate max-w-[150px]">{p.note || '-'}</td>
+                        <td className="py-2 px-2 text-gray-500 text-[10px] max-w-[200px]">
+                          <div className="font-medium">{p.note || '-'}</div>
+                          {p.allocations && Object.keys(p.allocations).length > 0 && (
+                            <div className="text-[8.5px] font-sans text-slate-600 mt-1.5 flex flex-wrap gap-1">
+                              {Object.entries(p.allocations).map(([oblId, amt]) => {
+                                const oblName = settings?.financialObligations?.find((o: any) => o.id === oblId)?.name || oblId;
+                                return (
+                                  <span key={oblId} className="bg-emerald-50 text-emerald-800 font-bold px-1 rounded shadow-3xs">
+                                    {oblName} ({Number(amt).toLocaleString()} {settings?.currency || 'FCFA'})
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </td>
                         <td className="py-2 px-2 text-center">
                           <div className="flex items-center justify-center gap-1.5">
                             <button
@@ -3051,6 +3105,206 @@ export default function ApeeReporting({
                 className="px-4 py-2 text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition shadow-sm active:scale-97 cursor-pointer"
               >
                 Enregistrer la modification
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Confirmation Modal for Deleting Expenses */}
+      {deleteExpenseConfirmId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-6 text-center">
+              <div className="mx-auto flex items-center justify-center h-14 w-14 rounded-full bg-red-50 text-red-600 mb-4 shadow-3xs">
+                <Trash2 className="h-6.5 w-6.5" />
+              </div>
+              <h3 className="text-base font-extrabold text-slate-950">
+                {isEn ? "Confirm deletion" : "Confirmer la suppression"}
+              </h3>
+              <p className="text-xs text-slate-500 mt-2 font-medium leading-relaxed">
+                {isEn 
+                  ? "Are you sure you want to permanently delete this expense? This action is irreversible." 
+                  : "Êtes-vous sûr de vouloir supprimer définitivement cette dépense ? Cette action est irréversible."}
+              </p>
+              
+              {(() => {
+                const exp = expenses.find(e => e.id === deleteExpenseConfirmId);
+                if (!exp) return null;
+                return (
+                  <div className="mt-4 p-3 bg-red-50/50 rounded-2xl border border-red-100 text-left space-y-1">
+                    <div className="text-[10px] font-bold text-red-800 uppercase tracking-wide">Détails de la dépense :</div>
+                    <div className="text-xs font-extrabold text-slate-800">{exp.title}</div>
+                    <div className="text-xs font-mono font-black text-red-600">{exp.amount.toLocaleString()} {settings?.currency || 'FCFA'}</div>
+                  </div>
+                );
+              })()}
+            </div>
+            
+            <div className="bg-slate-50 px-6 py-4 flex gap-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setDeleteExpenseConfirmId(null)}
+                className="flex-1 px-4 py-2 text-xs font-extrabold text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer text-center"
+              >
+                {isEn ? "Cancel" : "Annuler"}
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const id = deleteExpenseConfirmId;
+                  setDeleteExpenseConfirmId(null);
+                  if (onDeleteExpense && id) {
+                    await onDeleteExpense(id);
+                    setSuccessMsg(isEn ? "Expense deleted successfully." : "La dépense a été supprimée avec succès.");
+                    setTimeout(() => setSuccessMsg(null), 3000);
+                  }
+                }}
+                className="flex-1 px-4 py-2 text-xs font-black bg-red-600 hover:bg-red-700 text-white rounded-xl transition shadow-xs active:scale-97 cursor-pointer text-center"
+              >
+                {isEn ? "Delete" : "Supprimer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Confirmation Modal for Deleting Cotisations */}
+      {deletePaymentConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-6 text-center">
+              <div className="mx-auto flex items-center justify-center h-14 w-14 rounded-full bg-red-50 text-red-600 mb-4 shadow-3xs">
+                <Trash2 className="h-6.5 w-6.5" />
+              </div>
+              <h3 className="text-base font-extrabold text-slate-950">
+                {isEn ? "Confirm deletion" : "Confirmer la suppression"}
+              </h3>
+              <p className="text-xs text-slate-500 mt-2 font-medium leading-relaxed">
+                {isEn 
+                  ? "Are you sure you want to permanently delete this student contribution record?" 
+                  : "Êtes-vous sûr de vouloir supprimer cette cotisation d'élève ? Cette action est irréversible."}
+              </p>
+              
+              {(() => {
+                const parent = parents.find(p => p.id === deletePaymentConfirm.parentId);
+                const pay = parent?.payments?.find(pay => pay.id === deletePaymentConfirm.paymentId);
+                if (!parent || !pay) return null;
+                return (
+                  <div className="mt-4 p-3 bg-red-50/50 rounded-2xl border border-red-100 text-left space-y-1">
+                    <div className="text-[10px] font-bold text-red-800 uppercase tracking-wide">Détails de la cotisation :</div>
+                    <div className="text-xs font-extrabold text-slate-800">Parent : {parent.name}</div>
+                    <div className="text-xs font-semibold text-slate-700">Date : {pay.date} | Mode : {pay.method || 'Espèces'}</div>
+                    <div className="text-xs font-mono font-black text-red-600">{pay.amount.toLocaleString()} {settings?.currency || 'FCFA'}</div>
+                  </div>
+                );
+              })()}
+            </div>
+            
+            <div className="bg-slate-50 px-6 py-4 flex gap-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setDeletePaymentConfirm(null)}
+                className="flex-1 px-4 py-2 text-xs font-extrabold text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer text-center"
+              >
+                {isEn ? "Cancel" : "Annuler"}
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const { parentId, paymentId } = deletePaymentConfirm;
+                  setDeletePaymentConfirm(null);
+                  if (onSaveParent && parentId && paymentId) {
+                    const parent = parents.find(p => p.id === parentId);
+                    if (!parent) return;
+
+                    const updatedPayments = parent.payments.filter(pay => pay.id !== paymentId);
+                    const sumPaid = updatedPayments.reduce((sum, pay) => sum + pay.amount, 0);
+
+                    let computedStatus: 'soldé' | 'partiel' | 'retard' = 'retard';
+                    if (sumPaid >= parent.totalDue) {
+                      computedStatus = 'soldé';
+                    } else if (sumPaid > 0) {
+                      computedStatus = 'partiel';
+                    }
+
+                    const updatedParent: ApeeParent = {
+                      ...parent,
+                      payments: updatedPayments,
+                      totalPaid: sumPaid,
+                      status: computedStatus,
+                      updatedAt: new Date().toISOString()
+                    };
+
+                    const success = await onSaveParent(updatedParent);
+                    if (success) {
+                      setSuccessMsg(isEn ? "Payment deleted successfully." : "La cotisation a été supprimée avec succès.");
+                      setTimeout(() => setSuccessMsg(null), 3000);
+                    }
+                  }
+                }}
+                className="flex-1 px-4 py-2 text-xs font-black bg-red-600 hover:bg-red-700 text-white rounded-xl transition shadow-xs active:scale-97 cursor-pointer text-center"
+              >
+                {isEn ? "Delete" : "Supprimer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Confirmation Modal for Deleting Appoints */}
+      {deleteOtherRevenueConfirmId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-6 text-center">
+              <div className="mx-auto flex items-center justify-center h-14 w-14 rounded-full bg-red-50 text-red-600 mb-4 shadow-3xs">
+                <Trash2 className="h-6.5 w-6.5" />
+              </div>
+              <h3 className="text-base font-extrabold text-slate-950">
+                {isEn ? "Confirm deletion" : "Confirmer la suppression"}
+              </h3>
+              <p className="text-xs text-slate-500 mt-2 font-medium leading-relaxed">
+                {isEn 
+                  ? "Are you sure you want to permanently delete this other revenue record? This action is irreversible." 
+                  : "Êtes-vous sûr de vouloir supprimer définitivement cette recette d'appoint ? Cette action est irréversible."}
+              </p>
+              
+              {(() => {
+                const rev = otherRevenues.find(r => r.id === deleteOtherRevenueConfirmId);
+                if (!rev) return null;
+                return (
+                  <div className="mt-4 p-3 bg-red-50/50 rounded-2xl border border-red-100 text-left space-y-1">
+                    <div className="text-[10px] font-bold text-red-800 uppercase tracking-wide">Détails de la recette :</div>
+                    <div className="text-xs font-extrabold text-slate-800">Payeur : {rev.payerName}</div>
+                    <div className="text-xs font-semibold text-slate-700">Date : {rev.date} | Mode : {rev.paymentMethod}</div>
+                    <div className="text-xs font-mono font-black text-red-600">{rev.amount.toLocaleString()} {settings?.currency || 'FCFA'}</div>
+                  </div>
+                );
+              })()}
+            </div>
+            
+            <div className="bg-slate-50 px-6 py-4 flex gap-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setDeleteOtherRevenueConfirmId(null)}
+                className="flex-1 px-4 py-2 text-xs font-extrabold text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer text-center"
+              >
+                {isEn ? "Cancel" : "Annuler"}
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const id = deleteOtherRevenueConfirmId;
+                  setDeleteOtherRevenueConfirmId(null);
+                  if (onDeleteOtherRevenue && id) {
+                    await onDeleteOtherRevenue(id);
+                    setSuccessMsg(isEn ? "Revenue deleted successfully." : "La recette d'appoint a été supprimée avec succès.");
+                    setTimeout(() => setSuccessMsg(null), 3000);
+                  }
+                }}
+                className="flex-1 px-4 py-2 text-xs font-black bg-red-600 hover:bg-red-700 text-white rounded-xl transition shadow-xs active:scale-97 cursor-pointer text-center"
+              >
+                {isEn ? "Delete" : "Supprimer"}
               </button>
             </div>
           </div>

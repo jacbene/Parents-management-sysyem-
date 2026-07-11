@@ -25,6 +25,7 @@ export const DEFAULT_SETTINGS: ApeeSettings = {
     { id: 'obl_apee', name: 'Cotisation APEE', amount: 12500, type: 'per_student', description: 'Cotisation de l\'association des parents d\'élèves' },
     { id: 'obl_inscription', name: 'Frais d\'inscription', amount: 5000, type: 'per_student', description: 'Droits d\'entrée scolaires réglementaires' },
     { id: 'obl_pension', name: 'Pension scolaire', amount: 25000, type: 'per_student', description: 'Frais de scolarité obligatoires' },
+    { id: 'obl_tenue', name: 'Frais de tenue', amount: 8000, type: 'per_student', description: 'Uniforme et tenue de sport réglementaire' },
     { id: 'obl_cantine', name: 'Cantine scolaire', amount: 15000, type: 'per_student', description: 'Service de restauration midi' },
     { id: 'obl_transport', name: 'Transport scolaire', amount: 10000, type: 'per_student', description: 'Abonnement bus scolaire' },
     { id: 'obl_secours', name: 'Fonds d\'urgence APEE', amount: 2000, type: 'per_parent', description: 'Contribution de solidarité parentale' }
@@ -205,6 +206,7 @@ function normalizeLogToInvoice(log: ApeeActivityLog, parentId: string): Invoice 
     paymentDate: log.timestamp,
     provider: log.operatorName,
     note: log.description,
+    transactionId: log.transactionId || '',
   };
 }
 
@@ -221,6 +223,7 @@ function normalizeToApeeLog(inv: Invoice): ApeeActivityLog {
     description: inv.note || '',
     amount: inv.amount || 0,
     operatorName: inv.provider || 'Gérant de Caisse',
+    transactionId: inv.transactionId || '',
   };
 }
 
@@ -383,12 +386,36 @@ export async function fetchApeeData(parentId: string) {
       }
     });
 
+    // Deduplicate lists by unique IDs to avoid React duplicate key warnings/errors
+    const uniqueParents = new Map<string, ApeeParent>();
+    dbParents.forEach(p => {
+      if (p.id) {
+        const existing = uniqueParents.get(p.id);
+        if (!existing || new Date(p.updatedAt).getTime() > new Date(existing.updatedAt).getTime()) {
+          uniqueParents.set(p.id, p);
+        }
+      }
+    });
+    const dedupedParents = Array.from(uniqueParents.values());
+
+    const uniqueExpenses = new Map<string, ApeeExpense>();
+    dbExpenses.forEach(e => { if (e.id) uniqueExpenses.set(e.id, e); });
+    const dedupedExpenses = Array.from(uniqueExpenses.values());
+
+    const uniqueLogs = new Map<string, ApeeActivityLog>();
+    dbLogs.forEach(l => { if (l.id) uniqueLogs.set(l.id, l); });
+    const dedupedLogs = Array.from(uniqueLogs.values());
+
+    const uniqueOther = new Map<string, ApeeOtherRevenue>();
+    dbOtherRevenues.forEach(r => { if (r.id) uniqueOther.set(r.id, r); });
+    const dedupedOtherRevenues = Array.from(uniqueOther.values());
+
     // Merge/overwrite cache if data is fetched
     const finalSettings = dbSettings || cachedSettings;
-    const finalParents = dbParents.length > 0 ? dbParents : cachedParents;
-    const finalExpenses = dbExpenses.length > 0 ? dbExpenses : cachedExpenses;
-    const finalLogs = dbLogs.length > 0 ? dbLogs : cachedLogs;
-    const finalOtherRevenues = dbOtherRevenues.length > 0 ? dbOtherRevenues : cachedOtherRevenues;
+    const finalParents = dedupedParents.length > 0 ? dedupedParents : cachedParents;
+    const finalExpenses = dedupedExpenses.length > 0 ? dedupedExpenses : cachedExpenses;
+    const finalLogs = dedupedLogs.length > 0 ? dedupedLogs : cachedLogs;
+    const finalOtherRevenues = dedupedOtherRevenues.length > 0 ? dedupedOtherRevenues : cachedOtherRevenues;
     finalLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
     const currentUser = auth.currentUser;
@@ -396,7 +423,7 @@ export async function fetchApeeData(parentId: string) {
     const canSyncToWrite = currentUser && !isParentRole;
 
     // Automatic self-healing: copy local-only parents back to Firestore
-    if (canSyncToWrite && parentId && dbParents.length === 0 && cachedParents.length > 0) {
+    if (canSyncToWrite && parentId && dedupedParents.length === 0 && cachedParents.length > 0) {
       console.log("Rescuing local-only parents and syncing them to Firestore...");
       cachedParents.forEach(async (cp) => {
         try {
@@ -408,9 +435,9 @@ export async function fetchApeeData(parentId: string) {
       });
     }
 
-    if (canSyncToWrite && parentId && dbParents.length > 0 && cachedParents.length > dbParents.length) {
+    if (canSyncToWrite && parentId && dedupedParents.length > 0 && cachedParents.length > dedupedParents.length) {
       cachedParents.forEach(async (cp) => {
-        if (!dbParents.some(dp => dp.id === cp.id)) {
+        if (!dedupedParents.some(dp => dp.id === cp.id)) {
           console.log("Rescuing newly-added offline parent:", cp.name);
           try {
             const invData = normalizeToInvoice(cp, parentId);
@@ -933,9 +960,7 @@ export function calculateParentDebtBreakdown(
   const globalPaid = (parent.payments || []).reduce((sum, p) => sum + p.amount, 0);
 
   // First pass: calculate total expected for each obligation
-  let unallocatedPaid = globalPaid;
   let globalDue = 0;
-
   const rubricBreakdown = obligations.map(obl => {
     let due = 0;
     if (studentCount > 0) {
@@ -943,26 +968,56 @@ export function calculateParentDebtBreakdown(
     }
     globalDue += due;
 
-    // Distribute paid greedily in sequence of defined obligations
-    const paid = Math.min(due, unallocatedPaid);
-    unallocatedPaid -= paid;
-
     return {
       id: obl.id,
       name: obl.name,
       type: obl.type,
       amountPerUnit: obl.amount,
       totalDue: due,
-      totalPaid: paid,
-      remainingDebt: Math.max(0, due - paid)
+      totalPaid: 0,
+      remainingDebt: due
     };
   });
 
-  // If there's surplus payment (overpayment), allocate it to the first obligation
-  if (unallocatedPaid > 0 && rubricBreakdown.length > 0) {
-    rubricBreakdown[0].totalPaid += unallocatedPaid;
-    rubricBreakdown[0].remainingDebt = rubricBreakdown[0].totalDue - rubricBreakdown[0].totalPaid;
-  }
+  // Second pass: distribute paid amounts using explicit allocations if present
+  const explicitAllocations: { [obligationId: string]: number } = {};
+  
+  (parent.payments || []).forEach(p => {
+    if (p.allocations && Object.keys(p.allocations).length > 0) {
+      Object.entries(p.allocations).forEach(([oblId, allocAmt]) => {
+        const amt = Number(allocAmt) || 0;
+        explicitAllocations[oblId] = (explicitAllocations[oblId] || 0) + amt;
+      });
+    }
+  });
+
+  // Apply explicit allocations
+  rubricBreakdown.forEach(rub => {
+    const allocatedAmt = explicitAllocations[rub.id] || 0;
+    rub.totalPaid += allocatedAmt;
+    rub.remainingDebt = Math.max(0, rub.totalDue - rub.totalPaid);
+  });
+
+  // Third pass: distribute any payment that does NOT have specific allocations greedily
+  (parent.payments || []).forEach(p => {
+    if (!p.allocations || Object.keys(p.allocations).length === 0) {
+      let unallocatedPaid = p.amount;
+      for (const rub of rubricBreakdown) {
+        if (unallocatedPaid <= 0) break;
+        if (rub.remainingDebt > 0) {
+          const paid = Math.min(rub.remainingDebt, unallocatedPaid);
+          rub.totalPaid += paid;
+          rub.remainingDebt = Math.max(0, rub.totalDue - rub.totalPaid);
+          unallocatedPaid -= paid;
+        }
+      }
+      // If there's still unallocated left on this payment, allocate it to the first obligation
+      if (unallocatedPaid > 0 && rubricBreakdown.length > 0) {
+        rubricBreakdown[0].totalPaid += unallocatedPaid;
+        rubricBreakdown[0].remainingDebt = rubricBreakdown[0].totalDue - rubricBreakdown[0].totalPaid;
+      }
+    }
+  });
 
   const globalDebt = Math.max(0, globalDue - globalPaid);
 
@@ -1062,25 +1117,49 @@ export function subscribeApeeData(
         }
       });
 
+      // Deduplicate lists by unique IDs to avoid React duplicate key warnings/errors
+      const uniqueParents = new Map<string, ApeeParent>();
+      dbParents.forEach(p => {
+        if (p.id) {
+          const existing = uniqueParents.get(p.id);
+          if (!existing || new Date(p.updatedAt).getTime() > new Date(existing.updatedAt).getTime()) {
+            uniqueParents.set(p.id, p);
+          }
+        }
+      });
+      const dedupedParents = Array.from(uniqueParents.values());
+
+      const uniqueExpenses = new Map<string, ApeeExpense>();
+      dbExpenses.forEach(e => { if (e.id) uniqueExpenses.set(e.id, e); });
+      const dedupedExpenses = Array.from(uniqueExpenses.values());
+
+      const uniqueLogs = new Map<string, ApeeActivityLog>();
+      dbLogs.forEach(l => { if (l.id) uniqueLogs.set(l.id, l); });
+      const dedupedLogs = Array.from(uniqueLogs.values());
+
+      const uniqueOther = new Map<string, ApeeOtherRevenue>();
+      dbOtherRevenues.forEach(r => { if (r.id) uniqueOther.set(r.id, r); });
+      const dedupedOtherRevenues = Array.from(uniqueOther.values());
+
       // Save to caches
       try {
         if (dbSettings) {
           localStorage.setItem(`${CACHE_SETTINGS}_${parentId}`, JSON.stringify(dbSettings));
         }
-        localStorage.setItem(`${CACHE_PARENTS}_${parentId}`, JSON.stringify(dbParents));
-        localStorage.setItem(`${CACHE_EXPENSES}_${parentId}`, JSON.stringify(dbExpenses));
-        localStorage.setItem(`${CACHE_LOGS}_${parentId}`, JSON.stringify(dbLogs));
-        localStorage.setItem(`${CACHE_OTHER_REVENUES}_${parentId}`, JSON.stringify(dbOtherRevenues));
+        localStorage.setItem(`${CACHE_PARENTS}_${parentId}`, JSON.stringify(dedupedParents));
+        localStorage.setItem(`${CACHE_EXPENSES}_${parentId}`, JSON.stringify(dedupedExpenses));
+        localStorage.setItem(`${CACHE_LOGS}_${parentId}`, JSON.stringify(dedupedLogs));
+        localStorage.setItem(`${CACHE_OTHER_REVENUES}_${parentId}`, JSON.stringify(dedupedOtherRevenues));
       } catch (err) {
         console.error('LocalStorage write failed in subscription', err);
       }
 
       onUpdate({
         settings: dbSettings || DEFAULT_SETTINGS,
-        parents: dbParents,
-        expenses: dbExpenses,
-        logs: dbLogs,
-        otherRevenues: dbOtherRevenues,
+        parents: dedupedParents,
+        expenses: dedupedExpenses,
+        logs: dedupedLogs,
+        otherRevenues: dedupedOtherRevenues,
       });
     },
     (err) => {

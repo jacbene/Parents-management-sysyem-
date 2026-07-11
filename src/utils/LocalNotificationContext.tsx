@@ -53,7 +53,7 @@ interface LocalNotificationProviderProps {
 }
 
 export function LocalNotificationProvider({ children, onNavigateToTab }: LocalNotificationProviderProps) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [notifications, setNotifications] = useState<LocalNotification[]>([]);
   const [permissionStatus, setPermissionStatus] = useState<NotificationPermission | 'unsupported'>('default');
   const [activeToast, setActiveToast] = useState<LocalNotification | null>(null);
@@ -325,16 +325,36 @@ export function LocalNotificationProvider({ children, onNavigateToTab }: LocalNo
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActiveToast(null);
-                }}
-                className="shrink-0 text-slate-500 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
+              <div className="flex flex-col gap-2 shrink-0 self-start">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if ('speechSynthesis' in window) {
+                      window.speechSynthesis.cancel();
+                      const utterance = new SpeechSynthesisUtterance(`${activeToast.title}. ${activeToast.body}`);
+                      utterance.lang = language === 'en' ? 'en-US' : 'fr-FR';
+                      window.speechSynthesis.speak(utterance);
+                    } else {
+                      alert(language === 'en' ? 'Speech synthesis is not supported' : 'Synthèse vocale non supportée');
+                    }
+                  }}
+                  className="p-1 text-slate-500 hover:text-indigo-400 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+                  title={language === 'en' ? "Listen to alert" : "Écouter l'alerte"}
+                >
+                  <Volume2 className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveToast(null);
+                  }}
+                  className="text-slate-500 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer self-center"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </motion.div>
           </div>
         )}

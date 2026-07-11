@@ -482,7 +482,19 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate,
         {/* Live Logs stream list */}
         <div className="space-y-2">
           {(() => {
-            const sortedLogsList = [...logs].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+            const sortedLogsList = [...logs]
+              .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+              .map(log => {
+                if (!log.description) return log;
+                let desc = log.description;
+                // Replace any occurrence of (Réf : N/A - Note : ...) with (Note : ...)
+                desc = desc.replace(/\s*\(Réf\s*:\s*N\/A\s*-\s*Note\s*:\s*/gi, ' (Note : ');
+                // Remove any occurrence of (Réf : N/A) entirely
+                desc = desc.replace(/\s*\(Réf\s*:\s*N\/A\)/gi, '');
+                // Normalize spaces
+                desc = desc.replace(/\s+/g, ' ').trim();
+                return { ...log, description: desc };
+              });
             const filtered = sortedLogsList.filter(log => {
               const query = searchLogQuery.toLowerCase();
               const termMatches = 

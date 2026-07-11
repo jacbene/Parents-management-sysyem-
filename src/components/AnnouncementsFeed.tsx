@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Announcement, AnnouncementCategory } from '../types';
-import { Newspaper, Bell, Award, Calendar, AlertTriangle, Plus, Trash2, Shield, Lock, Unlock, CheckCircle } from 'lucide-react';
+import { Newspaper, Bell, Award, Calendar, AlertTriangle, Plus, Trash2, Shield, Lock, Unlock, CheckCircle, Volume2, VolumeX } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useLanguage } from '../utils/TranslationContext';
 
 const STATIC_ANNOUNCEMENTS: Announcement[] = [
   {
@@ -57,11 +58,44 @@ export default function AnnouncementsFeed({
   pedManagerName = '',
   hasPedPassword = false,
 }: AnnouncementsFeedProps) {
+  const { language } = useLanguage();
+  const isEn = language === 'en';
   const [showAddForm, setShowAddForm] = useState(false);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [category, setCategory] = useState<AnnouncementCategory>('General');
   const [author, setAuthor] = useState(pedManagerName || 'Responsable Pédagogique');
+  const [speakingAnnId, setSpeakingAnnId] = useState<string | null>(null);
+  const [deleteAnnConfirmId, setDeleteAnnConfirmId] = useState<string | null>(null);
+
+  // Stop talking on unmount
+  React.useEffect(() => {
+    return () => {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
+
+  const handleSpeakAnnouncement = (id: string, title: string, content: string) => {
+    if (!('speechSynthesis' in window)) {
+      alert(isEn ? 'Speech synthesis is not supported on this browser.' : 'La synthèse vocale n\'est pas supportée par votre appareil.');
+      return;
+    }
+
+    if (speakingAnnId === id) {
+      window.speechSynthesis.cancel();
+      setSpeakingAnnId(null);
+    } else {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(`${title}. ${content}`);
+      utterance.lang = language === 'en' ? 'en-US' : 'fr-FR';
+      utterance.onstart = () => setSpeakingAnnId(id);
+      utterance.onend = () => setSpeakingAnnId(null);
+      utterance.onerror = () => setSpeakingAnnId(null);
+      window.speechSynthesis.speak(utterance);
+    }
+  };
 
   // Merge custom dynamic announcements with static ones
   const allAnnouncements = [...customAnnouncements, ...STATIC_ANNOUNCEMENTS];
@@ -135,10 +169,7 @@ export default function AnnouncementsFeed({
       onPromptUnlockPed();
       return;
     }
-    const confirm = window.confirm(`Voulez-vous supprimer le communiqué officiel "${annTitle}" ?`);
-    if (confirm && onDeleteAnnouncement) {
-      await onDeleteAnnouncement(id);
-    }
+    setDeleteAnnConfirmId(id);
   };
 
   return (
@@ -332,13 +363,99 @@ export default function AnnouncementsFeed({
                 </h3>
                 <p className="text-sm leading-relaxed text-gray-700 whitespace-pre-wrap">{ann.content}</p>
               </div>
-              <div className="pt-4 mt-4 border-t border-black/5 flex items-center justify-between text-[11px] font-medium text-gray-500 select-none">
+              <div className="pt-3 mt-4 border-t border-black/5 flex items-center justify-between text-[11px] font-medium text-gray-500 select-none">
                 <span>Émis par : <strong className="text-gray-700">{ann.author}</strong></span>
+                
+                <button
+                  type="button"
+                  onClick={() => handleSpeakAnnouncement(ann.id, ann.title, ann.content)}
+                  className={`px-2.5 py-1.5 rounded-lg font-bold text-[10px] cursor-pointer transition flex items-center gap-1 shadow-2xs border ${
+                    speakingAnnId === ann.id
+                      ? 'bg-rose-500 hover:bg-rose-600 text-white border-rose-600 animate-pulse'
+                      : ann.category === 'Urgent'
+                        ? 'bg-red-600 hover:bg-red-700 text-white border-red-700'
+                        : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                  }`}
+                  title={isEn ? "Listen to this announcement" : "Écouter ce communiqué"}
+                >
+                  {speakingAnnId === ann.id ? (
+                    <>
+                      <VolumeX className="h-3 w-3 shrink-0" />
+                      <span>{isEn ? "Stop" : "Arrêter"}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Volume2 className="h-3 w-3 shrink-0" />
+                      <span>
+                        {ann.category === 'Urgent' 
+                          ? (isEn ? "🔊 Listen Alert" : "🔊 Écouter l'Alerte") 
+                          : (isEn ? "Listen" : "Écouter")}
+                      </span>
+                    </>
+                  )}
+                </button>
               </div>
             </motion.div>
           );
         })}
       </div>
+
+      {/* Custom Confirmation Modal for Deleting Announcements */}
+      {deleteAnnConfirmId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-6 text-center">
+              <div className="mx-auto flex items-center justify-center h-14 w-14 rounded-full bg-red-50 text-red-600 mb-4 shadow-3xs">
+                <Trash2 className="h-6.5 w-6.5" />
+              </div>
+              <h3 className="text-base font-extrabold text-slate-950">
+                {isEn ? "Confirm deletion" : "Confirmer la suppression"}
+              </h3>
+              <p className="text-xs text-slate-500 mt-2 font-medium leading-relaxed">
+                {isEn 
+                  ? "Are you sure you want to permanently delete this official announcement? This action is irreversible." 
+                  : "Êtes-vous sûr de vouloir supprimer définitivement ce communiqué officiel ? Cette action est irréversible."}
+              </p>
+              
+              {(() => {
+                const ann = allAnnouncements.find(a => a.id === deleteAnnConfirmId);
+                if (!ann) return null;
+                return (
+                  <div className="mt-4 p-3 bg-red-50/50 rounded-2xl border border-red-100 text-left space-y-1">
+                    <div className="text-[10px] font-bold text-red-800 uppercase tracking-wide">Titre du communiqué :</div>
+                    <div className="text-xs font-extrabold text-slate-800">{ann.title}</div>
+                    <div className="text-[10px] text-slate-500 line-clamp-2 mt-1 font-medium">{ann.content}</div>
+                  </div>
+                );
+              })()}
+            </div>
+            
+            <div className="bg-slate-50 px-6 py-4 flex gap-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setDeleteAnnConfirmId(null)}
+                className="flex-1 px-4 py-2 text-xs font-extrabold text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer text-center"
+              >
+                {isEn ? "Cancel" : "Annuler"}
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const id = deleteAnnConfirmId;
+                  setDeleteAnnConfirmId(null);
+                  if (onDeleteAnnouncement && id) {
+                    await onDeleteAnnouncement(id);
+                  }
+                }}
+                className="flex-1 px-4 py-2 text-xs font-black bg-red-600 hover:bg-red-700 text-white rounded-xl transition shadow-xs active:scale-97 cursor-pointer text-center"
+              >
+                {isEn ? "Delete" : "Supprimer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
