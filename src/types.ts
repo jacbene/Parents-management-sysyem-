@@ -72,6 +72,9 @@ export interface Announcement {
   date: string;
   author: string;
   pinned?: boolean;
+  imageUrl?: string;
+  pdfUrl?: string;
+  pdfFileName?: string;
 }
 
 export type AppointmentStatus = 'Scheduled' | 'Completed' | 'Cancelled';

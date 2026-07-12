@@ -158,40 +158,40 @@ service cloud.firestore {
     // grades rules
     match /grades/{gradeId} {
       allow get, list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
-      allow create: if isSignedIn() && isOwnerOrDemoWrite(request.resource.data.parentId);
-      allow update: if isSignedIn() && isOwnerOrDemoWrite(request.resource.data.parentId) && isOwnerOrDemoWrite(request.resource.data.parentId);
+      allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && (isSuperAdmin() || (isOwnerOrDemoWrite(resource.data.parentId) && isOwnerOrDemoWrite(request.resource.data.parentId)));
       allow delete: if isSignedIn() && (isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin());
     }
 
     // attendance rules
     match /attendance/{attendanceId} {
       allow get, list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
-      allow create: if isSignedIn() && isOwnerOrDemoWrite(request.resource.data.parentId);
-      allow update: if isSignedIn() && isOwnerOrDemoWrite(request.resource.data.parentId) && isOwnerOrDemoWrite(request.resource.data.parentId);
+      allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && (isSuperAdmin() || (isOwnerOrDemoWrite(request.resource.data.parentId) && isOwnerOrDemoWrite(request.resource.data.parentId)));
       allow delete: if isSignedIn() && (isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin());
     }
 
     // homeworks rules
     match /homeworks/{homeworkId} {
       allow get, list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
-      allow create: if isSignedIn() && isOwnerOrDemoWrite(request.resource.data.parentId);
-      allow update: if isSignedIn() && isOwnerOrDemoWrite(request.resource.data.parentId) && isOwnerOrDemoWrite(request.resource.data.parentId);
+      allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && (isSuperAdmin() || (isOwnerOrDemoWrite(request.resource.data.parentId) && isOwnerOrDemoWrite(request.resource.data.parentId)));
       allow delete: if isSignedIn() && (isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin());
     }
 
     // appointments rules
     match /appointments/{appointmentId} {
       allow get, list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
-      allow create: if isSignedIn() && isOwnerOrDemoWrite(request.resource.data.parentId);
-      allow update: if isSignedIn() && isOwnerOrDemoWrite(request.resource.data.parentId) && isOwnerOrDemoWrite(request.resource.data.parentId);
+      allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && (isSuperAdmin() || (isOwnerOrDemoWrite(request.resource.data.parentId) && isOwnerOrDemoWrite(request.resource.data.parentId)));
       allow delete: if isSignedIn() && (isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin());
     }
 
     // messages rules
     match /messages/{messageId} {
       allow get, list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
-      allow create: if isSignedIn() && isOwnerOrDemoWrite(request.resource.data.parentId);
-      allow update: if isSignedIn() && isOwnerOrDemoWrite(request.resource.data.parentId) && isOwnerOrDemoWrite(request.resource.data.parentId);
+      allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && (isSuperAdmin() || (isOwnerOrDemoWrite(request.resource.data.parentId) && isOwnerOrDemoWrite(request.resource.data.parentId)));
       allow delete: if isSignedIn() && (isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin());
     }
 
@@ -199,9 +199,9 @@ service cloud.firestore {
     match /invoices/{invoiceId} {
       allow get: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId) || invoiceId.matches('^log_.*'));
       allow list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
-      allow create: if isSignedIn() && (invoiceId.matches('^log_.*') || isOwnerOrDemoWrite(request.resource.data.parentId));
-      allow update: if isSignedIn() && (invoiceId.matches('^log_.*') || (isOwnerOrDemoWrite(request.resource.data.parentId) && isOwnerOrDemoWrite(request.resource.data.parentId)));
-      allow delete: if isSignedIn() && (invoiceId.matches('^log_.*') || isOwnerOrDemoWrite(request.resource.data.parentId) || isSuperAdmin());
+      allow create: if isSignedIn() && (isSuperAdmin() || invoiceId.matches('^log_.*') || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && (isSuperAdmin() || invoiceId.matches('^log_.*') || (isOwnerOrDemoWrite(request.resource.data.parentId) && isOwnerOrDemoWrite(request.resource.data.parentId)));
+      allow delete: if isSignedIn() && (invoiceId.matches('^log_.*') || isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin());
     }
 
     // reading_logs rules
@@ -251,16 +251,16 @@ service cloud.firestore {
     // announcements rules
     match /announcements/{announcementId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isOwnerOrDemoWrite(request.resource.data.parentId);
-      allow update: if isSignedIn() && isOwnerOrDemoWrite(request.resource.data.parentId) && isOwnerOrDemoWrite(request.resource.data.parentId);
+      allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && (isSuperAdmin() || (isOwnerOrDemoWrite(request.resource.data.parentId) && isOwnerOrDemoWrite(request.resource.data.parentId)));
       allow delete: if isSignedIn() && (isOwnerOrDemoWrite(request.resource.data.parentId) || isSuperAdmin());
     }
 
     // lessons rules
     match /lessons/{lessonId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isOwnerOrDemoWrite(request.resource.data.parentId);
-      allow update: if isSignedIn() && isOwnerOrDemoWrite(request.resource.data.parentId) && isOwnerOrDemoWrite(request.resource.data.parentId);
+      allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && (isSuperAdmin() || (isOwnerOrDemoWrite(request.resource.data.parentId) && isOwnerOrDemoWrite(request.resource.data.parentId)));
       allow delete: if isSignedIn() && (isOwnerOrDemoWrite(request.resource.data.parentId) || isSuperAdmin());
     }
 

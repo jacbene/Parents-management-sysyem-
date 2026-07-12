@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { Announcement, AnnouncementCategory } from '../types';
-import { Newspaper, Bell, Award, Calendar, AlertTriangle, Plus, Trash2, Shield, Lock, Unlock, CheckCircle, Volume2, VolumeX, Pin } from 'lucide-react';
+import { Newspaper, Bell, Award, Calendar, AlertTriangle, Plus, Trash2, Shield, Lock, Unlock, CheckCircle, Volume2, VolumeX, Pin, FileText, FileUp, File, Eye, EyeOff, Image as ImageIcon, ArrowRight, X, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLanguage } from '../utils/TranslationContext';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { storage } from '../firebase';
 
 const STATIC_ANNOUNCEMENTS: Announcement[] = [
   {
@@ -11,7 +13,8 @@ const STATIC_ANNOUNCEMENTS: Announcement[] = [
     content: 'Chers parents, nous vous invitons à la réunion de présentation des classes vertes le vendredi 5 juin à 18h00 dans la grande salle polyvalente de l\'école. Présence recommandée.',
     category: 'Event',
     date: '2026-05-23',
-    author: 'Direction de l\'Établissement'
+    author: 'Direction de l\'Établissement',
+    imageUrl: 'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&q=80&w=1200'
   },
   {
     id: 'ann_2',
@@ -35,7 +38,9 @@ const STATIC_ANNOUNCEMENTS: Announcement[] = [
     content: 'Les visites médicales obligatoires débuteront le mois prochain. Un carnet de rendez-vous individuel et un questionnaire de santé confidentiel vous parviendront par le cahier de liaison de votre enfant.',
     category: 'Academic',
     date: '2026-05-15',
-    author: 'Infirmerie Scolaire'
+    author: 'Infirmerie Scolaire',
+    pdfUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+    pdfFileName: 'Fiche_Sante_Confidentielle_CP_CE2.pdf'
   }
 ];
 
@@ -80,6 +85,111 @@ export default function AnnouncementsFeed({
     }
   });
   const [isPinnedForm, setIsPinnedForm] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+
+  // Image attachments
+  const [imageSourceType, setImageSourceType] = useState<'upload' | 'url'>('upload');
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageUrlInput, setImageUrlInput] = useState('');
+  const [imageFileName, setImageFileName] = useState('');
+  const [imageFileError, setImageFileError] = useState('');
+  const imageInputRef = React.useRef<HTMLInputElement>(null);
+
+  // PDF attachments
+  const [pdfSourceType, setPdfSourceType] = useState<'upload' | 'url'>('upload');
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfUrlInput, setPdfUrlInput] = useState('');
+  const [pdfFileName, setPdfFileName] = useState('');
+  const [pdfFileError, setPdfFileError] = useState('');
+  const pdfInputRef = React.useRef<HTMLInputElement>(null);
+
+  const [activePdfAnnId, setActivePdfAnnId] = useState<string | null>(null);
+
+  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setImageFileError('');
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setImageFileError(isEn ? 'Please select a valid image file.' : 'Veuillez sélectionner un fichier image valide.');
+      return;
+    }
+
+    // Max size: 10 MB for Firebase Storage uploads
+    if (file.size > 10 * 1024 * 1024) {
+      setImageFileError(isEn ? 'Image is too large. Max size: 10 MB.' : 'L\'image est trop volumineuse. Taille max conseillée : 10 Mo.');
+      return;
+    }
+
+    setImageFile(file);
+    setImageFileName(file.name);
+    
+    // Create lightweight object URL for immediate browser preview
+    try {
+      const localUrl = URL.createObjectURL(file);
+      setImageUrlInput(localUrl);
+    } catch (err) {
+      console.warn("Failed to create object URL:", err);
+    }
+  };
+
+  const handlePdfFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPdfFileError('');
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.type !== 'application/pdf') {
+      setPdfFileError(isEn ? 'Please select a PDF document.' : 'Veuillez sélectionner un document PDF.');
+      return;
+    }
+
+    // Max size: 10 MB for Firebase Storage uploads
+    if (file.size > 10 * 1024 * 1024) {
+      setPdfFileError(isEn ? 'PDF is too large. Max size: 10 MB.' : 'Le PDF est trop volumineux. Taille max conseillée : 10 Mo.');
+      return;
+    }
+
+    setPdfFile(file);
+    setPdfFileName(file.name);
+
+    // Create lightweight object URL for immediate browser preview
+    try {
+      const localUrl = URL.createObjectURL(file);
+      setPdfUrlInput(localUrl);
+    } catch (err) {
+      console.warn("Failed to create object URL:", err);
+    }
+  };
+
+  const handleRemoveImage = () => {
+    if (imageUrlInput.startsWith('blob:')) {
+      try {
+        URL.revokeObjectURL(imageUrlInput);
+      } catch (err) {
+        console.warn("Error revoking URL:", err);
+      }
+    }
+    setImageFile(null);
+    setImageUrlInput('');
+    setImageFileName('');
+    setImageFileError('');
+    if (imageInputRef.current) imageInputRef.current.value = '';
+  };
+
+  const handleRemovePdf = () => {
+    if (pdfUrlInput.startsWith('blob:')) {
+      try {
+        URL.revokeObjectURL(pdfUrlInput);
+      } catch (err) {
+        console.warn("Error revoking URL:", err);
+      }
+    }
+    setPdfFile(null);
+    setPdfUrlInput('');
+    setPdfFileName('');
+    setPdfFileError('');
+    if (pdfInputRef.current) pdfInputRef.current.value = '';
+  };
 
   // Stop talking on unmount
   React.useEffect(() => {
@@ -233,24 +343,74 @@ export default function AnnouncementsFeed({
       return;
     }
 
-    if (onAddAnnouncement) {
-      const newAnn: Announcement = {
-        id: 'ann_' + Date.now(),
-        title: title.trim(),
-        content: content.trim(),
-        category,
-        date: new Date().toISOString().split('T')[0],
-        author: author.trim() || 'Responsable Pédagogique',
-        pinned: isPinnedForm
-      };
+    setIsUploading(true);
 
-      const success = await onAddAnnouncement(newAnn);
-      if (success) {
-        setTitle('');
-        setContent('');
-        setIsPinnedForm(false);
-        setShowAddForm(false);
+    try {
+      let finalImageUrl = imageUrlInput.trim() || undefined;
+      let finalPdfUrl = pdfUrlInput.trim() || undefined;
+
+      // Handle image file upload to Firebase Storage
+      if (imageSourceType === 'upload' && imageFile) {
+        try {
+          const imageRef = ref(storage, `announcements/images/${Date.now()}_${imageFile.name}`);
+          await uploadBytes(imageRef, imageFile);
+          finalImageUrl = await getDownloadURL(imageRef);
+        } catch (storageError) {
+          console.error("Firebase Storage image upload failed:", storageError);
+          setImageFileError(isEn ? "Failed to upload image to Firebase Storage." : "Échec du téléversement de l'image vers Firebase Storage.");
+          setIsUploading(false);
+          return;
+        }
       }
+
+      // Handle PDF file upload to Firebase Storage
+      if (pdfSourceType === 'upload' && pdfFile) {
+        try {
+          const documentRef = ref(storage, `announcements/documents/${Date.now()}_${pdfFile.name}`);
+          await uploadBytes(documentRef, pdfFile);
+          finalPdfUrl = await getDownloadURL(documentRef);
+        } catch (storageError) {
+          console.error("Firebase Storage PDF upload failed:", storageError);
+          setPdfFileError(isEn ? "Failed to upload PDF to Firebase Storage." : "Échec du téléversement du PDF vers Firebase Storage.");
+          setIsUploading(false);
+          return;
+        }
+      }
+
+      if (onAddAnnouncement) {
+        const newAnn: Announcement = {
+          id: 'ann_' + Date.now(),
+          title: title.trim(),
+          content: content.trim(),
+          category,
+          date: new Date().toISOString().split('T')[0],
+          author: author.trim() || 'Responsable Pédagogique',
+          pinned: isPinnedForm,
+          imageUrl: finalImageUrl,
+          pdfUrl: finalPdfUrl,
+          pdfFileName: pdfFileName.trim() || undefined,
+        };
+
+        const success = await onAddAnnouncement(newAnn);
+        if (success) {
+          setTitle('');
+          setContent('');
+          setIsPinnedForm(false);
+          setImageFile(null);
+          setImageUrlInput('');
+          setImageFileName('');
+          setImageFileError('');
+          setPdfFile(null);
+          setPdfUrlInput('');
+          setPdfFileName('');
+          setPdfFileError('');
+          setShowAddForm(false);
+        }
+      }
+    } catch (err) {
+      console.error("Submission failed:", err);
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -392,6 +552,181 @@ export default function AnnouncementsFeed({
                 ></textarea>
               </div>
 
+              {/* Pièces jointes : Images & Documents */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Section Image Illustration */}
+                <div className="bg-slate-100/80 border border-slate-200 rounded-xl p-3.5 space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
+                    <h4 className="text-[10px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                      <ImageIcon className="h-3.5 w-3.5 text-indigo-500" />
+                      {language === 'fr' ? 'Image / Illustration (Facultatif)' : 'Image / Illustration (Optional)'}
+                    </h4>
+                    <div className="flex bg-slate-200/60 p-0.5 rounded-lg text-[9px] font-bold">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setImageSourceType('upload');
+                          handleRemoveImage();
+                        }}
+                        className={`px-1.5 py-0.5 rounded transition-all ${imageSourceType === 'upload' ? 'bg-white text-slate-900 shadow-3xs' : 'text-slate-500 hover:text-slate-850'}`}
+                      >
+                        {language === 'fr' ? 'Fichier' : 'File'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setImageSourceType('url');
+                          handleRemoveImage();
+                        }}
+                        className={`px-1.5 py-0.5 rounded transition-all ${imageSourceType === 'url' ? 'bg-white text-slate-900 shadow-3xs' : 'text-slate-500 hover:text-slate-850'}`}
+                      >
+                        {language === 'fr' ? 'Lien Web' : 'Web Link'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {imageSourceType === 'upload' ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-center border-2 border-dashed border-slate-300 hover:border-indigo-400 rounded-lg p-3 bg-white transition relative cursor-pointer">
+                        <input
+                          type="file"
+                          ref={imageInputRef}
+                          accept="image/*"
+                          onChange={handleImageFileChange}
+                          className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                        />
+                        <div className="text-center space-y-0.5 select-none pointer-events-none">
+                          <FileUp className="h-4.5 w-4.5 text-slate-400 mx-auto" />
+                          <p className="text-[10px] font-bold text-slate-700">
+                            {imageFileName ? imageFileName : (language === 'fr' ? 'Glisser-déposer ou cliquer' : 'Drag & drop or click')}
+                          </p>
+                          <p className="text-[8px] text-slate-400">
+                            {language === 'fr' ? 'Max: 10 Mo (téléversé sur Firebase Storage)' : 'Max: 10 MB (uploaded to Firebase Storage)'}
+                          </p>
+                        </div>
+                      </div>
+                      {imageFileName && (
+                        <div className="flex items-center justify-between bg-indigo-50/50 border border-indigo-100 rounded-lg p-1.5 text-xs">
+                          <span className="font-bold text-indigo-900 truncate flex items-center gap-1">
+                            <ImageIcon className="h-3.5 w-3.5 text-indigo-500 flex-shrink-0" />
+                            {imageFileName}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleRemoveImage}
+                            className="px-1.5 py-0.5 bg-white hover:bg-red-50 border border-slate-200 hover:border-red-200 text-red-600 rounded text-[9px] font-bold transition cursor-pointer"
+                          >
+                            {language === 'fr' ? 'Supprimer' : 'Remove'}
+                          </button>
+                        </div>
+                      )}
+                      {imageFileError && (
+                        <p className="text-[9px] text-red-600 font-bold">⚠️ {imageFileError}</p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      <input
+                        type="url"
+                        value={(imageUrlInput.startsWith('data:') || imageUrlInput.startsWith('blob:')) ? '' : imageUrlInput}
+                        onChange={(e) => setImageUrlInput(e.target.value)}
+                        placeholder="https://images.unsplash.com/photo-..."
+                        className="w-full text-xs font-medium rounded-lg border border-slate-200 bg-white p-2 focus:border-indigo-500 focus:outline-none text-slate-800"
+                      />
+                      <p className="text-[8px] text-slate-400">
+                        {language === 'fr' ? "Adresse URL directe d'une image publique" : 'Direct web link of a public image'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Section Document d'accompagnement (PDF) */}
+                <div className="bg-slate-100/80 border border-slate-200 rounded-xl p-3.5 space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
+                    <h4 className="text-[10px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                      <FileText className="h-3.5 w-3.5 text-rose-500" />
+                      {language === 'fr' ? 'Document PDF Joint (Facultatif)' : 'Attached PDF Document (Optional)'}
+                    </h4>
+                    <div className="flex bg-slate-200/60 p-0.5 rounded-lg text-[9px] font-bold">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPdfSourceType('upload');
+                          handleRemovePdf();
+                        }}
+                        className={`px-1.5 py-0.5 rounded transition-all ${pdfSourceType === 'upload' ? 'bg-white text-slate-900 shadow-3xs' : 'text-slate-500 hover:text-slate-850'}`}
+                      >
+                        {language === 'fr' ? 'Fichier' : 'File'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPdfSourceType('url');
+                          handleRemovePdf();
+                        }}
+                        className={`px-1.5 py-0.5 rounded transition-all ${pdfSourceType === 'url' ? 'bg-white text-slate-900 shadow-3xs' : 'text-slate-500 hover:text-slate-850'}`}
+                      >
+                        {language === 'fr' ? 'Lien Web' : 'Web Link'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {pdfSourceType === 'upload' ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-center border-2 border-dashed border-slate-300 hover:border-indigo-400 rounded-lg p-3 bg-white transition relative cursor-pointer">
+                        <input
+                          type="file"
+                          ref={pdfInputRef}
+                          accept="application/pdf"
+                          onChange={handlePdfFileChange}
+                          className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                        />
+                        <div className="text-center space-y-0.5 select-none pointer-events-none">
+                          <FileUp className="h-4.5 w-4.5 text-slate-400 mx-auto" />
+                          <p className="text-[10px] font-bold text-slate-700">
+                            {pdfFileName ? pdfFileName : (language === 'fr' ? 'Glisser-déposer ou cliquer' : 'Drag & drop or click')}
+                          </p>
+                          <p className="text-[8px] text-slate-400">
+                            {language === 'fr' ? 'Max: 10 Mo (téléversé sur Firebase Storage)' : 'Max: 10 MB (uploaded to Firebase Storage)'}
+                          </p>
+                        </div>
+                      </div>
+                      {pdfFileName && (
+                        <div className="flex items-center justify-between bg-rose-50/50 border border-rose-100 rounded-lg p-1.5 text-xs">
+                          <span className="font-bold text-rose-950 truncate flex items-center gap-1">
+                            <File className="h-3.5 w-3.5 text-rose-500 flex-shrink-0" />
+                            {pdfFileName}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleRemovePdf}
+                            className="px-1.5 py-0.5 bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-rose-600 rounded text-[9px] font-bold transition cursor-pointer"
+                          >
+                            {language === 'fr' ? 'Supprimer' : 'Remove'}
+                          </button>
+                        </div>
+                      )}
+                      {pdfFileError && (
+                        <p className="text-[9px] text-red-600 font-bold">⚠️ {pdfFileError}</p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      <input
+                        type="url"
+                        value={(pdfUrlInput.startsWith('data:') || pdfUrlInput.startsWith('blob:')) ? '' : pdfUrlInput}
+                        onChange={(e) => setPdfUrlInput(e.target.value)}
+                        placeholder="https://exemple.com/bulletin-officiel.pdf"
+                        className="w-full text-xs font-medium rounded-lg border border-slate-200 bg-white p-2 focus:border-indigo-500 focus:outline-none text-slate-800"
+                      />
+                      <p className="text-[8px] text-slate-400">
+                        {language === 'fr' ? "Adresse URL directe d'un PDF public" : 'Direct web link of a public PDF'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {isPedAuthorized && (
                 <div className="flex items-center gap-2 bg-indigo-50/50 border border-indigo-100 p-3 rounded-xl select-none">
                   <input
@@ -413,16 +748,28 @@ export default function AnnouncementsFeed({
               <div className="flex justify-end gap-2.5 pt-2">
                 <button
                   type="button"
+                  disabled={isUploading}
                   onClick={() => setShowAddForm(false)}
-                  className="px-4 py-2 border border-slate-250 bg-white text-slate-800 text-xs font-bold uppercase tracking-wider rounded-lg hover:bg-slate-50 cursor-pointer text-center"
+                  className="px-4 py-2 border border-slate-250 bg-white text-slate-800 text-xs font-bold uppercase tracking-wider rounded-lg hover:bg-slate-50 cursor-pointer text-center disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Annuler
+                  {language === 'fr' ? 'Annuler' : 'Cancel'}
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg flex items-center gap-1 cursor-pointer text-center shadow-xs"
+                  disabled={isUploading}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg flex items-center justify-center gap-1.5 cursor-pointer text-center shadow-xs disabled:opacity-75 disabled:cursor-not-allowed min-w-[120px]"
                 >
-                  <CheckCircle className="h-4 w-4" /> Diffuser
+                  {isUploading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span>{language === 'fr' ? 'Envoi...' : 'Uploading...'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="h-4 w-4" /> 
+                      <span>{language === 'fr' ? 'Diffuser' : 'Publish'}</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>
@@ -503,6 +850,81 @@ export default function AnnouncementsFeed({
                   {ann.title}
                 </h3>
                 <p className="text-sm leading-relaxed text-gray-700 whitespace-pre-wrap">{ann.content}</p>
+
+                {/* Attached Image display */}
+                {ann.imageUrl && (
+                  <div className="mt-3.5 overflow-hidden rounded-xl border border-slate-150/80 bg-slate-50 relative group/img">
+                    <img
+                      src={ann.imageUrl}
+                      alt={ann.title}
+                      referrerPolicy="no-referrer"
+                      className="w-full h-auto max-h-56 object-cover rounded-xl transition duration-300 group-hover/img:scale-[1.01]"
+                    />
+                  </div>
+                )}
+
+                {/* Attached PDF document display */}
+                {ann.pdfUrl && (
+                  <div className="mt-3.5 space-y-2">
+                    <div className="flex items-center justify-between p-2.5 bg-rose-50/55 border border-rose-100 rounded-xl">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FileText className="h-5 w-5 text-rose-500 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-rose-950 truncate">
+                            {ann.pdfFileName || (language === 'fr' ? 'Document PDF Joint.pdf' : 'Attached PDF Document.pdf')}
+                          </p>
+                          <p className="text-[9px] text-rose-600 font-extrabold uppercase tracking-wider">
+                            {language === 'fr' ? 'Fichier PDF' : 'PDF Document'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setActivePdfAnnId(activePdfAnnId === ann.id ? null : ann.id)}
+                          className="px-2 py-1 bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer"
+                        >
+                          {activePdfAnnId === ann.id ? (
+                            <>
+                              <EyeOff className="h-3 w-3 text-rose-500" />
+                              <span>{language === 'fr' ? 'Masquer' : 'Hide'}</span>
+                            </>
+                          ) : (
+                            <>
+                              <Eye className="h-3 w-3 text-rose-500" />
+                              <span>{language === 'fr' ? 'Consulter' : 'View'}</span>
+                            </>
+                          )}
+                        </button>
+                        <a
+                          href={ann.pdfUrl}
+                          download={ann.pdfFileName || 'document.pdf'}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer"
+                        >
+                          {language === 'fr' ? 'Ouvrir' : 'Open'}
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* Inline PDF viewer frame */}
+                    {activePdfAnnId === ann.id && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="overflow-hidden border border-rose-100 rounded-xl bg-white p-1.5 shadow-3xs"
+                      >
+                        <iframe
+                          src={ann.pdfUrl}
+                          title={ann.pdfFileName || 'PDF Viewer'}
+                          className="w-full h-80 rounded-lg border-0"
+                        />
+                      </motion.div>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="pt-3 mt-4 border-t border-black/5 flex items-center justify-between text-[11px] font-medium text-gray-500 select-none">
                 <span>Émis par : <strong className="text-gray-700">{ann.author}</strong></span>

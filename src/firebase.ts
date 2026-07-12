@@ -1,6 +1,7 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, signInAnonymously, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { initializeFirestore, setLogLevel, getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
@@ -23,6 +24,7 @@ try {
 }
 
 export const db = dbInstance;
+export const storage = getStorage(app);
 
 let simulatedOffline = typeof localStorage !== 'undefined' ? localStorage.getItem('pasma_offline_simulated') === 'true' : false;
 

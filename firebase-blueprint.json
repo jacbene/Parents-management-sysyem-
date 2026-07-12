@@ -76,7 +76,10 @@
         "category": { "type": "string", "enum": ["General", "Academic", "Event", "Urgent"] },
         "date": { "type": "string" },
         "author": { "type": "string" },
-        "pinned": { "type": "boolean" }
+        "pinned": { "type": "boolean" },
+        "imageUrl": { "type": "string" },
+        "pdfUrl": { "type": "string" },
+        "pdfFileName": { "type": "string" }
       },
       "required": ["id", "title", "content", "category", "date"]
     },
