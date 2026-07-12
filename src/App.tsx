@@ -1193,31 +1193,39 @@ export default function App() {
     const initAndFetchData = async () => {
       setDataLoading(true);
       try {
+        const isPreprod = typeof window !== 'undefined' && (
+          window.location.hostname.includes('ais-pre-') || 
+          window.location.hostname.includes('ais-prod-') ||
+          window.location.hostname.includes('pasma-app')
+        );
+
         // Ensure Bene Jacques exists in Firestore under demo_school_ekali if not present
-        try {
-          const beneDocRef = doc(db, 'invoices', 'apee_par_bene_jacques');
-          const snap = await getDoc(beneDocRef);
-          if (!snap.exists()) {
-            await setDoc(beneDocRef, {
-              id: 'apee_par_bene_jacques',
-              studentId: 'apee_ces_ekali_1',
-              parentId: 'demo_school_ekali',
-              title: 'Bene Jacques',
-              phone: '687463313',
-              email: 'jacquesbene301@gmail.com',
-              amount: 25000,
-              dueDate: '2025/2026',
-              status: 'Unpaid',
-              paymentDate: new Date().toISOString(),
-              note: 'Règlement initial pour la rentrée scolaire de Marc et Elise',
-              amountPaid: 15000,
-              studentsList: JSON.stringify([{ name: 'Marc Bene', classRoom: 'CM2-A' }, { name: 'Elise Bene', classRoom: 'CE2-B' }]),
-              paymentsHistory: JSON.stringify([{ id: 'p_bene_1', amount: 15000, date: '2026-05-10', note: 'Versement initial par Mobile Money', method: 'Orange Money' }])
-            });
-            console.log("Successfully seeded Bene Jacques into Firestore invoices.");
+        if (!isPreprod) {
+          try {
+            const beneDocRef = doc(db, 'invoices', 'apee_par_bene_jacques');
+            const snap = await getDoc(beneDocRef);
+            if (!snap.exists()) {
+              await setDoc(beneDocRef, {
+                id: 'apee_par_bene_jacques',
+                studentId: 'apee_ces_ekali_1',
+                parentId: 'demo_school_ekali',
+                title: 'Bene Jacques',
+                phone: '687463313',
+                email: 'jacquesbene301@gmail.com',
+                amount: 25000,
+                dueDate: '2025/2026',
+                status: 'Unpaid',
+                paymentDate: new Date().toISOString(),
+                note: 'Règlement initial pour la rentrée scolaire de Marc et Elise',
+                amountPaid: 15000,
+                studentsList: JSON.stringify([{ name: 'Marc Bene', classRoom: 'CM2-A' }, { name: 'Elise Bene', classRoom: 'CE2-B' }]),
+                paymentsHistory: JSON.stringify([{ id: 'p_bene_1', amount: 15000, date: '2026-05-10', note: 'Versement initial par Mobile Money', method: 'Orange Money' }])
+              });
+              console.log("Successfully seeded Bene Jacques into Firestore invoices.");
+            }
+          } catch (beneErr) {
+            console.warn("Soft seeding of Bene Jacques on load skipped or offline:", beneErr);
           }
-        } catch (beneErr) {
-          console.warn("Soft seeding of Bene Jacques on load skipped or offline:", beneErr);
         }
 
         // A. Verify if database has seeded profiles for this account space (demo schools pre-seeded dynamically if empty)
@@ -1227,7 +1235,7 @@ export default function App() {
                                 portalUserRole === 'parent' || 
                                 portalUserRole === 'teacher';
 
-        if (!isSimulatedUser) {
+        if (!isSimulatedUser && !isPreprod) {
           try {
             seeded = await isDatabaseSeeded(userId);
             if (!seeded) {
@@ -1239,7 +1247,7 @@ export default function App() {
             console.warn("Seeding verification failed or timed out. Attempting online fetch anyway.", e);
           }
         } else {
-          console.log("Local simulated workspace session (or unauthenticated state) detected. Bypassing remote database seeding.");
+          console.log("Local simulated workspace session, unauthenticated state, or pre-production mode detected. Bypassing remote database seeding.");
         }
 
         // B. Fetch cache/local storage backup first for instant loading
@@ -2643,7 +2651,7 @@ export default function App() {
             <SuperAdminDashboard
               onBackToPortal={() => {
                 setShowSuperAdmin(false);
-                setShowMainLogin(true);
+                setShowMainLogin(selectedSchoolId ? false : true);
               }}
               onSelectSchool={(schoolId, role, details) => {
                 handleSelectSchool(schoolId, role, details);

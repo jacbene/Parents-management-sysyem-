@@ -37,26 +37,38 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
       ];
   const defaultClassroom = configuredClassrooms[0] || '6ème';
 
-  const [parentName, setParentName] = useState('');
-  const [parentPhone, setParentPhone] = useState('');
-  const [parentAddress, setParentAddress] = useState('');
-  const [parentEmail, setParentEmail] = useState('');
-  const [students, setStudents] = useState<ApeeStudentLink[]>([{ name: '', classRoom: defaultClassroom, dateOperation: new Date().toISOString().slice(0, 10) }]);
+  // Load draft data once on mount if available
+  const [draftData] = useState(() => {
+    try {
+      const saved = localStorage.getItem('pasma_apee_form_draft');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const isInitialRender = React.useRef(true);
+
+  const [parentName, setParentName] = useState(() => draftData?.parent?.parentName || '');
+  const [parentPhone, setParentPhone] = useState(() => draftData?.parent?.parentPhone || '');
+  const [parentAddress, setParentAddress] = useState(() => draftData?.parent?.parentAddress || '');
+  const [parentEmail, setParentEmail] = useState(() => draftData?.parent?.parentEmail || '');
+  const [students, setStudents] = useState<ApeeStudentLink[]>(() => draftData?.parent?.students || [{ name: '', classRoom: defaultClassroom, dateOperation: new Date().toISOString().slice(0, 10) }]);
   const [showPrintToast, setShowPrintToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
-  const [note, setNote] = useState('');
+  const [note, setNote] = useState(() => draftData?.parent?.note || '');
   
   // Payment states
-  const [payAmount, setPayAmount] = useState<number>(0);
-  const [payMethod, setPayMethod] = useState<string>('Espèces');
-  const [paymentNote, setPaymentNote] = useState('');
+  const [payAmount, setPayAmount] = useState<number>(() => draftData?.parent?.payAmount !== undefined ? draftData?.parent?.payAmount : 0);
+  const [payMethod, setPayMethod] = useState<string>(() => draftData?.parent?.payMethod || 'Espèces');
+  const [paymentNote, setPaymentNote] = useState(() => draftData?.parent?.paymentNote || '');
   const [payments, setPayments] = useState<ApeePaymentItem[]>([]);
-  const [transactionId, setTransactionId] = useState('');
-  const [provider, setProvider] = useState('MTN');
+  const [transactionId, setTransactionId] = useState(() => draftData?.parent?.transactionId || '');
+  const [provider, setProvider] = useState(() => draftData?.parent?.provider || 'MTN');
 
   // Allocation states
-  const [selectedObligationId, setSelectedObligationId] = useState<string>('auto');
-  const [paymentAllocationType, setPaymentAllocationType] = useState<'full' | 'partial'>('partial');
+  const [selectedObligationId, setSelectedObligationId] = useState<string>(() => draftData?.parent?.selectedObligationId || 'auto');
+  const [paymentAllocationType, setPaymentAllocationType] = useState<'full' | 'partial'>(() => draftData?.parent?.paymentAllocationType || 'partial');
   
   // Alert visual confirmations
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -73,15 +85,15 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
   const [otherPayloadToConfirm, setOtherPayloadToConfirm] = useState<ApeeOtherRevenue | null>(null);
 
   // Other revenues states
-  const [formMode, setFormMode] = useState<'parent' | 'other_revenue'>('parent');
-  const [otherPayerName, setOtherPayerName] = useState('');
-  const [otherStatus, setOtherStatus] = useState<'membre_honneur' | 'institution' | 'autre'>('membre_honneur');
-  const [otherStatusDetails, setOtherStatusDetails] = useState('');
-  const [otherAmount, setOtherAmount] = useState<number>(0);
-  const [otherPaymentMethod, setOtherPaymentMethod] = useState('Espèces');
-  const [otherTransactionId, setOtherTransactionId] = useState('');
-  const [otherDate, setOtherDate] = useState(new Date().toISOString().slice(0, 10));
-  const [otherNotes, setOtherNotes] = useState('');
+  const [formMode, setFormMode] = useState<'parent' | 'other_revenue'>(() => draftData?.formMode || 'parent');
+  const [otherPayerName, setOtherPayerName] = useState(() => draftData?.other?.otherPayerName || '');
+  const [otherStatus, setOtherStatus] = useState<'membre_honneur' | 'institution' | 'autre'>(() => draftData?.other?.otherStatus || 'membre_honneur');
+  const [otherStatusDetails, setOtherStatusDetails] = useState(() => draftData?.other?.otherStatusDetails || '');
+  const [otherAmount, setOtherAmount] = useState<number>(() => draftData?.other?.otherAmount !== undefined ? draftData?.other?.otherAmount : 0);
+  const [otherPaymentMethod, setOtherPaymentMethod] = useState(() => draftData?.other?.otherPaymentMethod || 'Espèces');
+  const [otherTransactionId, setOtherTransactionId] = useState(() => draftData?.other?.otherTransactionId || '');
+  const [otherDate, setOtherDate] = useState(() => draftData?.other?.otherDate || new Date().toISOString().slice(0, 10));
+  const [otherNotes, setOtherNotes] = useState(() => draftData?.other?.otherNotes || '');
 
   const clearOtherForm = () => {
     setOtherPayerName('');
@@ -92,6 +104,11 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
     setOtherTransactionId('');
     setOtherDate(new Date().toISOString().slice(0, 10));
     setOtherNotes('');
+    try {
+      localStorage.removeItem('pasma_apee_form_draft');
+    } catch (e) {
+      console.warn("Could not remove draft from localStorage:", e);
+    }
   };
 
   const handleDownloadOtherRevenueReceiptPDF = (revenueToPrint: ApeeOtherRevenue) => {
@@ -397,11 +414,24 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
       setProvider('MTN');
       setLoadedParentId(activeParentToEdit.id);
     } else {
-      clearForm();
+      if (!isInitialRender.current) {
+        clearForm(true);
+      } else {
+        try {
+          const savedDraft = localStorage.getItem('pasma_apee_form_draft');
+          if (savedDraft) {
+            setSuccessMsg(isEn ? "Draft restored automatically!" : "Brouillon restauré automatiquement !");
+            setTimeout(() => setSuccessMsg(null), 4000);
+          }
+        } catch (e) {
+          console.warn("Could not read draft from localStorage:", e);
+        }
+      }
     }
+    isInitialRender.current = false;
   }, [activeParentToEdit]);
 
-  const clearForm = () => {
+  const clearForm = (clearDraft = true) => {
     setParentName('');
     setParentPhone('');
     setParentAddress('');
@@ -417,7 +447,90 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
     setSelectedObligationId('auto');
     setPaymentAllocationType('partial');
     setLoadedParentId(null);
+    if (clearDraft) {
+      try {
+        localStorage.removeItem('pasma_apee_form_draft');
+      } catch (e) {
+        console.warn("Could not remove draft from localStorage:", e);
+      }
+    }
   };
+
+  // Auto-save draft whenever inputs change
+  useEffect(() => {
+    if (activeParentToEdit) return; // Do not save drafts while editing an existing parent
+
+    // Check if there is anything substantial entered in the form
+    const hasParentData = parentName || parentPhone || parentAddress || parentEmail || note || payAmount > 0 || paymentNote || transactionId || (students.length > 1 || (students[0] && students[0].name));
+    const hasOtherData = otherPayerName || otherAmount > 0 || otherNotes || otherTransactionId;
+
+    if (hasParentData || hasOtherData) {
+      const draft = {
+        formMode,
+        parent: {
+          parentName,
+          parentPhone,
+          parentAddress,
+          parentEmail,
+          students,
+          note,
+          payAmount,
+          payMethod,
+          paymentNote,
+          transactionId,
+          provider,
+          selectedObligationId,
+          paymentAllocationType
+        },
+        other: {
+          otherPayerName,
+          otherStatus,
+          otherStatusDetails,
+          otherAmount,
+          otherPaymentMethod,
+          otherTransactionId,
+          otherDate,
+          otherNotes
+        }
+      };
+      try {
+        localStorage.setItem('pasma_apee_form_draft', JSON.stringify(draft));
+      } catch (e) {
+        console.warn("Could not save draft to localStorage:", e);
+      }
+    } else {
+      // If fields are empty, clean the draft
+      try {
+        localStorage.removeItem('pasma_apee_form_draft');
+      } catch (e) {
+        console.warn("Could not clear draft from localStorage:", e);
+      }
+    }
+  }, [
+    activeParentToEdit,
+    formMode,
+    parentName,
+    parentPhone,
+    parentAddress,
+    parentEmail,
+    students,
+    note,
+    payAmount,
+    payMethod,
+    paymentNote,
+    transactionId,
+    provider,
+    selectedObligationId,
+    paymentAllocationType,
+    otherPayerName,
+    otherStatus,
+    otherStatusDetails,
+    otherAmount,
+    otherPaymentMethod,
+    otherTransactionId,
+    otherDate,
+    otherNotes
+  ]);
 
   const handleAddStudent = () => {
     setStudents([...students, { name: '', classRoom: defaultClassroom, dateOperation: new Date().toISOString().slice(0, 10) }]);

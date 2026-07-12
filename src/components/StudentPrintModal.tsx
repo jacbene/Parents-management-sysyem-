@@ -36,13 +36,119 @@ interface StudentPrintModalProps {
 export default function StudentPrintModal({ student, grades, attendance, isOpen, onClose, settings }: StudentPrintModalProps) {
   const { language } = useLanguage();
   const isEn = language === 'en';
+  
+  // Parent Configuration states for PDF visual preview
+  const [pdfTheme, setPdfTheme] = useState<'indigo' | 'emerald' | 'crimson' | 'amber' | 'slate'>('indigo');
+  const [selectedTerm, setSelectedTerm] = useState<'all' | 't1' | 't2' | 't3'>('all');
   const [showChart, setShowChart] = useState(true);
+  const [showAttendance, setShowAttendance] = useState(true);
+  const [showSignatures, setShowSignatures] = useState(true);
+  const [parentCustomNotes, setParentCustomNotes] = useState('');
+
   const [isMounted, setIsMounted] = useState(false);
   const [showPrintToast, setShowPrintToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  // Theme definition mapping for cohesive premium design
+  const themeColors = {
+    indigo: {
+      primary: [79, 70, 229] as [number, number, number],
+      primaryHex: '#4f46e5',
+      bgLight: 'bg-indigo-50/50',
+      bgSoft: 'bg-indigo-50',
+      borderLight: 'border-indigo-100',
+      borderAccent: 'border-indigo-200',
+      textPrimary: 'text-indigo-600',
+      textPrimaryDark: 'text-indigo-950',
+      accentFill: 'bg-indigo-50 border-indigo-150 text-indigo-850',
+      badge: 'bg-indigo-50 text-indigo-700 border border-indigo-100'
+    },
+    emerald: {
+      primary: [16, 185, 129] as [number, number, number],
+      primaryHex: '#10b981',
+      bgLight: 'bg-emerald-50/50',
+      bgSoft: 'bg-emerald-50',
+      borderLight: 'border-emerald-100',
+      borderAccent: 'border-emerald-200',
+      textPrimary: 'text-emerald-600',
+      textPrimaryDark: 'text-emerald-950',
+      accentFill: 'bg-emerald-50 border-emerald-150 text-emerald-850',
+      badge: 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+    },
+    crimson: {
+      primary: [225, 29, 72] as [number, number, number],
+      primaryHex: '#e11d48',
+      bgLight: 'bg-rose-50/50',
+      bgSoft: 'bg-rose-50',
+      borderLight: 'border-rose-100',
+      borderAccent: 'border-rose-200',
+      textPrimary: 'text-rose-600',
+      textPrimaryDark: 'text-rose-950',
+      accentFill: 'bg-rose-50 border-rose-150 text-rose-850',
+      badge: 'bg-rose-50 text-rose-700 border border-rose-100'
+    },
+    amber: {
+      primary: [217, 119, 6] as [number, number, number],
+      primaryHex: '#d97706',
+      bgLight: 'bg-amber-50/50',
+      bgSoft: 'bg-amber-50',
+      borderLight: 'border-amber-100',
+      borderAccent: 'border-amber-200',
+      textPrimary: 'text-amber-600',
+      textPrimaryDark: 'text-amber-950',
+      accentFill: 'bg-amber-50 border-amber-150 text-amber-850',
+      badge: 'bg-amber-50 text-amber-700 border border-amber-100'
+    },
+    slate: {
+      primary: [71, 85, 105] as [number, number, number],
+      primaryHex: '#475569',
+      bgLight: 'bg-slate-50',
+      bgSoft: 'bg-slate-100/50',
+      borderLight: 'border-slate-200',
+      borderAccent: 'border-slate-300',
+      textPrimary: 'text-slate-600',
+      textPrimaryDark: 'text-slate-950',
+      accentFill: 'bg-slate-50 border-slate-150 text-slate-850',
+      badge: 'bg-slate-100 text-slate-700 border border-slate-200'
+    }
+  };
+
+  const activeTheme = themeColors[pdfTheme];
+
+  // Filter grades & attendance based on selected academic period
+  const filteredGrades = grades.filter(item => {
+    if (selectedTerm === 'all') return true;
+    const d = new Date(item.date);
+    const month = d.getMonth(); // 0 = Jan, 11 = Dec
+    if (selectedTerm === 't1') {
+      // Sept (8), Oct (9), Nov (10), Dec (11)
+      return month >= 8 && month <= 11;
+    } else if (selectedTerm === 't2') {
+      // Jan (0), Feb (1), Mar (2)
+      return month >= 0 && month <= 2;
+    } else if (selectedTerm === 't3') {
+      // Apr (3), May (4), June (5), July (6), Aug (7)
+      return month >= 3 && month <= 7;
+    }
+    return true;
+  });
+
+  const filteredAttendance = attendance.filter(item => {
+    if (selectedTerm === 'all') return true;
+    const d = new Date(item.date);
+    const month = d.getMonth();
+    if (selectedTerm === 't1') {
+      return month >= 8 && month <= 11;
+    } else if (selectedTerm === 't2') {
+      return month >= 0 && month <= 2;
+    } else if (selectedTerm === 't3') {
+      return month >= 3 && month <= 7;
+    }
+    return true;
+  });
 
   // Find titular teacher for student's classroom in global ApeeSettings
   const foundTeacher = settings?.classTeachers?.find(t => {
@@ -68,14 +174,14 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
 
   if (!isOpen) return null;
 
-  // 1. Grade stats computations
-  const totalTests = grades.length;
+  // 1. Grade stats computations (using filtered grades)
+  const totalTests = filteredGrades.length;
   const averagePercentage = totalTests > 0
-    ? (grades.reduce((sum, g) => sum + (g.score / g.maxScore) * 100, 0) / totalTests)
+    ? (filteredGrades.reduce((sum, g) => sum + (g.score / g.maxScore) * 100, 0) / totalTests)
     : 0;
 
   const averageBase20 = totalTests > 0
-    ? (grades.reduce((sum, g) => sum + (g.score / g.maxScore) * 20, 0) / totalTests)
+    ? (filteredGrades.reduce((sum, g) => sum + (g.score / g.maxScore) * 20, 0) / totalTests)
     : 0;
 
   // Grade classification label in French
@@ -89,12 +195,12 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
 
   const apprec = getAppreciation(averageBase20);
 
-  // 2. Attendance Stats computations
-  const totalLogs = attendance.length;
-  const presentCount = attendance.filter(a => a.status === 'Present').length;
-  const absentCount = attendance.filter(a => a.status === 'Absent').length;
-  const lateCount = attendance.filter(a => a.status === 'Late').length;
-  const excusedCount = attendance.filter(a => a.status === 'Excused').length;
+  // 2. Attendance Stats computations (using filtered attendance)
+  const totalLogs = filteredAttendance.length;
+  const presentCount = filteredAttendance.filter(a => a.status === 'Present').length;
+  const absentCount = filteredAttendance.filter(a => a.status === 'Absent').length;
+  const lateCount = filteredAttendance.filter(a => a.status === 'Late').length;
+  const excusedCount = filteredAttendance.filter(a => a.status === 'Excused').length;
 
   const presenceRate = totalLogs > 0
     ? (((presentCount + excusedCount) / totalLogs) * 100).toFixed(1)
@@ -102,7 +208,7 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
 
   // Group grades by subject to show a consolidated performance per subject inside the report
   const subjectAveragesMap: { [subj: string]: { sumBase20: number; count: number } } = {};
-  grades.forEach(g => {
+  filteredGrades.forEach(g => {
     const scoreOn20 = (g.score / g.maxScore) * 20;
     if (!subjectAveragesMap[g.subject]) {
       subjectAveragesMap[g.subject] = { sumBase20: 0, count: 0 };
@@ -141,6 +247,7 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
     // Header
     rows.push('"RAPPORT ACADEMIQUE ET SCOLAIRE - PASMA-SYS"');
     rows.push(`"Date de generation",${escapeCSV(new Date().toLocaleString('fr-FR'))}`);
+    rows.push(`"Periode selectionnee",${escapeCSV(selectedTerm === 'all' ? 'Année Complète' : selectedTerm === 't1' ? 'Trimestre 1' : selectedTerm === 't2' ? 'Trimestre 2' : 'Trimestre 3')}`);
     rows.push('');
     
     // Section 1: Student Details
@@ -167,10 +274,10 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
     rows.push('"NOTES ET EVALUATIONS DETALLEES"');
     rows.push('"Matiere","Intitule de l\'examen","Date d\'evaluation","Note","Bareme","Remarques"');
     
-    if (grades.length === 0) {
+    if (filteredGrades.length === 0) {
       rows.push('"Aucune note disponible"');
     } else {
-      grades.forEach(g => {
+      filteredGrades.forEach(g => {
         rows.push([
           escapeCSV(g.subject),
           escapeCSV(g.examName),
@@ -184,25 +291,27 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
     rows.push('');
 
     // Section 4: Attendance List
-    rows.push('"REGISTRE DE PRESENCE ET ASSIDUITE"');
-    rows.push('"Date","Statut de presence","Remarques & Justifications"');
-    
-    if (attendance.length === 0) {
-      rows.push('"Aucune donnee de presence"');
-    } else {
-      attendance.forEach(att => {
-        let statusFr: string = att.status;
-        if (att.status === 'Present') statusFr = 'Présent';
-        if (att.status === 'Absent') statusFr = 'Absent';
-        if (att.status === 'Late') statusFr = 'En Retard';
-        if (att.status === 'Excused') statusFr = 'Justifié';
+    if (showAttendance) {
+      rows.push('"REGISTRE DE PRESENCE ET ASSIDUITE"');
+      rows.push('"Date","Statut de presence","Remarques & Justifications"');
+      
+      if (filteredAttendance.length === 0) {
+        rows.push('"Aucune donnee de presence"');
+      } else {
+        filteredAttendance.forEach(att => {
+          let statusFr: string = att.status;
+          if (att.status === 'Present') statusFr = 'Présent';
+          if (att.status === 'Absent') statusFr = 'Absent';
+          if (att.status === 'Late') statusFr = 'En Retard';
+          if (att.status === 'Excused') statusFr = 'Justifié';
 
-        rows.push([
-          escapeCSV(new Date(att.date).toLocaleDateString('fr-FR')),
-          escapeCSV(statusFr),
-          escapeCSV(att.remarks || '')
-        ].join(','));
-      });
+          rows.push([
+            escapeCSV(new Date(att.date).toLocaleDateString('fr-FR')),
+            escapeCSV(statusFr),
+            escapeCSV(att.remarks || '')
+          ].join(','));
+        });
+      }
     }
 
     // Convert rows and create Download Link
@@ -219,9 +328,21 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+
+    setToastMessage(isEn ? `Student CSV record for ${student.name} downloaded successfully!` : `Le relevé CSV de l'élève ${student.name} a été téléchargé avec succès !`);
+    setShowPrintToast(true);
+    setTimeout(() => {
+      setShowPrintToast(false);
+    }, 4500);
   };
 
   const handleDownloadPDF = () => {
+    setToastMessage(isEn ? "Generating and downloading formatted PDF report card..." : "Génération et téléchargement du bulletin scolaire PDF...");
+    setShowPrintToast(true);
+    setTimeout(() => {
+      setShowPrintToast(false);
+    }, 4500);
+
     const doc = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
@@ -233,6 +354,9 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
     const pageWidth = 210;
     const pageHeight = 297;
     const contentWidth = pageWidth - (2 * margin); // 180mm
+
+    const activeColor = themeColors[pdfTheme].primary;
+    const activeColorHex = themeColors[pdfTheme].primaryHex;
 
     const checkPageBreak = (heightNeeded: number) => {
       if (y + heightNeeded > pageHeight - 20) {
@@ -296,15 +420,24 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
       y += 12;
     }
 
-    // Elegant accent: Deep indigo header bar
-    doc.setFillColor(79, 70, 229); // Primary Indigo
+    // Elegant accent: Deep custom theme color header bar
+    doc.setFillColor(activeColor[0], activeColor[1], activeColor[2]);
     doc.rect(margin, y, 4, 18, 'F');
 
     // Title text
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9.5);
-    doc.setTextColor(79, 70, 229);
-    doc.text(isEn ? "PASMA-SYS PORTAL • STUDENT PERFORMANCE REPORT CARD" : "PORTAIL SCOLAIRE PASMA-SYS • BULLETIN SCOLAIRE", margin + 6, y + 4);
+    doc.setTextColor(activeColor[0], activeColor[1], activeColor[2]);
+    
+    const termLabel = selectedTerm === 'all' 
+      ? (isEn ? "FULL YEAR" : "ANNÉE COMPLÈTE") 
+      : selectedTerm === 't1' 
+      ? (isEn ? "1ST TRIMESTER" : "1ER TRIMESTRE") 
+      : selectedTerm === 't2' 
+      ? (isEn ? "2ND TRIMESTER" : "2ÈME TRIMESTRE") 
+      : (isEn ? "3RD TRIMESTER" : "3ÈME TRIMESTRE");
+
+    doc.text(`${isEn ? "PASMA-SYS PORTAL" : "PORTAIL SCOLAIRE PASMA-SYS"} • ${termLabel}`, margin + 6, y + 4);
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
@@ -344,7 +477,7 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
     doc.rect(margin + 5, y + 24, 45, 6, 'F');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
-    doc.setTextColor(79, 70, 229); // Indigo 700
+    doc.setTextColor(activeColor[0], activeColor[1], activeColor[2]);
     doc.text("ÉLÈVE INSCRIT ET ACTIF", margin + 8, y + 28);
 
     // Vertical separator line
@@ -384,7 +517,7 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.setTextColor(79, 70, 229); // Indigo 700
+    doc.setTextColor(activeColor[0], activeColor[1], activeColor[2]);
     doc.text("RENDEMENT ACADÉMIQUE", margin + 5, y + 6);
 
     doc.setFont('helvetica', 'bold');
@@ -421,7 +554,7 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
     y += 32;
 
     // Averages per Subject (Bilan par Discipline)
-    if (subjectChartData.length > 0) {
+    if (showChart && subjectChartData.length > 0) {
       checkPageBreak(35);
       
       doc.setFont('helvetica', 'bold');
@@ -465,7 +598,7 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
           doc.setTextColor(239, 68, 68); // Red-500
           doc.setFont('helvetica', 'bold');
         } else {
-          doc.setTextColor(79, 70, 229); // Indigo-600
+          doc.setTextColor(activeColor[0], activeColor[1], activeColor[2]);
           doc.setFont('helvetica', 'bold');
         }
         doc.text(`${avgVal.toFixed(2)} / 20`, margin + 100, y + 4);
@@ -495,7 +628,7 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
     y += 10;
 
     // Detailed table headers
-    doc.setFillColor(79, 70, 229); // Primary Indigo header
+    doc.setFillColor(activeColor[0], activeColor[1], activeColor[2]);
     doc.rect(margin, y, contentWidth, 8, 'F');
 
     doc.setFont('helvetica', 'bold');
@@ -513,7 +646,7 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
       return text.length > maxChars ? text.substring(0, maxChars - 3) + '...' : text;
     };
 
-    if (grades.length === 0) {
+    if (filteredGrades.length === 0) {
       checkPageBreak(8);
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(8.5);
@@ -521,7 +654,7 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
       doc.text("Aucune note de contrôle enregistrée pour cet élève.", margin + 4, y + 5);
       y += 8;
     } else {
-      grades.forEach((g, gIdx) => {
+      filteredGrades.forEach((g, gIdx) => {
         checkPageBreak(8);
 
         if (gIdx % 2 === 0) {
@@ -567,145 +700,177 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
     y += 6;
 
     // Detailed attendance report
-    checkPageBreak(25);
-    
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.setTextColor(15, 23, 42); // Slate 950
-    doc.text("RAPPORT DU REGISTRE DE PRÉSENCE ET ASSIDUITÉ", margin, y + 5);
-    
-    doc.setDrawColor(226, 232, 240);
-    doc.setLineWidth(0.3);
-    doc.line(margin, y + 7, margin + contentWidth, y + 7);
-    
-    y += 10;
+    if (showAttendance) {
+      checkPageBreak(25);
+      
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(15, 23, 42); // Slate 950
+      doc.text("RAPPORT DU REGISTRE DE PRÉSENCE ET ASSIDUITÉ", margin, y + 5);
+      
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.3);
+      doc.line(margin, y + 7, margin + contentWidth, y + 7);
+      
+      y += 10;
 
-    // Attendance Table Header
-    doc.setFillColor(51, 65, 85); // Charcoal / Slate 700 header
-    doc.rect(margin, y, contentWidth, 8, 'F');
+      // Attendance Table Header
+      doc.setFillColor(51, 65, 85); // Charcoal / Slate 700 header
+      doc.rect(margin, y, contentWidth, 8, 'F');
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.setTextColor(255, 255, 255); // White font
-    doc.text("Date du contrôle", margin + 3, y + 5);
-    doc.text("Statut de présence", margin + 55, y + 5);
-    doc.text("Motif justificatif / Remarques de la vie scolaire", margin + 100, y + 5);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(255, 255, 255); // White font
+      doc.text("Date du contrôle", margin + 3, y + 5);
+      doc.text("Statut de présence", margin + 55, y + 5);
+      doc.text("Motif justificatif / Remarques de la vie scolaire", margin + 100, y + 5);
 
-    y += 8;
-
-    if (attendance.length === 0) {
-      checkPageBreak(8);
-      doc.setFont('helvetica', 'italic');
-      doc.setFontSize(8.5);
-      doc.setTextColor(148, 163, 184); // Slate 400
-      doc.text("Aucun retard ou absence répertorié au dossier de présence.", margin + 4, y + 5);
       y += 8;
-    } else {
-      attendance.forEach((att, attIdx) => {
+
+      if (filteredAttendance.length === 0) {
         checkPageBreak(8);
-
-        if (attIdx % 2 === 0) {
-          doc.setFillColor(248, 250, 252); // Slate 50
-          doc.rect(margin, y, contentWidth, 7, 'F');
-        }
-
-        doc.setDrawColor(241, 245, 249);
-        doc.setLineWidth(0.15);
-        doc.line(margin, y + 7, margin + contentWidth, y + 7);
-
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(8);
-        doc.setTextColor(15, 23, 42); // Slate 900
-        doc.text(new Date(att.date).toLocaleDateString('fr-FR', { dateStyle: 'long' }), margin + 3, y + 4.5);
-
-        let statusFr = 'Présent';
-        if (att.status === 'Present') {
-          doc.setTextColor(22, 101, 52); // Green
-          statusFr = 'Présent';
-        } else if (att.status === 'Absent') {
-          doc.setTextColor(185, 28, 28); // Red
-          statusFr = 'Absent';
-        } else if (att.status === 'Late') {
-          doc.setTextColor(180, 83, 9); // Amber
-          statusFr = 'En Retard';
-        } else if (att.status === 'Excused') {
-          doc.setTextColor(79, 70, 229); // Indigo
-          statusFr = 'Justifié';
-        }
-
-        doc.setFont('helvetica', 'bold');
-        doc.text(statusFr, margin + 55, y + 4.5);
-
         doc.setFont('helvetica', 'italic');
-        doc.setFontSize(8);
-        doc.setTextColor(100, 116, 139); // Slate 500
-        const altRemark = att.remarks || (att.status === 'Present' ? 'Élève ponctuel et assidu' : 'Aucun motif renseigné');
-        doc.text(truncateString(altRemark, 42), margin + 100, y + 4.5);
+        doc.setFontSize(8.5);
+        doc.setTextColor(148, 163, 184); // Slate 400
+        doc.text("Aucun retard ou absence répertorié au dossier de présence.", margin + 4, y + 5);
+        y += 8;
+      } else {
+        filteredAttendance.forEach((att, attIdx) => {
+          checkPageBreak(8);
 
-        y += 7;
-      });
+          if (attIdx % 2 === 0) {
+            doc.setFillColor(248, 250, 252); // Slate 50
+            doc.rect(margin, y, contentWidth, 7, 'F');
+          }
+
+          doc.setDrawColor(241, 245, 249);
+          doc.setLineWidth(0.15);
+          doc.line(margin, y + 7, margin + contentWidth, y + 7);
+
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8);
+          doc.setTextColor(15, 23, 42); // Slate 900
+          doc.text(new Date(att.date).toLocaleDateString('fr-FR', { dateStyle: 'long' }), margin + 3, y + 4.5);
+
+          let statusFr = 'Présent';
+          if (att.status === 'Present') {
+            doc.setTextColor(22, 101, 52); // Green
+            statusFr = 'Présent';
+          } else if (att.status === 'Absent') {
+            doc.setTextColor(185, 28, 28); // Red
+            statusFr = 'Absent';
+          } else if (att.status === 'Late') {
+            doc.setTextColor(180, 83, 9); // Amber
+            statusFr = 'En Retard';
+          } else if (att.status === 'Excused') {
+            doc.setTextColor(79, 70, 229); // Indigo
+            statusFr = 'Justifié';
+          }
+
+          doc.setFont('helvetica', 'bold');
+          doc.text(statusFr, margin + 55, y + 4.5);
+
+          doc.setFont('helvetica', 'italic');
+          doc.setFontSize(8);
+          doc.setTextColor(100, 116, 139); // Slate 500
+          const altRemark = att.remarks || (att.status === 'Present' ? 'Élève ponctuel et assidu' : 'Aucun motif renseigné');
+          doc.text(truncateString(altRemark, 42), margin + 100, y + 4.5);
+
+          y += 7;
+        });
+      }
+      y += 6;
     }
 
-    y += 6;
+    // Custom Parent Remarks Section
+    if (parentCustomNotes.trim()) {
+      checkPageBreak(30);
+      
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(15, 23, 42);
+      doc.text("OBSERVATIONS ET REMARQUES DES PARENTS D'ÉLÈVES", margin, y + 5);
+
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.3);
+      doc.line(margin, y + 7, margin + contentWidth, y + 7);
+
+      y += 10;
+
+      doc.setFillColor(248, 250, 252); // Slate 50
+      doc.setDrawColor(activeColor[0], activeColor[1], activeColor[2]);
+      doc.setLineWidth(0.4);
+      doc.rect(margin, y, contentWidth, 16, 'FD');
+
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text(truncateString(parentCustomNotes.trim(), 95), margin + 5, y + 6);
+      doc.text(parentCustomNotes.trim().length > 95 ? truncateString(parentCustomNotes.trim().substring(95), 95) : "", margin + 5, y + 11);
+
+      y += 22;
+    }
 
     // Administrative signatures block
-    checkPageBreak(40);
-    
-    doc.setDrawColor(226, 232, 240);
-    doc.setLineWidth(0.3);
-    doc.line(margin, y + 5, margin + contentWidth, y + 5);
+    if (showSignatures) {
+      checkPageBreak(40);
+      
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.3);
+      doc.line(margin, y + 5, margin + contentWidth, y + 5);
 
-    y += 12;
+      y += 12;
 
-    const signatureWidth = contentWidth / 3;
+      const signatureWidth = contentWidth / 3;
 
-    // Column 1: Teacher
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.5);
-    doc.setTextColor(51, 65, 85); // Slate 700
-    doc.text("L'Enseignant Principal", margin + (signatureWidth / 2), y, { align: 'center' });
-    
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(100, 116, 139);
-    doc.text(teacherName, margin + (signatureWidth / 2), y + 5, { align: 'center' });
+      // Column 1: Teacher
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(51, 65, 85); // Slate 700
+      doc.text("L'Enseignant Principal", margin + (signatureWidth / 2), y, { align: 'center' });
+      
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(teacherName, margin + (signatureWidth / 2), y + 5, { align: 'center' });
 
-    doc.setDrawColor(203, 213, 225);
-    doc.setLineWidth(0.2);
-    doc.line(margin + 10, y + 22, margin + signatureWidth - 10, y + 22);
-    doc.setFontSize(7);
-    doc.setTextColor(148, 163, 184);
-    doc.text("Signature & Date", margin + (signatureWidth / 2), y + 26, { align: 'center' });
+      doc.setDrawColor(203, 213, 225);
+      doc.setLineWidth(0.2);
+      doc.line(margin + 10, y + 22, margin + signatureWidth - 10, y + 22);
+      doc.setFontSize(7);
+      doc.setTextColor(148, 163, 184);
+      doc.text("Signature & Date", margin + (signatureWidth / 2), y + 26, { align: 'center' });
 
-    // Column 2: Principal/Director
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.5);
-    doc.setTextColor(51, 65, 85);
-    doc.text("Le Directeur d'Établissement", margin + signatureWidth + (signatureWidth / 2), y, { align: 'center' });
+      // Column 2: Principal/Director
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text("Le Directeur d'Établissement", margin + signatureWidth + (signatureWidth / 2), y, { align: 'center' });
 
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(100, 116, 139);
-    const dName = settings?.directorName || 'Administration';
-    doc.text(dName, margin + signatureWidth + (signatureWidth / 2), y + 5, { align: 'center' });
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      const dName = settings?.directorName || 'Administration';
+      doc.text(dName, margin + signatureWidth + (signatureWidth / 2), y + 5, { align: 'center' });
 
-    doc.line(margin + signatureWidth + 10, y + 22, margin + 2 * signatureWidth - 10, y + 22);
-    doc.setFontSize(7);
-    doc.setTextColor(148, 163, 184);
-    doc.text("Cachet et signature", margin + signatureWidth + (signatureWidth / 2), y + 26, { align: 'center' });
+      doc.line(margin + signatureWidth + 10, y + 22, margin + 2 * signatureWidth - 10, y + 22);
+      doc.setFontSize(7);
+      doc.setTextColor(148, 163, 184);
+      doc.text("Cachet et signature", margin + signatureWidth + (signatureWidth / 2), y + 26, { align: 'center' });
 
-    // Column 3: Parents
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.5);
-    doc.setTextColor(51, 65, 85);
-    doc.text("Signature des Parents", margin + 2 * signatureWidth + (signatureWidth / 2), y, { align: 'center' });
+      // Column 3: Parents
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text("Signature des Parents", margin + 2 * signatureWidth + (signatureWidth / 2), y, { align: 'center' });
 
-    doc.line(margin + 2 * signatureWidth + 10, y + 22, margin + 3 * signatureWidth - 10, y + 22);
-    doc.setFontSize(7);
-    doc.setTextColor(148, 163, 184);
-    doc.text("Mention 'Lu et Approuvé'", margin + 2 * signatureWidth + (signatureWidth / 2), y + 26, { align: 'center' });
+      doc.line(margin + 2 * signatureWidth + 10, y + 22, margin + 3 * signatureWidth - 10, y + 22);
+      doc.setFontSize(7);
+      doc.setTextColor(148, 163, 184);
+      doc.text("Mention 'Lu et Approuvé'", margin + 2 * signatureWidth + (signatureWidth / 2), y + 26, { align: 'center' });
 
-    y += 36;
+      y += 36;
+    }
 
     // Footnote
     checkPageBreak(18);
@@ -740,7 +905,7 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
   };
 
   return (
-    <div className="StudentPrintModal fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[1000] no-print">
+    <div className="StudentPrintModal fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-2 md:p-4 z-[1000] no-print">
       
       {/* Print Style Injector */}
       <style dangerouslySetInnerHTML={{ __html: `
@@ -755,7 +920,8 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
             position: absolute !important;
             left: 0 !important;
             top: 0 !important;
-            width: 100% !important;
+            width: 210mm !important;
+            min-height: 297mm !important;
             background: white !important;
             color: black !important;
             font-size: 10pt !important;
@@ -763,13 +929,7 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
             box-shadow: none !important;
             border: none !important;
             margin: 0 !important;
-            padding: 1.5cm !important;
-          }
-          .print-break-after {
-            page-break-after: always !important;
-          }
-          .print-border {
-            border: 1px solid #e2e8f0 !important;
+            padding: 15mm !important;
           }
           .no-print-interface {
             display: none !important;
@@ -778,15 +938,15 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
       `}} />
 
       {/* Main Preview Card */}
-      <div className="bg-white rounded-3xl shadow-2xl border border-slate-150 w-full max-w-4xl h-[90vh] flex flex-col overflow-hidden animate-in fade-in-50 zoom-in-95 duration-200">
+      <div className="bg-white rounded-3xl shadow-2xl border border-slate-150 w-full max-w-6xl h-[92vh] flex flex-col overflow-hidden animate-in fade-in-50 zoom-in-95 duration-200">
         
-        {/* Modal Top Header (Non printable) */}
+        {/* Modal Top Header (Non-printable) */}
         <div className="bg-slate-900 px-6 py-4 flex justify-between items-center text-white shrink-0 no-print-interface">
           <div className="flex items-center gap-2.5">
             <Printer className="h-5 w-5 text-indigo-400" />
             <div>
-              <h3 className="font-bold text-sm">Aperçu avant Impression du Profil</h3>
-              <p className="text-[11px] text-slate-300">Générez un dossier scolaire imprimable pour {student.name}</p>
+              <h3 className="font-extrabold text-sm tracking-tight">Portail d'Impression et de Configuration du Bulletin</h3>
+              <p className="text-[11px] text-slate-300">Personnalisez et visualisez le dossier scolaire de l'élève en temps réel</p>
             </div>
           </div>
           <button 
@@ -798,218 +958,383 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
           </button>
         </div>
 
-        {/* Scrollable Preview Area */}
-        <div className="flex-1 overflow-y-auto p-8 bg-slate-50 select-text">
+        {/* Dual-Pane Split Layout */}
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden bg-slate-100">
           
-          <div className="max-w-2xl mx-auto space-y-6">
+          {/* Left Configuration Pane (320px sidebar) */}
+          <div className="w-full md:w-80 bg-white border-r border-slate-200 p-5 flex flex-col gap-6 overflow-y-auto shrink-0 no-print-interface">
+            <div>
+              <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-3">Options du Document</h4>
+              
+              {/* Academic Period Selector */}
+              <div className="space-y-2 mb-5">
+                <label className="text-[11px] font-bold text-slate-700 block">Période Académique / Trimestre</label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTerm('all')}
+                    className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition cursor-pointer text-center ${
+                      selectedTerm === 'all'
+                        ? `bg-${pdfTheme}-50 border-${pdfTheme}-300 text-${pdfTheme}-700 font-extrabold`
+                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    Année Complète
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTerm('t1')}
+                    className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition cursor-pointer text-center ${
+                      selectedTerm === 't1'
+                        ? `bg-${pdfTheme}-50 border-${pdfTheme}-300 text-${pdfTheme}-700 font-extrabold`
+                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    1er Trimestre
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTerm('t2')}
+                    className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition cursor-pointer text-center ${
+                      selectedTerm === 't2'
+                        ? `bg-${pdfTheme}-50 border-${pdfTheme}-300 text-${pdfTheme}-700 font-extrabold`
+                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    2e Trimestre
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTerm('t3')}
+                    className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition cursor-pointer text-center ${
+                      selectedTerm === 't3'
+                        ? `bg-${pdfTheme}-50 border-${pdfTheme}-300 text-${pdfTheme}-700 font-extrabold`
+                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    3e Trimestre
+                  </button>
+                </div>
+              </div>
+
+              {/* Theme Color Picker Swatches */}
+              <div className="space-y-2 mb-5">
+                <label className="text-[11px] font-bold text-slate-700 block">Thème de Couleur du Bulletin</label>
+                <div className="flex gap-3 pt-1">
+                  {(['indigo', 'emerald', 'crimson', 'amber', 'slate'] as const).map((colorName) => {
+                    const bgColors = {
+                      indigo: 'bg-indigo-600',
+                      emerald: 'bg-emerald-500',
+                      crimson: 'bg-rose-600',
+                      amber: 'bg-amber-500',
+                      slate: 'bg-slate-600'
+                    };
+                    return (
+                      <button
+                        key={colorName}
+                        onClick={() => setPdfTheme(colorName)}
+                        className={`h-7 w-7 rounded-full ${bgColors[colorName]} relative flex items-center justify-center transition cursor-pointer active:scale-90 hover:opacity-90 shadow-sm border ${
+                          pdfTheme === colorName ? 'ring-2 ring-offset-2 ring-slate-850 border-white scale-110' : 'border-slate-200'
+                        }`}
+                        title={`Thème ${colorName}`}
+                      >
+                        {pdfTheme === colorName && (
+                          <span className="text-[10px] text-white font-bold">✓</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Toggle Controls for Sections */}
+              <div className="space-y-3 mb-5 border-t border-slate-100 pt-4">
+                <label className="text-[11px] font-bold text-slate-700 block">Sections à Inclure</label>
+                
+                <label className="flex items-center gap-2.5 text-[11px] font-medium text-slate-600 cursor-pointer hover:text-slate-900">
+                  <input
+                    type="checkbox"
+                    checked={showChart}
+                    onChange={(e) => setShowChart(e.target.checked)}
+                    className="rounded text-slate-600 focus:ring-slate-500 h-3.5 w-3.5 border-slate-300"
+                  />
+                  <span>Graphique par discipline</span>
+                </label>
+
+                <label className="flex items-center gap-2.5 text-[11px] font-medium text-slate-600 cursor-pointer hover:text-slate-900">
+                  <input
+                    type="checkbox"
+                    checked={showAttendance}
+                    onChange={(e) => setShowAttendance(e.target.checked)}
+                    className="rounded text-slate-600 focus:ring-slate-500 h-3.5 w-3.5 border-slate-300"
+                  />
+                  <span>Registre d'assiduité</span>
+                </label>
+
+                <label className="flex items-center gap-2.5 text-[11px] font-medium text-slate-600 cursor-pointer hover:text-slate-900">
+                  <input
+                    type="checkbox"
+                    checked={showSignatures}
+                    onChange={(e) => setShowSignatures(e.target.checked)}
+                    className="rounded text-slate-600 focus:ring-slate-500 h-3.5 w-3.5 border-slate-300"
+                  />
+                  <span>Signatures administratives</span>
+                </label>
+              </div>
+
+              {/* Custom Parent Remarks Notes Block */}
+              <div className="space-y-2 border-t border-slate-100 pt-4">
+                <label className="text-[11px] font-bold text-slate-700 block flex justify-between items-center">
+                  <span>Remarques des Parents / Famille</span>
+                  <span className="text-[9px] text-slate-400 font-mono">{parentCustomNotes.length}/180</span>
+                </label>
+                <textarea
+                  value={parentCustomNotes}
+                  onChange={(e) => setParentCustomNotes(e.target.value.substring(0, 180))}
+                  placeholder="Saisissez une observation ou signature parentale (par ex: Signature électronique des parents M. et Mme...)"
+                  className="w-full h-24 p-2 text-[11px] bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-slate-400 placeholder-slate-400 leading-normal"
+                />
+                <p className="text-[9px] text-slate-400 italic leading-snug">
+                  Ces remarques s'afficheront instantanément dans l'aperçu et figureront sur le bulletin PDF final.
+                </p>
+              </div>
+
+            </div>
+          </div>
+
+          {/* Right Live Preview Area */}
+          <div className="flex-1 bg-slate-200 p-4 md:p-8 overflow-y-auto flex flex-col items-center scrollbar-thin select-text">
             
-            {/* Context Notice for Digital User */}
-            <div className="bg-indigo-50 border border-indigo-150 rounded-xl p-4 flex gap-3 text-xs text-indigo-900 no-print-interface">
-              <ShieldCheck className="h-4.5 w-4.5 text-indigo-650 shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <span className="font-bold">Module d'Impression Certifié</span>
-                <p className="text-indigo-950 font-medium leading-relaxed">
-                  Ce document rassemble les relevés officiels collectés dans l'ENT Pasma-sys. Cliquez sur "Lancer l'impression" au bas de l'écran ou appuyez sur <kbd className="bg-indigo-100 px-1 py-0.5 rounded-sm border border-indigo-200 font-mono text-[10px]">Ctrl+P</kbd> pour générer le PDF officiel. Les sections d'interface grises seront automatiquement masquées.
+            {/* Live Context Alert bar */}
+            <div className="w-full max-w-[210mm] bg-amber-50 border border-amber-200 rounded-xl p-3 flex gap-2.5 text-[11px] text-amber-900 mb-4 no-print-interface shadow-xs shrink-0">
+              <ShieldCheck className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold">Aperçu interactif haute fidélité (Format A4)</p>
+                <p className="text-amber-950/80 leading-normal mt-0.5">
+                  Toutes les modifications apportées à gauche (couleurs, périodes, remarques) sont immédiatement répercutées ci-dessous. Le téléchargement PDF utilisera exactement ces mêmes configurations.
                 </p>
               </div>
             </div>
 
-            {/* PRINT TARGET SECTION CONTAINER */}
+            {/* THE VISUAL CRISP PREVIEW CONTAINER */}
             <div 
               id="print-section"
-              className="bg-white border border-slate-150 rounded-2xl p-8 shadow-sm space-y-6 font-sans print-border"
+              className="w-[210mm] min-h-[297mm] bg-white border border-slate-350 p-[15mm] relative text-slate-800 shadow-2xl font-sans rounded-xs flex flex-col justify-between print-border select-text shrink-0"
             >
-              {/* Report Header */}
-              <div className="border-b-2 border-indigo-950 pb-5 flex justify-between items-start gap-4">
-                <div className="space-y-1">
-                  <span className="text-[10px] font-black tracking-widest text-indigo-650 uppercase font-sans">
-                    PASMA-SYS EDUCATION ENT • DOSSIER SCOLAIRE
-                  </span>
-                  <h2 className="text-xl font-black text-slate-900 uppercase">
-                    Bilan Scolaire de l'Élève
-                  </h2>
-                  <p className="text-xs text-slate-500 font-mono flex items-center gap-1.5">
-                    <Clock className="h-3.5 w-3.5" />
-                    Édité le {new Date().toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' })}
-                  </p>
-                </div>
+              
+              <div className="space-y-6">
                 
-                {/* Visual Accent Logo */}
-                <div className="bg-indigo-50 text-indigo-800 border border-indigo-150 p-2.5 rounded-xl text-center shrink-0">
-                  <GraduationCap className="h-6 w-6 mx-auto text-indigo-700" />
-                  <span className="text-[8px] font-black uppercase tracking-wider block mt-1">PASMA-ENT</span>
+                {/* Official Country Header (Republic of Cameroon Moto align) */}
+                <div className="border-b-2 border-slate-850 pb-4">
+                  <div className="flex justify-between items-start text-center">
+                    <div className="text-left space-y-0.5">
+                      <p className="text-[9px] font-black tracking-wider text-slate-750">RÉPUBLIQUE DU CAMEROUN</p>
+                      <p className="text-[7.5px] italic text-slate-400">Paix - Travail - Patrie</p>
+                    </div>
+                    <div className="text-center">
+                      <div className="bg-slate-100 border border-slate-250 p-1.5 rounded-lg text-center inline-block">
+                        <GraduationCap className="h-4 w-4 mx-auto text-slate-700" />
+                        <span className="text-[6.5px] font-bold block">PASMA ENT</span>
+                      </div>
+                    </div>
+                    <div className="text-right space-y-0.5">
+                      <p className="text-[9px] font-black tracking-wider text-slate-750">REPUBLIC OF CAMEROON</p>
+                      <p className="text-[7.5px] italic text-slate-400">Peace - Work - Fatherland</p>
+                      <p className="text-[8px] font-bold text-slate-700 pt-0.5">Année Académique: {settings?.schoolYear || "2025/2026"}</p>
+                    </div>
+                  </div>
                 </div>
-              </div>
 
-              {/* Patient Profile Metadata Row */}
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start bg-slate-50 p-4 rounded-xl print-border">
-                {/* Photo frame */}
-                <div className="md:col-span-2 flex justify-center">
-                  <div className="w-20 h-20 bg-white border border-slate-200 rounded-xl overflow-hidden flex items-center justify-center shrink-0">
-                    {isImageAvatar(student.avatar) ? (
-                      <img src={student.avatar} alt={student.name} className="w-full h-full object-cover animate-pulse-once" referrerPolicy="no-referrer" />
-                    ) : (
-                      <span className="text-5xl font-sans" role="img" aria-label="student avatar">
-                        {student.avatar}
+                {/* Elegant Custom Theme Colored Title Card */}
+                <div className="flex gap-4 items-center">
+                  <div className={`w-1.5 h-16 rounded-sm shrink-0 bg-${pdfTheme}-600`} style={{ backgroundColor: activeTheme.primaryHex }} />
+                  <div className="space-y-0.5">
+                    <span className={`text-[9px] font-black tracking-widest uppercase ${activeTheme.textPrimary}`}>
+                      {selectedTerm === 'all' ? "BULLETIN ANNUEL GLOBAL" : selectedTerm === 't1' ? "BULLETIN TRIMESTRIEL - TRIMESTRE 1" : selectedTerm === 't2' ? "BULLETIN TRIMESTRIEL - TRIMESTRE 2" : "BULLETIN TRIMESTRIEL - TRIMESTRE 3"}
+                    </span>
+                    <h2 className="text-lg font-black text-slate-900 tracking-tight uppercase">
+                      Bilan d'Évaluation de l'Élève
+                    </h2>
+                    <p className="text-[9.5px] text-slate-500 font-mono flex items-center gap-1">
+                      <Clock className="h-3 w-3 text-slate-400" />
+                      Généré interactif le {new Date().toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' })}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Patient Profile Metadata Row */}
+                <div className="grid grid-cols-12 gap-4 bg-slate-50 p-4 border border-slate-200 rounded-xl print-border text-[11px] leading-relaxed">
+                  
+                  {/* Student Photo and Core Info */}
+                  <div className="col-span-7 flex gap-4 items-center">
+                    <div className="w-16 h-16 bg-white border border-slate-200 rounded-lg overflow-hidden flex items-center justify-center shrink-0">
+                      {isImageAvatar(student.avatar) ? (
+                        <img src={student.avatar} alt={student.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      ) : (
+                        <span className="text-4xl" role="img" aria-label="student avatar">
+                          {student.avatar}
+                        </span>
+                      )}
+                    </div>
+                    <div className="space-y-0.5">
+                      <h3 className="text-sm font-black text-slate-900 uppercase">{student.name}</h3>
+                      <p className="text-slate-600">Né(e) le : <strong className="text-slate-800">{new Date(student.dob).toLocaleDateString('fr-FR', { dateStyle: 'long' })}</strong></p>
+                      <p className="text-slate-600">Classe / Section : <strong className="text-slate-800">{student.grade} • {student.classRoom}</strong></p>
+                      <div className="pt-1">
+                        <span className={`inline-block px-2 py-0.5 rounded text-[8.5px] font-bold ${activeTheme.badge}`}>
+                          ÉLÈVE ACTIF ET INSCRIT
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Vertical Separator */}
+                  <div className="col-span-1 border-r border-slate-200 h-14 my-auto self-center justify-self-center" />
+
+                  {/* Supervisor details */}
+                  <div className="col-span-4 space-y-1 my-auto">
+                    <span className="text-[8px] font-black text-slate-400 tracking-wider uppercase block">Superviseur Pédagogique</span>
+                    <p className="font-bold text-slate-800">{teacherName}</p>
+                    {teacherPhone && <p className="text-[10px] text-slate-500 font-medium">Tél: <span className="font-mono">{teacherPhone}</span></p>}
+                    {teacherEmail && <p className="text-[10px] text-slate-500 font-medium truncate" title={teacherEmail}>Email: <span className="font-mono text-slate-600">{teacherEmail}</span></p>}
+                  </div>
+
+                </div>
+
+                {/* Scorecards Row */}
+                <div className="grid grid-cols-2 gap-4">
+                  
+                  {/* Academic Performance KPI Card */}
+                  <div className={`border rounded-xl p-4 flex flex-col justify-between ${activeTheme.bgLight} ${activeTheme.borderAccent}`}>
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase">
+                      <span className="flex items-center gap-1.5">
+                        <Award className="h-4 w-4 text-amber-500" /> RENDEMENT ACADÉMIQUE
                       </span>
+                      <span className="font-mono">{totalTests} éval.</span>
+                    </div>
+                    <div className="flex items-baseline gap-1.5 pt-2">
+                      <span className="text-2xl font-black text-slate-950 font-mono">
+                        {totalTests > 0 ? averageBase20.toFixed(2) : '--'}
+                      </span>
+                      <span className="text-xs text-slate-400 font-bold">/ 20</span>
+                      {totalTests > 0 && (
+                        <span className={`text-[10px] font-bold ${activeTheme.textPrimary}`}>
+                          ({averagePercentage.toFixed(1)}%)
+                        </span>
+                      )}
+                    </div>
+                    {totalTests > 0 && (
+                      <div className={`mt-2 border rounded-lg px-2 py-0.5 text-[9.5px] font-extrabold flex justify-between items-center ${apprec.color}`}>
+                        <span>Appréciation :</span>
+                        <span>{apprec.text}</span>
+                      </div>
                     )}
                   </div>
-                </div>
 
-                {/* Core info metadata */}
-                <div className="md:col-span-5 space-y-1 text-xs">
-                  <h3 className="text-base font-extrabold text-slate-900 uppercase">{student.name}</h3>
-                  <div className="text-slate-700 font-medium space-y-1">
-                    <p className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5 text-gray-400" /> Né(e) le : <strong>{new Date(student.dob).toLocaleDateString('fr-FR', { dateStyle: 'long' })}</strong></p>
-                    <p className="flex items-center gap-1.5"><GraduationCap className="h-3.5 w-3.5 text-gray-400" /> Niveau : <strong>{student.grade} • {student.classRoom}</strong></p>
-                  </div>
-                </div>
-
-                {/* Supervisor metadata */}
-                <div className="md:col-span-5 border-t md:border-t-0 md:border-l border-slate-200 pt-3 md:pt-0 md:pl-5 space-y-1 text-xs text-slate-700">
-                  <span className="text-[9px] uppercase font-black text-slate-400 tracking-wider block">Superviseur Pédagogique</span>
-                  <div className="font-medium space-y-1 text-[11px]">
-                    <p className="flex items-center gap-1.5"><User className="h-3.5 w-3.5 text-gray-400" /> Enseignant principal : <strong>{teacherName}</strong></p>
-                    {teacherPhone && (
-                      <p className="flex items-center gap-1.5"><Phone className="h-3.5 w-3.5 text-gray-400" /> Téléphone : <strong className="font-mono text-slate-600">{teacherPhone}</strong></p>
-                    )}
-                    {teacherEmail && (
-                      <p className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5 text-gray-400" /> Email direct : <strong className="font-mono text-slate-600">{teacherEmail}</strong></p>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Synthetic metrics widgets */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                
-                {/* GP/Average metric scorecard */}
-                <div className="bg-white border border-slate-200 rounded-xl p-4.5 space-y-1.5 flex flex-col justify-between">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
-                      <Award className="h-4 w-4 text-amber-500" /> Rendement Cognitif
-                    </span>
-                    <span className="text-[10px] font-mono text-slate-400">{totalTests} évaluation(s)</span>
-                  </div>
-                  <div className="flex items-baseline gap-2 pt-1">
-                    <span className="text-3xl font-black font-sans text-indigo-950">
-                      {totalTests > 0 ? averageBase20.toFixed(2) : '--'}
-                    </span>
-                    <span className="text-xs text-slate-400 font-bold">/ 20</span>
-                    {totalTests > 0 && <span className="text-xs text-indigo-600 font-medium">({averagePercentage.toFixed(1)}%)</span>}
-                  </div>
-                  {totalTests > 0 && (
-                    <div className={`mt-2 border rounded-lg px-2.5 py-1 text-[10.5px] font-extrabold flex justify-between items-center ${apprec.color}`}>
-                      <span>Appréciation :</span>
-                      <span>{apprec.text}</span>
+                  {/* Attendance Performance KPI Card */}
+                  <div className="border border-emerald-200 bg-emerald-50/40 rounded-xl p-4 flex flex-col justify-between">
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase">
+                      <span className="flex items-center gap-1.5">
+                        <ListChecks className="h-4 w-4 text-emerald-600" /> TAUX D'ASSIDUITÉ
+                      </span>
+                      <span className="font-mono">{totalLogs} cont.</span>
                     </div>
-                  )}
-                </div>
-
-                {/* Absences metric scorecard */}
-                <div className="bg-white border border-slate-200 rounded-xl p-4.5 space-y-1.5 flex flex-col justify-between">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
-                      <ListChecks className="h-4 w-4 text-indigo-500" /> Taux d'Assiduité
-                    </span>
-                    <span className="text-[10px] font-mono text-slate-400">{totalLogs} contrôle(s)</span>
-                  </div>
-                  <div className="flex items-baseline gap-1 pt-1">
-                    <span className={`text-3xl font-black font-sans ${Number(presenceRate) < 90 ? 'text-red-650' : 'text-slate-900'}`}>
-                      {presenceRate}%
-                    </span>
-                    <span className="text-xs text-slate-400 font-bold">Présence effective</span>
-                  </div>
-                  <div className="grid grid-cols-4 gap-1 text-center font-mono mt-2 pt-2 border-t border-slate-100 text-[10px] leading-tight text-slate-500 font-semibold">
-                    <div>
-                      <p className="text-slate-900 text-[11px] font-bold">{presentCount}</p>
-                      <p className="text-[8px] font-sans text-slate-400">Prés.</p>
+                    <div className="flex items-baseline gap-1.5 pt-2">
+                      <span className={`text-2xl font-black font-mono ${Number(presenceRate) < 90 ? 'text-red-600' : 'text-slate-950'}`}>
+                        {presenceRate}%
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-bold">Présence effective</span>
                     </div>
-                    <div>
-                      <p className="text-amber-600 text-[11px] font-bold">{lateCount}</p>
-                      <p className="text-[8px] font-sans text-slate-400">Ret.</p>
-                    </div>
-                    <div>
-                      <p className="text-red-650 text-[11px] font-bold">{absentCount}</p>
-                      <p className="text-[8px] font-sans text-slate-400">Abs.</p>
-                    </div>
-                    <div>
-                      <p className="text-indigo-600 text-[11px] font-bold">{excusedCount}</p>
-                      <p className="text-[8px] font-sans text-slate-400">Exc.</p>
+                    <div className="grid grid-cols-4 gap-1 text-center font-mono mt-2 pt-1.5 border-t border-emerald-100 text-[9px] text-slate-500 font-semibold leading-none">
+                      <div>
+                        <p className="text-slate-900 text-[10px] font-bold">{presentCount}</p>
+                        <p className="text-[7.5px] text-slate-400 mt-0.5">Prés.</p>
+                      </div>
+                      <div>
+                        <p className="text-amber-600 text-[10px] font-bold">{lateCount}</p>
+                        <p className="text-[7.5px] text-slate-400 mt-0.5">Ret.</p>
+                      </div>
+                      <div>
+                        <p className="text-red-600 text-[10px] font-bold">{absentCount}</p>
+                        <p className="text-[7.5px] text-slate-400 mt-0.5">Abs.</p>
+                      </div>
+                      <div>
+                        <p className="text-indigo-600 text-[10px] font-bold">{excusedCount}</p>
+                        <p className="text-[7.5px] text-slate-400 mt-0.5">Exc.</p>
+                      </div>
                     </div>
                   </div>
+
                 </div>
 
-              </div>
-
-              {/* Summary Performance Chart */}
-              {showChart && subjectChartData.length > 0 && (
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4.5 space-y-3 print-border">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-slate-750 uppercase flex items-center gap-1.5 font-semibold">
-                      <TrendingUp className="h-4 w-4 text-indigo-650" /> Bilan Graphique : Moyennes Standardisées par Discipline (sur 20)
-                    </span>
-                    <span className="text-[9px] text-slate-400 font-mono uppercase tracking-wider">PASMA-ENT ANALYTICS</span>
+                {/* Analytical Bar Chart (visible on A4 sheet screen only if checked) */}
+                {showChart && subjectChartData.length > 0 && (
+                  <div className="bg-slate-50 border border-slate-250 rounded-xl p-4 space-y-2 print-border">
+                    <div className="flex justify-between items-center text-[10px]">
+                      <span className="font-extrabold text-slate-750 uppercase flex items-center gap-1.5">
+                        <TrendingUp className="h-3.5 w-3.5" style={{ color: activeTheme.primaryHex }} /> Bilan Analytique : Moyennes Scolaires par Discipline (sur 20)
+                      </span>
+                      <span className="text-[8px] text-slate-400 font-mono tracking-widest uppercase">PASMA ANALYTICS</span>
+                    </div>
+                    <div className="h-32 w-full text-[9px]">
+                      {isMounted ? (
+                        <ResponsiveContainer width="100%" height={128} minWidth={0}>
+                          <BarChart data={subjectChartData} margin={{ top: 10, right: 10, left: -30, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                            <XAxis dataKey="subject" tick={{ fontSize: 8, fill: '#475569', fontWeight: 600 }} tickLine={false} />
+                            <YAxis domain={[0, 20]} ticks={[0, 5, 10, 15, 20]} tick={{ fontSize: 8, fill: '#475569' }} tickLine={false} />
+                            <Tooltip 
+                              formatter={(value) => [`${value} / 20`, 'Moyenne']}
+                              contentStyle={{ fontSize: 9, borderRadius: 6, borderColor: '#cbd5e1' }}
+                            />
+                            <Bar dataKey="Moyenne" fill={activeTheme.primaryHex} radius={[3, 3, 0, 0]} maxBarSize={24}>
+                              {subjectChartData.map((entry, index) => {
+                                const isBelowMoyenne = entry.Moyenne < 10;
+                                return <Cell key={`cell-${index}`} fill={isBelowMoyenne ? '#ef4444' : activeTheme.primaryHex} />;
+                              })}
+                            </Bar>
+                            <ReferenceLine y={10} stroke="#ef4444" strokeDasharray="4 4" label={{ value: 'Seuil (10)', fill: '#ef4444', fontSize: 7.5, position: 'top', fontWeight: 'bold' }} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="h-full w-full bg-slate-100 rounded flex items-center justify-center">Chargement graphique...</div>
+                      )}
+                    </div>
                   </div>
-                  <div className="h-48 w-full text-[10px]">
-                    {isMounted ? (
-                      <ResponsiveContainer width="100%" height={192} minWidth={0}>
-                        <BarChart data={subjectChartData} margin={{ top: 15, right: 10, left: -25, bottom: 5 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                          <XAxis dataKey="subject" tick={{ fontSize: 9, fill: '#475569', fontWeight: 600 }} tickLine={false} />
-                          <YAxis domain={[0, 20]} ticks={[0, 5, 10, 15, 20]} tick={{ fontSize: 9, fill: '#475569' }} tickLine={false} />
-                          <Tooltip 
-                            formatter={(value) => [`${value} / 20`, 'Moyenne scolaire']}
-                            contentStyle={{ fontSize: 10, borderRadius: 8, borderColor: '#cbd5e1' }}
-                          />
-                          <Bar dataKey="Moyenne" fill="#4f46e5" radius={[4, 4, 0, 0]} maxBarSize={32}>
-                            {subjectChartData.map((entry, index) => {
-                              const isBelowMoyenne = entry.Moyenne < 10;
-                              return <Cell key={`cell-${index}`} fill={isBelowMoyenne ? '#ef4444' : '#4f46e5'} />;
-                            })}
-                          </Bar>
-                          <ReferenceLine y={10} stroke="#ef4444" strokeDasharray="4 4" label={{ value: 'Seuil de Réussite (10/20)', fill: '#ef4444', fontSize: 8, position: 'top', fontWeight: 'bold' }} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    ) : (
-                      <div className="h-full w-full bg-slate-50 rounded-xl animate-pulse flex items-center justify-center text-xs text-slate-405 font-medium font-sans">Chargement...</div>
-                    )}
-                  </div>
-                </div>
-              )}
+                )}
 
               {/* Core Subsection A: Academic evaluation (Grades) */}
-              <div className="space-y-2.5">
-                <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-1.5 border-b border-slate-150 pb-1.5">
-                  <NotebookPen className="h-4 w-4 text-indigo-650 shrink-0" />
-                  Tableau des Évaluations de Notes
+              <div className="space-y-2">
+                <h4 className="text-[10px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-1.5 border-b border-slate-200 pb-1">
+                  <NotebookPen className="h-3.5 w-3.5" style={{ color: activeTheme.primaryHex }} />
+                  Détail des Évaluations & Notes de Contrôles
                 </h4>
-                {grades.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic text-center py-4 bg-slate-50 rounded-xl">Aucune note de contrôle enregistrée pour cet élève.</p>
+                {filteredGrades.length === 0 ? (
+                  <p className="text-[10px] text-slate-400 italic text-center py-4 bg-slate-50 border border-dashed border-slate-200 rounded-lg">Aucune note de contrôle enregistrée pour la période sélectionnée.</p>
                 ) : (
-                  <div className="overflow-hidden border border-slate-200 rounded-xl">
-                    <table className="w-full text-left text-[11px] border-collapse font-sans">
+                  <div className="overflow-hidden border border-slate-200 rounded-lg">
+                    <table className="w-full text-left text-[10px] border-collapse font-sans">
                       <thead>
                         <tr className="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold">
-                          <th className="px-3 py-2">Matière / Discipline</th>
-                          <th className="px-3 py-2">Intitulé de l'examen</th>
-                          <th className="px-3 py-2 text-center">Date d'évaluation</th>
-                          <th className="px-3 py-2 text-center">Note obtenue</th>
-                          <th className="px-3 py-2">Appréciation Enseignant</th>
+                          <th className="px-2.5 py-1.5">Matière / Discipline</th>
+                          <th className="px-2.5 py-1.5">Intitulé de l'examen</th>
+                          <th className="px-2.5 py-1.5 text-center">Date</th>
+                          <th className="px-2.5 py-1.5 text-center">Note / Barème</th>
+                          <th className="px-2.5 py-1.5">Observations Enseignant</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 text-slate-800">
-                        {grades.map((g) => (
+                        {filteredGrades.map((g) => (
                           <tr key={g.id} className="hover:bg-slate-50/50">
-                            <td className="px-3 py-2 font-bold text-slate-900">{g.subject}</td>
-                            <td className="px-3 py-2 text-slate-600">{g.examName}</td>
-                            <td className="px-3 py-2 text-center text-slate-500 font-mono">
+                            <td className="px-2.5 py-1.5 font-extrabold text-slate-900">{g.subject}</td>
+                            <td className="px-2.5 py-1.5 text-slate-600">{g.examName}</td>
+                            <td className="px-2.5 py-1.5 text-center text-slate-500 font-mono">
                               {new Date(g.date).toLocaleDateString('fr-FR', { dateStyle: 'short' })}
                             </td>
-                            <td className="px-3 py-2 text-center font-mono">
-                              <span className="font-bold text-indigo-950 text-xs">{g.score}</span> / <span className="text-slate-400 font-semibold">{g.maxScore}</span>
+                            <td className="px-2.5 py-1.5 text-center font-mono">
+                              <span className="font-extrabold text-slate-900">{g.score}</span> / <span className="text-slate-400 font-semibold">{g.maxScore}</span>
                             </td>
-                            <td className="px-3 py-2 text-slate-500 italic max-w-[180px] truncate" title={g.teacherRemarks}>
+                            <td className="px-2.5 py-1.5 text-slate-500 italic max-w-[150px] truncate" title={g.teacherRemarks}>
                               {g.teacherRemarks || "Aucun commentaire"}
                             </td>
                           </tr>
@@ -1020,81 +1345,98 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
                 )}
               </div>
 
-              {/* Core Subsection B: Attendance History */}
-              <div className="space-y-2.5">
-                <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest flex items-center gap-1.5 border-b border-slate-150 pb-1.5">
-                  <Calendar className="h-4 w-4 text-indigo-650 shrink-0" />
-                  Rapport du Registre de Présence
-                </h4>
-                {attendance.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic text-center py-4 bg-slate-50 rounded-xl">Aucune absence ou retard répertorié au dossier.</p>
-                ) : (
-                  <div className="overflow-hidden border border-slate-200 rounded-xl">
-                    <table className="w-full text-left text-[11px] border-collapse font-sans">
-                      <thead>
-                        <tr className="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold">
-                          <th className="px-3 py-2">Date du contrôle</th>
-                          <th className="px-3 py-2 text-center">Statut d'absence</th>
-                          <th className="px-3 py-2">Motifs justificatifs & Remarques</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 text-slate-800 font-medium">
-                        {attendance.map((att) => {
-                          let badgeStyle = 'bg-slate-100 text-slate-700';
-                          if (att.status === 'Present') badgeStyle = 'bg-emerald-50 text-emerald-700 font-bold';
-                          if (att.status === 'Absent') badgeStyle = 'bg-red-55 text-red-700 font-bold';
-                          if (att.status === 'Late') badgeStyle = 'bg-amber-100 text-amber-700 font-bold';
-                          if (att.status === 'Excused') badgeStyle = 'bg-indigo-50 text-indigo-700 font-bold';
-                          
-                          return (
-                            <tr key={att.id} className="hover:bg-slate-50/50">
-                              <td className="px-3 py-2 text-slate-900 font-mono">
-                                {new Date(att.date).toLocaleDateString('fr-FR', { dateStyle: 'long' })}
-                              </td>
-                              <td className="px-3 py-2 text-center">
-                                <span className={`inline-block px-2.5 py-0.5 rounded-full text-[9.5px] ${badgeStyle}`}>
-                                  {att.status === 'Present' && 'Présent'}
-                                  {att.status === 'Absent' && 'Absent'}
-                                  {att.status === 'Late' && 'En Retard'}
-                                  {att.status === 'Excused' && 'Justifié'}
-                                </span>
-                              </td>
-                              <td className="px-3 py-2 text-slate-500 italic max-w-xs truncate" title={att.remarks}>
-                                {att.remarks || (att.status === 'Present' ? 'Élève ponctuel et assidu' : 'Aucun motif renseigné')}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
+              {/* Core Subsection B: Attendance Register (Conditional) */}
+              {showAttendance && (
+                <div className="space-y-2">
+                  <h4 className="text-[10px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-1.5 border-b border-slate-200 pb-1">
+                    <Calendar className="h-3.5 w-3.5" style={{ color: activeTheme.primaryHex }} />
+                    Rapport d'Assiduité & Registre de Présence
+                  </h4>
+                  {filteredAttendance.length === 0 ? (
+                    <p className="text-[10px] text-slate-400 italic text-center py-4 bg-slate-50 border border-dashed border-slate-200 rounded-lg">Aucune absence ou retard enregistré pour la période sélectionnée.</p>
+                  ) : (
+                    <div className="overflow-hidden border border-slate-200 rounded-lg">
+                      <table className="w-full text-left text-[10px] border-collapse font-sans">
+                        <thead>
+                          <tr className="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold">
+                            <th className="px-2.5 py-1.5">Date du contrôle</th>
+                            <th className="px-2.5 py-1.5 text-center">Statut d'assiduité</th>
+                            <th className="px-2.5 py-1.5">Motifs & Justifications Vie Scolaire</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-slate-800 font-medium">
+                          {filteredAttendance.map((att) => {
+                            let badgeStyle = 'bg-slate-100 text-slate-700';
+                            if (att.status === 'Present') badgeStyle = 'bg-emerald-50 text-emerald-700 font-bold';
+                            if (att.status === 'Absent') badgeStyle = 'bg-red-50 text-red-700 font-bold';
+                            if (att.status === 'Late') badgeStyle = 'bg-amber-100 text-amber-700 font-bold';
+                            if (att.status === 'Excused') badgeStyle = 'bg-indigo-50 text-indigo-700 font-bold';
+                            
+                            return (
+                              <tr key={att.id} className="hover:bg-slate-50/50">
+                                <td className="px-2.5 py-1.5 text-slate-900 font-mono">
+                                  {new Date(att.date).toLocaleDateString('fr-FR', { dateStyle: 'long' })}
+                                </td>
+                                <td className="px-2.5 py-1.5 text-center">
+                                  <span className={`inline-block px-2 py-0.5 rounded text-[9px] ${badgeStyle}`}>
+                                    {att.status === 'Present' && 'Présent'}
+                                    {att.status === 'Absent' && 'Absent'}
+                                    {att.status === 'Late' && 'En Retard'}
+                                    {att.status === 'Excused' && 'Justifié'}
+                                  </span>
+                                </td>
+                                <td className="px-2.5 py-1.5 text-slate-500 italic max-w-xs truncate" title={att.remarks}>
+                                  {att.remarks || (att.status === 'Present' ? 'Élève ponctuel et assidu' : 'Aucun motif renseigné')}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
 
-              {/* Administrative signatures spaces for print output only */}
-              <div className="grid grid-cols-3 gap-6 pt-12 items-start text-center text-xs font-sans">
-                <div className="space-y-16">
-                  <div>
-                    <p className="font-bold text-slate-800">Enseignant Principal</p>
-                    <p className="text-[10px] text-slate-500 mt-1 font-medium">{teacherName}</p>
+              {/* Parent Custom Remarks section in Preview sheet */}
+              {parentCustomNotes.trim() && (
+                <div className="space-y-2">
+                  <h4 className="text-[10px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-1.5 border-b border-slate-200 pb-1">
+                    <User className="h-3.5 w-3.5" style={{ color: activeTheme.primaryHex }} />
+                    Observations et Signatures des Parents d'Élèves
+                  </h4>
+                  <div className={`p-3 border rounded-lg italic text-[9.5px] leading-relaxed text-slate-700 bg-slate-50 border-${pdfTheme}-200`} style={{ borderColor: activeTheme.primaryHex }}>
+                    <p>{parentCustomNotes}</p>
                   </div>
-                  <div className="border-t border-slate-300 mx-auto w-36 pt-1 text-[10px] text-gray-400">Signature & Date</div>
                 </div>
-                <div className="space-y-16">
+              )}
+
+              {/* Signatures box (only if enabled) */}
+              {showSignatures && (
+                <div className="grid grid-cols-3 gap-4 pt-4 border-t border-slate-100 text-[10px] leading-relaxed text-center">
                   <div>
-                    <p className="font-bold text-slate-800">Le Directeur d'Établissement</p>
-                    {settings?.directorName && <p className="text-[10px] text-slate-500 mt-1 font-medium">{settings.directorName}</p>}
+                    <p className="font-bold text-slate-900">Enseignant Principal</p>
+                    <p className="text-[9px] text-slate-500 mt-0.5">{teacherName}</p>
+                    <div className="h-10" />
+                    <div className="border-t border-slate-200 mx-auto w-24 pt-0.5 text-[8px] text-slate-400">Signature</div>
                   </div>
-                  <div className="border-t border-slate-300 mx-auto w-36 pt-1 text-[10px] text-gray-400">Cachet officiel</div>
+                  <div>
+                    <p className="font-bold text-slate-900">Directeur d'Établissement</p>
+                    <p className="text-[9px] text-slate-500 mt-0.5">{settings?.directorName || 'Jacques Bene Mbama'}</p>
+                    <div className="h-10" />
+                    <div className="border-t border-slate-200 mx-auto w-24 pt-0.5 text-[8px] text-slate-400">Cachet officiel</div>
+                  </div>
+                  <div>
+                    <p className="font-bold text-slate-900">Signature des Parents</p>
+                    <p className="text-[9px] text-slate-500 mt-0.5">M. / Mme</p>
+                    <div className="h-10" />
+                    <div className="border-t border-slate-200 mx-auto w-24 pt-0.5 text-[8px] text-slate-400">Lu et Approuvé</div>
+                  </div>
                 </div>
-                <div className="space-y-16">
-                  <p className="font-bold text-slate-800">Signature du Parent</p>
-                  <div className="border-t border-slate-300 mx-auto w-36 pt-1 text-[10px] text-gray-400">Mention "lu et approuvé"</div>
-                </div>
-              </div>
+              )}
 
               {/* Notice footnote */}
-              <p className="text-[9px] text-slate-400 text-center pt-8 border-t border-slate-100 leading-normal font-sans">
+              <p className="text-[8.5px] text-slate-400 text-center pt-6 border-t border-slate-150 leading-normal font-sans">
                 Ce relevé numérique de situation scolaire fait foi sous réserve de vérification physique auprès du secrétariat du Directeur d'École. <br />
                 Portail Pasma-sys ENT administré par Jacques Bene Mbama (+237 656 454 053). All rights reserved 2026.
               </p>
@@ -1105,37 +1447,24 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
 
         </div>
 
-        {/* Modal Action Footer (Non printable) */}
+      </div>
+
+      {/* Modal Action Footer (Non printable) */}
         <div className="bg-slate-100 border-t border-slate-200 px-6 py-4 flex flex-wrap justify-between items-center gap-3 shrink-0 no-print-interface">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 border border-slate-300 bg-white hover:bg-slate-50 font-bold text-xs text-slate-700 rounded-xl cursor-pointer transition shadow-xs"
+            className="px-4 py-2 border border-slate-300 bg-white hover:bg-slate-50 font-bold text-xs text-slate-750 rounded-xl cursor-pointer transition shadow-xs"
           >
             Retour au Portail
           </button>
           
           <div className="flex gap-2">
-            {subjectChartData.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowChart(prev => !prev)}
-                className={`font-semibold text-xs px-4 py-2.5 rounded-xl shadow-md cursor-pointer transition flex items-center gap-2 active:scale-97 ${
-                  showChart 
-                    ? 'bg-blue-55 border border-blue-200 text-blue-700 hover:bg-blue-100'
-                    : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'
-                }`}
-                title={showChart ? "Masquer le graphique d'analyse des moyennes" : "Afficher le graphique analytique"}
-              >
-                <BarChart2 className="h-4 w-4" />
-                <span>{showChart ? "Masquer le Graphique" : "Afficher le Graphique"}</span>
-              </button>
-            )}
             <button
               type="button"
               onClick={handleDownloadCSV}
               className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow-md cursor-pointer transition flex items-center gap-2 active:scale-97"
-              title="Télécharger le relevé de notes et registre d'assiduité sous format CSV"
+              title="Exporter le relevé de notes et registre d'assiduité sous format CSV"
             >
               <Download className="h-4 w-4" />
               <span>Exporter en CSV</span>
@@ -1152,7 +1481,8 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
             <button
               type="button"
               onClick={handlePrint}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow-md cursor-pointer transition flex items-center gap-2 active:scale-97"
+              className="text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow-md cursor-pointer transition flex items-center gap-2 active:scale-97"
+              style={{ backgroundColor: activeTheme.primaryHex }}
               title="Lancer l'impression directe du rapport"
             >
               <Printer className="h-4 w-4" />

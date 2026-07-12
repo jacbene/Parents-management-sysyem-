@@ -5,6 +5,8 @@ import { AnimatePresence, motion } from 'motion/react';
 import { jsPDF } from 'jspdf';
 import { useLanguage } from '../utils/TranslationContext';
 import PaymentMethodSelector from './PaymentMethodSelector';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 
 interface BillingPortalProps {
   invoices: Invoice[];
@@ -26,14 +28,85 @@ export default function BillingPortal({
   settings
 }: BillingPortalProps) {
   const { t, language } = useLanguage();
+  const isEn = language === 'en';
   const [activeTab, setActiveTab] = useState<'all' | 'unpaid' | 'paid'>('all');
   const [payingInvoice, setPayingInvoice] = useState<Invoice | null>(null);
+  const [invoiceSearchQuery, setInvoiceSearchQuery] = useState('');
 
   // States for Receipt Retrieval
   const [searchRefId, setSearchRefId] = useState('');
   const [searchResult, setSearchResult] = useState<Invoice | null>(null);
   const [searchAttempted, setSearchAttempted] = useState(false);
   const [searchType, setSearchType] = useState<'not_found' | 'paid' | 'unpaid' | null>(null);
+
+  const [selectedQrInvoice, setSelectedQrInvoice] = useState<Invoice | null>(null);
+  const [qrProvider, setQrProvider] = useState<'mtn' | 'orange' | 'wave' | 'bank'>('mtn');
+  const [qrScanningSimulation, setQrScanningSimulation] = useState(false);
+  const [qrSuccessMessage, setQrSuccessMessage] = useState(false);
+
+  const getInvoiceQRCodeUrl = (inv: Invoice, prov: 'mtn' | 'orange' | 'wave' | 'bank') => {
+    const rawPhone = parentPhone || inv.phone || '';
+    const referenceId = rawPhone ? rawPhone.trim().replace(/[\s\-\(\)\+]/g, '') : 'REF_UNKNOWN';
+    const providerScheme = prov === 'mtn' ? 'mtn_momo' : prov === 'orange' ? 'orange_money' : prov === 'wave' ? 'wave' : 'bank_transfer';
+
+    const student = students?.find(s => s.id === inv.studentId);
+    const studentName = student ? student.name : "Élève de l'établissement";
+    const studentClass = student ? `${student.grade} ${student.classRoom}` : "N/A";
+
+    const paymentData = {
+      service: "PasmaSysPay",
+      provider: providerScheme,
+      invoiceId: inv.id,
+      title: inv.title,
+      amount: inv.amount,
+      currency: "FCFA",
+      reference: referenceId,
+      studentId: inv.studentId,
+      studentName: studentName,
+      studentClass: studentClass,
+      school: "CES d'Ekali 1",
+      recipient: "APEE CES d'Ekali 1 Treasury",
+      timestamp: new Date().toISOString()
+    };
+
+    const payload = JSON.stringify(paymentData);
+    return `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(payload)}&color=0f172a&bgcolor=ffffff&qzone=1`;
+  };
+
+  const handleSimulateQrPayment = async (inv: Invoice) => {
+    setQrScanningSimulation(true);
+    setQrSuccessMessage(false);
+    
+    try {
+      await new Promise(resolve => setTimeout(resolve, 1500)); // scan animation delay
+      
+      const invRef = doc(db, 'invoices', inv.id);
+      const paidDate = new Date().toISOString().split('T')[0];
+
+      await updateDoc(invRef, {
+        status: 'Paid',
+        paymentDate: paidDate
+      });
+
+      const updatedInvoice: Invoice = {
+        ...inv,
+        status: 'Paid',
+        paymentDate: paidDate
+      };
+
+      setQrSuccessMessage(true);
+      await new Promise(resolve => setTimeout(resolve, 1500)); // success message delay
+      
+      onUpdateInvoice(updatedInvoice);
+      setSelectedQrInvoice(null);
+    } catch (err) {
+      console.error(err);
+      alert("Une erreur est survenue lors de la simulation du paiement.");
+    } finally {
+      setQrScanningSimulation(false);
+      setQrSuccessMessage(false);
+    }
+  };
 
   const handleSearchReceipt = (e: React.FormEvent) => {
     e.preventDefault();
@@ -725,10 +798,50 @@ export default function BillingPortal({
     return true;
   });
 
-  // Filter invoices for tabs
+  // Filter invoices for tabs and search query
   const filteredInvoices = studentInvoices.filter(inv => {
-    if (activeTab === 'unpaid') return inv.status === 'Unpaid' || inv.status === 'Overdue';
-    if (activeTab === 'paid') return inv.status === 'Paid';
+    // 1. Tab filter
+    if (activeTab === 'unpaid' && !(inv.status === 'Unpaid' || inv.status === 'Overdue')) return false;
+    if (activeTab === 'paid' && inv.status !== 'Paid') return false;
+
+    // 2. Search query filter
+    if (invoiceSearchQuery.trim()) {
+      const query = invoiceSearchQuery.toLowerCase().trim();
+      const queryClean = query.replace(/\D/g, ''); // for clean phone matches
+
+      // Match invoice id
+      const matchesId = inv.id.toLowerCase().includes(query);
+
+      // Match invoice title
+      const matchesTitle = inv.title.toLowerCase().includes(query);
+
+      // Match invoice description
+      const matchesDesc = inv.description ? inv.description.toLowerCase().includes(query) : false;
+
+      // Match invoice phone
+      const invPhoneClean = inv.phone ? inv.phone.replace(/\D/g, '') : '';
+      const matchesPhone = inv.phone ? inv.phone.toLowerCase().includes(query) || (queryClean && invPhoneClean.includes(queryClean)) : false;
+
+      // Match student associated with the invoice
+      const student = students?.find(s => s.id === inv.studentId);
+      const matchesStudentName = student ? student.name.toLowerCase().includes(query) : false;
+
+      // Match names in studentsList (for APEE cotisations)
+      let matchesStudentsList = false;
+      if (inv.studentsList) {
+        try {
+          const parsed = JSON.parse(inv.studentsList);
+          if (Array.isArray(parsed)) {
+            matchesStudentsList = parsed.some((s: any) => 
+              s.name && s.name.toLowerCase().includes(query)
+            );
+          }
+        } catch (e) {}
+      }
+
+      return matchesId || matchesTitle || matchesDesc || matchesPhone || matchesStudentName || matchesStudentsList;
+    }
+
     return true;
   });
 
@@ -960,6 +1073,37 @@ export default function BillingPortal({
       </div>
     </div>
 
+      {/* Barre de Recherche pour les Factures */}
+      <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4 flex flex-col md:flex-row gap-4 items-center justify-between shadow-3xs">
+        <div className="relative w-full md:max-w-md">
+          <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+            <Search className="h-4 w-4" />
+          </span>
+          <input
+            id="billing-search-input"
+            type="text"
+            placeholder={isEn ? "Filter by student name, parent phone, or reference..." : "Filtrer par nom d'élève, téléphone parent, ou référence..."}
+            value={invoiceSearchQuery}
+            onChange={(e) => setInvoiceSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-10 py-2.5 bg-white border border-slate-200 hover:border-slate-350 focus:outline-hidden focus:border-indigo-500 rounded-xl text-xs font-medium transition-all shadow-3xs"
+          />
+          {invoiceSearchQuery && (
+            <button
+              onClick={() => setInvoiceSearchQuery('')}
+              className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 transition cursor-pointer"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+        <div className="text-[11px] text-slate-500 font-bold self-end md:self-center bg-slate-200/40 px-2.5 py-1 rounded-lg border border-slate-200/50">
+          {isEn 
+            ? `${filteredInvoices.length} matched invoices` 
+            : `${filteredInvoices.length} factures filtrées`
+          }
+        </div>
+      </div>
+
       {filteredInvoices.length === 0 ? (
         <div className="text-center p-12 bg-gray-50/50 rounded-2xl border border-gray-100">
           <Receipt className="h-8 w-8 text-slate-300 mx-auto mb-2" />
@@ -1025,12 +1169,23 @@ export default function BillingPortal({
                 </button>
 
                 {inv.status !== 'Paid' && (
-                  <button
-                    onClick={() => startPayment(inv)}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer hover:bg-indigo-700 transition"
-                  >
-                    <CreditCard className="h-3.5 w-3.5" /> Payer ma dette
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedQrInvoice(inv)}
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 transition cursor-pointer"
+                      title="Afficher le Code QR de règlement direct"
+                    >
+                      <QrCode className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">QR Direct</span>
+                    </button>
+                    <button
+                      onClick={() => startPayment(inv)}
+                      className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer hover:bg-indigo-700 transition"
+                    >
+                      <CreditCard className="h-3.5 w-3.5" /> Payer ma dette
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -1115,6 +1270,7 @@ export default function BillingPortal({
                 <PaymentMethodSelector
                   invoice={payingInvoice}
                   parentPhone={parentPhone}
+                  students={students}
                   onPaymentSuccess={(updated) => {
                     onUpdateInvoice(updated);
                     // Hide modal after display success
@@ -1128,6 +1284,191 @@ export default function BillingPortal({
             </motion.div>
           </div>
         )}
+
+        {selectedQrInvoice && (() => {
+          const qrStudent = students?.find(s => s.id === selectedQrInvoice.studentId);
+          const qrStudentName = qrStudent ? qrStudent.name : "Élève de l'établissement";
+          const qrStudentClass = qrStudent ? `${qrStudent.grade} ${qrStudent.classRoom}` : "N/A";
+          const qrFormatted = formatAmountTtc(selectedQrInvoice.amount);
+          
+          return (
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-white rounded-3xl w-full max-w-md border border-gray-100 shadow-2xl overflow-hidden animate-fade-in"
+              >
+                {/* Header */}
+                <div className="p-5 bg-slate-900 text-white relative">
+                  <button
+                    onClick={() => setSelectedQrInvoice(null)}
+                    className="absolute right-4 top-4 text-white/60 hover:text-white cursor-pointer"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-indigo-300 font-black uppercase tracking-widest block">🔒 Code QR de Règlement Direct</span>
+                    <h3 className="text-base font-black">Scan & Paiement Mobile</h3>
+                  </div>
+                </div>
+
+                <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+                  {/* Select Operator */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-600 block">Choisissez l'application de paiement</label>
+                    <div className="grid grid-cols-4 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setQrProvider('mtn')}
+                        className={`p-2 rounded-xl border text-center transition flex flex-col items-center gap-1 cursor-pointer ${
+                          qrProvider === 'mtn'
+                            ? 'bg-amber-50 border-amber-500 text-amber-900 ring-1 ring-amber-100'
+                            : 'bg-white border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="w-5 h-5 rounded-full bg-amber-400 flex items-center justify-center font-black text-[10px] text-gray-950 border border-yellow-500 shadow-3xs">M</div>
+                        <span className="text-[9px] font-black uppercase tracking-tight">MTN MoMo</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setQrProvider('orange')}
+                        className={`p-2 rounded-xl border text-center transition flex flex-col items-center gap-1 cursor-pointer ${
+                          qrProvider === 'orange'
+                            ? 'bg-orange-50 border-orange-500 text-orange-900 ring-1 ring-orange-100'
+                            : 'bg-white border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="w-5 h-5 rounded-full bg-orange-500 flex items-center justify-center font-black text-[10px] text-white border border-orange-600 shadow-3xs">O</div>
+                        <span className="text-[9px] font-black uppercase tracking-tight">Orange</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setQrProvider('wave')}
+                        className={`p-2 rounded-xl border text-center transition flex flex-col items-center gap-1 cursor-pointer ${
+                          qrProvider === 'wave'
+                            ? 'bg-sky-50 border-sky-500 text-sky-900 ring-1 ring-sky-100'
+                            : 'bg-white border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="w-5 h-5 rounded-full bg-sky-450 flex items-center justify-center font-black text-[10px] text-white border border-sky-550 shadow-3xs">W</div>
+                        <span className="text-[9px] font-black uppercase tracking-tight">Wave</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setQrProvider('bank')}
+                        className={`p-2 rounded-xl border text-center transition flex flex-col items-center gap-1 cursor-pointer ${
+                          qrProvider === 'bank'
+                            ? 'bg-indigo-50 border-indigo-500 text-indigo-900 ring-1 ring-indigo-100'
+                            : 'bg-white border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="w-5 h-5 rounded-full bg-slate-800 flex items-center justify-center font-black text-[10px] text-white border border-slate-900 shadow-3xs">B</div>
+                        <span className="text-[9px] font-black uppercase tracking-tight">Banque</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* QR Code Canvas */}
+                  <div className="flex flex-col items-center justify-center p-5 bg-slate-50 border border-slate-200/80 rounded-2xl relative shadow-2xs overflow-hidden">
+                    <div className="absolute top-2.5 right-2.5 flex items-center gap-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-ping" />
+                      <span className="text-[8px] font-extrabold text-indigo-600 tracking-wider">GENERATEUR QR ACTIF</span>
+                    </div>
+
+                    <div className="relative p-3 bg-white rounded-2xl border border-slate-200 shadow-sm">
+                      {/* Scanning laser effect */}
+                      {!qrSuccessMessage && (
+                        <div className="absolute left-3 right-3 h-0.5 bg-indigo-500/80 opacity-70 shadow-[0_0_6px_rgba(99,102,241,0.8)] animate-bounce" style={{ top: 'calc(50% - 1px)', zIndex: 11 }} />
+                      )}
+
+                      {qrSuccessMessage ? (
+                        <div className="w-[180px] h-[180px] flex flex-col items-center justify-center text-center space-y-2 bg-emerald-50 rounded-xl relative z-10">
+                          <div className="h-12 w-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
+                            <CheckCircle2 className="h-7 w-7 animate-bounce" />
+                          </div>
+                          <p className="text-xs font-black text-emerald-900">Règlement Confirmé</p>
+                          <p className="text-[9px] text-emerald-700 font-medium">Livre comptable mis à jour</p>
+                        </div>
+                      ) : (
+                        <img
+                          referrerPolicy="no-referrer"
+                          src={getInvoiceQRCodeUrl(selectedQrInvoice, qrProvider)}
+                          alt={`QR Code Direct`}
+                          className="w-[180px] h-[180px] object-contain relative z-10"
+                        />
+                      )}
+                    </div>
+
+                    <p className="text-[10px] text-slate-500 font-semibold text-center mt-3 max-w-[280px] leading-relaxed">
+                      Scannez ce code QR unique avec votre application bancaire mobile ou application de paiement mobile ({qrProvider === 'mtn' ? 'MTN MoMo' : qrProvider === 'orange' ? 'Orange Money' : qrProvider === 'wave' ? 'Wave' : 'Toute application bancaire'}) pour payer directement.
+                    </p>
+                  </div>
+
+                  {/* Payment Details Table Inside QR Modal */}
+                  <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-2xl space-y-2.5 text-xs text-slate-800">
+                    <div className="flex justify-between border-b border-slate-200/40 pb-1.5">
+                      <span className="font-extrabold text-indigo-700 text-[10px] uppercase">Détails de l'élève</span>
+                      <span className="font-mono text-[9px] text-slate-400">Réf : {selectedQrInvoice.id.toUpperCase()}</span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1">
+                      <span className="text-slate-400 font-bold text-[10px] uppercase">Bénéficiaire</span>
+                      <span className="col-span-2 font-bold text-slate-900">{qrStudentName}</span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1">
+                      <span className="text-slate-400 font-bold text-[10px] uppercase">Classe</span>
+                      <span className="col-span-2 text-slate-650 font-semibold">{qrStudentClass}</span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1 border-t border-slate-100 pt-2">
+                      <span className="text-slate-400 font-bold text-[10px] uppercase">Libellé</span>
+                      <span className="col-span-2 font-bold text-slate-900">{selectedQrInvoice.title}</span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1 border-t border-slate-100 pt-2 items-center">
+                      <span className="text-indigo-550 font-bold text-[10px] uppercase">Montant</span>
+                      <div className="col-span-2 text-right">
+                        <span className="font-black text-indigo-750 font-mono block text-sm">{qrFormatted.fcfa}</span>
+                        <span className="text-[9px] text-slate-400 block font-medium">soit {qrFormatted.euro}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Simulate scan action button */}
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      disabled={qrScanningSimulation}
+                      onClick={() => handleSimulateQrPayment(selectedQrInvoice)}
+                      className="w-full py-2.5 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 disabled:opacity-50 hover:shadow-xs transition flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      {qrScanningSimulation ? (
+                        <>
+                          <span className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          Lecture du Code QR & Validation...
+                        </>
+                      ) : (
+                        <>
+                          <ShieldCheck className="h-4 w-4 text-emerald-400" />
+                          Simuler le Scan & Paiement
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  <div className="text-center font-mono text-[9px] text-slate-400 flex items-center justify-center gap-1 select-none">
+                    <ShieldCheck className="h-3.5 w-3.5 text-emerald-500 shrink-0" /> Cryptage SSL 256 bits • Banque Agréée BCEAO/BEAC
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          );
+        })()}
       </AnimatePresence>
     </div>
   );

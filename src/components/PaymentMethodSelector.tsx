@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { CreditCard, Smartphone, QrCode, ShieldCheck, CheckCircle2, ChevronRight, Sparkles, AlertCircle, Info, HelpCircle } from 'lucide-react';
-import { Invoice } from '../types';
+import { Invoice, Student } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
@@ -8,6 +8,7 @@ import { db, handleFirestoreError, OperationType } from '../firebase';
 interface PaymentMethodSelectorProps {
   invoice: Invoice;
   parentPhone?: string;
+  students?: Student[];
   onPaymentSuccess: (invoice: Invoice) => void;
   onCancel: () => void;
 }
@@ -15,6 +16,7 @@ interface PaymentMethodSelectorProps {
 export default function PaymentMethodSelector({
   invoice,
   parentPhone,
+  students,
   onPaymentSuccess,
   onCancel
 }: PaymentMethodSelectorProps) {
@@ -48,15 +50,27 @@ export default function PaymentMethodSelector({
     const referenceId = rawPhone ? rawPhone.trim().replace(/[\s\-\(\)\+]/g, '') : 'REF_UNKNOWN';
     const providerScheme = prov === 'mtn' ? 'mtn_momo' : prov === 'orange' ? 'orange_money' : 'wave';
 
-    const queryParams = new URLSearchParams({
-      invoiceId: invoice.id,
-      amount: invoice.amount.toString(),
-      referenceId: referenceId,
-      school: 'CES_Ekali_1',
-      recipient: 'CES_Ekali_1_APEE_Treasury'
-    });
+    const student = students?.find(s => s.id === invoice.studentId);
+    const studentName = student ? student.name : "Élève de l'établissement";
+    const studentClass = student ? `${student.grade} ${student.classRoom}` : "N/A";
 
-    const payload = `${providerScheme}://payment?${queryParams.toString()}`;
+    const paymentData = {
+      service: "PasmaSysPay",
+      provider: providerScheme,
+      invoiceId: invoice.id,
+      title: invoice.title,
+      amount: invoice.amount,
+      currency: "FCFA",
+      reference: referenceId,
+      studentId: invoice.studentId,
+      studentName: studentName,
+      studentClass: studentClass,
+      school: "CES d'Ekali 1",
+      recipient: "APEE CES d'Ekali 1 Treasury",
+      timestamp: new Date().toISOString()
+    };
+
+    const payload = JSON.stringify(paymentData);
     return `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(payload)}&color=0f172a&bgcolor=ffffff&qzone=1`;
   };
 

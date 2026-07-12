@@ -128,22 +128,37 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
         }
       ];
 
-      if (list.length === 0) {
-        setSchools(fallbackList);
+      const isPreprod = typeof window !== 'undefined' && (
+        window.location.hostname.includes('ais-pre-') || 
+        window.location.hostname.includes('ais-prod-') ||
+        window.location.hostname.includes('pasma-app')
+      );
+
+      if (isPreprod) {
+        setSchools(list);
       } else {
-        // Merge list with fallback fallback fallback to ensure variety
-        const merged = [...list];
-        fallbackList.forEach(fb => {
-          if (!merged.some(m => m.id === fb.id)) {
-            merged.push(fb);
-          }
-        });
-        setSchools(merged);
+        if (list.length === 0) {
+          setSchools(fallbackList);
+        } else {
+          // Merge list with fallback fallback fallback to ensure variety
+          const merged = [...list];
+          fallbackList.forEach(fb => {
+            if (!merged.some(m => m.id === fb.id)) {
+              merged.push(fb);
+            }
+          });
+          setSchools(merged);
+        }
       }
     } catch (err) {
       console.warn("Could not load establishments from Firestore:", err);
       // fallback in UI
-      setSchools([
+      const isPreprod = typeof window !== 'undefined' && (
+        window.location.hostname.includes('ais-pre-') || 
+        window.location.hostname.includes('ais-prod-') ||
+        window.location.hostname.includes('pasma-app')
+      );
+      setSchools(isPreprod ? [] : [
         {
           id: 'demo_school_ekali',
           name: "CES d'Ekali 1 - MFOU",

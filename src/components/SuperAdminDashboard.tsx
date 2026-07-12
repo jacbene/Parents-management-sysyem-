@@ -42,6 +42,12 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
   const [allStudents, setAllStudents] = useState<Student[]>([]);
   const [allInvoices, setAllInvoices] = useState<Invoice[]>([]);
   const [systemLogs, setSystemLogs] = useState<SystemLog[]>([]);
+
+  const isPreprod = typeof window !== 'undefined' && (
+    window.location.hostname.includes('ais-pre-') || 
+    window.location.hostname.includes('ais-prod-') ||
+    window.location.hostname.includes('pasma-app')
+  );
   
   // Custom states
   const [activeSubTab, setActiveSubTab] = useState<'schools' | 'admins'>('schools');
@@ -140,11 +146,13 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
 
         // Ensure we merge defaults to display seamless test-bed variety
         const mergedSchools = [...schoolList];
-        fallbackSchools.forEach(fb => {
-          if (!mergedSchools.some(m => m.id === fb.id)) {
-            mergedSchools.push(fb);
-          }
-        });
+        if (!isPreprod) {
+          fallbackSchools.forEach(fb => {
+            if (!mergedSchools.some(m => m.id === fb.id)) {
+              mergedSchools.push(fb);
+            }
+          });
+        }
         setSchools(mergedSchools);
 
         // 2. Fetch all students
@@ -224,7 +232,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
           }
         ];
 
-        setSystemLogs([...logs, ...fallbackSystemLogs]);
+        setSystemLogs(isPreprod ? logs : [...logs, ...fallbackSystemLogs]);
 
         // 5. Fetch secondary super admins from Firestore
         const adminsList: any[] = [];
@@ -414,6 +422,13 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
       // 1. Delete from establishments
       await deleteDoc(doc(db, 'establishments', schoolId));
       
+      // Delete school settings if exists
+      try {
+        await deleteDoc(doc(db, 'invoices', `${schoolId}_settings`));
+      } catch (err) {
+        console.warn("Could not delete settings invoice for school:", schoolId, err);
+      }
+      
       // 2. Log deletion
       await handleWriteSystemLog(
         'DELETE_SCHOOL',
@@ -421,6 +436,9 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
         0,
         schoolId
       );
+
+      // Instantly filter from state for reactive UI feedback
+      setSchools(prev => prev.filter(s => s.id !== schoolId));
 
       setSuccessMessage(`L'établissement "${name}" a été supprimé du registre de surveillance Pasma-sys.`);
       setRefreshTrigger(p => p + 1);
@@ -497,19 +515,19 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
   const totalStudents = schools.reduce((acc, sch) => {
     const fromDb = allStudents.filter(s => s.parentId === sch.id).length;
     // Base fallback if no students registered yet in Firestore
-    return acc + (fromDb > 0 ? fromDb : 3);
+    return acc + (fromDb > 0 ? fromDb : (isPreprod ? 0 : 3));
   }, 0);
 
   const totalParents = schools.reduce((acc, sch) => {
     const parentInvoices = allInvoices.filter(inv => inv.parentId === sch.id && inv.studentId === 'apee_ces_ekali_1');
-    return acc + (parentInvoices.length > 0 ? parentInvoices.length : 2); // default demo seeds
+    return acc + (parentInvoices.length > 0 ? parentInvoices.length : (isPreprod ? 0 : 2)); // default demo seeds
   }, 0);
 
   const totalFundsCollected = schools.reduce((acc, sch) => {
     const parentInvoices = allInvoices.filter(inv => inv.parentId === sch.id && inv.studentId === 'apee_ces_ekali_1');
     const totalPaid = parentInvoices.reduce((sum, parent) => sum + (parent.amountPaid || 0), 0);
     // Add seed payments for fallback schools to show beautiful non-empty metrics on first load
-    const fallbackPaymentSum = sch.id === 'demo_school_ekali' ? 1250000 : (sch.id === 'demo_school_vogt' ? 4200000 : 0);
+    const fallbackPaymentSum = isPreprod ? 0 : (sch.id === 'demo_school_ekali' ? 1250000 : (sch.id === 'demo_school_vogt' ? 4200000 : 0));
     return acc + (totalPaid > 0 ? totalPaid : fallbackPaymentSum);
   }, 0);
 
@@ -751,13 +769,13 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                             // Calculate metrics for school
                             const parentsCount = allInvoices.filter(
                               inv => inv.parentId === school.id && inv.studentId === 'apee_ces_ekali_1'
-                            ).length || 2; // Demodb fallback
+                            ).length || (isPreprod ? 0 : 2); // Demodb fallback
                             
-                            const pupilsCount = allStudents.filter(s => s.parentId === school.id).length || 3;
+                            const pupilsCount = allStudents.filter(s => s.parentId === school.id).length || (isPreprod ? 0 : 3);
                             
                             const collected = allInvoices
                               .filter(inv => inv.parentId === school.id && inv.studentId === 'apee_ces_ekali_1')
-                              .reduce((sum, inv) => sum + (inv.amountPaid || 0), 0) || (school.id === 'demo_school_ekali' ? 1250000 : (school.id === 'demo_school_vogt' ? 4200000 : 0));
+                              .reduce((sum, inv) => sum + (inv.amountPaid || 0), 0) || (isPreprod ? 0 : (school.id === 'demo_school_ekali' ? 1250000 : (school.id === 'demo_school_vogt' ? 4200000 : 0)));
                             
                             const progressPercent = Math.round((collected / (school.financialGoal || 5000000)) * 100);
 
@@ -826,7 +844,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                                     >
                                       Accès Parent
                                     </button>
-                                    {school.id !== 'demo_school_ekali' && (
+                                    {(!isPreprod ? school.id !== 'demo_school_ekali' : true) && (
                                       <button
                                         onClick={() => handleDeleteSchool(school.id, school.name)}
                                         className="p-1.5 bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-150 text-slate-400 hover:text-rose-600 rounded-lg transition cursor-pointer"
