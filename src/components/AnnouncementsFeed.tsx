@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Announcement, AnnouncementCategory } from '../types';
-import { Newspaper, Bell, Award, Calendar, AlertTriangle, Plus, Trash2, Shield, Lock, Unlock, CheckCircle, Volume2, VolumeX } from 'lucide-react';
+import { Newspaper, Bell, Award, Calendar, AlertTriangle, Plus, Trash2, Shield, Lock, Unlock, CheckCircle, Volume2, VolumeX, Pin } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLanguage } from '../utils/TranslationContext';
 
@@ -43,6 +43,7 @@ interface AnnouncementsFeedProps {
   customAnnouncements?: Announcement[];
   onAddAnnouncement?: (ann: Announcement) => Promise<boolean>;
   onDeleteAnnouncement?: (id: string) => Promise<boolean>;
+  onTogglePinAnnouncement?: (id: string, pinned: boolean) => Promise<boolean>;
   isPedAuthorized?: boolean;
   onPromptUnlockPed?: () => void;
   pedManagerName?: string;
@@ -53,6 +54,7 @@ export default function AnnouncementsFeed({
   customAnnouncements = [],
   onAddAnnouncement,
   onDeleteAnnouncement,
+  onTogglePinAnnouncement,
   isPedAuthorized = false,
   onPromptUnlockPed,
   pedManagerName = '',
@@ -67,6 +69,17 @@ export default function AnnouncementsFeed({
   const [author, setAuthor] = useState(pedManagerName || 'Responsable Pédagogique');
   const [speakingAnnId, setSpeakingAnnId] = useState<string | null>(null);
   const [deleteAnnConfirmId, setDeleteAnnConfirmId] = useState<string | null>(null);
+  const utteranceRef = React.useRef<SpeechSynthesisUtterance | null>(null);
+
+  const [localPinnedIds, setLocalPinnedIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('pasma_pinned_announcements');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [isPinnedForm, setIsPinnedForm] = useState(false);
 
   // Stop talking on unmount
   React.useEffect(() => {
@@ -86,19 +99,93 @@ export default function AnnouncementsFeed({
     if (speakingAnnId === id) {
       window.speechSynthesis.cancel();
       setSpeakingAnnId(null);
+      utteranceRef.current = null;
     } else {
       window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(`${title}. ${content}`);
-      utterance.lang = language === 'en' ? 'en-US' : 'fr-FR';
-      utterance.onstart = () => setSpeakingAnnId(id);
-      utterance.onend = () => setSpeakingAnnId(null);
-      utterance.onerror = () => setSpeakingAnnId(null);
+      
+      // Plain text cleanup to ensure smooth synthesis
+      const cleanTitle = title.replace(/[#*_`~[\]]/g, '');
+      const cleanContent = content.replace(/[#*_`~[\]]/g, '');
+      
+      const utterance = new SpeechSynthesisUtterance(`${cleanTitle}. ${cleanContent}`);
+      utteranceRef.current = utterance; // Retain to avoid Garbage Collection in Chrome/Safari
+      
+      const targetLang = language === 'en' ? 'en-US' : 'fr-FR';
+      utterance.lang = targetLang;
+      
+      // Best-effort voice matching
+      if ('getVoices' in window.speechSynthesis) {
+        const voices = window.speechSynthesis.getVoices();
+        const preferredLang = language === 'en' ? 'en' : 'fr';
+        const matchingVoice = voices.find(v => v.lang.toLowerCase().startsWith(preferredLang)) 
+          || voices.find(v => v.lang.toLowerCase().includes(preferredLang));
+        if (matchingVoice) {
+          utterance.voice = matchingVoice;
+        }
+      }
+
+      utterance.onstart = () => {
+        setSpeakingAnnId(id);
+      };
+
+      utterance.onend = () => {
+        setSpeakingAnnId(null);
+        utteranceRef.current = null;
+      };
+
+      utterance.onerror = (e) => {
+        console.warn("SpeechSynthesisUtterance error:", e);
+        // Chrome bug: some short interruptions trigger an error but are harmless
+        setSpeakingAnnId(null);
+        utteranceRef.current = null;
+      };
+
+      // Workaround for Chrome getting stuck in paused/speaking state
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+      
       window.speechSynthesis.speak(utterance);
     }
   };
 
   // Merge custom dynamic announcements with static ones
   const allAnnouncements = [...customAnnouncements, ...STATIC_ANNOUNCEMENTS];
+
+  const sortedAnnouncements = [...allAnnouncements].sort((a, b) => {
+    const aPinned = !!(a.pinned || localPinnedIds.includes(a.id));
+    const bPinned = !!(b.pinned || localPinnedIds.includes(b.id));
+    if (aPinned && !bPinned) return -1;
+    if (!aPinned && bPinned) return 1;
+    return new Date(b.date).getTime() - new Date(a.date).getTime();
+  });
+
+  const handleTogglePin = async (id: string, currentlyPinned: boolean) => {
+    if (hasPedPassword && !isPedAuthorized && onPromptUnlockPed) {
+      onPromptUnlockPed();
+      return;
+    }
+    
+    const newPinned = !currentlyPinned;
+    let updatedIds = [...localPinnedIds];
+    if (newPinned) {
+      if (!updatedIds.includes(id)) {
+        updatedIds.push(id);
+      }
+    } else {
+      updatedIds = updatedIds.filter(x => x !== id);
+    }
+    setLocalPinnedIds(updatedIds);
+    try {
+      localStorage.setItem('pasma_pinned_announcements', JSON.stringify(updatedIds));
+    } catch (e) {
+      console.warn("Could not save pinned announcements to localStorage:", e);
+    }
+
+    if (onTogglePinAnnouncement) {
+      await onTogglePinAnnouncement(id, newPinned);
+    }
+  };
 
   const getCategoryTheme = (cat: string) => {
     switch (cat) {
@@ -136,6 +223,7 @@ export default function AnnouncementsFeed({
     }
     setAuthor(pedManagerName || 'Direction / Censeur');
     setShowAddForm(true);
+    setIsPinnedForm(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -152,13 +240,15 @@ export default function AnnouncementsFeed({
         content: content.trim(),
         category,
         date: new Date().toISOString().split('T')[0],
-        author: author.trim() || 'Responsable Pédagogique'
+        author: author.trim() || 'Responsable Pédagogique',
+        pinned: isPinnedForm
       };
 
       const success = await onAddAnnouncement(newAnn);
       if (success) {
         setTitle('');
         setContent('');
+        setIsPinnedForm(false);
         setShowAddForm(false);
       }
     }
@@ -302,6 +392,24 @@ export default function AnnouncementsFeed({
                 ></textarea>
               </div>
 
+              {isPedAuthorized && (
+                <div className="flex items-center gap-2 bg-indigo-50/50 border border-indigo-100 p-3 rounded-xl select-none">
+                  <input
+                    type="checkbox"
+                    id="form-pin-announcement"
+                    checked={isPinnedForm}
+                    onChange={(e) => setIsPinnedForm(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                  />
+                  <label htmlFor="form-pin-announcement" className="text-xs font-bold text-indigo-950 cursor-pointer flex items-center gap-1.5">
+                    <Pin className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                    {language === 'fr' 
+                      ? 'Épingler ce communiqué en haut de la liste pour une visibilité maximale' 
+                      : 'Pin this announcement to the top of the feed for maximum visibility'}
+                  </label>
+                </div>
+              )}
+
               <div className="flex justify-end gap-2.5 pt-2">
                 <button
                   type="button"
@@ -323,10 +431,11 @@ export default function AnnouncementsFeed({
       </AnimatePresence>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {allAnnouncements.map((ann, idx) => {
+        {sortedAnnouncements.map((ann, idx) => {
           const config = getCategoryTheme(ann.category);
           const Icon = config.icon;
           const isCustom = ann.id.startsWith('ann_') && Number(ann.id.split('_')[1]) > 100000;
+          const isPinned = !!(ann.pinned || localPinnedIds.includes(ann.id));
 
           return (
             <motion.div
@@ -334,15 +443,47 @@ export default function AnnouncementsFeed({
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: idx * 0.05 }}
-              className={`p-5 rounded-2xl border ${config.bg} flex flex-col justify-between transition-all hover:shadow-xs relative group duration-300`}
+              className={`p-5 rounded-2xl border ${config.bg} ${isPinned ? 'ring-2 ring-amber-400 border-amber-400 bg-amber-50/10 shadow-xs' : ''} flex flex-col justify-between transition-all hover:shadow-xs relative group duration-300`}
             >
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className={`text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-full ${config.badge}`}>
                     {ann.category}
                   </span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono text-gray-500">{ann.date}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-mono text-gray-500 mr-1">{ann.date}</span>
+                    
+                    {/* Pin Toggle or Static Badge */}
+                    {isPinned ? (
+                      isPedAuthorized ? (
+                        <button
+                          type="button"
+                          onClick={() => handleTogglePin(ann.id, true)}
+                          className="p-1 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-lg transition-all border border-amber-300 cursor-pointer flex items-center gap-1 text-[10px] font-extrabold"
+                          title={language === 'fr' ? 'Désépingler ce communiqué' : 'Unpin this announcement'}
+                        >
+                          <Pin className="h-3 w-3 fill-amber-600 text-amber-700" />
+                          <span>{language === 'fr' ? 'Épinglé' : 'Pinned'}</span>
+                        </button>
+                      ) : (
+                        <div className="p-1 bg-amber-100 text-amber-800 rounded-lg border border-amber-200 flex items-center gap-1 text-[10px] font-extrabold select-none">
+                          <Pin className="h-3 w-3 fill-amber-600 text-amber-700" />
+                          <span>{language === 'fr' ? 'Épinglé' : 'Pinned'}</span>
+                        </div>
+                      )
+                    ) : (
+                      isPedAuthorized && (
+                        <button
+                          type="button"
+                          onClick={() => handleTogglePin(ann.id, false)}
+                          className="p-1 text-gray-400 hover:text-amber-700 hover:bg-amber-100 rounded-lg transition-all border border-transparent hover:border-amber-200 cursor-pointer flex items-center gap-1 text-[10px] font-extrabold"
+                          title={language === 'fr' ? 'Épingler ce communiqué' : 'Pin this announcement'}
+                        >
+                          <Pin className="h-3 w-3 rotate-45" />
+                        </button>
+                      )
+                    )}
+
                     {onDeleteAnnouncement && (
                       <button
                         type="button"

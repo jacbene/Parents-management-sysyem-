@@ -59,6 +59,7 @@ export interface Lesson {
   teacherName: string;
   date: string;
   createdAt: string;
+  pdfUrl?: string;
 }
 
 export type AnnouncementCategory = 'General' | 'Academic' | 'Event' | 'Urgent';
@@ -70,6 +71,7 @@ export interface Announcement {
   category: AnnouncementCategory;
   date: string;
   author: string;
+  pinned?: boolean;
 }
 
 export type AppointmentStatus = 'Scheduled' | 'Completed' | 'Cancelled';

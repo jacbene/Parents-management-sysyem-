@@ -75,7 +75,8 @@
         "content": { "type": "string" },
         "category": { "type": "string", "enum": ["General", "Academic", "Event", "Urgent"] },
         "date": { "type": "string" },
-        "author": { "type": "string" }
+        "author": { "type": "string" },
+        "pinned": { "type": "boolean" }
       },
       "required": ["id", "title", "content", "category", "date"]
     },

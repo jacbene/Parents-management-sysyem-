@@ -1869,6 +1869,22 @@ export default function App() {
     return true;
   };
 
+  const handleTogglePinAnnouncement = async (id: string, pinned: boolean) => {
+    if (!await checkPedAuthorization()) return false;
+    setAnnouncements(prev => prev.map(a => a.id === id ? { ...a, pinned } : a));
+    const ann = announcements.find(a => a.id === id);
+    if (ann && userId) {
+      await runFirestoreWrite(
+        'announcements',
+        id,
+        'UPDATE',
+        { ...ann, pinned, parentId: userId },
+        `${pinned ? 'Épingler' : 'Désépingler'} l'annonce : ${ann.title}`
+      );
+    }
+    return true;
+  };
+
   // APEE State Action Handlers
   const handleSaveApeeSettings = async (newSettings: ApeeSettings): Promise<boolean> => {
     // Determine if this is a financial or budget modification.
@@ -3557,6 +3573,7 @@ export default function App() {
                           customAnnouncements={announcements}
                           onAddAnnouncement={handleAddAnnouncement}
                           onDeleteAnnouncement={handleDeleteAnnouncement}
+                          onTogglePinAnnouncement={handleTogglePinAnnouncement}
                           isPedAuthorized={portalUserRole === 'teacher' || isPedAuthorized}
                           onPromptUnlockPed={handlePromptUnlockPed}
                           pedManagerName={apeeSettings.pedManagerName}

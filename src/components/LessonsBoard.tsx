@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Student, Lesson, Homework, HomeworkStatus } from '../types';
 import { 
   BookOpen, Plus, Trash2, Sparkles, Download, Calendar, 
   ChevronDown, ChevronUp, GraduationCap, CheckCircle2, 
-  Loader2, ArrowRight, FileText, CheckSquare, Info
+  Loader2, ArrowRight, FileText, CheckSquare, Info,
+  FileUp, Eye, EyeOff, File
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection, addDoc, doc, deleteDoc } from 'firebase/firestore';
@@ -502,6 +503,12 @@ export default function LessonsBoard({
                           <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-black rounded-md">
                             {lesson.subject}
                           </span>
+                          {lesson.pdfUrl && (
+                            <span className="px-2 py-0.5 bg-rose-50 text-rose-700 text-[10px] font-black rounded-md flex items-center gap-1">
+                              <File className="h-3 w-3 text-rose-500" />
+                              PDF
+                            </span>
+                          )}
                           <span className="text-[10px] text-gray-400 flex items-center gap-1">
                             <Calendar className="h-3 w-3" />
                             {lesson.date}

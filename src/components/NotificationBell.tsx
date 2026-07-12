@@ -29,6 +29,7 @@ export default function NotificationBell({ portalUserRole, selectedStudentName =
   const { language } = useLanguage();
   const isEn = language === 'en';
   const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   // Stop talking when dropdown closes or on unmount
   useEffect(() => {
@@ -48,13 +49,48 @@ export default function NotificationBell({ portalUserRole, selectedStudentName =
     if (speakingId === id) {
       window.speechSynthesis.cancel();
       setSpeakingId(null);
+      utteranceRef.current = null;
     } else {
       window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(`${title}. ${body}`);
-      utterance.lang = language === 'en' ? 'en-US' : 'fr-FR';
-      utterance.onstart = () => setSpeakingId(id);
-      utterance.onend = () => setSpeakingId(null);
-      utterance.onerror = () => setSpeakingId(null);
+      
+      const cleanTitle = title.replace(/[#*_`~[\]]/g, '');
+      const cleanBody = body.replace(/[#*_`~[\]]/g, '');
+      
+      const utterance = new SpeechSynthesisUtterance(`${cleanTitle}. ${cleanBody}`);
+      utteranceRef.current = utterance; // Avoid Garbage Collection in Chrome/Safari
+      
+      const targetLang = language === 'en' ? 'en-US' : 'fr-FR';
+      utterance.lang = targetLang;
+      
+      if ('getVoices' in window.speechSynthesis) {
+        const voices = window.speechSynthesis.getVoices();
+        const preferredLang = language === 'en' ? 'en' : 'fr';
+        const matchingVoice = voices.find(v => v.lang.toLowerCase().startsWith(preferredLang))
+          || voices.find(v => v.lang.toLowerCase().includes(preferredLang));
+        if (matchingVoice) {
+          utterance.voice = matchingVoice;
+        }
+      }
+
+      utterance.onstart = () => {
+        setSpeakingId(id);
+      };
+
+      utterance.onend = () => {
+        setSpeakingId(null);
+        utteranceRef.current = null;
+      };
+
+      utterance.onerror = (e) => {
+        console.warn("Notification speech error:", e);
+        setSpeakingId(null);
+        utteranceRef.current = null;
+      };
+
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+
       window.speechSynthesis.speak(utterance);
     }
   };
