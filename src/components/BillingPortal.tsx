@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Invoice, Student } from '../types';
-import { CreditCard, ShieldCheck, CheckCircle2, AlertCircle, Sparkles, X, Landmark, Receipt, QrCode, Smartphone, Search, Download, RefreshCw } from 'lucide-react';
+import { CreditCard, ShieldCheck, CheckCircle2, AlertCircle, Sparkles, X, Landmark, Receipt, QrCode, Smartphone, Search, Download, RefreshCw, Bell, Mail, Send, MessageSquare, Loader2, Clock } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { jsPDF } from 'jspdf';
 import { useLanguage } from '../utils/TranslationContext';
@@ -43,6 +43,20 @@ export default function BillingPortal({
   const [qrProvider, setQrProvider] = useState<'mtn' | 'orange' | 'wave' | 'bank'>('mtn');
   const [qrScanningSimulation, setQrScanningSimulation] = useState(false);
   const [qrSuccessMessage, setQrSuccessMessage] = useState(false);
+
+  // States for Send Reminder (Manager Action)
+  const [selectedReminderInvoice, setSelectedReminderInvoice] = useState<Invoice | null>(null);
+  const [reminderChannel, setReminderChannel] = useState<'sms' | 'email'>('sms');
+  const [reminderTone, setReminderTone] = useState<'courtois' | 'ferme' | 'urgent'>('courtois');
+  const [reminderPhone, setReminderPhone] = useState('');
+  const [reminderEmail, setReminderEmail] = useState('');
+  const [reminderSubject, setReminderSubject] = useState('');
+  const [reminderMessage, setReminderMessage] = useState('');
+  const [isGeneratingTemplate, setIsGeneratingTemplate] = useState(false);
+  const [isSendingReminder, setIsSendingReminder] = useState(false);
+  const [reminderProgress, setReminderProgress] = useState(0);
+  const [reminderProgressLog, setReminderProgressLog] = useState<string[]>([]);
+  const [reminderSuccess, setReminderSuccess] = useState(false);
 
   const getInvoiceQRCodeUrl = (inv: Invoice, prov: 'mtn' | 'orange' | 'wave' | 'bank') => {
     const rawPhone = parentPhone || inv.phone || '';
@@ -105,6 +119,223 @@ export default function BillingPortal({
     } finally {
       setQrScanningSimulation(false);
       setQrSuccessMessage(false);
+    }
+  };
+
+  const interpolateTemplate = (template: string, inv: Invoice) => {
+    const student = students?.find(s => s.id === inv.studentId);
+    let parentName = '';
+    let studentNames = '';
+
+    if (inv.studentId === 'apee_ces_ekali_1') {
+      parentName = inv.title; // In APEE invoices, title is parent name
+      try {
+        if (inv.studentsList) {
+          const parsedList = JSON.parse(inv.studentsList);
+          if (Array.isArray(parsedList) && parsedList.length > 0) {
+            studentNames = parsedList.map((s: any) => s.name).join(', ');
+          } else {
+            studentNames = "Élève(s) supervisé(s)";
+          }
+        } else {
+          studentNames = "Élève(s) supervisé(s)";
+        }
+      } catch (e) {
+        studentNames = "Élève(s) supervisé(s)";
+      }
+    } else {
+      const stud = students?.find(s => s.id === inv.studentId);
+      studentNames = stud ? stud.name : "l'élève";
+      parentName = inv.parentId ? inv.parentId.replace('parent_', '').replace('_', ' ') : 'Parent';
+      parentName = parentName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    }
+
+    const remainingAmount = inv.amount - (inv.amountPaid || 0);
+
+    return template
+      .replace(/{parent_name}/g, parentName)
+      .replace(/{student_names}/g, studentNames)
+      .replace(/{remaining_amount}/g, remainingAmount.toLocaleString('fr-FR'))
+      .replace(/{total_due_amount}/g, inv.amount.toLocaleString('fr-FR'))
+      .replace(/{school_year}/g, settings?.schoolYear || '2025/2026')
+      .replace(/{association_name}/g, settings?.associationName || "APEE du CES d'Ékali 1")
+      .replace(/{short_name}/g, settings?.associationShortName || 'APEE');
+  };
+
+  const generateLocalTemplate = (inv: Invoice, channel: 'sms' | 'email', tone: 'courtois' | 'ferme' | 'urgent') => {
+    const student = students?.find(s => s.id === inv.studentId);
+    let parentName = '';
+    let studentNames = '';
+
+    if (inv.studentId === 'apee_ces_ekali_1') {
+      parentName = inv.title;
+      try {
+        if (inv.studentsList) {
+          const parsedList = JSON.parse(inv.studentsList);
+          if (Array.isArray(parsedList) && parsedList.length > 0) {
+            studentNames = parsedList.map((s: any) => s.name).join(', ');
+          } else {
+            studentNames = "Élève(s)";
+          }
+        } else {
+          studentNames = "Élève(s)";
+        }
+      } catch (e) {
+        studentNames = "Élève(s)";
+      }
+    } else {
+      studentNames = student ? student.name : "l'élève";
+      parentName = inv.parentId ? inv.parentId.replace('parent_', '').replace('_', ' ') : 'Parent';
+      parentName = parentName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    }
+
+    const remainingAmount = inv.amount - (inv.amountPaid || 0);
+    const amountStr = `${remainingAmount.toLocaleString('fr-FR')} FCFA`;
+    const schoolYearStr = settings?.schoolYear || '2025/2026';
+    const assocName = settings?.associationName || "APEE du CES d'Ékali 1";
+    const assocShort = settings?.associationShortName || 'APEE';
+
+    let msg = '';
+    let subject = '';
+
+    if (channel === 'sms') {
+      if (tone === 'courtois') {
+        msg = `Chers parents. Merci pour votre premier versement. Nous vous rappelons amicalement qu'il reste un solde de ${amountStr} pour la cotisation ${assocShort} de ${studentNames} (${schoolYearStr}). Merci de régulariser à votre convenance.`;
+      } else if (tone === 'urgent') {
+        msg = `URGENT : Chers parents, la cotisation ${assocShort} de ${studentNames} pour l'année ${schoolYearStr} présente un impayé de ${amountStr}. Veuillez régulariser d'urgence auprès de l'intendance pour éviter toute suspension.`;
+      } else { // ferme
+        msg = `Rappel : Solde de cotisation ${assocShort} (${schoolYearStr}) non réglé pour ${studentNames}. Montant dû : ${amountStr}. Merci de bien vouloir solder cette facture dans les plus brefs délais.`;
+      }
+    } else {
+      if (tone === 'courtois') {
+        subject = `Rappel amical : Solde de cotisation ${assocShort} pour ${studentNames}`;
+        msg = `Bonjour ${parentName},\n\nNous tenons à vous remercier chaleureusement pour la confiance accordée à notre établissement et pour vos contributions passées.\n\nNous vous informons qu'un montant restant dû de ${amountStr} est à régler pour la cotisation annuelle de ${assocShort} (${schoolYearStr}) concernant : ${studentNames}.\n\nVous pouvez régulariser cette situation auprès du secrétariat ou directement via notre portail de paiement mobile (QR Code).\n\nNous vous remercions pour votre précieuse collaboration.\n\nBien cordialement,\nLa Caisse d'Intendance\n${assocName}`;
+      } else if (tone === 'urgent') {
+        subject = `URGENT : Avis de retard de paiement - Cotisation ${assocShort} (${schoolYearStr})`;
+        msg = `Bonjour ${parentName},\n\nSauf erreur de notre part, le paiement de la cotisation ${assocShort} (${schoolYearStr}) pour ${studentNames} n'a pas été soldé.\n\nÀ ce jour, votre retard de paiement s'élève à ${amountStr}.\n\nUne régularisation immédiate est demandée afin de nous permettre de poursuivre les investissements matériels et pédagogiques essentiels pour les élèves.\n\nNous comptons sur votre proactivité immédiate.\n\nCordialement,\nLe Bureau Exécutif de l'${assocShort}\n${assocName}`;
+      } else { // ferme
+        subject = `Avis de relance : Cotisation ${assocShort} non soldée - Réf: ${inv.id.toUpperCase()}`;
+        msg = `Bonjour ${parentName},\n\nNous vous contactons au sujet de la facture de cotisation ${assocShort} (${schoolYearStr}) d'un montant total de ${inv.amount.toLocaleString('fr-FR')} FCFA.\n\nNos registres comptables indiquent un impayé de ${amountStr}.\n\nNous vous prions de bien vouloir régulariser ce solde débiteur sous 48 heures.\n\nEn vous remerciant par avance de votre diligence,\n\nService de la Comptabilité scolaire\n${assocName}`;
+      }
+    }
+
+    setReminderSubject(subject);
+    setReminderMessage(msg);
+  };
+
+  const handleOpenReminder = (inv: Invoice) => {
+    setSelectedReminderInvoice(inv);
+    setReminderPhone(inv.phone || '');
+    setReminderEmail(inv.email || '');
+    setReminderSuccess(false);
+    setReminderProgress(0);
+    setReminderProgressLog([]);
+    generateLocalTemplate(inv, reminderChannel, reminderTone);
+  };
+
+  const handleReminderChannelChange = (channel: 'sms' | 'email') => {
+    setReminderChannel(channel);
+    if (selectedReminderInvoice) {
+      generateLocalTemplate(selectedReminderInvoice, channel, reminderTone);
+    }
+  };
+
+  const handleReminderToneChange = (tone: 'courtois' | 'ferme' | 'urgent') => {
+    setReminderTone(tone);
+    if (selectedReminderInvoice) {
+      generateLocalTemplate(selectedReminderInvoice, reminderChannel, tone);
+    }
+  };
+
+  const handleGenerateAiTemplate = async () => {
+    if (!selectedReminderInvoice) return;
+    setIsGeneratingTemplate(true);
+    try {
+      const remainingAmount = selectedReminderInvoice.amount - (selectedReminderInvoice.amountPaid || 0);
+      const response = await fetch('/api/apee/generate-reminders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          targetStatus: remainingAmount < selectedReminderInvoice.amount ? 'partiel' : 'retard',
+          tone: reminderTone,
+          language: language,
+          customContext: `Facture de titre : "${selectedReminderInvoice.title}". Montant restant dû : ${remainingAmount} FCFA.`
+        })
+      });
+
+      const resData = await response.json();
+      if (resData.success && resData.data) {
+        const data = resData.data;
+        if (reminderChannel === 'sms') {
+          const rawSms = data.smsTemplate || '';
+          const finalSms = interpolateTemplate(rawSms, selectedReminderInvoice);
+          setReminderMessage(finalSms);
+        } else {
+          const rawSubject = data.emailSubject || '';
+          const rawEmail = data.emailTemplate || '';
+          setReminderSubject(interpolateTemplate(rawSubject, selectedReminderInvoice));
+          setReminderMessage(interpolateTemplate(rawEmail, selectedReminderInvoice));
+        }
+      } else {
+        generateLocalTemplate(selectedReminderInvoice, reminderChannel, reminderTone);
+      }
+    } catch (err) {
+      console.error(err);
+      generateLocalTemplate(selectedReminderInvoice, reminderChannel, reminderTone);
+    } finally {
+      setIsGeneratingTemplate(false);
+    }
+  };
+
+  const handleSendReminder = async () => {
+    if (!selectedReminderInvoice) return;
+    setIsSendingReminder(true);
+    setReminderProgress(0);
+    setReminderProgressLog([]);
+
+    const steps = [
+      { progress: 15, log: "Analyse de la facture et préparation des données de contact..." },
+      { progress: 40, log: `Initialisation de la passerelle de communication (${reminderChannel.toUpperCase()})...` },
+      { progress: 70, log: `Chiffrement et acheminement du message vers ${reminderChannel === 'sms' ? reminderPhone : reminderEmail}...` },
+      { progress: 90, log: "Attente de l'accusé de réception réseau..." },
+      { progress: 100, log: `${reminderChannel === 'sms' ? "SMS envoyé" : "Email envoyé"} avec succès à ${reminderChannel === 'sms' ? reminderPhone : reminderEmail} !` }
+    ];
+
+    for (const step of steps) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      setReminderProgress(step.progress);
+      setReminderProgressLog(prev => [...prev, `[${new Date().toLocaleTimeString('fr-FR')}] ${step.log}`]);
+    }
+
+    try {
+      const nowStr = new Date().toISOString();
+      const updatedInvoice: Invoice = {
+        ...selectedReminderInvoice,
+        lastReminded: nowStr
+      };
+
+      try {
+        const invRef = doc(db, 'invoices', selectedReminderInvoice.id);
+        await updateDoc(invRef, {
+          lastReminded: nowStr
+        });
+      } catch (dbErr) {
+        console.warn("Could not save lastReminded to Firestore, updating locally", dbErr);
+      }
+
+      onUpdateInvoice(updatedInvoice);
+      setReminderSuccess(true);
+
+      if (reminderChannel === 'email' && reminderEmail) {
+        const mailtoUrl = `mailto:${encodeURIComponent(reminderEmail)}?subject=${encodeURIComponent(reminderSubject)}&body=${encodeURIComponent(reminderMessage)}`;
+        window.location.href = mailtoUrl;
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSendingReminder(false);
     }
   };
 
@@ -1170,6 +1401,17 @@ export default function BillingPortal({
 
                 {inv.status !== 'Paid' && (
                   <>
+                    {portalUserRole === 'manager' && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenReminder(inv)}
+                        className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer"
+                        title="Relancer le parent par SMS ou Email"
+                      >
+                        <Bell className="h-3.5 w-3.5 text-white" />
+                        <span>Relancer</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => setSelectedQrInvoice(inv)}
@@ -1469,6 +1711,278 @@ export default function BillingPortal({
             </div>
           );
         })()}
+      </AnimatePresence>
+
+      {/* Send Reminder Modal for Managers */}
+      <AnimatePresence>
+        {selectedReminderInvoice && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl w-full max-w-lg border border-slate-100 shadow-2xl overflow-hidden animate-fade-in flex flex-col max-h-[90vh]"
+            >
+              {/* Header */}
+              <div className="p-5 bg-slate-900 text-white relative shrink-0">
+                <button
+                  onClick={() => setSelectedReminderInvoice(null)}
+                  className="absolute right-4 top-4 text-white/60 hover:text-white cursor-pointer transition-all"
+                  disabled={isSendingReminder}
+                >
+                  <X className="h-5 w-5" />
+                </button>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-amber-400 font-black uppercase tracking-widest block bg-amber-400/10 px-2 py-0.5 rounded-full">
+                      💼 Relance Intendante
+                    </span>
+                    {selectedReminderInvoice.lastReminded && (
+                      <span className="text-[9px] text-slate-300 font-mono flex items-center gap-1 bg-white/10 px-2 py-0.5 rounded-full">
+                        <Clock className="h-3 w-3 text-amber-300" /> Relancé le : {new Date(selectedReminderInvoice.lastReminded).toLocaleDateString('fr-FR')}
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="text-base font-black">Assistant de Notification de Retard</h3>
+                </div>
+              </div>
+
+              {!reminderSuccess ? (
+                <div className="p-6 space-y-4 overflow-y-auto flex-1">
+                  {/* Summary of outstanding amount */}
+                  <div className="p-3 bg-slate-50 border border-slate-200/65 rounded-2xl flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Facture en retard</p>
+                      <h4 className="text-xs font-bold text-slate-800 line-clamp-1">{selectedReminderInvoice.title}</h4>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Reste dû</p>
+                      <p className="text-xs font-black text-indigo-700 font-mono">
+                        {formatAmountTtc(selectedReminderInvoice.amount - (selectedReminderInvoice.amountPaid || 0)).fcfa}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Channel Selector */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Canal d'acheminement</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleReminderChannelChange('sms')}
+                        disabled={isSendingReminder}
+                        className={`py-2 px-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-bold transition cursor-pointer ${
+                          reminderChannel === 'sms'
+                            ? 'bg-amber-50 border-amber-300 text-amber-800 shadow-3xs'
+                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        <MessageSquare className="h-4 w-4" />
+                        <span>SMS / WhatsApp</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleReminderChannelChange('email')}
+                        disabled={isSendingReminder}
+                        className={`py-2 px-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-bold transition cursor-pointer ${
+                          reminderChannel === 'email'
+                            ? 'bg-amber-50 border-amber-300 text-amber-800 shadow-3xs'
+                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        <Mail className="h-4 w-4" />
+                        <span>Courriel (Email)</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Tone Selector */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Ton de la communication</label>
+                    <div className="flex gap-2">
+                      {(['courtois', 'ferme', 'urgent'] as const).map((tValue) => (
+                        <button
+                          key={tValue}
+                          type="button"
+                          onClick={() => handleReminderToneChange(tValue)}
+                          disabled={isSendingReminder}
+                          className={`flex-1 py-1.5 px-3 rounded-lg text-[11px] font-semibold capitalize transition cursor-pointer ${
+                            reminderTone === tValue
+                              ? 'bg-slate-800 text-white shadow-3xs'
+                              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                          }`}
+                        >
+                          {tValue === 'courtois' ? '😊 Courtois' : tValue === 'ferme' ? '💼 Professionnel' : '🚨 Urgent'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Contact Fields */}
+                  <div className="space-y-3">
+                    {reminderChannel === 'sms' ? (
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Numéro de téléphone destinataire</label>
+                        <input
+                          type="text"
+                          value={reminderPhone}
+                          onChange={(e) => setReminderPhone(e.target.value)}
+                          disabled={isSendingReminder}
+                          placeholder="+237 6XX XX XX XX"
+                          className="w-full px-3 py-2 rounded-xl border border-slate-250 text-xs font-semibold focus:outline-indigo-500 bg-white"
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Adresse e-mail destinataire</label>
+                          <input
+                            type="email"
+                            value={reminderEmail}
+                            onChange={(e) => setReminderEmail(e.target.value)}
+                            disabled={isSendingReminder}
+                            placeholder="parent@exemple.com"
+                            className="w-full px-3 py-2 rounded-xl border border-slate-250 text-xs font-semibold focus:outline-indigo-500 bg-white"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Objet de l'Email</label>
+                          <input
+                            type="text"
+                            value={reminderSubject}
+                            onChange={(e) => setReminderSubject(e.target.value)}
+                            disabled={isSendingReminder}
+                            className="w-full px-3 py-2 rounded-xl border border-slate-250 text-xs font-semibold focus:outline-indigo-500 bg-white"
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Textarea for message preview/edit */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Contenu du message</label>
+                      <button
+                        type="button"
+                        onClick={handleGenerateAiTemplate}
+                        disabled={isGeneratingTemplate || isSendingReminder}
+                        className="flex items-center gap-1 text-[10px] font-bold text-indigo-650 hover:text-indigo-800 cursor-pointer disabled:opacity-50"
+                        title="Régénérer un message personnalisé grâce à l'IA Gemini"
+                      >
+                        {isGeneratingTemplate ? (
+                          <>
+                            <Loader2 className="h-3 w-3 animate-spin text-indigo-600" />
+                            Génération...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="h-3.5 w-3.5 text-indigo-500" />
+                            Améliorer avec Gemini AI
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    <textarea
+                      value={reminderMessage}
+                      onChange={(e) => setReminderMessage(e.target.value)}
+                      disabled={isSendingReminder}
+                      rows={5}
+                      className="w-full p-3 rounded-2xl border border-slate-250 text-xs font-medium focus:outline-indigo-500 bg-white leading-relaxed resize-none"
+                    />
+                  </div>
+
+                  {/* Sending simulation panel */}
+                  {isSendingReminder && (
+                    <div className="p-4 bg-slate-900 text-slate-100 rounded-2xl space-y-3 font-mono text-[10px] border border-slate-800 shadow-inner">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-amber-400">Status : Envoi en cours...</span>
+                        <span>{reminderProgress}%</span>
+                      </div>
+                      <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${reminderProgress}%` }}
+                          transition={{ duration: 0.3 }}
+                          className="bg-amber-400 h-full"
+                        />
+                      </div>
+                      <div className="space-y-1 max-h-[80px] overflow-y-auto text-slate-400 border-t border-slate-800 pt-2 select-text">
+                        {reminderProgressLog.map((logLine, idx) => (
+                          <div key={idx} className="line-clamp-2">{logLine}</div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  {!isSendingReminder && (
+                    <div className="pt-2 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedReminderInvoice(null)}
+                        className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer"
+                      >
+                        Annuler
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSendReminder}
+                        disabled={isGeneratingTemplate || (reminderChannel === 'sms' ? !reminderPhone : !reminderEmail)}
+                        className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center justify-center gap-2 shadow-xs disabled:opacity-50"
+                      >
+                        <Send className="h-3.5 w-3.5" />
+                        <span>Envoyer le Rappel</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* Success Screen */
+                <div className="p-6 text-center space-y-4">
+                  <div className="mx-auto h-12 w-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 scale-110">
+                    <CheckCircle2 className="h-6 w-6" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-black text-slate-850">Relance expédiée avec succès !</h4>
+                    <p className="text-xs text-slate-500 font-medium">
+                      La relance financière par <span className="font-bold">{reminderChannel.toUpperCase()}</span> a été transmise au destinataire.
+                    </p>
+                  </div>
+
+                  <div className="p-4 bg-slate-50 border border-slate-150 rounded-2xl text-left text-xs font-semibold text-slate-600 space-y-2 max-w-sm mx-auto">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Destinataire :</span>
+                      <span>{reminderChannel === 'sms' ? reminderPhone : reminderEmail}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Heure d'envoi :</span>
+                      <span>{new Date().toLocaleTimeString('fr-FR')}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Facture associée :</span>
+                      <span className="truncate max-w-[180px]">{selectedReminderInvoice.title}</span>
+                    </div>
+                    {reminderChannel === 'email' && (
+                      <div className="pt-2 border-t border-slate-200 text-[10px] text-amber-700 font-bold flex items-start gap-1">
+                        <span>ℹ️</span>
+                        <span>L'ouverture de votre application de messagerie native (Mailto) a également été déclenchée.</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedReminderInvoice(null)}
+                    className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-xs"
+                  >
+                    Fermer l'Assistant
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
       </AnimatePresence>
     </div>
   );

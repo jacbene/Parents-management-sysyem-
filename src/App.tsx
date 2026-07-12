@@ -40,6 +40,7 @@ import ApeeLegal from './components/ApeeLegal';
 import ApeeSharePortal from './components/apee/ApeeSharePortal';
 import { useLanguage } from './utils/TranslationContext';
 import DrivePortal from './components/DrivePortal';
+import SheetsPortal from './components/SheetsPortal';
 import FirebaseConsole from './components/FirebaseConsole';
 import SyncToastContainer from './components/SyncToastContainer';
 
@@ -87,9 +88,12 @@ import {
   Coins,
   Settings,
   Plus,
+  Share2,
+  X,
   Bell,
   Shield,
   Cloud,
+  FileSpreadsheet,
   RefreshCw,
   Trash2,
   Clock,
@@ -112,6 +116,7 @@ type TabType =
   | 'apee_reminders'
   | 'apee_legal'
   | 'google_drive'
+  | 'google_sheets'
   | 'firebase_console'
   | 'announcements' 
   | 'students_by_class'
@@ -371,6 +376,8 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [isIframe, setIsIframe] = useState(false);
   const [showSuperAdmin, setShowSuperAdmin] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
 
 
   // Establishment and role-based access state (with persistence)
@@ -2868,7 +2875,7 @@ export default function App() {
                 <span className="h-8 w-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
                 <div className="text-center space-y-1">
                   <p className="font-bold text-sm text-gray-900">
-                    {seeding ? "Création des données de simulation de vos élèves (Pasma)..." : "Synchronisation de votre profil parent..."}
+                    {seeding ? "Création des données de simulation de vos élèves (Pasma)..." : "Synchronisation de votre profil..."}
                   </p>
                   <p className="text-xs text-gray-500">
                     {seeding ? "La base de données Firestore s'initialise pour votre UID." : "Chargement en cours depuis Google Firebase..."}
@@ -3198,6 +3205,18 @@ export default function App() {
                         </button>
 
                         <button
+                          onClick={() => setActiveTab('google_sheets')}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
+                            activeTab === 'google_sheets' ? 'bg-indigo-600 text-white shadow-xs' : 'text-gray-650 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <FileSpreadsheet className="h-4 w-4" /> 
+                            {t('tab.google_sheets')}
+                          </span>
+                        </button>
+
+                        <button
                           onClick={() => setActiveTab('firebase_console')}
                           className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
                             activeTab === 'firebase_console' ? 'bg-indigo-600 text-white shadow-xs' : 'text-gray-650 hover:bg-slate-50'
@@ -3355,101 +3374,34 @@ export default function App() {
                     )}
                   </div>
                   
-                  {/* Parent Profile & Notification Preferences */}
-                  {portalUserRole === 'parent' ? (
-                    <div className="space-y-3">
-                      {portalParentDetails && (
-                        <motion.div 
-                          initial={{ opacity: 0, y: 15 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 rounded-2xl p-3.5 space-y-3 shadow-3xs dark:shadow-none"
-                        >
-                          <div className="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-800/80">
-                            <div className="p-1.5 bg-indigo-50 dark:bg-indigo-950/40 rounded-lg text-indigo-650 dark:text-indigo-400">
-                              <UserIcon className="h-4.5 w-4.5" />
-                            </div>
-                            <div className="min-w-0">
-                              <h4 className="text-xs font-black text-slate-850 dark:text-indigo-200 truncate">
-                                {language === 'en' ? "My Parent Profile" : "Mon Profil Parent"}
-                              </h4>
-                              <p className="text-[10px] text-slate-450 dark:text-slate-500 font-mono">
-                                {portalParentDetails.name} • {portalParentDetails.phone || "No Phone"}
-                              </p>
-                            </div>
-                          </div>
+                  {/* Compact Profile & Share Buttons */}
+                  <div className="space-y-2 pt-2">
+                    {portalUserRole === 'parent' && portalParentDetails && (
+                      <button
+                        type="button"
+                        onClick={() => setShowProfileModal(true)}
+                        className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/60 text-xs font-bold transition shadow-3xs cursor-pointer select-none"
+                      >
+                        <span className="flex items-center gap-2">
+                          <UserIcon className="h-4 w-4 text-indigo-650 dark:text-indigo-400" />
+                          {language === 'en' ? "My Profile" : "Mon Profil"}
+                        </span>
+                        <Settings className="h-3.5 w-3.5 text-slate-400" />
+                      </button>
+                    )}
 
-                          <div className="space-y-2.5">
-                            <h5 className="text-[9.5px] font-black text-indigo-650 dark:text-indigo-400 uppercase tracking-wider">
-                              {language === 'en' ? "Notification Preferences" : "Préférences Notifications"}
-                            </h5>
-
-                            {/* IMPORTANT GRADES PREFERENCE */}
-                            <div className="space-y-1">
-                              <label className="flex items-start gap-2.5 cursor-pointer select-none">
-                                <input
-                                  type="checkbox"
-                                  checked={prefOnlyImportantGrades}
-                                  onChange={(e) => handleUpdatePreferences(e.target.checked, prefOnlyUrgentFinancials)}
-                                  className="mt-0.5 rounded border-slate-300 dark:border-slate-700 text-indigo-650 focus:ring-indigo-500 h-4 w-4 cursor-pointer transition-colors"
-                                />
-                                <div className="space-y-0.5">
-                                  <span className="text-[11px] font-extrabold text-slate-800 dark:text-slate-200 leading-tight block">
-                                    {language === 'en' ? "Important grades only" : "Notes importantes uniquement"}
-                                  </span>
-                                  <span className="text-[9px] text-slate-450 dark:text-slate-500 leading-relaxed block">
-                                    {language === 'en' 
-                                      ? "Receive push alerts only for grades 15/20 or higher."
-                                      : "Recevoir des alertes de notes uniquement si la note est ≥ 15/20."}
-                                  </span>
-                                </div>
-                              </label>
-                            </div>
-
-                            {/* URGENT FINANCIALS PREFERENCE */}
-                            <div className="space-y-1">
-                              <label className="flex items-start gap-2.5 cursor-pointer select-none">
-                                <input
-                                  type="checkbox"
-                                  checked={prefOnlyUrgentFinancials}
-                                  onChange={(e) => handleUpdatePreferences(prefOnlyImportantGrades, e.target.checked)}
-                                  className="mt-0.5 rounded border-slate-300 dark:border-slate-700 text-indigo-650 focus:ring-indigo-500 h-4 w-4 cursor-pointer transition-colors"
-                                />
-                                <div className="space-y-0.5">
-                                  <span className="text-[11px] font-extrabold text-slate-800 dark:text-slate-200 leading-tight block">
-                                    {language === 'en' ? "Urgent billing alerts only" : "Alertes financières urgentes"}
-                                  </span>
-                                  <span className="text-[9px] text-slate-450 dark:text-slate-500 leading-relaxed block">
-                                    {language === 'en' 
-                                      ? "Receive alerts only for critical financial deadlines or late notices."
-                                      : "Recevoir des rappels uniquement pour les échéances ou retards critiques."}
-                                  </span>
-                                </div>
-                              </label>
-                            </div>
-                          </div>
-
-                          {/* Sync status */}
-                          <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[9px] font-bold text-emerald-600 dark:text-emerald-400">
-                            <span className="flex items-center gap-1">
-                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                              {language === 'en' ? "Preferences saved" : "Préférences enregistrées"}
-                            </span>
-                            <span className="text-slate-400 dark:text-slate-500 font-mono">Pasma-sys</span>
-                          </div>
-                        </motion.div>
-                      )}
-
-                      <ApeeSharePortal 
-                        associationName={apeeSettings.associationName}
-                        portalUserRole={portalUserRole || undefined}
-                      />
-                    </div>
-                  ) : (
-                    <ApeeSharePortal 
-                      associationName={apeeSettings.associationName}
-                      portalUserRole={portalUserRole || undefined}
-                    />
-                  )}
+                    <button
+                      type="button"
+                      onClick={() => setShowShareModal(true)}
+                      className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-indigo-100/80 dark:border-indigo-950/40 bg-indigo-50/40 dark:bg-indigo-950/10 text-indigo-950 dark:text-indigo-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 text-xs font-bold transition shadow-3xs cursor-pointer select-none"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Share2 className="h-4 w-4 text-indigo-650 dark:text-indigo-400" />
+                        {language === 'en' ? "Share App" : "Partager l'application"}
+                      </span>
+                      <Plus className="h-3.5 w-3.5 text-indigo-400" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Right Side / Centered: Main Screen Panel workspace */}
@@ -3577,6 +3529,17 @@ export default function App() {
                           parents={apeeParents}
                           invoices={invoices}
                           students={students}
+                        />
+                      </motion.div>
+                    )}
+
+                    {activeTab === 'google_sheets' && (
+                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="google_sheets">
+                        <SheetsPortal 
+                          parents={apeeParents}
+                          invoices={invoices}
+                          students={students}
+                          onSaveParent={handleSaveApeeParentInPlace}
                         />
                       </motion.div>
                     )}
@@ -3974,6 +3937,163 @@ export default function App() {
                     : "✨ Synchronisation automatique active en arrière-plan."
                   }
                 </p>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Parent Profile & Notification Preferences Modal */}
+      <AnimatePresence>
+        {showProfileModal && portalUserRole === 'parent' && portalParentDetails && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowProfileModal(false)}
+              className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs z-[1000] cursor-pointer"
+            />
+
+            {/* Modal Body */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ type: 'spring', duration: 0.3 }}
+              className="fixed inset-x-4 top-1/2 -translate-y-1/2 md:inset-x-auto md:left-1/2 md:-translate-x-1/2 w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-800 rounded-3xl p-6 shadow-2xl z-[1001] space-y-4 font-sans text-left"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800/80">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-indigo-50 dark:bg-indigo-950/40 rounded-xl text-indigo-650 dark:text-indigo-400">
+                    <UserIcon className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-850 dark:text-indigo-200">
+                      {language === 'en' ? "My Parent Profile" : "Mon Profil Parent"}
+                    </h3>
+                    <p className="text-xs text-slate-450 dark:text-slate-500 font-medium">
+                      {portalParentDetails.name} • {portalParentDetails.phone || "No Phone"}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowProfileModal(false)}
+                  className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-650 dark:hover:text-slate-200 rounded-xl transition cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Preferences list */}
+              <div className="space-y-4 py-1">
+                <h4 className="text-[10px] font-black text-indigo-650 dark:text-indigo-400 uppercase tracking-wider">
+                  {language === 'en' ? "Notification Preferences" : "Préférences Notifications"}
+                </h4>
+
+                {/* IMPORTANT GRADES PREFERENCE */}
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-950/20 border border-slate-150 dark:border-slate-800 rounded-2xl">
+                  <label className="flex items-start gap-3 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={prefOnlyImportantGrades}
+                      onChange={(e) => handleUpdatePreferences(e.target.checked, prefOnlyUrgentFinancials)}
+                      className="mt-0.5 rounded border-slate-300 dark:border-slate-700 text-indigo-650 focus:ring-indigo-500 h-4.5 w-4.5 cursor-pointer transition-colors"
+                    />
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight block">
+                        {language === 'en' ? "Important grades only" : "Notes importantes uniquement"}
+                      </span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed block">
+                        {language === 'en' 
+                          ? "Receive push alerts only for grades 15/20 or higher."
+                          : "Recevoir des alertes de notes uniquement si la note est ≥ 15/20."}
+                      </span>
+                    </div>
+                  </label>
+                </div>
+
+                {/* URGENT FINANCIALS PREFERENCE */}
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-950/20 border border-slate-150 dark:border-slate-800 rounded-2xl">
+                  <label className="flex items-start gap-3 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={prefOnlyUrgentFinancials}
+                      onChange={(e) => handleUpdatePreferences(prefOnlyImportantGrades, e.target.checked)}
+                      className="mt-0.5 rounded border-slate-300 dark:border-slate-700 text-indigo-650 focus:ring-indigo-500 h-4.5 w-4.5 cursor-pointer transition-colors"
+                    />
+                    <div className="space-y-0.5">
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight block">
+                        {language === 'en' ? "Urgent billing alerts only" : "Alertes financières urgentes"}
+                      </span>
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed block">
+                        {language === 'en' 
+                          ? "Receive alerts only for critical financial deadlines or late notices."
+                          : "Recevoir des rappels uniquement pour les échéances ou retards critiques."}
+                      </span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Sync status footer */}
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                  {language === 'en' ? "Preferences saved" : "Préférences enregistrées"}
+                </span>
+                <span className="text-slate-400 dark:text-slate-500 font-mono">Pasma-sys</span>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Share Application Modal */}
+      <AnimatePresence>
+        {showShareModal && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowShareModal(false)}
+              className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs z-[1000] cursor-pointer"
+            />
+
+            {/* Modal Body */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ type: 'spring', duration: 0.3 }}
+              className="fixed inset-x-4 top-1/2 -translate-y-1/2 md:inset-x-auto md:left-1/2 md:-translate-x-1/2 w-full max-w-lg bg-white rounded-3xl p-6 shadow-2xl z-[1001] space-y-4 font-sans text-left"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <h3 className="text-sm font-black text-slate-850 uppercase tracking-wider flex items-center gap-2">
+                  <Share2 className="h-4.5 w-4.5 text-indigo-650" />
+                  {language === 'en' ? "Share Application" : "Partager l'application"}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowShareModal(false)}
+                  className="p-1.5 hover:bg-slate-100 text-slate-400 hover:text-slate-650 rounded-xl transition cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Share portal content inside the modal container */}
+              <div className="overflow-y-auto max-h-[80vh]">
+                <ApeeSharePortal 
+                  associationName={apeeSettings.associationName}
+                  portalUserRole={portalUserRole || undefined}
+                />
               </div>
             </motion.div>
           </>

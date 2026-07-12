@@ -4,6 +4,7 @@ import { jsPDF } from 'jspdf';
 import { ApeeExpense, ApeeSettings, ApeeParent, ApeeOtherRevenue } from '../../types';
 import { getApeeShortName } from '../../utils/apeeDb';
 import ApeeBlankForms from './ApeeBlankForms';
+import ApeeBudgetAnalysis from './ApeeBudgetAnalysis';
 import { useLanguage } from '../../utils/TranslationContext';
 
 interface ApeeFinancialProps {
@@ -40,7 +41,7 @@ export default function ApeeFinancial({
 
   // Active filter tab
   const [activeFilter, setActiveFilter] = useState<string>('all'); // 'all' | 'command' | 'payment-order' | 'refund'
-  const [activeView, setActiveView] = useState<'journal' | 'generator'>('journal');
+  const [activeView, setActiveView] = useState<'journal' | 'generator' | 'analysis'>('journal');
 
   // Calculations
   const calculatedExpenses = expenses.reduce((sums, e) => {
@@ -791,36 +792,56 @@ export default function ApeeFinancial({
         </div>
       </div>
 
-      {/* Navigation subtabs for Caisse vs Blank Form Generator */}
-      <div className="flex bg-slate-100 p-1 rounded-2xl max-w-md border select-none">
+      {/* Navigation subtabs for Caisse vs Blank Form Generator vs Budget Analysis */}
+      <div className="flex bg-slate-100 p-1 rounded-2xl max-w-xl border select-none">
         <button
           type="button"
           onClick={() => setActiveView('journal')}
-          className={`flex-1 py-2 px-4 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
             activeView === 'journal'
               ? 'bg-white text-slate-900 shadow-sm ring-1 ring-black/5'
               : 'text-slate-500 hover:text-slate-800'
           }`}
         >
           <Wallet2 className="h-4 w-4 text-indigo-605" />
-          Journal & Budget de Caisse
+          {isEn ? "Ledger & Budget" : "Journal & Budget de Caisse"}
         </button>
         <button
           type="button"
           onClick={() => setActiveView('generator')}
-          className={`flex-1 py-1.5 px-4 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+          className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
             activeView === 'generator'
               ? 'bg-white text-slate-900 shadow-sm ring-1 ring-black/5'
               : 'text-slate-500 hover:text-slate-800'
           }`}
         >
           <ClipboardList className="h-4 w-4 text-emerald-650" />
-          Formulaires Vierges <span className="bg-emerald-100 text-emerald-800 text-[9px] px-1.5 py-0.5 rounded-md font-black">Nouveau</span>
+          {isEn ? "Blank Forms" : "Formulaires Vierges"} <span className="bg-emerald-100 text-emerald-800 text-[9px] px-1.5 py-0.5 rounded-md font-black">{isEn ? "New" : "Nouveau"}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveView('analysis')}
+          className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+            activeView === 'analysis'
+              ? 'bg-white text-slate-900 shadow-sm ring-1 ring-black/5'
+              : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <TrendingUp className="h-4 w-4 text-amber-600" />
+          {isEn ? "Budget Analysis" : "Analyse Budgétaire"}
         </button>
       </div>
 
       {activeView === 'generator' ? (
         <ApeeBlankForms settings={settings} />
+      ) : activeView === 'analysis' ? (
+        <ApeeBudgetAnalysis
+          expenses={expenses}
+          settings={settings}
+          parents={parents}
+          otherRevenues={otherRevenues}
+          totalRevenue={totalRevenue}
+        />
       ) : (
         <>
           {/* Financial math visualizer */}
