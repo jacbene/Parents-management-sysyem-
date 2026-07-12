@@ -109,6 +109,14 @@ service cloud.firestore {
       return isOwnerOrDemoRead(parentId);
     }
 
+    // Vérifie si l'utilisateur est propriétaire de l'établissement
+    function isEstablishmentOwner(establishmentId) {
+      return isSignedIn() && 
+             isSafeId(establishmentId) &&
+             exists(/databases/$(database)/documents/establishments/$(establishmentId)) &&
+             get(/databases/$(database)/documents/establishments/$(establishmentId)).data.ownerId == request.auth.uid;
+    }
+
     // Récupère un étudiant avec gestion d'erreur
     function getStudentData(studentId) {
       let doc = get(/databases/$(database)/documents/students/$(studentId));
@@ -193,29 +201,71 @@ service cloud.firestore {
              data.size() < 5000;
     }
 
+    // Validation pour la création d'établissement
+    function validateEstablishmentCreate(data) {
+      return validateFields(data,
+        ['ownerId', 'name'],
+        ['ownerId', 'name', 'address', 'phone', 'email', 'logo', 'createdAt', 'description', 'website', 'type']) &&
+        data.ownerId == request.auth.uid &&
+        data.name is string && data.name.size() < 100 &&
+        data.name.size() >= 2 &&
+        (!('address' in data) || (data.address is string && data.address.size() < 200)) &&
+        (!('phone' in data) || (data.phone is string && data.phone.size() < 30)) &&
+        (!('email' in data) || (data.email is string && data.email.size() < 100)) &&
+        (!('logo' in data) || (data.logo is string && data.logo.size() < 500)) &&
+        (!('description' in data) || (data.description is string && data.description.size() < 500)) &&
+        (!('website' in data) || (data.website is string && data.website.size() < 100)) &&
+        (!('type' in data) || (data.type is string && data.type.size() < 50));
+    }
+
+    // Validation pour la mise à jour d'établissement
+    function validateEstablishmentUpdate(data) {
+      return validateFields(data,
+        [],
+        ['ownerId', 'name', 'address', 'phone', 'email', 'logo', 'createdAt', 'description', 'website', 'type']) &&
+        isImmutable('ownerId') &&
+        (!('name' in data) || (data.name is string && data.name.size() < 100 && data.name.size() >= 2)) &&
+        (!('address' in data) || (data.address is string && data.address.size() < 200)) &&
+        (!('phone' in data) || (data.phone is string && data.phone.size() < 30)) &&
+        (!('email' in data) || (data.email is string && data.email.size() < 100)) &&
+        (!('logo' in data) || (data.logo is string && data.logo.size() < 500)) &&
+        (!('description' in data) || (data.description is string && data.description.size() < 500)) &&
+        (!('website' in data) || (data.website is string && data.website.size() < 100)) &&
+        (!('type' in data) || (data.type is string && data.type.size() < 50));
+    }
+
     // ============================================
     // 4. RÈGLES PAR COLLECTION
     // ============================================
 
     // -------------------- establishments --------------------
+    // Règle modifiée : l'ID de l'établissement DOIT être l'UID de l'utilisateur
     match /establishments/{establishmentId} {
+      // Lecture publique pour les démos, ou authentifiée
       allow read: if isSignedIn() || isDemoId(establishmentId);
       
+      // Création : l'ID DOIT être l'UID de l'utilisateur
       allow create: if isSignedIn() && 
+                    establishmentId == request.auth.uid &&
                     isSafeId(establishmentId) &&
                     request.resource.data.size() < 5000 &&
-                    request.resource.data.ownerId == request.auth.uid &&
+                    !exists(/databases/$(database)/documents/establishments/$(request.auth.uid)) &&
+                    validateEstablishmentCreate(request.resource.data) &&
                     noPrivilegeFields(request.resource.data);
       
+      // Mise à jour : seul le propriétaire peut modifier
       allow update: if isSignedIn() && 
                     resource != null &&
-                    isSafeId(establishmentId) &&
+                    establishmentId == request.auth.uid &&
                     resource.data.ownerId == request.auth.uid &&
                     request.resource.data.size() < 5000 &&
+                    validateEstablishmentUpdate(request.resource.data) &&
                     noPrivilegeFields(request.resource.data);
       
+      // Suppression : seul le propriétaire peut supprimer
       allow delete: if isSignedIn() && 
                     resource != null &&
+                    establishmentId == request.auth.uid &&
                     resource.data.ownerId == request.auth.uid;
     }
 
@@ -267,7 +317,7 @@ service cloud.firestore {
                     (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId)) &&
                     validateSimpleDocument(request.resource.data, 
                       ['parentId', 'studentId', 'subject', 'score'], 
-                      ['parentId', 'studentId', 'subject', 'score', 'date', 'comment']);
+                      ['parentId', 'studentId', 'subject', 'score', 'date', 'comment', 'gradeScale', 'coefficient']);
       
       allow update: if isSignedIn() && 
                     resource != null &&
@@ -275,7 +325,7 @@ service cloud.firestore {
                     (isSuperAdmin() || (isOwnerOrDemoWrite(resource.data.parentId))) &&
                     validateSimpleDocument(request.resource.data, 
                       [], 
-                      ['parentId', 'studentId', 'subject', 'score', 'date', 'comment']) &&
+                      ['parentId', 'studentId', 'subject', 'score', 'date', 'comment', 'gradeScale', 'coefficient']) &&
                     (isSuperAdmin() || isImmutable('parentId'));
       
       allow delete: if isSignedIn() && 
@@ -296,7 +346,7 @@ service cloud.firestore {
                     (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId)) &&
                     validateSimpleDocument(request.resource.data, 
                       ['parentId', 'studentId', 'date', 'status'], 
-                      ['parentId', 'studentId', 'date', 'status', 'comment', 'teacherName']);
+                      ['parentId', 'studentId', 'date', 'status', 'comment', 'teacherName', 'attendanceType']);
       
       allow update: if isSignedIn() && 
                     resource != null &&
@@ -304,7 +354,7 @@ service cloud.firestore {
                     (isSuperAdmin() || (isOwnerOrDemoWrite(resource.data.parentId))) &&
                     validateSimpleDocument(request.resource.data, 
                       [], 
-                      ['parentId', 'studentId', 'date', 'status', 'comment', 'teacherName']) &&
+                      ['parentId', 'studentId', 'date', 'status', 'comment', 'teacherName', 'attendanceType']) &&
                     (isSuperAdmin() || isImmutable('parentId'));
       
       allow delete: if isSignedIn() && 
@@ -325,7 +375,7 @@ service cloud.firestore {
                     (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId)) &&
                     validateSimpleDocument(request.resource.data, 
                       ['parentId', 'title', 'dueDate'], 
-                      ['parentId', 'title', 'dueDate', 'description', 'subject', 'assignedTo']);
+                      ['parentId', 'title', 'dueDate', 'description', 'subject', 'assignedTo', 'classRoom', 'priority']);
       
       allow update: if isSignedIn() && 
                     resource != null &&
@@ -333,7 +383,7 @@ service cloud.firestore {
                     (isSuperAdmin() || (isOwnerOrDemoWrite(resource.data.parentId))) &&
                     validateSimpleDocument(request.resource.data, 
                       [], 
-                      ['parentId', 'title', 'dueDate', 'description', 'subject', 'assignedTo']) &&
+                      ['parentId', 'title', 'dueDate', 'description', 'subject', 'assignedTo', 'classRoom', 'priority']) &&
                     (isSuperAdmin() || isImmutable('parentId'));
       
       allow delete: if isSignedIn() && 
@@ -354,7 +404,7 @@ service cloud.firestore {
                     (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId)) &&
                     validateSimpleDocument(request.resource.data, 
                       ['parentId', 'title', 'date', 'studentId'], 
-                      ['parentId', 'title', 'date', 'studentId', 'description', 'status']);
+                      ['parentId', 'title', 'date', 'studentId', 'description', 'status', 'location', 'duration']);
       
       allow update: if isSignedIn() && 
                     resource != null &&
@@ -362,7 +412,7 @@ service cloud.firestore {
                     (isSuperAdmin() || (isOwnerOrDemoWrite(resource.data.parentId))) &&
                     validateSimpleDocument(request.resource.data, 
                       [], 
-                      ['parentId', 'title', 'date', 'studentId', 'description', 'status']) &&
+                      ['parentId', 'title', 'date', 'studentId', 'description', 'status', 'location', 'duration']) &&
                     (isSuperAdmin() || isImmutable('parentId'));
       
       allow delete: if isSignedIn() && 
@@ -383,7 +433,7 @@ service cloud.firestore {
                     (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId)) &&
                     validateSimpleDocument(request.resource.data, 
                       ['parentId', 'senderId', 'content'], 
-                      ['parentId', 'senderId', 'content', 'read', 'timestamp', 'receiverId']);
+                      ['parentId', 'senderId', 'content', 'read', 'timestamp', 'receiverId', 'attachments', 'priority']);
       
       allow update: if isSignedIn() && 
                     resource != null &&
@@ -391,7 +441,7 @@ service cloud.firestore {
                     (isSuperAdmin() || (isOwnerOrDemoWrite(resource.data.parentId))) &&
                     validateSimpleDocument(request.resource.data, 
                       [], 
-                      ['parentId', 'senderId', 'content', 'read', 'timestamp', 'receiverId']) &&
+                      ['parentId', 'senderId', 'content', 'read', 'timestamp', 'receiverId', 'attachments', 'priority']) &&
                     (isSuperAdmin() || isImmutable('parentId')) &&
                     (isSuperAdmin() || isImmutable('senderId'));
       
@@ -419,7 +469,7 @@ service cloud.firestore {
                      isOwnerOrDemoWrite(request.resource.data.parentId)) &&
                     validateSimpleDocument(request.resource.data, 
                       ['parentId', 'amount', 'status'], 
-                      ['parentId', 'amount', 'status', 'date', 'description', 'studentId', 'paymentMethod']);
+                      ['parentId', 'amount', 'status', 'date', 'description', 'studentId', 'paymentMethod', 'invoiceNumber', 'dueDate']);
       
       allow update: if isSignedIn() && 
                     resource != null &&
@@ -429,7 +479,7 @@ service cloud.firestore {
                      (isOwnerOrDemoWrite(resource.data.parentId))) &&
                     validateSimpleDocument(request.resource.data, 
                       [], 
-                      ['parentId', 'amount', 'status', 'date', 'description', 'studentId', 'paymentMethod']) &&
+                      ['parentId', 'amount', 'status', 'date', 'description', 'studentId', 'paymentMethod', 'invoiceNumber', 'dueDate']) &&
                     (isSuperAdmin() || invoiceId.matches('^log_.*') || isImmutable('parentId'));
       
       allow delete: if isSignedIn() && 
@@ -487,7 +537,7 @@ service cloud.firestore {
                     (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId)) &&
                     validateSimpleDocument(request.resource.data, 
                       ['parentId', 'title', 'content'], 
-                      ['parentId', 'title', 'content', 'date', 'authorName', 'priority']);
+                      ['parentId', 'title', 'content', 'date', 'authorName', 'priority', 'expiryDate', 'targetAudience']);
       
       allow update: if isSignedIn() && 
                     resource != null &&
@@ -495,7 +545,7 @@ service cloud.firestore {
                     (isSuperAdmin() || (isOwnerOrDemoWrite(resource.data.parentId))) &&
                     validateSimpleDocument(request.resource.data, 
                       [], 
-                      ['parentId', 'title', 'content', 'date', 'authorName', 'priority']) &&
+                      ['parentId', 'title', 'content', 'date', 'authorName', 'priority', 'expiryDate', 'targetAudience']) &&
                     (isSuperAdmin() || isImmutable('parentId'));
       
       allow delete: if isSignedIn() && 
@@ -514,7 +564,7 @@ service cloud.firestore {
                     (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId)) &&
                     validateSimpleDocument(request.resource.data, 
                       ['parentId', 'title', 'content'], 
-                      ['parentId', 'title', 'content', 'date', 'subject', 'teacherName']);
+                      ['parentId', 'title', 'content', 'date', 'subject', 'teacherName', 'duration', 'classRoom', 'attachments']);
       
       allow update: if isSignedIn() && 
                     resource != null &&
@@ -522,7 +572,7 @@ service cloud.firestore {
                     (isSuperAdmin() || (isOwnerOrDemoWrite(resource.data.parentId))) &&
                     validateSimpleDocument(request.resource.data, 
                       [], 
-                      ['parentId', 'title', 'content', 'date', 'subject', 'teacherName']) &&
+                      ['parentId', 'title', 'content', 'date', 'subject', 'teacherName', 'duration', 'classRoom', 'attachments']) &&
                     (isSuperAdmin() || isImmutable('parentId'));
       
       allow delete: if isSignedIn() && 
@@ -580,7 +630,7 @@ service cloud.firestore {
                     request.resource.data.size() < 5000 &&
                     validateFields(request.resource.data,
                       ['uid', 'sessionId', 'createdAt'],
-                      ['uid', 'sessionId', 'createdAt', 'expiresAt', 'deviceInfo']);
+                      ['uid', 'sessionId', 'createdAt', 'expiresAt', 'deviceInfo', 'lastActivity']);
       
       allow update: if isSignedIn() && 
                     isSafeId(sessionId) &&
