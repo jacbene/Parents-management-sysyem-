@@ -85,13 +85,23 @@ export default function NotificationBell({ portalUserRole, selectedStudentName =
         console.warn("Notification speech error:", e);
         setSpeakingId(null);
         utteranceRef.current = null;
+
+        if (e.error === 'not-allowed') {
+          alert(isEn 
+            ? "Your browser blocked text-to-speech. If you are using the embedded preview, please open the application in a new tab using the button at the top right of the screen to hear notifications!" 
+            : "Votre navigateur a bloqué la synthèse vocale. Si vous utilisez l'aperçu intégré, veuillez ouvrir l'application dans un nouvel onglet avec le bouton en haut à droite pour entendre les notifications !"
+          );
+        }
       };
 
       if (window.speechSynthesis.paused) {
         window.speechSynthesis.resume();
       }
 
-      window.speechSynthesis.speak(utterance);
+      // Delay speak invocation slightly to ensure previous cancel() completed
+      setTimeout(() => {
+        window.speechSynthesis.speak(utterance);
+      }, 150);
     }
   };
 

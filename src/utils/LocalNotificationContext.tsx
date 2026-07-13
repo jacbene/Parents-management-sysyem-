@@ -334,7 +334,25 @@ export function LocalNotificationProvider({ children, onNavigateToTab }: LocalNo
                       window.speechSynthesis.cancel();
                       const utterance = new SpeechSynthesisUtterance(`${activeToast.title}. ${activeToast.body}`);
                       utterance.lang = language === 'en' ? 'en-US' : 'fr-FR';
-                      window.speechSynthesis.speak(utterance);
+                      
+                      utterance.onerror = (errEvent) => {
+                        console.warn("Toast SpeechSynthesisUtterance error:", errEvent);
+                        if (errEvent.error === 'not-allowed') {
+                          alert(language === 'en' 
+                            ? "Your browser blocked text-to-speech. If you are using the embedded preview, please open the application in a new tab using the button at the top right of the screen to hear alerts!" 
+                            : "Votre navigateur a bloqué la synthèse vocale. Si vous utilisez l'aperçu intégré, veuillez ouvrir l'application dans un nouvel onglet avec le bouton en haut à droite pour entendre les alertes !"
+                          );
+                        }
+                      };
+
+                      if (window.speechSynthesis.paused) {
+                        window.speechSynthesis.resume();
+                      }
+
+                      // Delay speak invocation slightly to ensure previous cancel() completed
+                      setTimeout(() => {
+                        window.speechSynthesis.speak(utterance);
+                      }, 150);
                     } else {
                       alert(language === 'en' ? 'Speech synthesis is not supported' : 'Synthèse vocale non supportée');
                     }

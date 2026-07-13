@@ -2,27 +2,36 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Catch-all deny
+    // ============================================
+    // 1. CATCH-ALL DENY
+    // ============================================
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // Seeding sandbox
+    // ============================================
+    // 2. SEEDING (sandbox de test)
+    // ============================================
     match /seeding/{document=**} {
       allow read, write: if true;
     }
 
-    // Helper: is user signed in?
+    // ============================================
+    // 3. UTILITY FUNCTIONS
+    // ============================================
+
     function isSignedIn() {
       return request.auth != null;
     }
 
-    // Helper: check if ID is safe to prevent poisoning
     function isSafeId(id) {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
-    // Helper: check if school ID is demo
+    function isSafeEmail(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-\\.\\+\\@]+$');
+    }
+
     function isDemoId(id) {
       return id != null && (
         id == 'demo_school_ekali' ||
@@ -34,264 +43,188 @@ service cloud.firestore {
       );
     }
 
-    // Path Helpers: ensure only simple variables are used in path interpolation
     function hasSuperAdminDoc(email) {
-      return exists(/databases/$(database)/documents/super_admins/$(email));
+      return email is string && 
+             exists(/databases/$(database)/documents/super_admins/$(email));
     }
 
-    // Helper: check if user is a super admin
     function isSuperAdmin() {
-      return isSignedIn() && (
-        request.auth.uid == "sys_admin_jacques" ||
-        ('email' in request.auth.token && (
-          request.auth.token.email == "jacquesbene301@gmail.com" ||
-          request.auth.token.email == "adjoint@pasma.sys" ||
-          hasSuperAdminDoc(request.auth.token.email)
-        ))
-      );
+      return isSignedIn() && 
+             (request.auth.uid == "sys_admin_jacques" ||
+              ('email' in request.auth.token && 
+               request.auth.token.email is string &&
+               (request.auth.token.email == "jacquesbene301@gmail.com" ||
+                request.auth.token.email == "adjoint@pasma.sys" ||
+                hasSuperAdminDoc(request.auth.token.email))));
     }
 
-    // Vérifie qu'un champ n'est pas modifié lors d'une mise à jour
     function isImmutable(field) {
       return !(field in request.resource.data) || 
              (resource != null && 
               resource.data[field] == request.resource.data[field]);
     }
 
-    // Valide les champs d'un document avec vérification des types
-    function validateFields(data, required, allowed) {
-      return data.keys().hasOnly(allowed) && 
-             required.all(key => key in data) &&
-             data.size() <= allowed.size() + 5; // Limite de champs supplémentaires
-    }
-
-    // Vérifie que les champs de rôle ne sont pas présents
-    function noRoleFields(data) {
-      return !('role' in data) && !('isAdmin' in data);
-    }
-
-    // Vérifie que les champs booléens sont valides
-    function isValidBoolean(field) {
-      return field == true || field == false;
-    }
-
-    // Vérifie les droits en lecture avec validation parentId
+    // Checking if parentId is owned by the user or is a demo ID
     function isOwnerOrDemoRead(parentId) {
       return isDemoId(parentId) || 
-             (isSignedIn() && isSafeId(parentId) && (
-               parentId == request.auth.uid || 
-               exists(/databases/$(database)/documents/establishments/$(parentId))
-             ));
+             (isSignedIn() && 
+              isSafeId(parentId) && 
+              (parentId == request.auth.uid || 
+               exists(/databases/$(database)/documents/establishments/$(parentId))));
     }
 
-    // Vérifie les droits en écriture avec validation parentId
     function isOwnerOrDemoWrite(parentId) {
       return isDemoId(parentId) || 
-             (isSignedIn() && isSafeId(parentId) && (
-               parentId == request.auth.uid || 
-               (exists(/databases/$(database)/documents/establishments/$(parentId)) && 
-                get(/databases/$(database)/documents/establishments/$(parentId)).data.ownerId == request.auth.uid)
-             ));
+             (isSignedIn() && 
+              isSafeId(parentId) && 
+              (parentId == request.auth.uid || 
+               getAfter(/databases/$(database)/documents/establishments/$(parentId)).data.ownerId == request.auth.uid));
     }
 
-    // Vérifie les droits en lecture/liste avec validation parentId
-    function isOwnerOrDemoList(parentId) {
-      return isOwnerOrDemoRead(parentId);
+    function studentExists(studentId) {
+      return exists(/databases/$(database)/documents/students/$(studentId));
     }
 
-    // Récupère un étudiant avec gestion d'erreur
-    function getStudent(studentId) {
-      let studentDoc = get(/databases/$(database)/documents/students/$(studentId));
-      return studentDoc != null ? studentDoc.data : null;
+    function isStudentOwnerRead(studentId) {
+      return studentExists(studentId) &&
+             isOwnerOrDemoRead(get(/databases/$(database)/documents/students/$(studentId)).data.parentId);
     }
 
-    // establishments rules
+    function isStudentOwnerWrite(studentId) {
+      return studentExists(studentId) &&
+             isOwnerOrDemoWrite(get(/databases/$(database)/documents/students/$(studentId)).data.parentId);
+    }
+
+    // ============================================
+    // 4. COLLECTION RULES
+    // ============================================
+
+    // establishments
     match /establishments/{establishmentId} {
-      allow read: if true;
-      allow create, update: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow read: if isSignedIn() || isDemoId(establishmentId);
+      allow write: if isSignedIn() && 
+                    isSafeId(establishmentId) &&
+                    (resource == null || resource.data.ownerId == request.auth.uid) &&
+                    request.resource.data.ownerId == request.auth.uid;
     }
 
-    // students rules
+    // students
     match /students/{studentId} {
-      allow get: if isSignedIn() && resource != null && 
-                 (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
+      allow get: if isSignedIn() && 
+                 isSafeId(studentId) &&
+                 (isSuperAdmin() || (resource != null && isOwnerOrDemoRead(resource.data.parentId)));
       
       allow list: if isSignedIn() && 
-                  request.query.parentId != null &&
-                  isSafeId(request.query.parentId) &&
-                 (isSuperAdmin() || isOwnerOrDemoList(request.query.parentId));
+                  (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
       
-      allow create: if isSignedIn() && isSafeId(studentId) && 
-                    request.resource.data.size() < 10000 &&
-                    (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId)) &&
-                    validateFields(request.resource.data,
-                      ['id', 'parentId', 'name', 'grade', 'classRoom'],
-                      ['id', 'parentId', 'name', 'grade', 'classRoom', 'avatar', 
-                       'teacherName', 'teacherEmail', 'dob', 'gradesValidated', 
-                       'attendanceValidated']) &&
-                    noRoleFields(request.resource.data) &&
-                    request.resource.data.name is string &&
-                    request.resource.data.name.size() < 100 &&
-                    request.resource.data.grade is string &&
-                    request.resource.data.grade.size() < 50;
+      allow create: if isSignedIn() && 
+                    isSafeId(studentId) &&
+                    (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
       
-      allow update: if isSignedIn() && resource != null &&
-                    request.resource.data.size() < 10000 &&
-                    (isSuperAdmin() || isOwnerOrDemoWrite(resource.data.parentId)) &&
-                    (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId)) &&
+      allow update: if isSignedIn() && 
+                    isSafeId(studentId) &&
+                    (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId))) &&
                     (isSuperAdmin() || isImmutable('parentId')) &&
-                    isImmutable('id') &&
-                    validateFields(request.resource.data,
-                      [],
-                      ['id', 'parentId', 'name', 'grade', 'classRoom', 'avatar', 
-                       'teacherName', 'teacherEmail', 'dob', 'gradesValidated', 
-                       'attendanceValidated']) &&
-                    noRoleFields(request.resource.data) &&
-                    request.resource.data.name is string &&
-                    request.resource.data.name.size() < 100;
+                    isImmutable('id');
       
-      allow delete: if isSignedIn() && resource != null &&
-                    (isSuperAdmin() || isOwnerOrDemoWrite(resource.data.parentId));
+      allow delete: if isSignedIn() && 
+                    isSafeId(studentId) &&
+                    (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 
-    // grades rules
+    // grades
     match /grades/{gradeId} {
       allow get, list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
       allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
-      allow update: if isSignedIn() && (isSuperAdmin() || (isOwnerOrDemoWrite(resource.data.parentId) && isOwnerOrDemoWrite(request.resource.data.parentId)));
-      allow delete: if isSignedIn() && (isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin());
+      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 
-    // attendance rules
+    // attendance
     match /attendance/{attendanceId} {
       allow get, list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
       allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
-      allow update: if isSignedIn() && (isSuperAdmin() || (isOwnerOrDemoWrite(request.resource.data.parentId) && isOwnerOrDemoWrite(request.resource.data.parentId)));
-      allow delete: if isSignedIn() && (isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin());
+      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 
-    // homeworks rules
+    // homeworks
     match /homeworks/{homeworkId} {
       allow get, list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
       allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
-      allow update: if isSignedIn() && (isSuperAdmin() || (isOwnerOrDemoWrite(request.resource.data.parentId) && isOwnerOrDemoWrite(request.resource.data.parentId)));
-      allow delete: if isSignedIn() && (isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin());
+      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 
-    // appointments rules
+    // appointments
     match /appointments/{appointmentId} {
       allow get, list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
       allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
-      allow update: if isSignedIn() && (isSuperAdmin() || (isOwnerOrDemoWrite(request.resource.data.parentId) && isOwnerOrDemoWrite(request.resource.data.parentId)));
-      allow delete: if isSignedIn() && (isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin());
+      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 
-    // messages rules
+    // messages
     match /messages/{messageId} {
       allow get, list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
       allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
-      allow update: if isSignedIn() && (isSuperAdmin() || (isOwnerOrDemoWrite(request.resource.data.parentId) && isOwnerOrDemoWrite(request.resource.data.parentId)));
-      allow delete: if isSignedIn() && (isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin());
+      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 
-    // invoices rules
+    // invoices
     match /invoices/{invoiceId} {
-      allow get: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId) || invoiceId.matches('^log_.*'));
+      allow get: if isSignedIn() && 
+                 isSafeId(invoiceId) &&
+                 (isSuperAdmin() || 
+                  (resource != null && isOwnerOrDemoRead(resource.data.parentId)) || 
+                  invoiceId.matches('^log_.*'));
       allow list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
       allow create: if isSignedIn() && (isSuperAdmin() || invoiceId.matches('^log_.*') || isOwnerOrDemoWrite(request.resource.data.parentId));
-      allow update: if isSignedIn() && (isSuperAdmin() || invoiceId.matches('^log_.*') || (isOwnerOrDemoWrite(request.resource.data.parentId) && isOwnerOrDemoWrite(request.resource.data.parentId)));
-      allow delete: if isSignedIn() && (invoiceId.matches('^log_.*') || isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin());
+      allow update: if isSignedIn() && (isSuperAdmin() || invoiceId.matches('^log_.*') || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && (isSuperAdmin() || invoiceId.matches('^log_.*') || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 
-    // reading_logs rules
+    // reading_logs
     match /reading_logs/{logId} {
-      allow read: if isSignedIn();
-      
-      allow create: if isSignedIn() && isSafeId(logId) && 
-                    request.resource.data.size() < 10000 &&
-                    let student = getStudent(request.resource.data.studentId);
-                    student != null && 
-                    isOwnerOrDemoWrite(student.parentId) &&
-                    validateFields(request.resource.data,
-                      ['studentId', 'studentName', 'bookTitle', 'status'],
-                      ['studentId', 'studentName', 'bookTitle', 'bookAuthor', 
-                       'genre', 'status', 'progressPercent', 'parentNotes', 
-                       'rating', 'addedAt']) &&
-                    request.resource.data.bookTitle is string &&
-                    request.resource.data.bookTitle.size() < 200 &&
-                    request.resource.data.progressPercent is int &&
-                    request.resource.data.progressPercent >= 0 &&
-                    request.resource.data.progressPercent <= 100;
-      
-      allow update: if isSignedIn() && resource != null &&
-                    request.resource.data.size() < 10000 &&
-                    let student = getStudent(resource.data.studentId);
-                    student != null && 
-                    isOwnerOrDemoWrite(student.parentId) &&
-                    let newStudent = getStudent(request.resource.data.studentId);
-                    newStudent != null && 
-                    isOwnerOrDemoWrite(newStudent.parentId) && 
-                    isImmutable('studentId') && 
-                    validateFields(request.resource.data,
-                      [],
-                      ['studentId', 'studentName', 'bookTitle', 'bookAuthor', 
-                       'genre', 'status', 'progressPercent', 'parentNotes', 
-                       'rating', 'addedAt']) &&
-                    request.resource.data.progressPercent is int &&
-                    request.resource.data.progressPercent >= 0 &&
-                    request.resource.data.progressPercent <= 100;
-      
-      allow delete: if isSignedIn() && resource != null &&
-                    let student = getStudent(resource.data.studentId);
-                    student != null && 
-                    isOwnerOrDemoWrite(student.parentId);
+      allow get: if isSignedIn() && isSafeId(logId) && (isSuperAdmin() || isStudentOwnerRead(resource.data.studentId));
+      allow list: if isSignedIn() && (isSuperAdmin() || isStudentOwnerRead(resource.data.studentId));
+      allow create: if isSignedIn() && isSafeId(logId) && isStudentOwnerWrite(request.resource.data.studentId);
+      allow update: if isSignedIn() && isSafeId(logId) && isStudentOwnerWrite(resource.data.studentId) && isStudentOwnerWrite(request.resource.data.studentId) && isImmutable('studentId');
+      allow delete: if isSignedIn() && isSafeId(logId) && isStudentOwnerWrite(resource.data.studentId);
     }
 
-    // announcements rules
+    // announcements
     match /announcements/{announcementId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() && isSafeId(announcementId);
       allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
-      allow update: if isSignedIn() && (isSuperAdmin() || (isOwnerOrDemoWrite(request.resource.data.parentId) && isOwnerOrDemoWrite(request.resource.data.parentId)));
-      allow delete: if isSignedIn() && (isOwnerOrDemoWrite(request.resource.data.parentId) || isSuperAdmin());
+      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 
-    // lessons rules
+    // lessons
     match /lessons/{lessonId} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() && isSafeId(lessonId);
       allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
-      allow update: if isSignedIn() && (isSuperAdmin() || (isOwnerOrDemoWrite(request.resource.data.parentId) && isOwnerOrDemoWrite(request.resource.data.parentId)));
-      allow delete: if isSignedIn() && (isOwnerOrDemoWrite(request.resource.data.parentId) || isSuperAdmin());
+      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 
-    // super_admins rules
+    // super_admins
     match /super_admins/{adminId} {
-      allow get: if isSignedIn() && (isSuperAdmin() || ('email' in request.auth.token && request.auth.token.email == adminId));
-      allow list: if isSignedIn() && (isSuperAdmin() || ('email' in request.auth.token && hasSuperAdminDoc(request.auth.token.email)));
-      allow write: if isSignedIn() && isSuperAdmin();
+      allow get: if isSignedIn() && 
+                 isSafeEmail(adminId) &&
+                 (isSuperAdmin() || 
+                  ('email' in request.auth.token && 
+                   request.auth.token.email is string &&
+                   request.auth.token.email == adminId));
+      allow list: if isSignedIn() && (isSuperAdmin() || ('email' in request.auth.token && request.auth.token.email is string && hasSuperAdminDoc(request.auth.token.email)));
+      allow create, update, delete: if isSignedIn() && isSuperAdmin();
     }
 
-    // active_sessions rules
+    // active_sessions
     match /active_sessions/{sessionId} {
-      allow read: if isSignedIn() && request.auth.uid == sessionId;
-      
-      allow create: if isSignedIn() && 
-                    request.auth.uid == sessionId &&
-                    request.resource.data.uid == request.auth.uid &&
-                    request.resource.data.size() < 5000 &&
-                    validateFields(request.resource.data,
-                      ['uid', 'sessionId', 'createdAt'],
-                      ['uid', 'sessionId', 'createdAt', 'expiresAt', 'deviceInfo']);
-      
-      allow update: if isSignedIn() && 
-                    request.auth.uid == sessionId &&
-                    request.resource.data.uid == request.auth.uid &&
-                    isImmutable('uid') &&
-                    isImmutable('sessionId') &&
-                    request.resource.data.size() < 5000;
-      
-      allow delete: if isSignedIn() && 
-                    request.auth.uid == sessionId;
+      allow read, write: if isSignedIn() && isSafeId(sessionId) && request.auth.uid == sessionId;
     }
 
   }

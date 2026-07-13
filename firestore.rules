@@ -3,9 +3,9 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ============================================
-    // 1. CATCH-ALL DENY (en dernier recours)
+    // 1. CATCH-ALL DENY
     // ============================================
-    match /{collection}/{docId} {
+    match /{document=**} {
       allow read, write: if false;
     }
 
@@ -17,20 +17,21 @@ service cloud.firestore {
     }
 
     // ============================================
-    // 3. FONCTIONS UTILITAIRES
+    // 3. UTILITY FUNCTIONS
     // ============================================
 
-    // Vérifie si l'utilisateur est authentifié
     function isSignedIn() {
       return request.auth != null;
     }
 
-    // Valide un ID (prévention d'injection)
     function isSafeId(id) {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
-    // Vérifie si l'ID est un ID de démo
+    function isSafeEmail(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-\\.\\+\\@]+$');
+    }
+
     function isDemoId(id) {
       return id != null && (
         id == 'demo_school_ekali' ||
@@ -42,50 +43,28 @@ service cloud.firestore {
       );
     }
 
-    // Vérifie si un document super_admin existe (utilisé uniquement pour la lecture)
     function hasSuperAdminDoc(email) {
       return email is string && 
-             isSafeId(email) &&
-             email.size() <= 128 &&
              exists(/databases/$(database)/documents/super_admins/$(email));
     }
 
-    // Vérifie si l'utilisateur est super admin (via claims ou liste fixe)
     function isSuperAdmin() {
       return isSignedIn() && 
              (request.auth.uid == "sys_admin_jacques" ||
               ('email' in request.auth.token && 
                request.auth.token.email is string &&
                (request.auth.token.email == "jacquesbene301@gmail.com" ||
-                request.auth.token.email == "adjoint@pasma.sys")));
+                request.auth.token.email == "adjoint@pasma.sys" ||
+                hasSuperAdminDoc(request.auth.token.email))));
     }
 
-    // Vérifie qu'un champ n'est pas modifié lors d'une mise à jour
     function isImmutable(field) {
       return !(field in request.resource.data) || 
              (resource != null && 
               resource.data[field] == request.resource.data[field]);
     }
 
-    // Valide que les champs sont autorisés et que les champs requis sont présents
-    function validateFields(data, required, allowed) {
-      return data.keys().hasOnly(allowed) && 
-             required.all(key => key in data) &&
-             data.size() <= allowed.size() + 5;
-    }
-
-    // Vérifie qu'aucun champ de privilège n'est présent
-    function noPrivilegeFields(data) {
-      let forbidden = ['role', 'isAdmin', 'permissions', 'accessLevel', 'isModerator', 'isTeacher'];
-      return forbidden.all(field => !(field in data));
-    }
-
-    // Vérifie qu'un champ est un booléen valide
-    function isValidBoolean(field) {
-      return field == true || field == false;
-    }
-
-    // Vérifie les droits en lecture
+    // Checking if parentId is owned by the user or is a demo ID
     function isOwnerOrDemoRead(parentId) {
       return isDemoId(parentId) || 
              (isSignedIn() && 
@@ -94,555 +73,160 @@ service cloud.firestore {
                exists(/databases/$(database)/documents/establishments/$(parentId))));
     }
 
-    // Vérifie les droits en écriture
     function isOwnerOrDemoWrite(parentId) {
       return isDemoId(parentId) || 
              (isSignedIn() && 
               isSafeId(parentId) && 
               (parentId == request.auth.uid || 
-               (exists(/databases/$(database)/documents/establishments/$(parentId)) && 
-                get(/databases/$(database)/documents/establishments/$(parentId)).data.ownerId == request.auth.uid)));
+               getAfter(/databases/$(database)/documents/establishments/$(parentId)).data.ownerId == request.auth.uid));
     }
 
-    // Vérifie les droits en liste (alias de lecture)
-    function isOwnerOrDemoList(parentId) {
-      return isOwnerOrDemoRead(parentId);
+    function studentExists(studentId) {
+      return exists(/databases/$(database)/documents/students/$(studentId));
     }
 
-    // Vérifie si l'utilisateur est propriétaire de l'établissement
-    function isEstablishmentOwner(establishmentId) {
-      return isSignedIn() && 
-             isSafeId(establishmentId) &&
-             exists(/databases/$(database)/documents/establishments/$(establishmentId)) &&
-             get(/databases/$(database)/documents/establishments/$(establishmentId)).data.ownerId == request.auth.uid;
+    function isStudentOwnerRead(studentId) {
+      return studentExists(studentId) &&
+             isOwnerOrDemoRead(get(/databases/$(database)/documents/students/$(studentId)).data.parentId);
     }
 
-    // Récupère un étudiant avec gestion d'erreur
-    function getStudentData(studentId) {
-      let doc = get(/databases/$(database)/documents/students/$(studentId));
-      return doc != null ? doc.data : null;
-    }
-
-    // Validation spécifique pour un étudiant (création)
-    function validateStudentCreate(data) {
-      return validateFields(data,
-        ['id', 'parentId', 'name', 'grade', 'classRoom'],
-        ['id', 'parentId', 'name', 'grade', 'classRoom', 'avatar', 
-         'teacherName', 'teacherEmail', 'dob', 'gradesValidated', 
-         'attendanceValidated']) &&
-        data.name is string && data.name.size() < 100 &&
-        data.grade is string && data.grade.size() < 50 &&
-        data.classRoom is string && data.classRoom.size() < 50 &&
-        (data.avatar == null || (data.avatar is string && data.avatar.size() < 500)) &&
-        (data.teacherName == null || (data.teacherName is string && data.teacherName.size() < 100)) &&
-        (data.teacherEmail == null || (data.teacherEmail is string && data.teacherEmail.size() < 100)) &&
-        (data.dob == null || (data.dob is string && data.dob.size() < 20)) &&
-        (data.gradesValidated == null || isValidBoolean(data.gradesValidated)) &&
-        (data.attendanceValidated == null || isValidBoolean(data.attendanceValidated));
-    }
-
-    // Validation spécifique pour un étudiant (mise à jour)
-    function validateStudentUpdate(data) {
-      return validateFields(data,
-        [],
-        ['id', 'parentId', 'name', 'grade', 'classRoom', 'avatar', 
-         'teacherName', 'teacherEmail', 'dob', 'gradesValidated', 
-         'attendanceValidated']) &&
-        (!('name' in data) || (data.name is string && data.name.size() < 100)) &&
-        (!('grade' in data) || (data.grade is string && data.grade.size() < 50)) &&
-        (!('classRoom' in data) || (data.classRoom is string && data.classRoom.size() < 50)) &&
-        (!('avatar' in data) || (data.avatar is string && data.avatar.size() < 500)) &&
-        (!('teacherName' in data) || (data.teacherName is string && data.teacherName.size() < 100)) &&
-        (!('teacherEmail' in data) || (data.teacherEmail is string && data.teacherEmail.size() < 100)) &&
-        (!('dob' in data) || (data.dob is string && data.dob.size() < 20)) &&
-        (!('gradesValidated' in data) || isValidBoolean(data.gradesValidated)) &&
-        (!('attendanceValidated' in data) || isValidBoolean(data.attendanceValidated));
-    }
-
-    // Validation pour reading_logs (création)
-    function validateReadingLogCreate(data) {
-      return validateFields(data,
-        ['studentId', 'studentName', 'bookTitle', 'status'],
-        ['studentId', 'studentName', 'bookTitle', 'bookAuthor', 
-         'genre', 'status', 'progressPercent', 'parentNotes', 
-         'rating', 'addedAt']) &&
-        data.bookTitle is string && data.bookTitle.size() < 200 &&
-        data.studentName is string && data.studentName.size() < 100 &&
-        data.status is string && data.status.size() < 50 &&
-        data.progressPercent is int && data.progressPercent >= 0 && data.progressPercent <= 100 &&
-        (data.bookAuthor == null || (data.bookAuthor is string && data.bookAuthor.size() < 100)) &&
-        (data.genre == null || (data.genre is string && data.genre.size() < 50)) &&
-        (data.parentNotes == null || (data.parentNotes is string && data.parentNotes.size() < 500)) &&
-        (data.rating == null || (data.rating is int && data.rating >= 1 && data.rating <= 5));
-    }
-
-    // Validation pour reading_logs (mise à jour)
-    function validateReadingLogUpdate(data) {
-      return validateFields(data,
-        [],
-        ['studentId', 'studentName', 'bookTitle', 'bookAuthor', 
-         'genre', 'status', 'progressPercent', 'parentNotes', 
-         'rating', 'addedAt']) &&
-        (!('bookTitle' in data) || (data.bookTitle is string && data.bookTitle.size() < 200)) &&
-        (!('studentName' in data) || (data.studentName is string && data.studentName.size() < 100)) &&
-        (!('status' in data) || (data.status is string && data.status.size() < 50)) &&
-        (!('progressPercent' in data) || (data.progressPercent is int && data.progressPercent >= 0 && data.progressPercent <= 100)) &&
-        (!('bookAuthor' in data) || (data.bookAuthor is string && data.bookAuthor.size() < 100)) &&
-        (!('genre' in data) || (data.genre is string && data.genre.size() < 50)) &&
-        (!('parentNotes' in data) || (data.parentNotes is string && data.parentNotes.size() < 500)) &&
-        (!('rating' in data) || (data.rating is int && data.rating >= 1 && data.rating <= 5));
-    }
-
-    // Validation générique pour les collections simples
-    function validateSimpleDocument(data, required, allowed) {
-      return validateFields(data, required, allowed) &&
-             noPrivilegeFields(data) &&
-             (!('parentId' in data) || (data.parentId is string && isSafeId(data.parentId))) &&
-             data.size() < 5000;
-    }
-
-    // Validation pour la création d'établissement
-    function validateEstablishmentCreate(data) {
-      return validateFields(data,
-        ['ownerId', 'name'],
-        ['ownerId', 'name', 'address', 'phone', 'email', 'logo', 'createdAt', 'description', 'website', 'type']) &&
-        data.ownerId == request.auth.uid &&
-        data.name is string && data.name.size() < 100 &&
-        data.name.size() >= 2 &&
-        (!('address' in data) || (data.address is string && data.address.size() < 200)) &&
-        (!('phone' in data) || (data.phone is string && data.phone.size() < 30)) &&
-        (!('email' in data) || (data.email is string && data.email.size() < 100)) &&
-        (!('logo' in data) || (data.logo is string && data.logo.size() < 500)) &&
-        (!('description' in data) || (data.description is string && data.description.size() < 500)) &&
-        (!('website' in data) || (data.website is string && data.website.size() < 100)) &&
-        (!('type' in data) || (data.type is string && data.type.size() < 50));
-    }
-
-    // Validation pour la mise à jour d'établissement
-    function validateEstablishmentUpdate(data) {
-      return validateFields(data,
-        [],
-        ['ownerId', 'name', 'address', 'phone', 'email', 'logo', 'createdAt', 'description', 'website', 'type']) &&
-        isImmutable('ownerId') &&
-        (!('name' in data) || (data.name is string && data.name.size() < 100 && data.name.size() >= 2)) &&
-        (!('address' in data) || (data.address is string && data.address.size() < 200)) &&
-        (!('phone' in data) || (data.phone is string && data.phone.size() < 30)) &&
-        (!('email' in data) || (data.email is string && data.email.size() < 100)) &&
-        (!('logo' in data) || (data.logo is string && data.logo.size() < 500)) &&
-        (!('description' in data) || (data.description is string && data.description.size() < 500)) &&
-        (!('website' in data) || (data.website is string && data.website.size() < 100)) &&
-        (!('type' in data) || (data.type is string && data.type.size() < 50));
+    function isStudentOwnerWrite(studentId) {
+      return studentExists(studentId) &&
+             isOwnerOrDemoWrite(get(/databases/$(database)/documents/students/$(studentId)).data.parentId);
     }
 
     // ============================================
-    // 4. RÈGLES PAR COLLECTION
+    // 4. COLLECTION RULES
     // ============================================
 
-    // -------------------- establishments --------------------
-    // Règle modifiée : l'ID de l'établissement DOIT être l'UID de l'utilisateur
+    // establishments
     match /establishments/{establishmentId} {
-      // Lecture publique pour les démos, ou authentifiée
-      allow read: if isSignedIn() || isDemoId(establishmentId);
-      
-      // Création : l'ID DOIT être l'UID de l'utilisateur
-      allow create: if isSignedIn() && 
-                    establishmentId == request.auth.uid &&
+      allow get: if isSignedIn() || isDemoId(establishmentId);
+      allow list: if isSignedIn() || isSuperAdmin();
+      allow write: if isSignedIn() && 
                     isSafeId(establishmentId) &&
-                    request.resource.data.size() < 5000 &&
-                    !exists(/databases/$(database)/documents/establishments/$(request.auth.uid)) &&
-                    validateEstablishmentCreate(request.resource.data) &&
-                    noPrivilegeFields(request.resource.data);
-      
-      // Mise à jour : seul le propriétaire peut modifier
-      allow update: if isSignedIn() && 
-                    resource != null &&
-                    establishmentId == request.auth.uid &&
-                    resource.data.ownerId == request.auth.uid &&
-                    request.resource.data.size() < 5000 &&
-                    validateEstablishmentUpdate(request.resource.data) &&
-                    noPrivilegeFields(request.resource.data);
-      
-      // Suppression : seul le propriétaire peut supprimer
-      allow delete: if isSignedIn() && 
-                    resource != null &&
-                    establishmentId == request.auth.uid &&
-                    resource.data.ownerId == request.auth.uid;
+                    (isSuperAdmin() || 
+                     ((resource == null || resource.data.ownerId == request.auth.uid) &&
+                      request.resource.data.ownerId == request.auth.uid));
     }
 
-    // -------------------- students --------------------
+    // students
     match /students/{studentId} {
       allow get: if isSignedIn() && 
-                 resource != null && 
                  isSafeId(studentId) &&
-                 (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
+                 (isSuperAdmin() || (resource != null && isOwnerOrDemoRead(resource.data.parentId)));
       
       allow list: if isSignedIn() && 
-                  request.query.parentId != null &&
-                  isSafeId(request.query.parentId) &&
-                  (isSuperAdmin() || isOwnerOrDemoList(request.query.parentId));
+                  (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
       
       allow create: if isSignedIn() && 
                     isSafeId(studentId) &&
-                    request.resource.data.size() < 10000 &&
-                    (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId)) &&
-                    validateStudentCreate(request.resource.data) &&
-                    noPrivilegeFields(request.resource.data);
+                    (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
       
       allow update: if isSignedIn() && 
-                    resource != null &&
                     isSafeId(studentId) &&
-                    request.resource.data.size() < 10000 &&
-                    (isSuperAdmin() || isOwnerOrDemoWrite(resource.data.parentId)) &&
-                    (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId)) &&
+                    (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId))) &&
                     (isSuperAdmin() || isImmutable('parentId')) &&
-                    isImmutable('id') &&
-                    validateStudentUpdate(request.resource.data) &&
-                    noPrivilegeFields(request.resource.data);
+                    isImmutable('id');
       
       allow delete: if isSignedIn() && 
-                    resource != null &&
                     isSafeId(studentId) &&
-                    (isSuperAdmin() || isOwnerOrDemoWrite(resource.data.parentId));
+                    (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 
-    // -------------------- grades --------------------
+    // grades
     match /grades/{gradeId} {
-      allow get, list: if isSignedIn() && 
-                       resource != null &&
-                       isSafeId(gradeId) &&
-                       (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
-      
-      allow create: if isSignedIn() && 
-                    isSafeId(gradeId) &&
-                    (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId)) &&
-                    validateSimpleDocument(request.resource.data, 
-                      ['parentId', 'studentId', 'subject', 'score'], 
-                      ['parentId', 'studentId', 'subject', 'score', 'date', 'comment', 'gradeScale', 'coefficient']);
-      
-      allow update: if isSignedIn() && 
-                    resource != null &&
-                    isSafeId(gradeId) &&
-                    (isSuperAdmin() || (isOwnerOrDemoWrite(resource.data.parentId))) &&
-                    validateSimpleDocument(request.resource.data, 
-                      [], 
-                      ['parentId', 'studentId', 'subject', 'score', 'date', 'comment', 'gradeScale', 'coefficient']) &&
-                    (isSuperAdmin() || isImmutable('parentId'));
-      
-      allow delete: if isSignedIn() && 
-                    resource != null &&
-                    isSafeId(gradeId) &&
-                    (isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin());
+      allow get, list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
+      allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 
-    // -------------------- attendance --------------------
+    // attendance
     match /attendance/{attendanceId} {
-      allow get, list: if isSignedIn() && 
-                       resource != null &&
-                       isSafeId(attendanceId) &&
-                       (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
-      
-      allow create: if isSignedIn() && 
-                    isSafeId(attendanceId) &&
-                    (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId)) &&
-                    validateSimpleDocument(request.resource.data, 
-                      ['parentId', 'studentId', 'date', 'status'], 
-                      ['parentId', 'studentId', 'date', 'status', 'comment', 'teacherName', 'attendanceType']);
-      
-      allow update: if isSignedIn() && 
-                    resource != null &&
-                    isSafeId(attendanceId) &&
-                    (isSuperAdmin() || (isOwnerOrDemoWrite(resource.data.parentId))) &&
-                    validateSimpleDocument(request.resource.data, 
-                      [], 
-                      ['parentId', 'studentId', 'date', 'status', 'comment', 'teacherName', 'attendanceType']) &&
-                    (isSuperAdmin() || isImmutable('parentId'));
-      
-      allow delete: if isSignedIn() && 
-                    resource != null &&
-                    isSafeId(attendanceId) &&
-                    (isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin());
+      allow get, list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
+      allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 
-    // -------------------- homeworks --------------------
+    // homeworks
     match /homeworks/{homeworkId} {
-      allow get, list: if isSignedIn() && 
-                       resource != null &&
-                       isSafeId(homeworkId) &&
-                       (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
-      
-      allow create: if isSignedIn() && 
-                    isSafeId(homeworkId) &&
-                    (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId)) &&
-                    validateSimpleDocument(request.resource.data, 
-                      ['parentId', 'title', 'dueDate'], 
-                      ['parentId', 'title', 'dueDate', 'description', 'subject', 'assignedTo', 'classRoom', 'priority']);
-      
-      allow update: if isSignedIn() && 
-                    resource != null &&
-                    isSafeId(homeworkId) &&
-                    (isSuperAdmin() || (isOwnerOrDemoWrite(resource.data.parentId))) &&
-                    validateSimpleDocument(request.resource.data, 
-                      [], 
-                      ['parentId', 'title', 'dueDate', 'description', 'subject', 'assignedTo', 'classRoom', 'priority']) &&
-                    (isSuperAdmin() || isImmutable('parentId'));
-      
-      allow delete: if isSignedIn() && 
-                    resource != null &&
-                    isSafeId(homeworkId) &&
-                    (isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin());
+      allow get, list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
+      allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 
-    // -------------------- appointments --------------------
+    // appointments
     match /appointments/{appointmentId} {
-      allow get, list: if isSignedIn() && 
-                       resource != null &&
-                       isSafeId(appointmentId) &&
-                       (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
-      
-      allow create: if isSignedIn() && 
-                    isSafeId(appointmentId) &&
-                    (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId)) &&
-                    validateSimpleDocument(request.resource.data, 
-                      ['parentId', 'title', 'date', 'studentId'], 
-                      ['parentId', 'title', 'date', 'studentId', 'description', 'status', 'location', 'duration']);
-      
-      allow update: if isSignedIn() && 
-                    resource != null &&
-                    isSafeId(appointmentId) &&
-                    (isSuperAdmin() || (isOwnerOrDemoWrite(resource.data.parentId))) &&
-                    validateSimpleDocument(request.resource.data, 
-                      [], 
-                      ['parentId', 'title', 'date', 'studentId', 'description', 'status', 'location', 'duration']) &&
-                    (isSuperAdmin() || isImmutable('parentId'));
-      
-      allow delete: if isSignedIn() && 
-                    resource != null &&
-                    isSafeId(appointmentId) &&
-                    (isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin());
+      allow get, list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
+      allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 
-    // -------------------- messages --------------------
+    // messages
     match /messages/{messageId} {
-      allow get, list: if isSignedIn() && 
-                       resource != null &&
-                       isSafeId(messageId) &&
-                       (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
-      
-      allow create: if isSignedIn() && 
-                    isSafeId(messageId) &&
-                    (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId)) &&
-                    validateSimpleDocument(request.resource.data, 
-                      ['parentId', 'senderId', 'content'], 
-                      ['parentId', 'senderId', 'content', 'read', 'timestamp', 'receiverId', 'attachments', 'priority']);
-      
-      allow update: if isSignedIn() && 
-                    resource != null &&
-                    isSafeId(messageId) &&
-                    (isSuperAdmin() || (isOwnerOrDemoWrite(resource.data.parentId))) &&
-                    validateSimpleDocument(request.resource.data, 
-                      [], 
-                      ['parentId', 'senderId', 'content', 'read', 'timestamp', 'receiverId', 'attachments', 'priority']) &&
-                    (isSuperAdmin() || isImmutable('parentId')) &&
-                    (isSuperAdmin() || isImmutable('senderId'));
-      
-      allow delete: if isSignedIn() && 
-                    resource != null &&
-                    isSafeId(messageId) &&
-                    (isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin());
+      allow get, list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
+      allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 
-    // -------------------- invoices --------------------
+    // invoices
     match /invoices/{invoiceId} {
       allow get: if isSignedIn() && 
                  isSafeId(invoiceId) &&
                  (isSuperAdmin() || 
                   (resource != null && isOwnerOrDemoRead(resource.data.parentId)) || 
                   invoiceId.matches('^log_.*'));
-      
-      allow list: if isSignedIn() && 
-                  (isSuperAdmin() || isOwnerOrDemoRead(request.query.parentId));
-      
-      allow create: if isSignedIn() && 
-                    isSafeId(invoiceId) &&
-                    (isSuperAdmin() || 
-                     invoiceId.matches('^log_.*') || 
-                     isOwnerOrDemoWrite(request.resource.data.parentId)) &&
-                    validateSimpleDocument(request.resource.data, 
-                      ['parentId', 'amount', 'status'], 
-                      ['parentId', 'amount', 'status', 'date', 'description', 'studentId', 'paymentMethod', 'invoiceNumber', 'dueDate']);
-      
-      allow update: if isSignedIn() && 
-                    resource != null &&
-                    isSafeId(invoiceId) &&
-                    (isSuperAdmin() || 
-                     invoiceId.matches('^log_.*') || 
-                     (isOwnerOrDemoWrite(resource.data.parentId))) &&
-                    validateSimpleDocument(request.resource.data, 
-                      [], 
-                      ['parentId', 'amount', 'status', 'date', 'description', 'studentId', 'paymentMethod', 'invoiceNumber', 'dueDate']) &&
-                    (isSuperAdmin() || invoiceId.matches('^log_.*') || isImmutable('parentId'));
-      
-      allow delete: if isSignedIn() && 
-                    resource != null &&
-                    isSafeId(invoiceId) &&
-                    (invoiceId.matches('^log_.*') || 
-                     isOwnerOrDemoWrite(resource.data.parentId) || 
-                     isSuperAdmin());
+      allow list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
+      allow create: if isSignedIn() && (isSuperAdmin() || invoiceId.matches('^log_.*') || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && (isSuperAdmin() || invoiceId.matches('^log_.*') || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && (isSuperAdmin() || invoiceId.matches('^log_.*') || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 
-    // -------------------- reading_logs --------------------
+    // reading_logs
     match /reading_logs/{logId} {
-      allow read: if isSignedIn() && 
-                  isSafeId(logId) &&
-                  resource != null;
-      
-      allow create: if isSignedIn() && 
-                    isSafeId(logId) &&
-                    request.resource.data.size() < 10000 &&
-                    let student = getStudentData(request.resource.data.studentId);
-                    student != null && 
-                    isOwnerOrDemoWrite(student.parentId) &&
-                    validateReadingLogCreate(request.resource.data) &&
-                    noPrivilegeFields(request.resource.data);
-      
-      allow update: if isSignedIn() && 
-                    resource != null &&
-                    isSafeId(logId) &&
-                    request.resource.data.size() < 10000 &&
-                    let student = getStudentData(resource.data.studentId);
-                    student != null && 
-                    isOwnerOrDemoWrite(student.parentId) &&
-                    let newStudent = getStudentData(request.resource.data.studentId);
-                    newStudent != null && 
-                    isOwnerOrDemoWrite(newStudent.parentId) && 
-                    isImmutable('studentId') &&
-                    validateReadingLogUpdate(request.resource.data) &&
-                    noPrivilegeFields(request.resource.data);
-      
-      allow delete: if isSignedIn() && 
-                    resource != null &&
-                    isSafeId(logId) &&
-                    let student = getStudentData(resource.data.studentId);
-                    student != null && 
-                    isOwnerOrDemoWrite(student.parentId);
+      allow get: if isSignedIn() && isSafeId(logId) && (isSuperAdmin() || isStudentOwnerRead(resource.data.studentId));
+      allow list: if isSignedIn() && (isSuperAdmin() || isStudentOwnerRead(resource.data.studentId));
+      allow create: if isSignedIn() && isSafeId(logId) && isStudentOwnerWrite(request.resource.data.studentId);
+      allow update: if isSignedIn() && isSafeId(logId) && isStudentOwnerWrite(resource.data.studentId) && isStudentOwnerWrite(request.resource.data.studentId) && isImmutable('studentId');
+      allow delete: if isSignedIn() && isSafeId(logId) && isStudentOwnerWrite(resource.data.studentId);
     }
 
-    // -------------------- announcements --------------------
+    // announcements
     match /announcements/{announcementId} {
-      allow read: if isSignedIn() && 
-                  isSafeId(announcementId);
-      
-      allow create: if isSignedIn() && 
-                    isSafeId(announcementId) &&
-                    (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId)) &&
-                    validateSimpleDocument(request.resource.data, 
-                      ['parentId', 'title', 'content'], 
-                      ['parentId', 'title', 'content', 'date', 'authorName', 'priority', 'expiryDate', 'targetAudience']);
-      
-      allow update: if isSignedIn() && 
-                    resource != null &&
-                    isSafeId(announcementId) &&
-                    (isSuperAdmin() || (isOwnerOrDemoWrite(resource.data.parentId))) &&
-                    validateSimpleDocument(request.resource.data, 
-                      [], 
-                      ['parentId', 'title', 'content', 'date', 'authorName', 'priority', 'expiryDate', 'targetAudience']) &&
-                    (isSuperAdmin() || isImmutable('parentId'));
-      
-      allow delete: if isSignedIn() && 
-                    resource != null &&
-                    isSafeId(announcementId) &&
-                    (isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin());
+      allow read: if isSignedIn() && isSafeId(announcementId);
+      allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 
-    // -------------------- lessons --------------------
+    // lessons
     match /lessons/{lessonId} {
-      allow read: if isSignedIn() && 
-                  isSafeId(lessonId);
-      
-      allow create: if isSignedIn() && 
-                    isSafeId(lessonId) &&
-                    (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId)) &&
-                    validateSimpleDocument(request.resource.data, 
-                      ['parentId', 'title', 'content'], 
-                      ['parentId', 'title', 'content', 'date', 'subject', 'teacherName', 'duration', 'classRoom', 'attachments']);
-      
-      allow update: if isSignedIn() && 
-                    resource != null &&
-                    isSafeId(lessonId) &&
-                    (isSuperAdmin() || (isOwnerOrDemoWrite(resource.data.parentId))) &&
-                    validateSimpleDocument(request.resource.data, 
-                      [], 
-                      ['parentId', 'title', 'content', 'date', 'subject', 'teacherName', 'duration', 'classRoom', 'attachments']) &&
-                    (isSuperAdmin() || isImmutable('parentId'));
-      
-      allow delete: if isSignedIn() && 
-                    resource != null &&
-                    isSafeId(lessonId) &&
-                    (isOwnerOrDemoWrite(resource.data.parentId) || isSuperAdmin());
+      allow read: if isSignedIn() && isSafeId(lessonId);
+      allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 
-    // -------------------- super_admins --------------------
+    // super_admins
     match /super_admins/{adminId} {
       allow get: if isSignedIn() && 
-                 isSafeId(adminId) &&
+                 isSafeEmail(adminId) &&
                  (isSuperAdmin() || 
                   ('email' in request.auth.token && 
                    request.auth.token.email is string &&
                    request.auth.token.email == adminId));
-      
-      allow list: if isSignedIn() && 
-                  (isSuperAdmin() || 
-                   ('email' in request.auth.token && 
-                    request.auth.token.email is string &&
-                    hasSuperAdminDoc(request.auth.token.email)));
-      
-      allow create: if isSignedIn() && 
-                    isSafeId(adminId) &&
-                    isSuperAdmin() &&
-                    request.resource.data.size() < 1000 &&
-                    validateFields(request.resource.data, 
-                      ['email'], 
-                      ['email', 'name', 'addedAt']);
-      
-      allow update: if isSignedIn() && 
-                    resource != null &&
-                    isSafeId(adminId) &&
-                    isSuperAdmin() &&
-                    request.resource.data.size() < 1000 &&
-                    isImmutable('email');
-      
-      allow delete: if isSignedIn() && 
-                    resource != null &&
-                    isSafeId(adminId) &&
-                    isSuperAdmin();
+      allow list: if isSignedIn() && (isSuperAdmin() || ('email' in request.auth.token && request.auth.token.email is string && hasSuperAdminDoc(request.auth.token.email)));
+      allow create, update, delete: if isSignedIn() && isSuperAdmin();
     }
 
-    // -------------------- active_sessions --------------------
+    // active_sessions
     match /active_sessions/{sessionId} {
-      allow read: if isSignedIn() && 
-                  isSafeId(sessionId) && 
-                  request.auth.uid == sessionId;
-      
-      allow create: if isSignedIn() && 
-                    isSafeId(sessionId) &&
-                    request.auth.uid == sessionId &&
-                    request.resource.data.uid == request.auth.uid &&
-                    request.resource.data.size() < 5000 &&
-                    validateFields(request.resource.data,
-                      ['uid', 'sessionId', 'createdAt'],
-                      ['uid', 'sessionId', 'createdAt', 'expiresAt', 'deviceInfo', 'lastActivity']);
-      
-      allow update: if isSignedIn() && 
-                    isSafeId(sessionId) &&
-                    request.auth.uid == sessionId &&
-                    request.resource.data.uid == request.auth.uid &&
-                    isImmutable('uid') &&
-                    isImmutable('sessionId') &&
-                    request.resource.data.size() < 5000;
-      
-      allow delete: if isSignedIn() && 
-                    isSafeId(sessionId) &&
-                    request.auth.uid == sessionId;
+      allow read, write: if isSignedIn() && isSafeId(sessionId) && request.auth.uid == sessionId;
     }
 
   }

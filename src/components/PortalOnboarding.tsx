@@ -658,6 +658,33 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
         }
       }
 
+      // Verify that we have sufficient credentials to write to Firestore
+      if (!currentUid || currentUid.startsWith('temp_mgr_')) {
+        throw new Error("Missing or insufficient permissions : Session de connexion anonyme ou compte non authentifié. Veuillez vous assurer d'avoir une session valide ou de ne pas être bloqué par des règles de sécurité.");
+      }
+
+      // Check account quotas: Query fresh list of schools to see if they reached the limit of 3 establishments per user
+      let freshSchools = schools;
+      try {
+        const qEst = query(collection(db, 'establishments'));
+        const snapshotEst = await getDocs(qEst);
+        const listEst: Establishment[] = [];
+        snapshotEst.forEach(docSnap => {
+          listEst.push({ id: docSnap.id, ...docSnap.data() } as Establishment);
+        });
+        freshSchools = listEst;
+      } catch (quotaErr: any) {
+        console.warn("Could not fetch fresh establishments list for quota check, falling back to local state", quotaErr);
+        if (quotaErr?.code === 'permission-denied') {
+          throw new Error("Missing or insufficient permissions : Vous n'avez pas l'autorisation de lister les établissements pour vérifier les quotas.");
+        }
+      }
+
+      const userOwnedSchools = freshSchools.filter(s => s.ownerId === currentUid);
+      if (userOwnedSchools.length >= 3 && currentUid !== 'sys_admin_jacques') {
+        throw new Error(`Account quota exceeded : Vous possédez déjà ${userOwnedSchools.length} établissement(s). La création est limitée à 3 établissements scolaires par compte de démonstration.`);
+      }
+
       const newSchoolId = `sch_${Date.now()}`;
       
       // 2. Map establishment profile
@@ -921,9 +948,19 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
         onSelectSchool(newSchoolId, 'manager');
       }, 1500);
 
-    } catch (err) {
-      console.error(err);
-      setErrorMessage("Une erreur est survenue lors de la création de la base de l'établissement.");
+    } catch (err: any) {
+      console.error("Erreur détaillée lors de la création de l'établissement:", err);
+      let errMsg = "Une erreur est survenue lors de la création de l'établissement.";
+      
+      if (err?.code === 'permission-denied' || err?.message?.includes('permission') || err?.message?.includes('Permission') || err?.message?.includes('insufficient')) {
+        errMsg = "🔒 Autorisation refusée (Missing or insufficient permissions) ou quota de base de données expiré. Veuillez vérifier votre connexion, vous assurer d'être connecté avec un compte valide ou ouvrir l'application dans un nouvel oglet.";
+      } else if (err?.message?.includes('quota') || err?.message?.includes('Quota') || err?.message?.includes('limit') || err?.message?.includes('limite')) {
+        errMsg = `⚠️ ${err.message}`;
+      } else if (err?.message) {
+        errMsg = `Échec de création : ${err.message}`;
+      }
+      
+      setErrorMessage(errMsg);
     } finally {
       setCreatingSchool(false);
     }

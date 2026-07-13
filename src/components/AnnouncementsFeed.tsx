@@ -75,6 +75,7 @@ export default function AnnouncementsFeed({
   const [speakingAnnId, setSpeakingAnnId] = useState<string | null>(null);
   const [deleteAnnConfirmId, setDeleteAnnConfirmId] = useState<string | null>(null);
   const utteranceRef = React.useRef<SpeechSynthesisUtterance | null>(null);
+  const resumeIntervalRef = React.useRef<any>(null);
 
   const [localPinnedIds, setLocalPinnedIds] = useState<string[]>(() => {
     try {
@@ -194,6 +195,9 @@ export default function AnnouncementsFeed({
   // Stop talking on unmount
   React.useEffect(() => {
     return () => {
+      if (resumeIntervalRef.current) {
+        clearInterval(resumeIntervalRef.current);
+      }
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
       }
@@ -206,11 +210,21 @@ export default function AnnouncementsFeed({
       return;
     }
 
+    // Helper to clear speech keep-alive interval
+    const clearSpeechInterval = () => {
+      if (resumeIntervalRef.current) {
+        clearInterval(resumeIntervalRef.current);
+        resumeIntervalRef.current = null;
+      }
+    };
+
     if (speakingAnnId === id) {
+      clearSpeechInterval();
       window.speechSynthesis.cancel();
       setSpeakingAnnId(null);
       utteranceRef.current = null;
     } else {
+      clearSpeechInterval();
       window.speechSynthesis.cancel();
       
       // Plain text cleanup to ensure smooth synthesis
@@ -236,18 +250,38 @@ export default function AnnouncementsFeed({
 
       utterance.onstart = () => {
         setSpeakingAnnId(id);
+        
+        // Setup keep-alive interval to prevent Chrome from pausing speech synthesis
+        clearSpeechInterval();
+        resumeIntervalRef.current = setInterval(() => {
+          if ('speechSynthesis' in window) {
+            if (window.speechSynthesis.speaking) {
+              window.speechSynthesis.resume();
+            } else {
+              clearSpeechInterval();
+            }
+          }
+        }, 3000);
       };
 
       utterance.onend = () => {
+        clearSpeechInterval();
         setSpeakingAnnId(null);
         utteranceRef.current = null;
       };
 
       utterance.onerror = (e) => {
         console.warn("SpeechSynthesisUtterance error:", e);
-        // Chrome bug: some short interruptions trigger an error but are harmless
+        clearSpeechInterval();
         setSpeakingAnnId(null);
         utteranceRef.current = null;
+
+        if (e.error === 'not-allowed') {
+          alert(isEn 
+            ? "Your browser blocked text-to-speech. If you are using the embedded preview, please open the application in a new tab using the button at the top right of the screen to listen to announcements!" 
+            : "Votre navigateur a bloqué la synthèse vocale. Si vous utilisez l'aperçu intégré, veuillez ouvrir l'application dans un nouvel onglet avec le bouton en haut à droite pour écouter les annonces !"
+          );
+        }
       };
 
       // Workaround for Chrome getting stuck in paused/speaking state
@@ -255,7 +289,16 @@ export default function AnnouncementsFeed({
         window.speechSynthesis.resume();
       }
       
-      window.speechSynthesis.speak(utterance);
+      // Delay speak invocation slightly to ensure previous cancel() completed
+      setTimeout(() => {
+        if ('speechSynthesis' in window) {
+          // Force a resume call before speaking
+          window.speechSynthesis.resume();
+          window.speechSynthesis.speak(utterance);
+          // Force an immediate resume call after speaking to trigger speech engine
+          window.speechSynthesis.resume();
+        }
+      }, 150);
     }
   };
 

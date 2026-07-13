@@ -306,7 +306,27 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
     setSuccessMessage(null);
 
     try {
+      if (!currentUserUid) {
+        throw new Error("Missing or insufficient permissions : Administrateur non authentifié.");
+      }
+
+      // Check system quota: maximum of 25 schools allowed in this demo environment to prevent abuse
+      let totalSchools = 0;
+      try {
+        const snapshot = await getDocs(collection(db, 'establishments'));
+        totalSchools = snapshot.size;
+      } catch (err: any) {
+        console.warn("Could not check global schools quota from Firestore, using state backup:", err);
+        // Resilient fallback using the active list from state to prevent blocking the super admin
+        totalSchools = schools.length;
+      }
+
+      if (totalSchools >= 25) {
+        throw new Error("Quota système atteint : La limite globale du serveur de démonstration est fixée à 25 établissements scolaires pour éviter les abus.");
+      }
+
       const newSchoolId = `sch_${Date.now()}`;
+      const batch = writeBatch(db);
       
       // 1. Save school to 'establishments'
       const estDoc: Establishment = {
@@ -324,7 +344,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
         ownerId: currentUserUid || 'sys_admin_jacques'
       };
 
-      await setDoc(doc(db, 'establishments', newSchoolId), estDoc);
+      batch.set(doc(db, 'establishments', newSchoolId), estDoc);
 
       // 2. Save settings to 'invoices'
       const budgetLines = [
@@ -335,7 +355,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
         { id: 'bl_5', name: 'Fonds d\'Administration Générale', allocatedAmount: Math.round(financialGoal * 0.15), description: 'Frais divers de bureau' }
       ];
 
-      await setDoc(doc(db, 'invoices', `${newSchoolId}_settings`), {
+      batch.set(doc(db, 'invoices', `${newSchoolId}_settings`), {
         id: 'apee_settings',
         studentId: 'apee_settings',
         parentId: newSchoolId,
@@ -353,8 +373,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
         pedManagerPassword: pedPassword.trim() || '1234'
       });
 
-      // 3. Seed 3 initial demo students
-      const batch = writeBatch(db);
+      // 3. Seed 2 initial demo students
       const student1Id = `stu_lucas_${newSchoolId.slice(4, 10)}`;
       const student2Id = `stu_chloe_${newSchoolId.slice(4, 10)}`;
 
@@ -384,6 +403,8 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
 
       batch.set(doc(db, 'students', student1Id), s1);
       batch.set(doc(db, 'students', student2Id), s2);
+      
+      // Commit all documents atomically
       await batch.commit();
 
       // 4. Log actions
@@ -407,7 +428,12 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
       setIsCreateOpen(false);
       setRefreshTrigger(p => p + 1);
     } catch (err: any) {
-      setErrorMessage(`Compte non authorisé ou quota de base de données expiré : ${err.message || err}`);
+      console.error("Erreur lors de la création de l'établissement par l'admin:", err);
+      let errMsg = `Échec de la création : ${err.message || err}`;
+      if (err?.code === 'permission-denied' || err?.message?.includes('permission') || err?.message?.includes('Permission') || err?.message?.includes('insufficient')) {
+        errMsg = "🔒 Autorisation refusée (Missing or insufficient permissions) : Votre compte n'est pas autorisé à créer de nouveaux établissements, ou le quota de la base de données Firestore a été dépassé. Veuillez vérifier vos habilitations.";
+      }
+      setErrorMessage(errMsg);
     } finally {
       setSubmitting(false);
     }
