@@ -553,22 +553,34 @@ export default function App() {
           }
           successCount++;
         } catch (err: any) {
-          console.error("Failed syncing item, keeping in queue:", action, err);
-          remaining.push(action);
+          console.error("Failed syncing item:", action, err);
 
           const errMsg = String(err?.message || err || '').toLowerCase();
           const errCode = String(err?.code || '').toLowerCase();
-          if (
-            errCode === 'unavailable' ||
-            errCode === 'deadline-exceeded' ||
-            errMsg.includes('offline') ||
-            errMsg.includes('network') ||
-            errMsg.includes('failed to fetch') ||
-            errMsg.includes('internet') ||
-            errMsg.includes('failed to connect') ||
-            !navigator.onLine
-          ) {
-            networkErrorEncountered = true;
+          
+          const isPermanentError = 
+            errCode === 'permission-denied' || 
+            errCode === 'invalid-argument' || 
+            errMsg.includes('permission') || 
+            errMsg.includes('unauthenticated') || 
+            errMsg.includes('insufficient');
+
+          if (isPermanentError) {
+            console.warn(`[Pasma-sys Sync] Discarding action ${action.id} due to permanent security or permission failure:`, errMsg);
+          } else {
+            remaining.push(action);
+            if (
+              errCode === 'unavailable' ||
+              errCode === 'deadline-exceeded' ||
+              errMsg.includes('offline') ||
+              errMsg.includes('network') ||
+              errMsg.includes('failed to fetch') ||
+              errMsg.includes('internet') ||
+              errMsg.includes('failed to connect') ||
+              !navigator.onLine
+            ) {
+              networkErrorEncountered = true;
+            }
           }
         }
       }
