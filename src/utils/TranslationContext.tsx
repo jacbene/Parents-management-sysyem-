@@ -15,6 +15,9 @@ const translations: Record<LanguageType, Record<string, string>> = {
     // Nav Tabs & General labels
     'tab.apee_dashboard': 'Tableau de bord',
     'tab.apee_recording': 'Saisie Cotisation',
+    'form.parents_payments': 'Paiements des Parents',
+    'form.other_revenues_long': 'Autres Recettes (Membres d\'honneur, Dons...)',
+    'form.total_obligations_pupils': 'Total des obligations pour les élèves saisis',
     'tab.apee_search': 'Recherche & Reçus',
     'tab.apee_reporting': 'Synthèse & Rapports',
     'tab.apee_finance': 'Dépenses & Recettes',
@@ -313,6 +316,9 @@ const translations: Record<LanguageType, Record<string, string>> = {
     // Nav Tabs & General labels
     'tab.apee_dashboard': 'Dashboard',
     'tab.apee_recording': 'Record Payment',
+    'form.parents_payments': 'Parent Payments',
+    'form.other_revenues_long': 'Other Revenues (Honorary members, Donations...)',
+    'form.total_obligations_pupils': 'Total obligations for entered pupils',
     'tab.apee_search': 'Search & Receipts',
     'tab.apee_reporting': 'Reports & Analytics',
     'tab.apee_finance': 'Expenses & Revenues',

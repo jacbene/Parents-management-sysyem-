@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Save, HelpCircle, Shield, Settings, Info, CheckCircle2, Plus, Trash2, Edit2, X, TrendingUp, Lock, Unlock, UserCheck, User, Phone, Mail, GraduationCap, AlertTriangle } from 'lucide-react';
+import { Save, HelpCircle, Shield, Settings, Info, CheckCircle2, Plus, Trash2, Edit2, X, TrendingUp, Lock, Unlock, UserCheck, User, Phone, Mail, GraduationCap, AlertTriangle, CreditCard, Smartphone } from 'lucide-react';
 import { ApeeSettings, ApeeBudgetLine, ApeeParent } from '../../types';
 import { getApeeShortName } from '../../utils/apeeDb';
 import { useLanguage } from '../../utils/TranslationContext';
@@ -26,6 +26,35 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
   const [country, setCountry] = useState(settings.country || 'Cameroun');
   const [currency, setCurrency] = useState(settings.currency || 'FCFA');
   const [financialObligations, setFinancialObligations] = useState(() => settings.financialObligations || []);
+
+  // Payment config state
+  const [cardEnabled, setCardEnabled] = useState(settings.paymentConfig?.cardEnabled ?? false);
+  const [stripePublicKey, setStripePublicKey] = useState(settings.paymentConfig?.stripePublicKey || '');
+  const [stripeSecretKey, setStripeSecretKey] = useState(settings.paymentConfig?.stripeSecretKey || '');
+
+  const [mtnEnabled, setMtnEnabled] = useState(settings.paymentConfig?.mtnEnabled ?? false);
+  const [mtnPhoneNumber, setMtnPhoneNumber] = useState(settings.paymentConfig?.mtnPhoneNumber || '');
+  const [mtnMerchantName, setMtnMerchantName] = useState(settings.paymentConfig?.mtnMerchantName || '');
+  const [mtnClientId, setMtnClientId] = useState(settings.paymentConfig?.mtnClientId || '');
+  const [mtnClientSecret, setMtnClientSecret] = useState(settings.paymentConfig?.mtnClientSecret || '');
+
+  const [orangeEnabled, setOrangeEnabled] = useState(settings.paymentConfig?.orangeEnabled ?? false);
+  const [orangePhoneNumber, setOrangePhoneNumber] = useState(settings.paymentConfig?.orangePhoneNumber || '');
+  const [orangeMerchantName, setOrangeMerchantName] = useState(settings.paymentConfig?.orangeMerchantName || '');
+  const [orangeMerchantKey, setOrangeMerchantKey] = useState(settings.paymentConfig?.orangeMerchantKey || '');
+  const [orangeClientId, setOrangeClientId] = useState(settings.paymentConfig?.orangeClientId || '');
+  const [orangeClientSecret, setOrangeClientSecret] = useState(settings.paymentConfig?.orangeClientSecret || '');
+
+  const [waveEnabled, setWaveEnabled] = useState(settings.paymentConfig?.waveEnabled ?? false);
+  const [wavePhoneNumber, setWavePhoneNumber] = useState(settings.paymentConfig?.wavePhoneNumber || '');
+  const [waveMerchantName, setWaveMerchantName] = useState(settings.paymentConfig?.waveMerchantName || '');
+  const [waveApiKey, setWaveApiKey] = useState(settings.paymentConfig?.waveApiKey || '');
+
+  // Key hide/show states
+  const [showStripeSecret, setShowStripeSecret] = useState(false);
+  const [showMtnSecret, setShowMtnSecret] = useState(false);
+  const [showOrangeSecret, setShowOrangeSecret] = useState(false);
+  const [showWaveSecret, setShowWaveSecret] = useState(false);
 
   // Inline additions state for obligations
   const [newOblName, setNewOblName] = useState('');
@@ -151,6 +180,26 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
         const missingPredefined = defaultClassrooms.filter(d => !settings.classTeachers!.some(s => s.classRoom === d.classRoom));
         setClassTeachers([...savedMapped, ...missingPredefined]);
       }
+      
+      const pCfg = settings.paymentConfig;
+      setCardEnabled(pCfg?.cardEnabled ?? false);
+      setStripePublicKey(pCfg?.stripePublicKey || '');
+      setStripeSecretKey(pCfg?.stripeSecretKey || '');
+      setMtnEnabled(pCfg?.mtnEnabled ?? false);
+      setMtnPhoneNumber(pCfg?.mtnPhoneNumber || '');
+      setMtnMerchantName(pCfg?.mtnMerchantName || '');
+      setMtnClientId(pCfg?.mtnClientId || '');
+      setMtnClientSecret(pCfg?.mtnClientSecret || '');
+      setOrangeEnabled(pCfg?.orangeEnabled ?? false);
+      setOrangePhoneNumber(pCfg?.orangePhoneNumber || '');
+      setOrangeMerchantName(pCfg?.orangeMerchantName || '');
+      setOrangeMerchantKey(pCfg?.orangeMerchantKey || '');
+      setOrangeClientId(pCfg?.orangeClientId || '');
+      setOrangeClientSecret(pCfg?.orangeClientSecret || '');
+      setWaveEnabled(pCfg?.waveEnabled ?? false);
+      setWavePhoneNumber(pCfg?.wavePhoneNumber || '');
+      setWaveMerchantName(pCfg?.waveMerchantName || '');
+      setWaveApiKey(pCfg?.waveApiKey || '');
     }
   }, [settings]);
 
@@ -203,6 +252,26 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
         country,
         currency,
         financialObligations,
+        paymentConfig: {
+          cardEnabled,
+          stripePublicKey: (stripePublicKey || '').trim(),
+          stripeSecretKey: (stripeSecretKey || '').trim(),
+          mtnEnabled,
+          mtnPhoneNumber: (mtnPhoneNumber || '').trim(),
+          mtnMerchantName: (mtnMerchantName || '').trim(),
+          mtnClientId: (mtnClientId || '').trim(),
+          mtnClientSecret: (mtnClientSecret || '').trim(),
+          orangeEnabled,
+          orangePhoneNumber: (orangePhoneNumber || '').trim(),
+          orangeMerchantName: (orangeMerchantName || '').trim(),
+          orangeMerchantKey: (orangeMerchantKey || '').trim(),
+          orangeClientId: (orangeClientId || '').trim(),
+          orangeClientSecret: (orangeClientSecret || '').trim(),
+          waveEnabled,
+          wavePhoneNumber: (wavePhoneNumber || '').trim(),
+          waveMerchantName: (waveMerchantName || '').trim(),
+          waveApiKey: (waveApiKey || '').trim(),
+        },
         ...extra
       });
 
@@ -1409,6 +1478,354 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
             </div>
           )}
         </div>
+      </div>
+
+      {/* SECTION: Electronic Payment Gateways Parameters Form */}
+      <div className="bg-white border border-slate-150 rounded-2xl p-4 md:p-6 space-y-6">
+        <div className="border-b border-slate-100 pb-3 select-none">
+          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+            <CreditCard className="h-4.5 w-4.5 text-indigo-500" /> Configuration des Passerelles de Paiement Électronique
+          </h3>
+          <p className="text-[10px] text-gray-400 mt-0.5 animate-none">
+            Activez et configurez les paramètres des passerelles de paiement par cartes bancaires (Stripe) et Mobile Money (MTN / Orange / Wave) pour les parents d'élèves de l'établissement.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          
+          {/* Mobile Money MTN & Orange Cameroon */}
+          <div className="space-y-4">
+            <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5 uppercase tracking-wide border-b pb-1 select-none">
+              <Smartphone className="h-4 w-4 text-amber-500" /> Mobile Money (Cameroun / Zone Afrique)
+            </h4>
+
+            {/* MTN Mobile Money */}
+            <div className={`p-4 rounded-xl border transition-all duration-250 ${mtnEnabled ? 'border-amber-400 bg-amber-50/5' : 'border-slate-150 bg-slate-50/50'}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-amber-400 flex items-center justify-center font-black text-slate-950 text-xs shadow-3xs select-none">
+                    MTN
+                  </div>
+                  <div>
+                    <h5 className="text-xs font-bold text-slate-800">MTN MoMo API</h5>
+                    <p className="text-[9px] text-gray-400">Passerelle Mobile Money MTN Cameroun</p>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer select-none">
+                  <input 
+                    type="checkbox" 
+                    checked={mtnEnabled} 
+                    onChange={(e) => setMtnEnabled(e.target.checked)} 
+                    className="sr-only peer"
+                  />
+                  <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+                </label>
+              </div>
+
+              {mtnEnabled && (
+                <div className="mt-3.5 space-y-3 text-xs animate-fade-in">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-slate-550 uppercase">Nom du Marchand Agréé</label>
+                      <input 
+                        type="text" 
+                        value={mtnMerchantName} 
+                        onChange={(e) => setMtnMerchantName(e.target.value)} 
+                        placeholder="Ex: APEE CES EKALI" 
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-amber-500 text-slate-805"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-slate-550 uppercase">N° Téléphone du Marchand</label>
+                      <input 
+                        type="text" 
+                        value={mtnPhoneNumber} 
+                        onChange={(e) => setMtnPhoneNumber(e.target.value)} 
+                        placeholder="Ex: +237 677 xxx xxx" 
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-amber-500 font-mono text-slate-805"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-slate-550 uppercase">MTN Client ID (User API)</label>
+                    <input 
+                      type="text" 
+                      value={mtnClientId} 
+                      onChange={(e) => setMtnClientId(e.target.value)} 
+                      placeholder="Ex: d1882d4c-xxxx-xxxx" 
+                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-amber-500 font-mono text-slate-805"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-slate-555 uppercase">MTN API Secret / Client Secret</label>
+                    <div className="relative">
+                      <input 
+                        type={showMtnSecret ? "text" : "password"} 
+                        value={mtnClientSecret} 
+                        onChange={(e) => setMtnClientSecret(e.target.value)} 
+                        placeholder="Clé secrète MTN MoMo" 
+                        className="w-full pl-3 pr-16 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-amber-500 font-mono text-slate-805 font-bold"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowMtnSecret(!showMtnSecret)}
+                        className="absolute right-2 top-1 text-[9px] text-gray-400 hover:text-slate-800 p-1 uppercase font-bold"
+                      >
+                        {showMtnSecret ? "Cacher" : "Afficher"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Orange Money */}
+            <div className={`p-4 rounded-xl border transition-all duration-250 ${orangeEnabled ? 'border-orange-450 bg-orange-50/5' : 'border-slate-150 bg-slate-50/50'}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-orange-500 flex items-center justify-center font-black text-white text-xs shadow-3xs select-none">
+                    OM
+                  </div>
+                  <div>
+                    <h5 className="text-xs font-bold text-slate-800">Orange Money API</h5>
+                    <p className="text-[9px] text-gray-400">Passerelle Orange Money Web Payment</p>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer select-none">
+                  <input 
+                    type="checkbox" 
+                    checked={orangeEnabled} 
+                    onChange={(e) => setOrangeEnabled(e.target.checked)} 
+                    className="sr-only peer"
+                  />
+                  <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-orange-500"></div>
+                </label>
+              </div>
+
+              {orangeEnabled && (
+                <div className="mt-3.5 space-y-3 text-xs animate-fade-in">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-slate-550 uppercase">Nom du Marchand Agréé</label>
+                      <input 
+                        type="text" 
+                        value={orangeMerchantName} 
+                        onChange={(e) => setOrangeMerchantName(e.target.value)} 
+                        placeholder="Ex: APEE CES EKALI" 
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-orange-500 text-slate-805"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-slate-550 uppercase">N° Téléphone du Marchand</label>
+                      <input 
+                        type="text" 
+                        value={orangePhoneNumber} 
+                        onChange={(e) => setOrangePhoneNumber(e.target.value)} 
+                        placeholder="Ex: +237 699 xxx xxx" 
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-orange-500 font-mono text-slate-805"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-slate-550 uppercase">Orange Client ID</label>
+                      <input 
+                        type="text" 
+                        value={orangeClientId} 
+                        onChange={(e) => setOrangeClientId(e.target.value)} 
+                        placeholder="Ex: OTM_c729x..." 
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-orange-500 font-mono text-slate-805"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-slate-550 uppercase">Orange Merchant Key</label>
+                      <input 
+                        type="text" 
+                        value={orangeMerchantKey} 
+                        onChange={(e) => setOrangeMerchantKey(e.target.value)} 
+                        placeholder="Ex: 504629d..." 
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-orange-500 font-mono text-slate-805"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-slate-555 uppercase">Orange Client Secret (API Key)</label>
+                    <div className="relative">
+                      <input 
+                        type={showOrangeSecret ? "text" : "password"} 
+                        value={orangeClientSecret} 
+                        onChange={(e) => setOrangeClientSecret(e.target.value)} 
+                        placeholder="Clé secrète Orange Web Payment" 
+                        className="w-full pl-3 pr-16 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-orange-500 font-mono text-slate-805 font-bold"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowOrangeSecret(!showOrangeSecret)}
+                        className="absolute right-2 top-1 text-[9px] text-gray-400 hover:text-slate-800 p-1 uppercase font-bold"
+                      >
+                        {showOrangeSecret ? "Cacher" : "Afficher"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+          </div>
+
+          {/* Card & Wave payments */}
+          <div className="space-y-4">
+            <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5 uppercase tracking-wide border-b pb-1 select-none">
+              <CreditCard className="h-4 w-4 text-indigo-500" /> Cartes Bancaires & Portefeuilles
+            </h4>
+
+            {/* Carte Bancaire - Stripe */}
+            <div className={`p-4 rounded-xl border transition-all duration-250 ${cardEnabled ? 'border-indigo-400 bg-indigo-50/5' : 'border-slate-150 bg-slate-50/50'}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-black text-xs shadow-3xs select-none">
+                    💳
+                  </div>
+                  <div>
+                    <h5 className="text-xs font-bold text-slate-800">Cartes Bancaires (Stripe)</h5>
+                    <p className="text-[9px] text-gray-400">Paiement international par Visa, MasterCard</p>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer select-none">
+                  <input 
+                    type="checkbox" 
+                    checked={cardEnabled} 
+                    onChange={(e) => setCardEnabled(e.target.checked)} 
+                    className="sr-only peer"
+                  />
+                  <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                </label>
+              </div>
+
+              {cardEnabled && (
+                <div className="mt-3.5 space-y-3 text-xs animate-fade-in">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-slate-550 uppercase">Clé Publique Stripe (Stripe Publishable Key)</label>
+                    <input 
+                      type="text" 
+                      value={stripePublicKey} 
+                      onChange={(e) => setStripePublicKey(e.target.value)} 
+                      placeholder="Ex: pk_test_51Px..." 
+                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-indigo-500 font-mono text-slate-805"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-slate-555 uppercase">Clé Secrète Stripe (Stripe Secret Key)</label>
+                    <div className="relative">
+                      <input 
+                        type={showStripeSecret ? "text" : "password"} 
+                        value={stripeSecretKey} 
+                        onChange={(e) => setStripeSecretKey(e.target.value)} 
+                        placeholder="Ex: sk_test_51Px..." 
+                        className="w-full pl-3 pr-16 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-indigo-500 font-mono text-slate-805 font-bold"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowStripeSecret(!showStripeSecret)}
+                        className="absolute right-2 top-1 text-[9px] text-gray-400 hover:text-slate-800 p-1 uppercase font-bold"
+                      >
+                        {showStripeSecret ? "Cacher" : "Afficher"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Wave Senegal/Cote d'Ivoire */}
+            <div className={`p-4 rounded-xl border transition-all duration-250 ${waveEnabled ? 'border-sky-400 bg-sky-50/5' : 'border-slate-150 bg-slate-50/50'}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-sky-400 flex items-center justify-center font-black text-white text-xs shadow-3xs select-none">
+                    🌊
+                  </div>
+                  <div>
+                    <h5 className="text-xs font-bold text-slate-800">Wave Wallet</h5>
+                    <p className="text-[9px] text-gray-400">Portefeuille mobile Wave Sénégal / Côte d'Ivoire</p>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer select-none">
+                  <input 
+                    type="checkbox" 
+                    checked={waveEnabled} 
+                    onChange={(e) => setWaveEnabled(e.target.checked)} 
+                    className="sr-only peer"
+                  />
+                  <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-500"></div>
+                </label>
+              </div>
+
+              {waveEnabled && (
+                <div className="mt-3.5 space-y-3 text-xs animate-fade-in">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-slate-550 uppercase">Nom du Marchand Agréé</label>
+                      <input 
+                        type="text" 
+                        value={waveMerchantName} 
+                        onChange={(e) => setWaveMerchantName(e.target.value)} 
+                        placeholder="Ex: APEE CES EKALI" 
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-sky-500 text-slate-805"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-slate-550 uppercase">N° Téléphone Wave</label>
+                      <input 
+                        type="text" 
+                        value={wavePhoneNumber} 
+                        onChange={(e) => setWavePhoneNumber(e.target.value)} 
+                        placeholder="Ex: +221 77 xxx xx xx" 
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-sky-500 font-mono text-slate-805"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold text-slate-555 uppercase">Clé d'API Wave (Wave API Key)</label>
+                    <div className="relative">
+                      <input 
+                        type={showWaveSecret ? "text" : "password"} 
+                        value={waveApiKey} 
+                        onChange={(e) => setWaveApiKey(e.target.value)} 
+                        placeholder="Clé API Wave" 
+                        className="w-full pl-3 pr-16 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-sky-500 font-mono text-slate-805 font-bold"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowWaveSecret(!showWaveSecret)}
+                        className="absolute right-2 top-1 text-[9px] text-gray-400 hover:text-slate-800 p-1 uppercase font-bold"
+                      >
+                        {showWaveSecret ? "Cacher" : "Afficher"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+          </div>
+
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            handleSaveWithExtra({}, "Paramètres des passerelles de paiements électroniques sauvegardés avec succès !");
+          }}
+          className="w-full py-2.5 bg-indigo-650 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-1.5 cursor-pointer transition shadow-2xs mt-2"
+        >
+          <Save className="h-4 w-4 text-emerald-400" /> Sauvegarder les configurations de paiement
+        </button>
       </div>
 
       {/* MODAL: Define / Edit Budget Line */}

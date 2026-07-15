@@ -353,6 +353,14 @@ export async function fetchApeeData(parentId: string) {
         } catch (e) {
           console.error("Failed to parse financialObligationsList from Firestore", e);
         }
+        let parsedPaymentConfig = undefined;
+        try {
+          if (data.paymentConfigList) {
+            parsedPaymentConfig = JSON.parse(data.paymentConfigList);
+          }
+        } catch (e) {
+          console.error("Failed to parse paymentConfigList from Firestore", e);
+        }
         dbSettings = {
           associationName: data.title,
           cotisationAmount: data.amount,
@@ -382,6 +390,7 @@ export async function fetchApeeData(parentId: string) {
           country: data.country || DEFAULT_SETTINGS.country,
           currency: data.currency || DEFAULT_SETTINGS.currency,
           financialObligations: obligations,
+          paymentConfig: parsedPaymentConfig,
         };
       }
     });
@@ -589,6 +598,7 @@ export async function saveApeeSettings(parentId: string, settings: ApeeSettings)
     country: settings.country || '',
     currency: settings.currency || '',
     financialObligationsList: JSON.stringify(settings.financialObligations || []),
+    paymentConfigList: JSON.stringify(settings.paymentConfig || {}),
   };
 
   if (isOffline()) {
@@ -836,6 +846,7 @@ export async function importFullBackup(
       pedManagerPassword: finalSettings.pedManagerPassword || '',
       honoraryContributions: finalSettings.honoraryContributions || 0,
       subventionsAndAids: finalSettings.subventionsAndAids || 0,
+      paymentConfigList: JSON.stringify(finalSettings.paymentConfig || {}),
     });
 
     // Write parents
@@ -1091,6 +1102,14 @@ export function subscribeApeeData(
           } catch (e) {
             console.error("Failed to parse financialObligationsList from Firestore", e);
           }
+          let parsedPaymentConfig = undefined;
+          try {
+            if (data.paymentConfigList) {
+              parsedPaymentConfig = JSON.parse(data.paymentConfigList);
+            }
+          } catch (e) {
+            console.error("Failed to parse paymentConfigList from Firestore", e);
+          }
           dbSettings = {
             associationName: data.title,
             cotisationAmount: data.amount,
@@ -1113,6 +1132,7 @@ export function subscribeApeeData(
             censeurPhone: data.censeurPhone || '',
             classTeachers: teachers,
             financialObligations: obligations,
+            paymentConfig: parsedPaymentConfig,
           } as any;
         }
       });

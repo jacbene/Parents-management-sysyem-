@@ -149,6 +149,7 @@ export interface Invoice {
   country?: string;
   currency?: string;
   financialObligationsList?: string;
+  paymentConfigList?: string;
 }
 
 export interface ApeeStudentLink {
@@ -237,6 +238,30 @@ export interface ApeeObligationDefinition {
   description?: string;
 }
 
+export interface ApeePaymentConfig {
+  cardEnabled?: boolean;
+  stripePublicKey?: string;
+  stripeSecretKey?: string;
+  
+  mtnEnabled?: boolean;
+  mtnPhoneNumber?: string;
+  mtnMerchantName?: string;
+  mtnClientId?: string;
+  mtnClientSecret?: string;
+  
+  orangeEnabled?: boolean;
+  orangePhoneNumber?: string;
+  orangeMerchantName?: string;
+  orangeMerchantKey?: string;
+  orangeClientId?: string;
+  orangeClientSecret?: string;
+  
+  waveEnabled?: boolean;
+  wavePhoneNumber?: string;
+  waveMerchantName?: string;
+  waveApiKey?: string;
+}
+
 export interface ApeeSettings {
   associationName: string;
   shortName?: string;
@@ -267,6 +292,7 @@ export interface ApeeSettings {
   censeurName?: string;
   censeurPhone?: string;
   classTeachers?: Array<{ classRoom: string; teacherName: string; teacherPhone: string; teacherEmail: string }>;
+  paymentConfig?: ApeePaymentConfig;
 }
 
 export interface Establishment {

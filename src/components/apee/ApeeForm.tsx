@@ -16,7 +16,7 @@ interface ApeeFormProps {
 }
 
 export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, onCancelEdit, onSaveOtherRevenue, parents = [] }: ApeeFormProps) {
-  const { language } = useLanguage();
+  const { language, t } = useLanguage();
   const isEn = language === 'en';
   // Get dynamic classrooms configured in settings or fall back to standard high-school levels
   const configuredClassrooms = settings?.classTeachers && settings.classTeachers.length > 0
@@ -1094,7 +1094,7 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
                 : 'text-slate-500 hover:text-slate-900'
             }`}
           >
-            👨‍👩‍👧‍👦 Cotisations de Parents
+            👨‍👩‍👧‍👦 {t('form.parents_payments')}
           </button>
           <button
             type="button"
@@ -1105,7 +1105,7 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
                 : 'text-slate-500 hover:text-slate-900'
             }`}
           >
-            💸 Autres Recettes (Membres d'honneur, Dons...)
+            💸 {t('form.other_revenues_long')}
           </button>
         </div>
       )}
@@ -1289,7 +1289,7 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
                 📊 Synthèse de l'Opération de Caisse
               </span>
               <h3 className="text-sm font-extrabold text-slate-850 flex items-center gap-1.5 mt-2">
-                Total des cotisations pour les élèves saisis
+                {t('form.total_obligations_pupils')}
               </h3>
               <p className="text-xs text-slate-500 font-medium max-w-xl">
                 {validStudentsCount > 0 ? (

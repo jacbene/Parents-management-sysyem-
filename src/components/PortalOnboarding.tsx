@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, doc, getDoc, getDocs, query, setDoc, writeBatch, where } from 'firebase/firestore';
 import { db } from '../firebase';
+import { logAuthError } from '../utils/authLogger';
 import { Landmark, Plus, CheckCircle, AlertOctagon, UserCheck, Phone, ShieldCheck, ArrowRight, X, Sparkles, User, HelpCircle, Mail, Smartphone, Key, RotateCw, Bell, Share2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ApeeSettings, ApeeParent, Student, Grade, Homework, Attendance, Invoice, Establishment } from '../types';
@@ -1021,8 +1022,16 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
         await batch.commit();
       } catch (commitErr: any) {
         console.warn("Firestore batch write restricted (Missing or insufficient permissions), proceeding with fully functional local fallback:", commitErr);
-        // Note: We deliberately proceed without throwing here, because all data has been successfully
-        // stored in localStorage fallback keys and will load flawlessly.
+        // Log the error to logs_auth for administrator diagnosis
+        logAuthError({
+          errorMessage: commitErr?.message || "Missing or insufficient permissions during batch commit of new school",
+          errorCode: commitErr?.code || 'permission-denied',
+          action: 'BATCH_COMMIT_SCHOOL',
+          component: 'PortalOnboarding',
+          schoolName: schoolName.trim(),
+          schoolId: newSchoolId,
+          details: `Cotisation: ${cotisationAmount}, Goal: ${financialGoal}`
+        });
       }
 
       setSuccessMessage("✨ Établissement créé et configuré avec succès ! Seeding de démo rattaché.");
@@ -1039,8 +1048,24 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
       console.error("Erreur détaillée lors de la création de l'établissement:", err);
       let errMsg = "Une erreur est survenue lors de la création de l'établissement.";
       
-      if (err?.code === 'permission-denied' || err?.message?.includes('permission') || err?.message?.includes('Permission') || err?.message?.includes('insufficient')) {
+      const isPermissionDenied = err?.code === 'permission-denied' || 
+                                 err?.message?.includes('permission') || 
+                                 err?.message?.includes('Permission') || 
+                                 err?.message?.includes('insufficient');
+
+      if (isPermissionDenied) {
         errMsg = "🔒 Autorisation refusée (Missing or insufficient permissions) ou quota de base de données expiré. Veuillez vérifier votre connexion, vous assurer d'être connecté avec un compte valide ou ouvrir l'application dans un nouvel oglet.";
+        
+        // Log permission denial event
+        logAuthError({
+          errorMessage: err?.message || "Missing or insufficient permissions during school validation / check",
+          errorCode: err?.code || 'permission-denied',
+          action: 'CREATE_SCHOOL_FLOW',
+          component: 'PortalOnboarding',
+          schoolName: schoolName.trim(),
+          schoolId: `sch_failed_${Date.now()}`,
+          details: `Cotisation: ${cotisationAmount}, Goal: ${financialGoal}`
+        });
       } else if (err?.message?.includes('quota') || err?.message?.includes('Quota') || err?.message?.includes('limit') || err?.message?.includes('limite')) {
         errMsg = `⚠️ ${err.message}`;
       } else if (err?.message) {

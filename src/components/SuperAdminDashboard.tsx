@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { collection, doc, getDocs, setDoc, deleteDoc, query, where, writeBatch } from 'firebase/firestore';
 import { db, auth } from '../firebase';
+import { logAuthError } from '../utils/authLogger';
+import AuthLogsViewer from './system/AuthLogsViewer';
 import { Establishment, Student, Invoice, SystemLog } from '../types';
 import { 
   Building2, 
@@ -50,7 +52,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
   );
   
   // Custom states
-  const [activeSubTab, setActiveSubTab] = useState<'schools' | 'admins'>('schools');
+  const [activeSubTab, setActiveSubTab] = useState<'schools' | 'admins' | 'auth_logs'>('schools');
   const [secondaryAdmins, setSecondaryAdmins] = useState<any[]>([]);
   const isPrimarySuperAdmin = auth.currentUser?.email === 'jacquesbene301@gmail.com' || currentUserUid === 'sys_admin_jacques';
 
@@ -500,7 +502,16 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
         await batch.commit();
       } catch (commitErr: any) {
         console.warn("Firestore batch write restricted (Missing or insufficient permissions), proceeding with local fallback:", commitErr);
-        // Note: Proceed without throwing here because all data is safely in localStorage cache.
+        // Log the error to logs_auth for administrator diagnosis
+        logAuthError({
+          errorMessage: commitErr?.message || "Missing or insufficient permissions during batch commit of new school by Super-Admin",
+          errorCode: commitErr?.code || 'permission-denied',
+          action: 'BATCH_COMMIT_SCHOOL',
+          component: 'SuperAdminDashboard',
+          schoolName: schoolName.trim(),
+          schoolId: newSchoolId,
+          details: `Cotisation: ${cotisationAmount}, Goal: ${financialGoal}`
+        });
       }
 
       // 4. Log actions
@@ -526,9 +537,27 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
     } catch (err: any) {
       console.error("Erreur lors de la création de l'établissement par l'admin:", err);
       let errMsg = `Échec de la création : ${err.message || err}`;
-      if (err?.code === 'permission-denied' || err?.message?.includes('permission') || err?.message?.includes('Permission') || err?.message?.includes('insufficient')) {
+      
+      const isPermissionDenied = err?.code === 'permission-denied' || 
+                                 err?.message?.includes('permission') || 
+                                 err?.message?.includes('Permission') || 
+                                 err?.message?.includes('insufficient');
+
+      if (isPermissionDenied) {
         errMsg = "🔒 Autorisation refusée (Missing or insufficient permissions) : Votre compte n'est pas autorisé à créer de nouveaux établissements, ou le quota de la base de données Firestore a été dépassé. Veuillez vérifier vos habilitations.";
+        
+        // Log permission denial event
+        logAuthError({
+          errorMessage: err?.message || "Missing or insufficient permissions during school validation / check by Super-Admin",
+          errorCode: err?.code || 'permission-denied',
+          action: 'CREATE_SCHOOL_FLOW',
+          component: 'SuperAdminDashboard',
+          schoolName: schoolName.trim(),
+          schoolId: `sch_failed_${Date.now()}`,
+          details: `Cotisation: ${cotisationAmount}, Goal: ${financialGoal}`
+        });
       }
+      
       setErrorMessage(errMsg);
     } finally {
       setSubmitting(false);
@@ -837,11 +866,24 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                     >
                       🛡️ Super-Admins Adjoints ({secondaryAdmins.length})
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveSubTab('auth_logs')}
+                      className={`px-4 py-1.5 text-xs font-black rounded-lg transition cursor-pointer border flex items-center gap-1.5 ${
+                        activeSubTab === 'auth_logs'
+                          ? 'bg-rose-600 text-white border-rose-700 shadow-xs'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      🚨 Diagnostic & Logs d'Accès
+                    </button>
                   </div>
                   <p className="text-xs text-slate-500 font-medium">
                     {activeSubTab === 'schools'
                       ? "Activez la supervision ou gérez les paramètres d'exploitation"
-                      : "Gérez et auditez les habilitations d'accès des superviseurs adjoints délégués"}
+                      : activeSubTab === 'admins'
+                        ? "Gérez et auditez les habilitations d'accès des superviseurs adjoints délégués"
+                        : "Consultez les rapports détaillés des permissions refusées et incidents de sécurité"}
                   </p>
                 </div>
 
@@ -985,7 +1027,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                     </div>
                   )}
                 </>
-              ) : (
+              ) : activeSubTab === 'admins' ? (
                 <div className="p-6 space-y-6">
                   {/* Informative Banner */}
                   <div className="bg-slate-900 border border-slate-800 text-slate-300 p-4 rounded-2xl flex items-start gap-3">
@@ -1181,6 +1223,10 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                       )}
                     </div>
                   </div>
+                </div>
+              ) : (
+                <div className="p-6">
+                  <AuthLogsViewer />
                 </div>
               )}
             </div>

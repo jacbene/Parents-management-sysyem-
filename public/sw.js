@@ -5,9 +5,10 @@ const ASSETS_TO_CACHE = [
   '/manifest.json'
 ];
 
-// Detect development environment (localhost, 127.0.0.1, or ais-dev subdomain)
+// Detect development environment (localhost, 127.0.0.1, or ais-dev / ais-pre subdomains)
 const isDevEnv = () => {
   return self.location.hostname.includes('ais-dev') || 
+         self.location.hostname.includes('ais-pre') || 
          self.location.hostname === 'localhost' || 
          self.location.hostname === '127.0.0.1';
 };
@@ -57,7 +58,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
+    caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
       if (cachedResponse) {
         return cachedResponse;
       }
@@ -70,9 +71,12 @@ self.addEventListener('fetch', (event) => {
           cache.put(event.request, responseToCache);
         });
         return networkResponse;
-      }).catch(() => {
-        // Fallback for offline files
-        return caches.match('/');
+      }).catch((err) => {
+        // Fallback uniquement pour les requêtes de navigation HTML
+        if (event.request.mode === 'navigate' || (event.request.headers.get('accept') && event.request.headers.get('accept').includes('text/html'))) {
+          return caches.match('/', { ignoreSearch: true });
+        }
+        throw err;
       });
     })
   );

@@ -98,10 +98,13 @@ export default function NotificationBell({ portalUserRole, selectedStudentName =
         window.speechSynthesis.resume();
       }
 
-      // Delay speak invocation slightly to ensure previous cancel() completed
-      setTimeout(() => {
+      // Speak synchronously (crucial for maintaining user gesture activation,
+      // otherwise browsers block the speech synthesis inside an iframe/sandbox!)
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.resume();
         window.speechSynthesis.speak(utterance);
-      }, 150);
+        window.speechSynthesis.resume();
+      }
     }
   };
 

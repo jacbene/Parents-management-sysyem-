@@ -1513,6 +1513,7 @@ export default function BillingPortal({
                   invoice={payingInvoice}
                   parentPhone={parentPhone}
                   students={students}
+                  settings={settings}
                   onPaymentSuccess={(updated) => {
                     onUpdateInvoice(updated);
                     // Hide modal after display success

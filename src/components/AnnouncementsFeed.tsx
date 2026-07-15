@@ -192,16 +192,28 @@ export default function AnnouncementsFeed({
     if (pdfInputRef.current) pdfInputRef.current.value = '';
   };
 
-  // Stop talking on unmount
+  // Stop talking on unmount and preload/warm up voices in background
   React.useEffect(() => {
-    return () => {
-      if (resumeIntervalRef.current) {
-        clearInterval(resumeIntervalRef.current);
-      }
-      if ('speechSynthesis' in window) {
+    if ('speechSynthesis' in window) {
+      // Pre-warm the voice list
+      window.speechSynthesis.getVoices();
+      
+      const handleVoicesChanged = () => {
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.getVoices();
+        }
+      };
+      
+      window.speechSynthesis.addEventListener('voiceschanged', handleVoicesChanged);
+      
+      return () => {
+        window.speechSynthesis.removeEventListener('voiceschanged', handleVoicesChanged);
+        if (resumeIntervalRef.current) {
+          clearInterval(resumeIntervalRef.current);
+        }
         window.speechSynthesis.cancel();
-      }
-    };
+      };
+    }
   }, []);
 
   const handleSpeakAnnouncement = (id: string, title: string, content: string) => {
@@ -284,21 +296,12 @@ export default function AnnouncementsFeed({
         }
       };
 
-      // Workaround for Chrome getting stuck in paused/speaking state
+      // Speak synchronously (no setTimeout) to satisfy strict browser user-gesture requirements
       if (window.speechSynthesis.paused) {
         window.speechSynthesis.resume();
       }
-      
-      // Delay speak invocation slightly to ensure previous cancel() completed
-      setTimeout(() => {
-        if ('speechSynthesis' in window) {
-          // Force a resume call before speaking
-          window.speechSynthesis.resume();
-          window.speechSynthesis.speak(utterance);
-          // Force an immediate resume call after speaking to trigger speech engine
-          window.speechSynthesis.resume();
-        }
-      }, 150);
+      window.speechSynthesis.speak(utterance);
+      window.speechSynthesis.resume();
     }
   };
 
