@@ -3,19 +3,229 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ============================================
-    // IFRAME & SANDBOX RESILIENT SECURITY RULES
+    // 1. CATCH-ALL DENY
     // ============================================
-    // Inside the AI Studio preview environment, the application runs inside an iframe.
-    // Modern browsers block third-party cookies and partitioned storage inside iframes,
-    // which prevents Firebase Authentication from reliably persisting or transmitting 
-    // user tokens (resulting in request.auth being null on the server).
-    //
-    // To guarantee 100% operational uptime, prevent background offline sync failures,
-    // and enable successful establishment creation during demo and evaluation sessions,
-    // the security rules allow unrestricted read/write access to the database collections.
-
     match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ============================================
+    // 2. SEEDING (sandbox de test)
+    // ============================================
+    match /seeding/{document=**} {
       allow read, write: if true;
+    }
+
+    // ============================================
+    // 3. UTILITY FUNCTIONS
+    // ============================================
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSafeId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isSafeEmail(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-\\.\\+\\@]+$');
+    }
+
+    function isDemoId(id) {
+      return id != null && (
+        id == 'demo_school_ekali' ||
+        id == 'demo_school_vogt' ||
+        id == 'demo_school_bilingue' ||
+        id == 'sandboxed_guest_user_ekali' ||
+        id == 'sandboxed_guest_user_vogt' ||
+        id == 'sandboxed_guest_user_bilingue'
+      );
+    }
+
+    function hasSuperAdminDoc(email) {
+      return email is string && 
+             exists(/databases/$(database)/documents/super_admins/$(email));
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && 
+             (request.auth.uid == "sys_admin_jacques" ||
+              (request.auth.token.email != null && 
+               request.auth.token.email is string &&
+               (request.auth.token.email == "jacquesbene301@gmail.com" ||
+                request.auth.token.email == "adjoint@pasma.sys" ||
+                hasSuperAdminDoc(request.auth.token.email))));
+    }
+
+    function isImmutable(field) {
+      return !(field in request.resource.data) || 
+             (resource != null && 
+              resource.data[field] == request.resource.data[field]);
+    }
+
+    // Checking if parentId is owned by the user or is a demo ID
+    function isOwnerOrDemoRead(parentId) {
+      return isDemoId(parentId) || 
+             (isSignedIn() && 
+              isSafeId(parentId) && 
+              (parentId == request.auth.uid || 
+               exists(/databases/$(database)/documents/establishments/$(parentId))));
+    }
+
+    function isOwnerOrDemoWrite(parentId) {
+      return isDemoId(parentId) || 
+             (isSignedIn() && 
+              isSafeId(parentId) && 
+              (parentId == request.auth.uid || 
+               (exists(/databases/$(database)/documents/establishments/$(parentId)) && 
+                get(/databases/$(database)/documents/establishments/$(parentId)).data.ownerId == request.auth.uid)));
+    }
+
+    function studentExists(studentId) {
+      return exists(/databases/$(database)/documents/students/$(studentId));
+    }
+
+    function isStudentOwnerRead(studentId) {
+      return studentExists(studentId) &&
+             isOwnerOrDemoRead(get(/databases/$(database)/documents/students/$(studentId)).data.parentId);
+    }
+
+    function isStudentOwnerWrite(studentId) {
+      return studentExists(studentId) &&
+             isOwnerOrDemoWrite(get(/databases/$(database)/documents/students/$(studentId)).data.parentId);
+    }
+
+    // ============================================
+    // 4. COLLECTION RULES
+    // ============================================
+
+    // establishments
+    match /establishments/{establishmentId} {
+      allow read: if isSignedIn() || isDemoId(establishmentId);
+      allow write: if isSignedIn() && 
+                    isSafeId(establishmentId) &&
+                    (resource == null || resource.data.ownerId == request.auth.uid) &&
+                    request.resource.data.ownerId == request.auth.uid;
+    }
+
+    // students
+    match /students/{studentId} {
+      allow get: if isSignedIn() && 
+                 isSafeId(studentId) &&
+                 (isSuperAdmin() || (resource != null && isOwnerOrDemoRead(resource.data.parentId)));
+      
+      allow list: if isSignedIn() && 
+                  (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
+      
+      allow create: if isSignedIn() && 
+                    isSafeId(studentId) &&
+                    (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
+      
+      allow update: if isSignedIn() && 
+                    isSafeId(studentId) &&
+                    (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId))) &&
+                    (isSuperAdmin() || isImmutable('parentId')) &&
+                    isImmutable('id');
+      
+      allow delete: if isSignedIn() && 
+                    isSafeId(studentId) &&
+                    (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+    }
+
+    // grades
+    match /grades/{gradeId} {
+      allow get, list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
+      allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+    }
+
+    // attendance
+    match /attendance/{attendanceId} {
+      allow get, list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
+      allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+    }
+
+    // homeworks
+    match /homeworks/{homeworkId} {
+      allow get, list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
+      allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+    }
+
+    // appointments
+    match /appointments/{appointmentId} {
+      allow get, list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
+      allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+    }
+
+    // messages
+    match /messages/{messageId} {
+      allow get, list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
+      allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+    }
+
+    // invoices
+    match /invoices/{invoiceId} {
+      allow get: if isSignedIn() && 
+                 isSafeId(invoiceId) &&
+                 (isSuperAdmin() || 
+                  (resource != null && isOwnerOrDemoRead(resource.data.parentId)) || 
+                  invoiceId.matches('^log_.*'));
+      allow list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
+      allow create: if isSignedIn() && (isSuperAdmin() || invoiceId.matches('^log_.*') || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && (isSuperAdmin() || invoiceId.matches('^log_.*') || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && (isSuperAdmin() || invoiceId.matches('^log_.*') || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+    }
+
+    // reading_logs
+    match /reading_logs/{logId} {
+      allow get: if isSignedIn() && isSafeId(logId) && (isSuperAdmin() || isStudentOwnerRead(resource.data.studentId));
+      allow list: if isSignedIn() && (isSuperAdmin() || isStudentOwnerRead(resource.data.studentId));
+      allow create: if isSignedIn() && isSafeId(logId) && isStudentOwnerWrite(request.resource.data.studentId);
+      allow update: if isSignedIn() && isSafeId(logId) && isStudentOwnerWrite(request.resource.data.studentId) && isStudentOwnerWrite(request.resource.data.studentId) && isImmutable('studentId');
+      allow delete: if isSignedIn() && isSafeId(logId) && isStudentOwnerWrite(request.resource.data.studentId);
+    }
+
+    // announcements
+    match /announcements/{announcementId} {
+      allow read: if isSignedIn() && isSafeId(announcementId);
+      allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+    }
+
+    // lessons
+    match /lessons/{lessonId} {
+      allow read: if isSignedIn() && isSafeId(lessonId);
+      allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+    }
+
+    // super_admins
+    match /super_admins/{adminId} {
+      allow get: if isSignedIn() && 
+                 isSafeEmail(adminId) &&
+                 (isSuperAdmin() || 
+                  (request.auth.token.email != null && 
+                   request.auth.token.email is string &&
+                   request.auth.token.email == adminId));
+      allow list: if isSignedIn() && (isSuperAdmin() || (request.auth.token.email != null && request.auth.token.email is string && hasSuperAdminDoc(request.auth.token.email)));
+      allow create, update, delete: if isSignedIn() && isSuperAdmin();
+    }
+
+    // active_sessions
+    match /active_sessions/{sessionId} {
+      allow read, write: if isSignedIn() && isSafeId(sessionId) && request.auth.uid == sessionId;
     }
 
   }

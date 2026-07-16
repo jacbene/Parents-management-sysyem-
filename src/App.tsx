@@ -382,6 +382,7 @@ export default function App() {
 
   // Establishment and role-based access state (with persistence)
   const [selectedSchoolId, setSelectedSchoolId] = useState<string | null>(() => localStorage.getItem('portal_selected_school_id'));
+  const [schoolStatus, setSchoolStatus] = useState<string>('active');
   const [portalUserRole, setPortalUserRole] = useState<'manager' | 'parent' | 'teacher' | null>(() => localStorage.getItem('portal_user_role') as 'manager' | 'parent' | 'teacher' | null);
   const [portalParentDetails, setPortalParentDetails] = useState<{ name: string; phone: string; studentSubsetNames?: string[] } | null>(() => {
     const s = localStorage.getItem('portal_parent_details');
@@ -1208,6 +1209,23 @@ export default function App() {
     }
 
     const unsubscribers: (() => void)[] = [];
+
+    // Real-time school status subscription to enforce suspension blocks in real-time
+    if (selectedSchoolId) {
+      try {
+        const unsubSchool = onSnapshot(doc(db, 'establishments', selectedSchoolId), (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data();
+            setSchoolStatus(data.status || 'active');
+          }
+        }, (err) => {
+          console.warn("Real-time school status listener subscription failed (offline fallback):", err);
+        });
+        unsubscribers.push(unsubSchool);
+      } catch (err) {
+        console.warn("Could not bind real-time school status listener:", err);
+      }
+    }
 
     const initAndFetchData = async () => {
       setDataLoading(true);
@@ -2733,6 +2751,63 @@ export default function App() {
                   </button>
                 </div>
               )}
+            </div>
+          </motion.div>
+        ) : schoolStatus === 'suspended' && !showSuperAdminButton ? (
+          /* Suspended School Block Screen */
+          <motion.div
+            key="suspended"
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
+            className="flex-1 flex items-center justify-center p-4 min-h-screen bg-slate-100/40"
+          >
+            <div className="w-full max-w-md bg-white border border-rose-150 rounded-2xl p-6 text-center space-y-6 shadow-md animate-scale">
+              <div className="h-16 w-16 bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center rounded-2xl mx-auto">
+                <AlertCircle className="h-8 w-8 animate-pulse" />
+              </div>
+              
+              <div className="space-y-2">
+                <h2 className="text-lg font-black text-slate-955">
+                  {language === 'en' ? 'Establishment Access Suspended' : 'Accès à l\'Établissement Suspendu'}
+                </h2>
+                <p className="text-xs text-slate-550 leading-relaxed">
+                  {language === 'en' 
+                    ? 'The services for this establishment have been temporarily suspended by the Pasma-sys Super Administrator. This might be due to an outstanding royalty payment or administration request.'
+                    : 'Les services de cet établissement ont été temporairement suspendus par le Super Administrateur de Pasma-sys. Cela peut être dû à un retard de règlement de la redevance ou à une demande administrative.'}
+                </p>
+              </div>
+
+              <div className="bg-slate-50/70 border border-slate-100 p-4 rounded-xl text-left space-y-1.5 text-xxs text-slate-650 font-medium">
+                <div className="flex justify-between border-b border-slate-100/80 pb-1.5">
+                  <span>{language === 'en' ? 'Establishment ID:' : 'ID Établissement :'}</span>
+                  <span className="font-mono text-slate-850 font-bold">{selectedSchoolId}</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-100/80 py-1.5">
+                  <span>{language === 'en' ? 'Support Contact:' : 'Support Technique :'}</span>
+                  <span className="text-indigo-650 font-bold font-sans">support@pasma.sys</span>
+                </div>
+                <div className="text-xxxs text-slate-400 pt-1 text-center leading-normal">
+                  {language === 'en' 
+                    ? 'Administration can log in to the Super-Admin panel to lift the suspension.' 
+                    : 'La direction peut se connecter à l\'espace Super-Admin pour lever la suspension.'}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    localStorage.removeItem('portal_selected_school_id');
+                    localStorage.removeItem('portal_user_role');
+                    setSelectedSchoolId(null);
+                    setPortalUserRole(null);
+                  }}
+                  className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs rounded-xl transition duration-150 cursor-pointer flex items-center justify-center gap-2 shadow-xs"
+                >
+                  {language === 'en' ? '← Back to School Selection' : '← Retour à la Sélection d\'École'}
+                </button>
+              </div>
             </div>
           </motion.div>
         ) : (

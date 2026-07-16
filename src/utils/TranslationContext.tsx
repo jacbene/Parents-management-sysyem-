@@ -54,9 +54,9 @@ const translations: Record<LanguageType, Record<string, string>> = {
     'drive.no_folder_warning': 'Aucun dossier de sauvegarde',
     'drive.no_folder_desc': "Afin de mieux classifier vos documents, nous vous conseillons de générer un dossier dédié 'Pasma-sys School Backups' sur votre Drive.",
     'drive.create_folder_btn': 'Créer le dossier Pasma-sys',
-    'drive.auto_backup': 'Sauvegarde Auto (APEE)',
+    'drive.auto_backup': 'Sauvegarde Auto (Association)',
     'drive.weekly': 'Hebdomadaire',
-    'drive.auto_backup_desc': "Téléverser automatiquement un instantané complet des finances de l'APEE tous les 7 jours.",
+    'drive.auto_backup_desc': "Téléverser automatiquement un instantané complet des finances de l'association tous les 7 jours.",
     'drive.status': 'Statut:',
     'drive.status_active': 'Actif (Chaque 7 j)',
     'drive.last_export': 'Dernier export:',
@@ -66,7 +66,7 @@ const translations: Record<LanguageType, Record<string, string>> = {
     'drive.force_auto_backup': 'Lancer le backup automatique maintenant',
     'drive.pasma_backups': 'Sauvegardes Pasma-sys',
     'drive.backups_desc': "Chiffrez et exportez instantanément les bases de données SQL locales de l'école directement dans votre dossier de stockage cloud.",
-    'drive.file_apee': "Fichier de l'APEE",
+    'drive.file_apee': "Fichier de l'Association",
     'drive.parents_count': '{count} Dossiers parents',
     'drive.file_billing': 'Factures & Régie Financière',
     'drive.invoices_count': '{count} Reçus de paiement',
@@ -181,7 +181,7 @@ const translations: Record<LanguageType, Record<string, string>> = {
     'search.filter_late': 'En Retard (Aucun versement)',
     'search.parent_details': '📁 Fiche Foyer Spécifique',
     'search.print_receipt': 'Imprimer le Reçu de Caisse (PDF)',
-    'search.print_desc': 'Génération d\'un document PDF officiel APEE avec entête officiel.',
+    'search.print_desc': 'Génération d\'un document PDF officiel avec entête de l\'établissement.',
     'search.last_reminder': 'Dernière relance envoyée le :',
     'search.never_reminded': 'Aucune relance envoyée',
     'search.parent_record': 'Dossier Financier du Foyer',
@@ -191,7 +191,7 @@ const translations: Record<LanguageType, Record<string, string>> = {
 
     // Financial / Expense Page
     'fin.title': 'Grille de Trésorerie Globale (Flux Budgétaires)',
-    'fin.subtitle': 'Saisie et répartition des dépenses d\'exploitation de l\'APEE, gestion des dons et subventions externes.',
+    'fin.subtitle': 'Saisie et répartition des dépenses d\'exploitation de l\'association, gestion des dons et subventions externes.',
     'fin.stats.receipts': 'Encaissements (Revenus)',
     'fin.stats.expenses': 'Dépenses validées',
     'fin.stats.cash_in_hand': 'Solde Réel en Caisse',
@@ -218,7 +218,7 @@ const translations: Record<LanguageType, Record<string, string>> = {
 
     // Reporting Page
     'rep.title': 'Bilan Financier & Analyse Économique',
-    'rep.subtitle': 'Rapports consolidés pour les Assemblées Générales et audit des comptes de l\'APEE.',
+    'rep.subtitle': 'Rapports consolidés pour les Assemblées Générales et audit des comptes de l\'association.',
     'rep.bud_gauge': 'Jauge Globale de Recouvrement des Cotisations',
     'rep.bud_evolution': 'Évolution Mensuelle des Encaissements',
     'rep.bud_allocation': 'Rapprochement Réel : Dépenses vs Lignes Budgétaires',
@@ -240,7 +240,7 @@ const translations: Record<LanguageType, Record<string, string>> = {
 
     // Settings Page
     'set.title': 'Configuration de l\'Établissement & Comptes',
-    'set.subtitle': 'Personnaliser l\'entité APEE active, paramétrer les mot de passe responsables et les enveloppes budgétaires.',
+    'set.subtitle': 'Personnaliser l\'association active, paramétrer les mot de passe responsables et les enveloppes budgétaires.',
     'set.info_general': '🏢 Informations Générales de la structure',
     'set.name': 'Nom de la structure / Association Active',
     'set.short': 'Sigle usuel (ex: APEE, AP, PTA)',
@@ -355,9 +355,9 @@ const translations: Record<LanguageType, Record<string, string>> = {
     'drive.no_folder_warning': 'No backup folder',
     'drive.no_folder_desc': 'To better classify your documents, we advise you to generate a dedicated folder "Pasma-sys School Backups" on your Drive.',
     'drive.create_folder_btn': 'Create Pasma-sys Folder',
-    'drive.auto_backup': 'Auto-Backup (PTA)',
+    'drive.auto_backup': 'Auto-Backup (Association)',
     'drive.weekly': 'Weekly',
-    'drive.auto_backup_desc': 'Automatically upload a complete snapshot of PTA finances every 7 days.',
+    'drive.auto_backup_desc': 'Automatically upload a complete snapshot of association finances every 7 days.',
     'drive.status': 'Status:',
     'drive.status_active': 'Active (Every 7 days)',
     'drive.last_export': 'Last export:',
@@ -367,7 +367,7 @@ const translations: Record<LanguageType, Record<string, string>> = {
     'drive.force_auto_backup': 'Run automatic backup now',
     'drive.pasma_backups': 'Pasma-sys Backups',
     'drive.backups_desc': 'Encrypt and instantly export local school SQL databases directly to your cloud storage folder.',
-    'drive.file_apee': 'PTA Ledger File',
+    'drive.file_apee': 'Association Ledger File',
     'drive.parents_count': '{count} Parent folders',
     'drive.file_billing': 'Invoices & Financial Registry',
     'drive.invoices_count': '{count} Payment receipts',
@@ -414,7 +414,7 @@ const translations: Record<LanguageType, Record<string, string>> = {
 
     // Dashboard Screen
     'dash.title': 'Financial Analytics & Pilot Dashboard',
-    'dash.subtitle': 'Real-time overview of PTA contributions and financial flows in your school.',
+    'dash.subtitle': 'Real-time overview of contributions and financial flows in your school.',
     'dash.stats.expected_recette': 'Forecast Budget Goal',
     'dash.stats.collected_recette': 'Total Fees Collected',
     'dash.stats.unpaid_recette': 'Remaining Dues',
@@ -482,7 +482,7 @@ const translations: Record<LanguageType, Record<string, string>> = {
     'search.filter_late': 'In Arrears (No payment)',
     'search.parent_details': '📁 Specific Household Statement',
     'search.print_receipt': 'Generate Cash Receipt (PDF)',
-    'search.print_desc': 'Generates an official school PTA receipt with automated breakdowns.',
+    'search.print_desc': 'Generates an official school receipt with automated breakdowns.',
     'search.last_reminder': 'Last reminder dispatched on:',
     'search.never_reminded': 'Never contacted yet',
     'search.parent_record': 'Household Financial Register',
@@ -492,8 +492,8 @@ const translations: Record<LanguageType, Record<string, string>> = {
 
     // Financial / Expense Page
     'fin.title': 'Cashflow & Balance Sheets (Outflows & Direct Inflows)',
-    'fin.subtitle': 'Record and categorize PTA operational expenses, manage external grants and donations.',
-    'fin.stats.receipts': 'Direct PTA Revenues',
+    'fin.subtitle': 'Record and categorize operational expenses, manage external grants and donations.',
+    'fin.stats.receipts': 'Direct Association Revenues',
     'fin.stats.expenses': 'Audited Outflows',
     'fin.stats.cash_in_hand': 'Actual Box Balance',
     'fin.add_expense': 'Record Cash Outflow / Expense',
@@ -520,7 +520,7 @@ const translations: Record<LanguageType, Record<string, string>> = {
     // Reporting Page
     'rep.title': 'Financial Statements & Audits',
     'rep.subtitle': 'Consolidated balance reports for Board General Assemblies and audits.',
-    'rep.bud_gauge': 'Overall PTA Contributions Collection Gauge',
+    'rep.bud_gauge': 'Overall Contributions Collection Gauge',
     'rep.bud_evolution': 'Monthly Collections Progress Ledger',
     'rep.bud_allocation': 'Actual Alignment: Outflows vs Budget Allocations',
     'rep.bud_desc': 'Funds distribution across allocation lines. The red line marks the authorized budget envelope.',
@@ -541,7 +541,7 @@ const translations: Record<LanguageType, Record<string, string>> = {
 
     // Settings Page
     'set.title': 'Association Settings & Authorized Keys',
-    'set.subtitle': 'Customize your active PTA entity, establish manager access keys, and allocate budget bands.',
+    'set.subtitle': 'Customize your active entity, establish manager access keys, and allocate budget bands.',
     'set.info_general': '🏢 General Association Information',
     'set.name': 'Association / Organization Name',
     'set.short': 'Acroynm / Label (e.g. PTA, APEE, AP)',

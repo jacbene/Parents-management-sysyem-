@@ -62,7 +62,7 @@ export interface Lesson {
   pdfUrl?: string;
 }
 
-export type AnnouncementCategory = 'General' | 'Academic' | 'Event' | 'Urgent';
+export type AnnouncementCategory = 'General' | 'Academic' | 'Event' | 'Urgent' | 'Sponsored';
 
 export interface Announcement {
   id: string;
@@ -75,6 +75,12 @@ export interface Announcement {
   imageUrl?: string;
   pdfUrl?: string;
   pdfFileName?: string;
+  isSponsored?: boolean;
+  sponsorName?: string;
+  sponsorLink?: string;
+  sponsorBadgeText?: string;
+  adClicks?: number;
+  adImpressions?: number;
 }
 
 export type AppointmentStatus = 'Scheduled' | 'Completed' | 'Cancelled';
@@ -260,6 +266,14 @@ export interface ApeePaymentConfig {
   wavePhoneNumber?: string;
   waveMerchantName?: string;
   waveApiKey?: string;
+
+  // Campay integration properties
+  campayEnabled?: boolean;
+  campayAppId?: string;
+  campayAppUsername?: string;
+  campayAppPassword?: string;
+  campayToken?: string;
+  campayWebhookKey?: string;
 }
 
 export interface ApeeSettings {
@@ -309,6 +323,10 @@ export interface Establishment {
   schoolYear: string;
   ownerId: string;
   logoUrl?: string;
+  status?: 'active' | 'suspended';
+  portalFeesPaid?: number;
+  lastPortalPaymentDate?: string;
+  registrationDate?: string;
 }
 
 export interface SystemLog {

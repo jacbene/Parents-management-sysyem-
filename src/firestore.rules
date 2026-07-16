@@ -51,7 +51,7 @@ service cloud.firestore {
     function isSuperAdmin() {
       return isSignedIn() && 
              (request.auth.uid == "sys_admin_jacques" ||
-              ('email' in request.auth.token && 
+              (request.auth.token.email != null && 
                request.auth.token.email is string &&
                (request.auth.token.email == "jacquesbene301@gmail.com" ||
                 request.auth.token.email == "adjoint@pasma.sys" ||
@@ -78,7 +78,8 @@ service cloud.firestore {
              (isSignedIn() && 
               isSafeId(parentId) && 
               (parentId == request.auth.uid || 
-               getAfter(/databases/$(database)/documents/establishments/$(parentId)).data.ownerId == request.auth.uid));
+               (exists(/databases/$(database)/documents/establishments/$(parentId)) && 
+                get(/databases/$(database)/documents/establishments/$(parentId)).data.ownerId == request.auth.uid)));
     }
 
     function studentExists(studentId) {
@@ -215,10 +216,10 @@ service cloud.firestore {
       allow get: if isSignedIn() && 
                  isSafeEmail(adminId) &&
                  (isSuperAdmin() || 
-                  ('email' in request.auth.token && 
+                  (request.auth.token.email != null && 
                    request.auth.token.email is string &&
                    request.auth.token.email == adminId));
-      allow list: if isSignedIn() && (isSuperAdmin() || ('email' in request.auth.token && request.auth.token.email is string && hasSuperAdminDoc(request.auth.token.email)));
+      allow list: if isSignedIn() && (isSuperAdmin() || (request.auth.token.email != null && request.auth.token.email is string && hasSuperAdminDoc(request.auth.token.email)));
       allow create, update, delete: if isSignedIn() && isSuperAdmin();
     }
 

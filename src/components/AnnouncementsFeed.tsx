@@ -17,12 +17,42 @@ const STATIC_ANNOUNCEMENTS: Announcement[] = [
     imageUrl: 'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&q=80&w=1200'
   },
   {
+    id: 'ann_ad_1',
+    title: '📚 -15% sur les Fournitures Scolaires chez PapetVogt',
+    content: 'Préparez la rentrée sereinement ! Présentez votre reçu de paiement de cotisation APEE PasmaSys sur l\'application pour bénéficier d\'une réduction immédiate de 15% sur tous les manuels scolaires et sacs à dos.',
+    category: 'Sponsored',
+    date: '2026-05-21',
+    author: 'Librairie & Papeterie Vogt',
+    isSponsored: true,
+    sponsorName: 'PapetVogt Sarl',
+    sponsorLink: 'https://example.com/papetvogt-promo',
+    sponsorBadgeText: 'Promo Rentrée 2026',
+    adClicks: 142,
+    adImpressions: 2150,
+    imageUrl: 'https://images.unsplash.com/photo-1513542789411-b6a5d4f31634?auto=format&fit=crop&q=80&w=1200'
+  },
+  {
     id: 'ann_2',
     title: 'Sécurité Routière et Accès École',
     content: 'Suite aux travaux dans la rue des Écoles, nous rappelons que le dépose-minute est temporairement déplacé devant la mairie. Merci de respecter la signalisation pour la sécurité des enfants.',
     category: 'Urgent',
     date: '2026-05-20',
     author: 'Bureau de la Sécurité Scolaire'
+  },
+  {
+    id: 'ann_ad_2',
+    title: '🚌 Transport Scolaire Sécurisé - TransScol Vogt',
+    content: 'Il reste 12 places disponibles pour nos navettes de ramassage scolaire pour l\'année académique en cours. Chauffeurs professionnels certifiés, climatisation, et géo-localisation en temps réel pour rassurer les parents.',
+    category: 'Sponsored',
+    date: '2026-05-19',
+    author: 'TransScol Vogt SA',
+    isSponsored: true,
+    sponsorName: 'TransScol Group',
+    sponsorLink: 'https://example.com/transscol-inscription',
+    sponsorBadgeText: 'Ramassage 2026',
+    adClicks: 89,
+    adImpressions: 1850,
+    imageUrl: 'https://images.unsplash.com/photo-1557223562-6c77ef16210f?auto=format&fit=crop&q=80&w=1200'
   },
   {
     id: 'ann_3',
@@ -105,6 +135,12 @@ export default function AnnouncementsFeed({
   const pdfInputRef = React.useRef<HTMLInputElement>(null);
 
   const [activePdfAnnId, setActivePdfAnnId] = useState<string | null>(null);
+
+  // States for Sponsored Ads
+  const [adClicksMap, setAdClicksMap] = useState<Record<string, number>>({});
+  const [sponsorNameInput, setSponsorNameInput] = useState('');
+  const [sponsorLinkInput, setSponsorLinkInput] = useState('');
+  const [sponsorBadgeInput, setSponsorBadgeInput] = useState('');
 
   const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setImageFileError('');
@@ -222,86 +258,149 @@ export default function AnnouncementsFeed({
       return;
     }
 
-    // Helper to clear speech keep-alive interval
-    const clearSpeechInterval = () => {
-      if (resumeIntervalRef.current) {
-        clearInterval(resumeIntervalRef.current);
-        resumeIntervalRef.current = null;
-      }
-    };
+    // Nettoyer les intervalles précédents
+    if (resumeIntervalRef.current) {
+      clearInterval(resumeIntervalRef.current);
+      resumeIntervalRef.current = null;
+    }
 
+    // Si c'est la même annonce qui est en cours de lecture, on arrête
     if (speakingAnnId === id) {
-      clearSpeechInterval();
       window.speechSynthesis.cancel();
       setSpeakingAnnId(null);
       utteranceRef.current = null;
-    } else {
-      clearSpeechInterval();
-      window.speechSynthesis.cancel();
-      
-      // Plain text cleanup to ensure smooth synthesis
-      const cleanTitle = title.replace(/[#*_`~[\]]/g, '');
-      const cleanContent = content.replace(/[#*_`~[\]]/g, '');
-      
-      const utterance = new SpeechSynthesisUtterance(`${cleanTitle}. ${cleanContent}`);
-      utteranceRef.current = utterance; // Retain to avoid Garbage Collection in Chrome/Safari
-      
-      const targetLang = language === 'en' ? 'en-US' : 'fr-FR';
-      utterance.lang = targetLang;
-      
-      // Best-effort voice matching
-      if ('getVoices' in window.speechSynthesis) {
-        const voices = window.speechSynthesis.getVoices();
+      return;
+    }
+
+    // Arrêter toute lecture en cours
+    window.speechSynthesis.cancel();
+    
+    // Nettoyer le texte
+    const cleanTitle = title.replace(/[#*_`~[\]]/g, '');
+    const cleanContent = content.replace(/[#*_`~[\]]/g, '');
+    
+    // Créer l'utterance
+    const utterance = new SpeechSynthesisUtterance(`${cleanTitle}. ${cleanContent}`);
+    utteranceRef.current = utterance;
+    
+    // Définir la langue
+    const targetLang = language === 'en' ? 'en-US' : 'fr-FR';
+    utterance.lang = targetLang;
+    utterance.rate = 0.9; // Légèrement plus lent pour une meilleure compréhension
+    utterance.pitch = 1;
+    utterance.volume = 1;
+    
+    // Sélectionner une voix appropriée
+    const setVoice = () => {
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length > 0) {
         const preferredLang = language === 'en' ? 'en' : 'fr';
-        const matchingVoice = voices.find(v => v.lang.toLowerCase().startsWith(preferredLang)) 
-          || voices.find(v => v.lang.toLowerCase().includes(preferredLang));
-        if (matchingVoice) {
-          utterance.voice = matchingVoice;
+        // Chercher une voix native
+        let voice = voices.find(v => v.lang.toLowerCase().startsWith(preferredLang) && v.localService);
+        if (!voice) {
+          voice = voices.find(v => v.lang.toLowerCase().startsWith(preferredLang));
+        }
+        if (!voice) {
+          voice = voices.find(v => v.lang.toLowerCase().includes(preferredLang));
+        }
+        if (voice) {
+          utterance.voice = voice;
+          console.log('Voice selected:', voice.name, voice.lang);
         }
       }
+    };
 
-      utterance.onstart = () => {
-        setSpeakingAnnId(id);
-        
-        // Setup keep-alive interval to prevent Chrome from pausing speech synthesis
-        clearSpeechInterval();
-        resumeIntervalRef.current = setInterval(() => {
-          if ('speechSynthesis' in window) {
-            if (window.speechSynthesis.speaking) {
-              window.speechSynthesis.resume();
-            } else {
-              clearSpeechInterval();
-            }
-          }
-        }, 3000);
-      };
+    // Essayer de définir la voix immédiatement
+    setVoice();
+    
+    // Et réessayer quand les voix sont chargées
+    const voicesChangedHandler = () => {
+      setVoice();
+      window.speechSynthesis.removeEventListener('voiceschanged', voicesChangedHandler);
+    };
+    window.speechSynthesis.addEventListener('voiceschanged', voicesChangedHandler);
 
-      utterance.onend = () => {
-        clearSpeechInterval();
+    // Événements
+    utterance.onstart = () => {
+      console.log('Speech started for:', id);
+      setSpeakingAnnId(id);
+      
+      // Keep-alive interval pour Chrome
+      resumeIntervalRef.current = setInterval(() => {
+        if (window.speechSynthesis.speaking) {
+          window.speechSynthesis.resume();
+          console.log('Resuming speech...');
+        } else {
+          clearInterval(resumeIntervalRef.current);
+          resumeIntervalRef.current = null;
+        }
+      }, 5000);
+    };
+
+    utterance.onend = () => {
+      console.log('Speech ended for:', id);
+      if (utteranceRef.current === utterance) {
+        if (resumeIntervalRef.current) {
+          clearInterval(resumeIntervalRef.current);
+          resumeIntervalRef.current = null;
+        }
         setSpeakingAnnId(null);
         utteranceRef.current = null;
-      };
+      }
+      window.speechSynthesis.removeEventListener('voiceschanged', voicesChangedHandler);
+    };
 
-      utterance.onerror = (e) => {
-        console.warn("SpeechSynthesisUtterance error:", e);
-        clearSpeechInterval();
+    utterance.onerror = (e) => {
+      console.warn('Speech synthesis warning:', e.error || e);
+      
+      // Only clean up state if this error belongs to the active utterance
+      if (utteranceRef.current === utterance) {
+        if (resumeIntervalRef.current) {
+          clearInterval(resumeIntervalRef.current);
+          resumeIntervalRef.current = null;
+        }
         setSpeakingAnnId(null);
         utteranceRef.current = null;
+      }
+      window.speechSynthesis.removeEventListener('voiceschanged', voicesChangedHandler);
 
+      // Avoid showing alert or handling errors if it is an expected cancellation/interruption
+      if (e.error !== 'interrupted' && e.error !== 'canceled') {
         if (e.error === 'not-allowed') {
           alert(isEn 
-            ? "Your browser blocked text-to-speech. If you are using the embedded preview, please open the application in a new tab using the button at the top right of the screen to listen to announcements!" 
-            : "Votre navigateur a bloqué la synthèse vocale. Si vous utilisez l'aperçu intégré, veuillez ouvrir l'application dans un nouvel onglet avec le bouton en haut à droite pour écouter les annonces !"
+            ? "Your browser blocked text-to-speech. Please click the page and try again, or use the 'Open in new tab' button." 
+            : "Votre navigateur a bloqué la synthèse vocale. Veuillez cliquer sur la page et réessayer, ou utiliser le bouton 'Ouvrir dans un nouvel onglet'."
+          );
+        } else if (e.error === 'network') {
+          alert(isEn 
+            ? "Network error with speech synthesis. Please try again." 
+            : "Erreur réseau avec la synthèse vocale. Veuillez réessayer."
           );
         }
-      };
+      }
+    };
 
-      // Speak synchronously (no setTimeout) to satisfy strict browser user-gesture requirements
+    // Démarrer la lecture
+    try {
+      // S'assurer que la synthèse n'est pas en pause
       if (window.speechSynthesis.paused) {
         window.speechSynthesis.resume();
       }
       window.speechSynthesis.speak(utterance);
-      window.speechSynthesis.resume();
+      // Forcer la reprise pour Chrome
+      setTimeout(() => {
+        if (window.speechSynthesis.speaking) {
+          window.speechSynthesis.resume();
+        }
+      }, 100);
+    } catch (err) {
+      console.error('Failed to speak:', err);
+      setSpeakingAnnId(null);
+      utteranceRef.current = null;
+      alert(isEn 
+        ? "Failed to start speech. Please try again." 
+        : "Impossible de démarrer la lecture vocale. Veuillez réessayer."
+      );
     }
   };
 
@@ -362,6 +461,12 @@ export default function AnnouncementsFeed({
           bg: 'bg-emerald-50 text-emerald-700 border-emerald-200',
           badge: 'bg-emerald-100 text-emerald-800',
           icon: Award
+        };
+      case 'Sponsored':
+        return {
+          bg: 'bg-amber-50 text-amber-800 border-amber-200/80',
+          badge: 'bg-amber-100 text-amber-900 border border-amber-300/40',
+          icon: Sparkles
         };
       default:
         return {
@@ -424,6 +529,7 @@ export default function AnnouncementsFeed({
       }
 
       if (onAddAnnouncement) {
+        const isSpon = category === 'Sponsored';
         const newAnn: Announcement = {
           id: 'ann_' + Date.now(),
           title: title.trim(),
@@ -435,6 +541,12 @@ export default function AnnouncementsFeed({
           imageUrl: finalImageUrl,
           pdfUrl: finalPdfUrl,
           pdfFileName: pdfFileName.trim() || undefined,
+          isSponsored: isSpon,
+          sponsorName: isSpon ? (sponsorNameInput.trim() || 'Partenaire Officiel') : undefined,
+          sponsorLink: isSpon ? (sponsorLinkInput.trim() || 'https://example.com') : undefined,
+          sponsorBadgeText: isSpon ? (sponsorBadgeInput.trim() || 'Sponsorisé') : undefined,
+          adClicks: isSpon ? 0 : undefined,
+          adImpressions: isSpon ? 1 : undefined,
         };
 
         const success = await onAddAnnouncement(newAnn);
@@ -450,6 +562,9 @@ export default function AnnouncementsFeed({
           setPdfUrlInput('');
           setPdfFileName('');
           setPdfFileError('');
+          setSponsorNameInput('');
+          setSponsorLinkInput('');
+          setSponsorBadgeInput('');
           setShowAddForm(false);
         }
       }
@@ -481,13 +596,25 @@ export default function AnnouncementsFeed({
           </p>
         </div>
 
-        {/* Action Button */}
-        <button
-          onClick={handleOpenForm}
-          className="px-4 py-2 bg-slate-900 hover:bg-slate-850 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs self-start sm:self-auto"
-        >
-          <Plus className="h-4 w-4" /> Publier un Communiqué
-        </button>
+        {/* Action Buttons */}
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          <button
+            onClick={() => {
+              window.open(window.location.href, '_blank');
+            }}
+            className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl border border-blue-200 transition flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <Sparkles className="h-3 w-3" />
+            {isEn ? "Open in new tab for audio" : "Ouvrir dans un nouvel onglet pour l'audio"}
+          </button>
+
+          <button
+            onClick={handleOpenForm}
+            className="px-4 py-2 bg-slate-900 hover:bg-slate-850 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+          >
+            <Plus className="h-4 w-4" /> Publier un Communiqué
+          </button>
+        </div>
       </div>
 
       {/* Security Status Header */}
@@ -570,9 +697,64 @@ export default function AnnouncementsFeed({
                     <option value="Urgent">Urgent / Alerte</option>
                     <option value="Event">Événementiel</option>
                     <option value="Academic">Académique</option>
+                    <option value="Sponsored">📢 Annonce Publicitaire Sponsorisée</option>
                   </select>
                 </div>
               </div>
+
+              {category === 'Sponsored' && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="bg-amber-50/70 border border-amber-200 rounded-xl p-4.5 space-y-3.5"
+                >
+                  <div className="flex items-center gap-1.5 text-amber-900 font-bold text-xs">
+                    <Sparkles className="h-4 w-4 text-amber-600 shrink-0" />
+                    <span>Configuration de la Campagne Publicitaire (Sponsorisé)</span>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[9.5px] font-bold text-amber-850 uppercase">Nom de l'Annonceur / Sponsor <span className="text-amber-600">*</span></label>
+                      <input
+                        type="text"
+                        required={category === 'Sponsored'}
+                        value={sponsorNameInput}
+                        onChange={(e) => setSponsorNameInput(e.target.value)}
+                        placeholder="Ex: Librairie PapetVogt"
+                        className="w-full px-3 py-2 text-xs bg-white border border-amber-200 rounded-lg focus:outline-amber-500 font-medium text-slate-850"
+                      />
+                    </div>
+                    
+                    <div className="space-y-1">
+                      <label className="text-[9.5px] font-bold text-amber-850 uppercase">Badge Publicitaire / Accroche</label>
+                      <input
+                        type="text"
+                        value={sponsorBadgeInput}
+                        onChange={(e) => setSponsorBadgeInput(e.target.value)}
+                        placeholder="Ex: Promo -15% ou Offre Spéciale"
+                        className="w-full px-3 py-2 text-xs bg-white border border-amber-200 rounded-lg focus:outline-amber-500 font-medium text-slate-850"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[9.5px] font-bold text-amber-850 uppercase">Lien de redirection de l'offre <span className="text-amber-600">*</span></label>
+                      <input
+                        type="url"
+                        required={category === 'Sponsored'}
+                        value={sponsorLinkInput}
+                        onChange={(e) => setSponsorLinkInput(e.target.value)}
+                        placeholder="Ex: https://example.com/promo"
+                        className="w-full px-3 py-2 text-xs bg-white border border-amber-200 rounded-lg focus:outline-amber-500 font-medium text-slate-850"
+                      />
+                    </div>
+                  </div>
+                  
+                  <p className="text-[10px] text-amber-700/85 leading-normal">
+                    💡 Les annonces de type <strong>Sponsorisé</strong> s'affichent avec un design premium dans l'onglet des parents et élèves. Chaque clic sur le lien de l'offre ou la consultation génère des revenus publicitaires passifs comptabilisés dans le tableau de bord financier de l'établissement (Régie Pub).
+                  </p>
+                </motion.div>
+              )}
 
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-slate-600 uppercase">Signataire / Auteur <span className="text-red-500">*</span></label>
@@ -829,6 +1011,22 @@ export default function AnnouncementsFeed({
           const Icon = config.icon;
           const isCustom = ann.id.startsWith('ann_') && Number(ann.id.split('_')[1]) > 100000;
           const isPinned = !!(ann.pinned || localPinnedIds.includes(ann.id));
+          const isSpon = !!ann.isSponsored;
+          
+          // Compute dynamic clicks and impressions
+          const currentClicks = adClicksMap[ann.id] !== undefined ? adClicksMap[ann.id] : (ann.adClicks || 0);
+          const currentImpressions = isSpon ? ((ann.adImpressions || 0) + 1) : 0; // Simulate +1 impression on render
+
+          const handleAdClick = (e: React.MouseEvent) => {
+            if (isSpon) {
+              setAdClicksMap(prev => ({
+                ...prev,
+                [ann.id]: currentClicks + 1
+              }));
+              // Save to localStorage or similar, or just show a nice notification
+              console.log(`Ad Click recorded for ${ann.id}. New count: ${currentClicks + 1}`);
+            }
+          };
 
           return (
             <motion.div
@@ -836,13 +1034,29 @@ export default function AnnouncementsFeed({
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: idx * 0.05 }}
-              className={`p-5 rounded-2xl border ${config.bg} ${isPinned ? 'ring-2 ring-amber-400 border-amber-400 bg-amber-50/10 shadow-xs' : ''} flex flex-col justify-between transition-all hover:shadow-xs relative group duration-300`}
+              className={`p-5 rounded-2xl border ${
+                isSpon 
+                  ? 'border-amber-300 bg-gradient-to-br from-amber-50/45 to-yellow-50/20 shadow-sm hover:shadow-md' 
+                  : config.bg
+              } ${isPinned ? 'ring-2 ring-amber-400 border-amber-400 bg-amber-50/10 shadow-xs' : ''} flex flex-col justify-between transition-all hover:shadow-xs relative group duration-300`}
             >
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className={`text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-full ${config.badge}`}>
-                    {ann.category}
+                  <span className={`text-[10px] uppercase tracking-wider font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 ${
+                    isSpon 
+                      ? 'bg-amber-100 text-amber-900 border border-amber-300/60 animate-pulse' 
+                      : config.badge
+                  }`}>
+                    {isSpon ? (
+                      <>
+                        <Sparkles className="h-2.5 w-2.5 text-amber-600 animate-spin" />
+                        <span>Sponsorisé • {ann.sponsorBadgeText || 'Annonce'}</span>
+                      </>
+                    ) : (
+                      ann.category
+                    )}
                   </span>
+                  
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs font-mono text-gray-500 mr-1">{ann.date}</span>
                     
@@ -891,8 +1105,9 @@ export default function AnnouncementsFeed({
                     )}
                   </div>
                 </div>
+                
                 <h3 className="font-semibold text-gray-900 text-base flex items-center gap-2">
-                  <Icon className="h-4 w-4 shrink-0" />
+                  <Icon className="h-4 w-4 shrink-0 text-amber-600" />
                   {ann.title}
                 </h3>
                 <p className="text-sm leading-relaxed text-gray-700 whitespace-pre-wrap">{ann.content}</p>
@@ -906,6 +1121,26 @@ export default function AnnouncementsFeed({
                       referrerPolicy="no-referrer"
                       className="w-full h-auto max-h-56 object-cover rounded-xl transition duration-300 group-hover/img:scale-[1.01]"
                     />
+                  </div>
+                )}
+
+                {/* Sponsored Ads CTA link */}
+                {isSpon && ann.sponsorLink && (
+                  <div className="mt-4 bg-white/70 border border-amber-200 p-3.5 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <p className="text-[10px] font-bold text-amber-850 uppercase tracking-wider">Offre Proposée par :</p>
+                      <p className="text-xs font-extrabold text-slate-900">{ann.sponsorName || 'Partenaire'}</p>
+                    </div>
+                    
+                    <a
+                      href={ann.sponsorLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={handleAdClick}
+                      className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 text-white font-extrabold text-xs rounded-xl shadow-xs text-center transition active:scale-97 cursor-pointer flex items-center justify-center gap-1"
+                    >
+                      <span>{language === 'fr' ? "Découvrir l'offre ↗" : "Visit Offer ↗"}</span>
+                    </a>
                   </div>
                 )}
 
@@ -972,18 +1207,32 @@ export default function AnnouncementsFeed({
                   </div>
                 )}
               </div>
-              <div className="pt-3 mt-4 border-t border-black/5 flex items-center justify-between text-[11px] font-medium text-gray-500 select-none">
-                <span>Émis par : <strong className="text-gray-700">{ann.author}</strong></span>
+              
+              <div className="pt-3 mt-4 border-t border-black/5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 text-[11px] font-medium text-gray-500 select-none">
+                <div className="flex items-center justify-between sm:justify-start gap-4">
+                  <span>Émis par : <strong className="text-gray-700">{ann.author}</strong></span>
+                  
+                  {isSpon && (
+                    <span className="text-[10px] font-mono text-amber-700 bg-amber-100 px-2 py-0.5 rounded-md font-bold flex items-center gap-1">
+                      <span>📊 {currentClicks} Clics</span>
+                      <span>•</span>
+                      <span>{currentImpressions} Vues</span>
+                      <span className="font-extrabold text-amber-900">({(currentClicks * 250).toLocaleString()} FCFA)</span>
+                    </span>
+                  )}
+                </div>
                 
                 <button
                   type="button"
                   onClick={() => handleSpeakAnnouncement(ann.id, ann.title, ann.content)}
-                  className={`px-2.5 py-1.5 rounded-lg font-bold text-[10px] cursor-pointer transition flex items-center gap-1 shadow-2xs border ${
+                  className={`px-2.5 py-1.5 rounded-lg font-bold text-[10px] cursor-pointer transition flex items-center justify-center gap-1 shadow-2xs border ${
                     speakingAnnId === ann.id
                       ? 'bg-rose-500 hover:bg-rose-600 text-white border-rose-600 animate-pulse'
                       : ann.category === 'Urgent'
                         ? 'bg-red-600 hover:bg-red-700 text-white border-red-700'
-                        : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                        : isSpon
+                          ? 'bg-amber-100 hover:bg-amber-200 text-amber-800 border-amber-300'
+                          : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
                   }`}
                   title={isEn ? "Listen to this announcement" : "Écouter ce communiqué"}
                 >
@@ -998,7 +1247,9 @@ export default function AnnouncementsFeed({
                       <span>
                         {ann.category === 'Urgent' 
                           ? (isEn ? "🔊 Listen Alert" : "🔊 Écouter l'Alerte") 
-                          : (isEn ? "Listen" : "Écouter")}
+                          : isSpon
+                            ? (isEn ? "Listen Ad" : "Écouter la Pub")
+                            : (isEn ? "Listen" : "Écouter")}
                       </span>
                     </>
                   )}

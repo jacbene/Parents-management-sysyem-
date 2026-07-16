@@ -11,7 +11,7 @@ const CACHE_OTHER_REVENUES = 'apee_other_revenues_cache';
 
 // Load default settings if none exist
 export const DEFAULT_SETTINGS: ApeeSettings = {
-  associationName: "APEE CES d'Ekali 1 - MFOU",
+  associationName: "Association des Parents CES d'Ekali 1 - MFOU",
   schoolYear: '2025/2026',
   cotisationAmount: 12500,
   financialGoal: 2750000,
@@ -22,13 +22,13 @@ export const DEFAULT_SETTINGS: ApeeSettings = {
   country: 'Cameroun',
   currency: 'FCFA',
   financialObligations: [
-    { id: 'obl_apee', name: 'Cotisation APEE', amount: 12500, type: 'per_student', description: 'Cotisation de l\'association des parents d\'élèves' },
+    { id: 'obl_apee', name: 'Cotisation Générale', amount: 12500, type: 'per_student', description: 'Cotisation de l\'association des parents d\'élèves' },
     { id: 'obl_inscription', name: 'Frais d\'inscription', amount: 5000, type: 'per_student', description: 'Droits d\'entrée scolaires réglementaires' },
     { id: 'obl_pension', name: 'Pension scolaire', amount: 25000, type: 'per_student', description: 'Frais de scolarité obligatoires' },
     { id: 'obl_tenue', name: 'Frais de tenue', amount: 8000, type: 'per_student', description: 'Uniforme et tenue de sport réglementaire' },
     { id: 'obl_cantine', name: 'Cantine scolaire', amount: 15000, type: 'per_student', description: 'Service de restauration midi' },
     { id: 'obl_transport', name: 'Transport scolaire', amount: 10000, type: 'per_student', description: 'Abonnement bus scolaire' },
-    { id: 'obl_secours', name: 'Fonds d\'urgence APEE', amount: 2000, type: 'per_parent', description: 'Contribution de solidarité parentale' }
+    { id: 'obl_secours', name: 'Fonds de Solidarité', amount: 2000, type: 'per_parent', description: 'Contribution de solidarité parentale' }
   ],
   budgetLines: [
     { id: 'bl_1', name: 'Soutien Pédagogique et Matériel Didactique', allocatedAmount: 900000, description: 'Achat de craies, livres, cahiers de préparation, et soutien aux enseignants vacataires' },
@@ -53,7 +53,7 @@ export function getApeeShortName(settings?: { associationName?: string; shortNam
     return settings.shortName.trim();
   }
   const name = settings?.associationName || '';
-  if (!name.trim()) return "APEE";
+  if (!name.trim()) return "Association";
 
   // Stop words to remove from acronym generation
   const stopWords = ['de', 'du', 'la', 'le', 'les', 'des', 'et', 'en', 'dans', 'pour', 'par', 'sur', 'aux', 'au', 'un', 'une', 'd', 'l', 's', 'c', 'j'];
@@ -63,11 +63,11 @@ export function getApeeShortName(settings?: { associationName?: string; shortNam
     return lw.length > 0 && !stopWords.includes(lw);
   });
 
-  if (words.length === 0) return "APEE";
+  if (words.length === 0) return "Association";
 
-  // If the first word is already APEE or similar acronym, or if words has initials
+  // If the first word is already Association or similar acronym, or if words has initials
   const initials = words.map(w => w[0].toUpperCase()).join('');
-  return initials.substring(0, 15) || "APEE";
+  return initials.substring(0, 15) || "Association";
 }
 
 /**

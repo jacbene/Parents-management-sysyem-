@@ -29,7 +29,9 @@ import {
   Sparkles,
   UserCheck,
   ShieldCheck,
-  Download
+  Download,
+  Ban,
+  Play
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -598,6 +600,36 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
     }
   };
 
+  const handleToggleSuspendSchool = async (schoolId: string, name: string, currentStatus?: 'active' | 'suspended') => {
+    const isSuspended = currentStatus === 'suspended';
+    const confirmMsg = isSuspended 
+      ? `Êtes-vous sûr de vouloir réactiver l'accès de l'établissement "${name}" ?`
+      : `⚠️ SUSPENSION DE SERVICE !\nÊtes-vous sûr de vouloir suspendre temporairement l'accès de l'établissement "${name}" ?\nLes administrateurs et parents ne pourront plus se connecter.`;
+      
+    if (!window.confirm(confirmMsg)) {
+      return;
+    }
+
+    try {
+      const schoolRef = doc(db, 'establishments', schoolId);
+      const newStatus = isSuspended ? 'active' : 'suspended';
+      await setDoc(schoolRef, { status: newStatus }, { merge: true });
+
+      await handleWriteSystemLog(
+        'SETTINGS_CHANGE',
+        `${isSuspended ? "Réactivation" : "Suspension temporaire"} de l'établissement : ${name}`,
+        0,
+        schoolId
+      );
+
+      setSchools(prev => prev.map(s => s.id === schoolId ? { ...s, status: newStatus } : s));
+      setSuccessMessage(`L'établissement "${name}" a été ${isSuspended ? "réactivé" : "suspendu"} avec succès.`);
+      setRefreshTrigger(p => p + 1);
+    } catch (err: any) {
+      alert(`Erreur lors de la modification du statut : ${err.message || err}`);
+    }
+  };
+
   const handleCreateManualLog = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualLogTitle) return;
@@ -918,13 +950,14 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                     </div>
                   ) : (
                     <div className="divide-y divide-slate-100 overflow-x-auto">
-                      <table className="w-full text-left text-xs text-slate-600 min-w-[700px]">
+                      <table className="w-full text-left text-xs text-slate-600 min-w-[900px]">
                         <thead className="bg-slate-50/50 text-[10.5px] text-slate-450 font-black uppercase tracking-wider border-b border-slate-150">
                           <tr>
                             <th className="px-6 py-3.5">Nom de l'Établissement</th>
-                            <th className="px-4 py-3.5">Effectifs Globaux</th>
-                            <th className="px-4 py-3.5">Fonds & Taux APEE</th>
-                            <th className="px-4 py-3.5">Responsable Finances</th>
+                            <th className="px-4 py-3.5">Effectifs</th>
+                            <th className="px-4 py-3.5">Fonds & Objectif</th>
+                            <th className="px-4 py-3.5">Redevance (1% Portail)</th>
+                            <th className="px-4 py-3.5">Responsable & Statut</th>
                             <th className="px-6 py-3.5 text-right font-sans">Supervision Actions</th>
                           </tr>
                         </thead>
@@ -943,8 +976,16 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                             
                             const progressPercent = Math.round((collected / (school.financialGoal || 5000000)) * 100);
 
+                            const expectedFee = Math.round(collected * 0.01);
+                            const paidFee = Math.round(school.portalFeesPaid || 0);
+                            const remainingFee = Math.max(0, expectedFee - paidFee);
+
+                            // Detect 3 months cycle alert
+                            // Use mock or real last payment date. If remainingFee is high, alert user of periodic settling.
+                            const hasDebtAlert = remainingFee > 5000;
+
                             return (
-                              <tr key={school.id} className="hover:bg-slate-50/50 transition">
+                              <tr key={school.id} className={`hover:bg-slate-50/50 transition ${school.status === 'suspended' ? 'bg-red-50/20' : ''}`}>
                                 <td className="px-6 py-4.5">
                                   <div className="flex items-center gap-3">
                                     {school.logoUrl ? (
@@ -954,12 +995,19 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                                         className="h-9 w-9 object-contain rounded-lg border border-slate-100 bg-slate-50 p-0.5 shrink-0" 
                                       />
                                     ) : (
-                                      <div className="h-9 w-9 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700 font-bold shrink-0">
+                                      <div className={`h-9 w-9 rounded-lg border flex items-center justify-center text-lg font-bold shrink-0 ${
+                                        school.status === 'suspended' ? 'bg-rose-50 border-rose-100 text-rose-700' : 'bg-indigo-50 border-indigo-100 text-indigo-700'
+                                      }`}>
                                         🏫
                                       </div>
                                     )}
                                     <div>
-                                      <div className="font-extrabold text-slate-900 text-[12.5px] leading-snug">{school.name}</div>
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="font-extrabold text-slate-900 text-[12.5px] leading-snug">{school.name}</span>
+                                        {school.status === 'suspended' && (
+                                          <span className="px-1.5 py-0.5 bg-rose-100 text-rose-800 text-[8px] font-black uppercase rounded">Suspendu</span>
+                                        )}
+                                      </div>
                                       <div className="text-[10px] text-slate-400 font-mono mt-0.5 flex items-center gap-1.5">
                                         <span>ID: {school.id}</span>
                                         <span>•</span>
@@ -987,32 +1035,69 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                                   </div>
                                 </td>
                                 <td className="px-4 py-4.5">
-                                  <div className="text-slate-800 space-y-0.5">
-                                    <div className="font-bold text-[11px]">{school.finManagerName || school.directorName || "N/A"}</div>
-                                    <div className="text-[10px] text-slate-500 font-mono flex items-center gap-0.5">📞 {school.finManagerPhone || "N/A"}</div>
+                                  <div className="space-y-1 font-mono text-slate-800">
+                                    <div className="text-[10.5px]">Dû : <span className="font-black text-indigo-950">{expectedFee.toLocaleString()} FCFA</span></div>
+                                    <div className="text-[9px] text-emerald-600">Réglé : <span className="font-bold">{paidFee.toLocaleString()} FCFA</span></div>
+                                    <div className="text-[9.5px]">
+                                      Reste : <span className={`font-black ${remainingFee > 0 ? 'text-amber-600' : 'text-slate-500'}`}>{remainingFee.toLocaleString()} FCFA</span>
+                                    </div>
+                                    {hasDebtAlert ? (
+                                      <div className="inline-flex items-center gap-0.5 text-[8px] bg-amber-50 text-amber-800 border border-amber-150 px-1 py-0.5 rounded uppercase font-black">
+                                        <ShieldAlert className="h-2.5 w-2.5" /> Retard &lt; 3 mois
+                                      </div>
+                                    ) : (
+                                      <div className="inline-flex items-center gap-0.5 text-[8px] bg-emerald-50 text-emerald-800 px-1 py-0.5 rounded uppercase font-black">
+                                        <CheckCircle className="h-2.5 w-2.5" /> À Jour
+                                      </div>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-4.5">
+                                  <div className="text-slate-800 space-y-1">
+                                    <div>
+                                      <div className="font-bold text-[11px] leading-tight">{school.finManagerName || school.directorName || "N/A"}</div>
+                                      <div className="text-[10px] text-slate-500 font-mono flex items-center gap-0.5">📞 {school.finManagerPhone || "N/A"}</div>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <span className={`inline-block w-2 h-2 rounded-full ${school.status === 'suspended' ? 'bg-red-500' : 'bg-emerald-500'}`}></span>
+                                      <span className="text-[9px] font-bold uppercase text-slate-500">
+                                        {school.status === 'suspended' ? 'Accès Bloqué' : 'Accès Autorisé'}
+                                      </span>
+                                    </div>
                                   </div>
                                 </td>
                                 <td className="px-6 py-4.5 text-right font-sans">
                                   <div className="flex items-center justify-end gap-1.5">
                                     <button
                                       onClick={() => onSelectSchool(school.id, 'manager', { name: school.finManagerName || school.directorName || 'Gérant Administratif', phone: school.finManagerPhone || 'Administrateur' })}
-                                      className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-105 text-indigo-700 hover:text-indigo-850 rounded-lg text-[10.5px] font-black transition cursor-pointer"
+                                      className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 hover:text-indigo-850 rounded-lg text-[10px] font-black transition cursor-pointer"
                                       title="Se connecter en tant que responsable administratif ou financier de cet établissement"
                                     >
-                                      Accès Administratif
+                                      Accès Admin
                                     </button>
                                     <button
                                       onClick={() => setSelectedSchoolForParentImpersonation(school)}
-                                      className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-105 text-emerald-700 hover:text-emerald-850 rounded-lg text-[10.5px] font-black transition cursor-pointer"
+                                      className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 hover:text-emerald-850 rounded-lg text-[10px] font-black transition cursor-pointer"
                                       title="Se connecter en tant que parent d'élève de cet établissement"
                                     >
                                       Accès Parent
                                     </button>
+                                    <button
+                                      onClick={() => handleToggleSuspendSchool(school.id, school.name, school.status)}
+                                      className={`p-1.5 rounded-lg border transition cursor-pointer ${
+                                        school.status === 'suspended' 
+                                          ? 'bg-amber-50 hover:bg-amber-100 border-amber-200 text-amber-700' 
+                                          : 'bg-rose-50 hover:bg-rose-100 border-rose-200 text-rose-700'
+                                      }`}
+                                      title={school.status === 'suspended' ? "Réactiver l'accès de cet établissement" : "Suspendre temporairement l'accès de cet établissement"}
+                                    >
+                                      {school.status === 'suspended' ? <Play className="h-3.5 w-3.5" /> : <Ban className="h-3.5 w-3.5" />}
+                                    </button>
                                     {(!isPreprod ? school.id !== 'demo_school_ekali' : true) && (
                                       <button
                                         onClick={() => handleDeleteSchool(school.id, school.name)}
-                                        className="p-1.5 bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-150 text-slate-400 hover:text-rose-600 rounded-lg transition cursor-pointer"
-                                        title="Supprimer cet établissement définitivement"
+                                        className="p-1.5 bg-white hover:bg-red-50 border border-slate-200 hover:border-red-150 text-slate-400 hover:text-red-600 rounded-lg transition cursor-pointer animate-pulse"
+                                        title="ANNULER DÉFINITIVEMENT (Supprimer)"
                                       >
                                         <Trash2 className="h-3.5 w-3.5" />
                                       </button>
