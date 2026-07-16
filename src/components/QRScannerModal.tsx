@@ -17,6 +17,7 @@ export default function QRScannerModal({ isOpen, onClose, allStudents, onAddAtte
   const [isActivating, setIsActivating] = useState(false);
   const [scanMode, setScanMode] = useState<'express' | 'manual'>('express');
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [simulatedStudentId, setSimulatedStudentId] = useState<string>('');
   
   // Scanning state
   const [scanningActive, setScanningActive] = useState(true);
@@ -515,6 +516,43 @@ export default function QRScannerModal({ isOpen, onClose, allStudents, onAddAtte
                         Met le scanner en pause, affiche le dossier de l'élève et vous permet de changer le statut ou justifier l'absence.
                       </p>
                     </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Simulator Section */}
+              <div className="bg-slate-850 border border-slate-750/60 p-4 rounded-2xl">
+                <span className="text-[11px] font-black uppercase tracking-wider text-indigo-400 flex items-center gap-1.5 mb-2">
+                  🧪 Simulateur de Scan (Test Démo)
+                </span>
+                <p className="text-[10.5px] text-slate-400 mb-3 leading-tight">
+                  L'environnement de prévisualisation peut bloquer l'accès à la caméra. Utilisez cette option pour simuler la capture d'un badge.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <select
+                    value={simulatedStudentId}
+                    onChange={(e) => setSimulatedStudentId(e.target.value)}
+                    className="flex-1 bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-xl px-3 py-2 focus:outline-indigo-500 font-medium"
+                  >
+                    <option value="">-- Choisir un élève à simuler --</option>
+                    {allStudents.map(student => (
+                      <option key={student.id} value={student.id}>
+                        {student.name} ({student.classRoom})
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!simulatedStudentId) {
+                        alert("Veuillez sélectionner un élève à simuler.");
+                        return;
+                      }
+                      handleQRCodeDetected(simulatedStudentId);
+                    }}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs active:scale-97 shrink-0"
+                  >
+                    <Scan className="h-4 w-4" /> Simuler Scan
                   </button>
                 </div>
               </div>

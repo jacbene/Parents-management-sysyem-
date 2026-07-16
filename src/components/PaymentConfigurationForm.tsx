@@ -1,21 +1,22 @@
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   Save, 
+  HelpCircle, 
+  Lock, 
+  Unlock, 
   Eye, 
   EyeOff, 
-  Lock, 
-  Smartphone, 
-  CreditCard, 
-  Info, 
   CheckCircle2, 
   AlertTriangle, 
-  Loader2, 
-  ShieldCheck,
-  Copy,
-  Check,
-  Globe
+  Info, 
+  ExternalLink, 
+  CreditCard,
+  Shield,
+  KeyRound,
+  RefreshCw
 } from 'lucide-react';
-import { ApeeSettings } from '../types';
+import { ApeeSettings, ApeePaymentConfig } from '../types';
 import { useLanguage } from '../utils/TranslationContext';
 
 interface PaymentConfigurationFormProps {
@@ -23,692 +24,450 @@ interface PaymentConfigurationFormProps {
   onSaveSettings: (settings: ApeeSettings) => Promise<boolean> | void;
 }
 
-export default function PaymentConfigurationForm({
-  settings,
-  onSaveSettings
+export default function PaymentConfigurationForm({ 
+  settings, 
+  onSaveSettings 
 }: PaymentConfigurationFormProps) {
-  const { language } = useLanguage();
-  const isEn = language === 'en';
+  const { t, language } = useLanguage();
 
-  // Toggle statuses
-  const [cardEnabled, setCardEnabled] = useState(settings.paymentConfig?.cardEnabled ?? false);
-  const [mtnEnabled, setMtnEnabled] = useState(settings.paymentConfig?.mtnEnabled ?? false);
-  const [orangeEnabled, setOrangeEnabled] = useState(settings.paymentConfig?.orangeEnabled ?? false);
-  const [waveEnabled, setWaveEnabled] = useState(settings.paymentConfig?.waveEnabled ?? false);
-  const [campayEnabled, setCampayEnabled] = useState(settings.paymentConfig?.campayEnabled ?? true);
+  // Load existing credentials or default
+  const paymentConfig = settings.paymentConfig || {};
+  
+  const [campayEnabled, setCampayEnabled] = useState(paymentConfig.campayEnabled ?? false);
+  const [campayAppId, setCampayAppId] = useState(paymentConfig.campayAppId || '');
+  const [campayAppUsername, setCampayAppUsername] = useState(paymentConfig.campayAppUsername || '');
+  const [campayAppPassword, setCampayAppPassword] = useState(paymentConfig.campayAppPassword || '');
+  const [campayToken, setCampayToken] = useState(paymentConfig.campayToken || '');
+  const [campayWebhookKey, setCampayWebhookKey] = useState(paymentConfig.campayWebhookKey || '');
 
-  // Stripe credentials
-  const [stripePublicKey, setStripePublicKey] = useState(settings.paymentConfig?.stripePublicKey || '');
-  const [stripeSecretKey, setStripeSecretKey] = useState(settings.paymentConfig?.stripeSecretKey || '');
+  // Hide/Show secrets
+  const [showPassword, setShowPassword] = useState(false);
+  const [showToken, setShowToken] = useState(false);
+  const [showWebhookKey, setShowWebhookKey] = useState(false);
 
-  // MTN credentials
-  const [mtnPhoneNumber, setMtnPhoneNumber] = useState(settings.paymentConfig?.mtnPhoneNumber || '');
-  const [mtnMerchantName, setMtnMerchantName] = useState(settings.paymentConfig?.mtnMerchantName || '');
-  const [mtnClientId, setMtnClientId] = useState(settings.paymentConfig?.mtnClientId || '');
-  const [mtnClientSecret, setMtnClientSecret] = useState(settings.paymentConfig?.mtnClientSecret || '');
+  // UI States
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [generalError, setGeneralError] = useState('');
 
-  // Orange credentials
-  const [orangePhoneNumber, setOrangePhoneNumber] = useState(settings.paymentConfig?.orangePhoneNumber || '');
-  const [orangeMerchantName, setOrangeMerchantName] = useState(settings.paymentConfig?.orangeMerchantName || '');
-  const [orangeMerchantKey, setOrangeMerchantKey] = useState(settings.paymentConfig?.orangeMerchantKey || '');
-  const [orangeClientId, setOrangeClientId] = useState(settings.paymentConfig?.orangeClientId || '');
-  const [orangeClientSecret, setOrangeClientSecret] = useState(settings.paymentConfig?.orangeClientSecret || '');
-
-  // Wave credentials
-  const [wavePhoneNumber, setWavePhoneNumber] = useState(settings.paymentConfig?.wavePhoneNumber || '');
-  const [waveMerchantName, setWaveMerchantName] = useState(settings.paymentConfig?.waveMerchantName || '');
-  const [waveApiKey, setWaveApiKey] = useState(settings.paymentConfig?.waveApiKey || '');
-
-  // Campay credentials (with provided values as default fallbacks)
-  const [campayAppId, setCampayAppId] = useState(settings.paymentConfig?.campayAppId || 'UirmJUAg75JHLjtXjp4J-Xi7jG8jQpMSldrgxuZKTbno0ehaU3lRayZmw05YlPxnB_VShTZHWj56-ImpaWdxuw');
-  const [campayAppUsername, setCampayAppUsername] = useState(settings.paymentConfig?.campayAppUsername || 'Uahox6805UvasolxjrndxKMC6EoWPxWwzJRQtH-aDLRXmj17zyAdHbLqyX2wy9GkxC3ZtvHpZ4s945hfHfeU-w');
-  const [campayAppPassword, setCampayAppPassword] = useState(settings.paymentConfig?.campayAppPassword || 'jGJNkAYDVvzNEutZ-LUrPKdnRJj7QlzPyFabJ_VefmS8FiafzGsAhy7rFUV5g1q0rRkgTift_XFJd_V85UiYEw');
-  const [campayToken, setCampayToken] = useState(settings.paymentConfig?.campayToken || 'ee362ee2adb13fac3e434e0579241626670c9a2e');
-  const [campayWebhookKey, setCampayWebhookKey] = useState(settings.paymentConfig?.campayWebhookKey || 'LpEvD_J1lf67b6QOJajBKmZHbeXL42GP0g2ItxEZBONyOnM8DCz6h3ktROPSM75sio2znlrRBEeoPu4JwtObpw');
-
-  // Visibility toggles
-  const [showStripeSecret, setShowStripeSecret] = useState(false);
-  const [showMtnSecret, setShowMtnSecret] = useState(false);
-  const [showOrangeSecret, setShowOrangeSecret] = useState(false);
-  const [showWaveSecret, setShowWaveSecret] = useState(false);
-  const [showCampayPassword, setShowCampayPassword] = useState(false);
-  const [showCampayToken, setShowCampayToken] = useState(false);
-  const [showCampayWebhookKey, setShowCampayWebhookKey] = useState(false);
-
-  // Clipboard copy success indicator
-  const [copiedUrl, setCopiedUrl] = useState(false);
-
-  // Status indicators
-  const [saving, setSaving] = useState(false);
-  const [showSuccess, setShowSuccess] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Sync settings when external changes happen
+  // Sync state if settings change externally
   useEffect(() => {
-    if (settings && settings.paymentConfig) {
-      const pCfg = settings.paymentConfig;
-      setCardEnabled(pCfg.cardEnabled ?? false);
-      setStripePublicKey(pCfg.stripePublicKey || '');
-      setStripeSecretKey(pCfg.stripeSecretKey || '');
-      setMtnEnabled(pCfg.mtnEnabled ?? false);
-      setMtnPhoneNumber(pCfg.mtnPhoneNumber || '');
-      setMtnMerchantName(pCfg.mtnMerchantName || '');
-      setMtnClientId(pCfg.mtnClientId || '');
-      setMtnClientSecret(pCfg.mtnClientSecret || '');
-      setOrangeEnabled(pCfg.orangeEnabled ?? false);
-      setOrangePhoneNumber(pCfg.orangePhoneNumber || '');
-      setOrangeMerchantName(pCfg.orangeMerchantName || '');
-      setOrangeMerchantKey(pCfg.orangeMerchantKey || '');
-      setOrangeClientId(pCfg.orangeClientId || '');
-      setOrangeClientSecret(pCfg.orangeClientSecret || '');
-      setWaveEnabled(pCfg.waveEnabled ?? false);
-      setWavePhoneNumber(pCfg.wavePhoneNumber || '');
-      setWaveMerchantName(pCfg.waveMerchantName || '');
-      setWaveApiKey(pCfg.waveApiKey || '');
-      
-      setCampayEnabled(pCfg.campayEnabled ?? true);
-      setCampayAppId(pCfg.campayAppId || 'UirmJUAg75JHLjtXjp4J-Xi7jG8jQpMSldrgxuZKTbno0ehaU3lRayZmw05YlPxnB_VShTZHWj56-ImpaWdxuw');
-      setCampayAppUsername(pCfg.campayAppUsername || 'Uahox6805UvasolxjrndxKMC6EoWPxWwzJRQtH-aDLRXmj17zyAdHbLqyX2wy9GkxC3ZtvHpZ4s945hfHfeU-w');
-      setCampayAppPassword(pCfg.campayAppPassword || 'jGJNkAYDVvzNEutZ-LUrPKdnRJj7QlzPyFabJ_VefmS8FiafzGsAhy7rFUV5g1q0rRkgTift_XFJd_V85UiYEw');
-      setCampayToken(pCfg.campayToken || 'ee362ee2adb13fac3e434e0579241626670c9a2e');
-      setCampayWebhookKey(pCfg.campayWebhookKey || 'LpEvD_J1lf67b6QOJajBKmZHbeXL42GP0g2ItxEZBONyOnM8DCz6h3ktROPSM75sio2znlrRBEeoPu4JwtObpw');
+    if (settings.paymentConfig) {
+      const cfg = settings.paymentConfig;
+      setCampayEnabled(cfg.campayEnabled ?? false);
+      setCampayAppId(cfg.campayAppId || '');
+      setCampayAppUsername(cfg.campayAppUsername || '');
+      setCampayAppPassword(cfg.campayAppPassword || '');
+      setCampayToken(cfg.campayToken || '');
+      setCampayWebhookKey(cfg.campayWebhookKey || '');
     }
   }, [settings]);
 
+  // Handle Validation
+  const validateForm = (): boolean => {
+    const newErrors: Record<string, string> = {};
+    setGeneralError('');
+
+    // If Campay is disabled, we allow saving empty or partial fields
+    if (!campayEnabled) {
+      setErrors({});
+      return true;
+    }
+
+    // 1. App ID validation
+    if (!campayAppId.trim()) {
+      newErrors.campayAppId = language === 'en' 
+        ? 'Campay App ID is required when integration is enabled.' 
+        : "L'identifiant d'application (App ID) Campay est requis lorsque l'intégration est activée.";
+    } else if (campayAppId.trim().length < 3) {
+      newErrors.campayAppId = language === 'en'
+        ? 'App ID must be at least 3 characters long.'
+        : "L'identifiant d'application doit comporter au moins 3 caractères.";
+    }
+
+    // 2. App Username validation
+    if (!campayAppUsername.trim()) {
+      newErrors.campayAppUsername = language === 'en'
+        ? 'Campay App Username is required.'
+        : "Le nom d'utilisateur de l'application (App Username) Campay est requis.";
+    } else if (/\s/.test(campayAppUsername)) {
+      newErrors.campayAppUsername = language === 'en'
+        ? 'App Username cannot contain spaces.'
+        : "Le nom d'utilisateur ne doit pas contenir d'espaces.";
+    }
+
+    // 3. App Password validation
+    if (!campayAppPassword.trim()) {
+      newErrors.campayAppPassword = language === 'en'
+        ? 'Campay App Password is required.'
+        : "Le mot de passe de l'application (App Password) Campay est requis.";
+    } else if (campayAppPassword.trim().length < 6) {
+      newErrors.campayAppPassword = language === 'en'
+        ? 'Password must be at least 6 characters long.'
+        : 'Le mot de passe doit contenir au moins 6 caractères.';
+    } else if (/\s/.test(campayAppPassword)) {
+      newErrors.campayAppPassword = language === 'en'
+        ? 'Password cannot contain spaces.'
+        : "Le mot de passe ne doit pas contenir d'espaces.";
+    }
+
+    // 4. Token validation
+    if (!campayToken.trim()) {
+      newErrors.campayToken = language === 'en'
+        ? 'API Authorization Token is required.'
+        : "Le jeton d'autorisation de l'API (Token) est requis.";
+    } else if (campayToken.trim().length < 15) {
+      newErrors.campayToken = language === 'en'
+        ? 'Token must be at least 15 characters long.'
+        : "Le jeton d'autorisation API (Token) est trop court (min. 15 caractères).";
+    } else if (/\s/.test(campayToken)) {
+      newErrors.campayToken = language === 'en'
+        ? 'API Token cannot contain spaces.'
+        : "Le jeton API ne doit pas contenir d'espaces.";
+    }
+
+    // 5. Webhook Key validation
+    if (!campayWebhookKey.trim()) {
+      newErrors.campayWebhookKey = language === 'en'
+        ? 'Campay Webhook Signature Key is required.'
+        : "La clé de signature de webhook Campay (Webhook Key) est requise.";
+    } else if (campayWebhookKey.trim().length < 8) {
+      newErrors.campayWebhookKey = language === 'en'
+        ? 'Webhook key must be at least 8 characters long.'
+        : 'La clé de webhook doit contenir au moins 8 caractères.';
+    } else if (/\s/.test(campayWebhookKey)) {
+      newErrors.campayWebhookKey = language === 'en'
+        ? 'Webhook key cannot contain spaces.'
+        : "La clé de webhook ne doit pas contenir d'espaces.";
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  // Handle Save
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaving(true);
-    setError(null);
-    setShowSuccess(false);
+    
+    if (!validateForm()) {
+      setGeneralError(language === 'en'
+        ? 'Please fix the errors in the form before saving.'
+        : "Veuillez corriger les erreurs dans le formulaire avant de l'enregistrer."
+      );
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveSuccess(false);
 
     try {
+      // Merge into existing paymentConfig to prevent losing Stripe, MTN, etc.
+      const updatedPaymentConfig: ApeePaymentConfig = {
+        ...(settings.paymentConfig || {}),
+        campayEnabled,
+        campayAppId: campayAppId.trim(),
+        campayAppUsername: campayAppUsername.trim(),
+        campayAppPassword: campayAppPassword.trim(),
+        campayToken: campayToken.trim(),
+        campayWebhookKey: campayWebhookKey.trim(),
+      };
+
       const updatedSettings: ApeeSettings = {
         ...settings,
-        paymentConfig: {
-          cardEnabled,
-          stripePublicKey: stripePublicKey.trim(),
-          stripeSecretKey: stripeSecretKey.trim(),
-          mtnEnabled,
-          mtnPhoneNumber: mtnPhoneNumber.trim(),
-          mtnMerchantName: mtnMerchantName.trim(),
-          mtnClientId: mtnClientId.trim(),
-          mtnClientSecret: mtnClientSecret.trim(),
-          orangeEnabled,
-          orangePhoneNumber: orangePhoneNumber.trim(),
-          orangeMerchantName: orangeMerchantName.trim(),
-          orangeMerchantKey: orangeMerchantKey.trim(),
-          orangeClientId: orangeClientId.trim(),
-          orangeClientSecret: orangeClientSecret.trim(),
-          waveEnabled,
-          wavePhoneNumber: wavePhoneNumber.trim(),
-          waveMerchantName: waveMerchantName.trim(),
-          waveApiKey: waveApiKey.trim(),
-          
-          campayEnabled,
-          campayAppId: campayAppId.trim(),
-          campayAppUsername: campayAppUsername.trim(),
-          campayAppPassword: campayAppPassword.trim(),
-          campayToken: campayToken.trim(),
-          campayWebhookKey: campayWebhookKey.trim()
-        }
+        paymentConfig: updatedPaymentConfig
       };
 
       const result = await onSaveSettings(updatedSettings);
+      
       if (result !== false) {
-        setShowSuccess(true);
-        setTimeout(() => setShowSuccess(false), 4000);
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 4000);
       } else {
-        setError(isEn ? 'Failed to save settings. Please verify administrator permissions.' : 'Échec de l\'enregistrement des paramètres. Veuillez vérifier vos privilèges.');
+        setGeneralError(language === 'en'
+          ? 'Failed to save settings. Please try again.'
+          : "Échec de l'enregistrement des paramètres. Veuillez réessayer."
+        );
       }
     } catch (err: any) {
-      console.error(err);
-      setError(isEn ? 'An unexpected error occurred while saving.' : 'Une erreur inattendue est survenue.');
+      console.error('Error saving Campay credentials:', err);
+      setGeneralError(err.message || 'Error occurred while saving settings.');
     } finally {
-      setSaving(false);
+      setIsSaving(false);
     }
   };
 
-  const getWebhookUrl = () => {
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://ais-pre-xjwa452a7g45f5oz5ftfxe-118121873529.europe-west2.run.app';
-    return `${origin}/api/campay-webhook`;
-  };
-
-  const handleCopyWebhookUrl = () => {
-    navigator.clipboard.writeText(getWebhookUrl());
-    setCopiedUrl(true);
-    setTimeout(() => setCopiedUrl(false), 2000);
-  };
-
   return (
-    <div id="payment_config_form_container" className="bg-white rounded-2xl border border-slate-150 shadow-xs overflow-hidden font-sans">
-      <div className="p-6 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 bg-slate-900 text-white flex items-center justify-center rounded-xl">
-            <ShieldCheck className="h-5 w-5" />
-          </div>
-          <div>
-            <h2 className="text-base font-extrabold text-slate-900">
-              {isEn ? 'Electronic Payment Gateways API' : 'Passerelles de Paiement Électronique'}
-            </h2>
-            <p className="text-xs text-slate-550">
-              {isEn ? 'Configure secure Stripe, MoMo, Orange & Wave credentials' : 'Configurez les clés API de Stripe, MoMo, Orange et Wave'}
-            </p>
-          </div>
+    <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-6 max-w-3xl mx-auto shadow-sm" id="campay_payment_config_form">
+      {/* Form Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-4 select-none">
+        <div className="space-y-1">
+          <span className="inline-flex items-center gap-1.5 bg-indigo-50 border border-indigo-150 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold text-indigo-700 uppercase tracking-wider">
+            <Shield className="h-3 w-3" /> Sécurité des Paiements
+          </span>
+          <h2 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
+            <CreditCard className="h-5 w-5 text-indigo-600" /> Intégration Campay Mobile Money
+          </h2>
+          <p className="text-xs text-slate-500 leading-relaxed max-w-xl">
+            Configurez vos clés d'API Campay officielles pour permettre aux parents de s'acquitter de leurs frais (cotisations APEE, tranches de scolarité) par Orange Money, MTN MoMo et Express Union.
+          </p>
+        </div>
+        <div className="mt-4 sm:mt-0">
+          <a
+            href="https://campay.net/dashboard"
+            target="_blank"
+            referrerPolicy="no-referrer"
+            className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 text-xs font-bold px-3 py-2 rounded-xl text-slate-700 hover:bg-slate-100 transition"
+          >
+            Console Campay <ExternalLink className="h-3 w-3" />
+          </a>
         </div>
       </div>
 
-      <form onSubmit={handleSave} className="p-6 space-y-6">
-        {showSuccess && (
-          <div className="bg-emerald-50 border border-emerald-150 p-4 rounded-xl flex items-start gap-3 text-xs text-emerald-800 animate-scale">
-            <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5 animate-pulse" />
-            <div>
-              <p className="font-bold">{isEn ? 'Success!' : 'Succès !'}</p>
-              <p className="text-xxs text-emerald-700/90 mt-0.5">
-                {isEn ? 'Electronic payment API gateway configuration saved successfully.' : 'Configuration des passerelles de paiement électronique sauvegardée.'}
+      {/* Toggle Campay Access */}
+      <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-150 select-none">
+        <div className="space-y-0.5 max-w-[80%]">
+          <label className="text-xs font-black text-slate-800 uppercase tracking-wide">
+            Activer la passerelle Campay
+          </label>
+          <p className="text-[11px] text-slate-500 leading-tight">
+            Si activé, Campay sera disponible comme méthode de paiement en ligne lors de la facturation des parents.
+          </p>
+        </div>
+        <label className="relative inline-flex items-center cursor-pointer">
+          <input 
+            type="checkbox" 
+            checked={campayEnabled} 
+            onChange={(e) => {
+              setCampayEnabled(e.target.checked);
+              if (!e.target.checked) {
+                // Clear validation errors when turning off
+                setErrors({});
+                setGeneralError('');
+              }
+            }} 
+            className="sr-only peer"
+          />
+          <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+        </label>
+      </div>
+
+      <form onSubmit={handleSave} className="space-y-5">
+        {/* Banner/Notification Alerts */}
+        <AnimatePresence mode="wait">
+          {generalError && (
+            <motion.div 
+              initial={{ opacity: 0, y: -10 }} 
+              animate={{ opacity: 1, y: 0 }} 
+              exit={{ opacity: 0, y: -10 }} 
+              className="p-4 bg-red-50 border border-red-150 rounded-2xl text-xs text-red-800 flex items-start gap-2.5 shadow-3xs"
+            >
+              <AlertTriangle className="h-4.5 w-4.5 text-red-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <span className="font-bold">Erreur de configuration :</span>
+                <p>{generalError}</p>
+              </div>
+            </motion.div>
+          )}
+
+          {saveSuccess && (
+            <motion.div 
+              initial={{ opacity: 0, y: -10 }} 
+              animate={{ opacity: 1, y: 0 }} 
+              exit={{ opacity: 0, y: -10 }} 
+              className="p-4 bg-emerald-50 border border-emerald-150 rounded-2xl text-xs text-emerald-800 flex items-start gap-2.5 shadow-3xs"
+            >
+              <CheckCircle2 className="h-4.5 w-4.5 text-emerald-600 shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <span className="font-bold">Configuration enregistrée avec succès !</span>
+                <p>Vos paramètres d'API Campay cryptés ont été sauvegardés de manière sécurisée dans la base de données Pasma-sys.</p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Inputs section, disabled or semi-transparent if disabled */}
+        <div className={`space-y-4 transition duration-250 ${campayEnabled ? 'opacity-100' : 'opacity-50 pointer-events-none select-none'}`}>
+          <div className="p-4 bg-amber-50/40 border border-amber-150/60 rounded-2xl text-[11px] text-amber-900 leading-normal flex items-start gap-2.5">
+            <Info className="h-4.5 w-4.5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <span className="font-extrabold uppercase tracking-wide">🔐 Recommandation de Sécurité Importante</span>
+              <p>
+                Vos identifiants d'API et clés de jetons (tokens) sont cryptés côté serveur. Ne partagez jamais ces informations. Nous vous recommandons de copier les clés directement depuis le panneau d'administration Campay (Paramètres de l'application) pour éviter les fautes de frappe.
               </p>
             </div>
           </div>
-        )}
 
-        {error && (
-          <div className="bg-rose-50 border border-rose-150 p-4 rounded-xl flex items-start gap-3 text-xs text-rose-800 animate-scale">
-            <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-bold">{isEn ? 'Error Saving' : 'Erreur d\'enregistrement'}</p>
-              <p className="text-xxs text-rose-700/90 mt-0.5">{error}</p>
-            </div>
-          </div>
-        )}
-
-        {/* Section Campay */}
-        <div className="border border-slate-150 rounded-2xl p-5 space-y-4 bg-slate-50/20">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <Globe className="h-5 w-5 text-indigo-700" />
-              <div>
-                <h3 className="text-sm font-extrabold text-slate-950">Campay Gateway</h3>
-                <p className="text-xxs text-slate-450">
-                  {isEn ? 'MTN MoMo, Orange Money & Card payment aggregator' : 'Agrégateur de paiement MTN, Orange & Cartes (Cameroun)'}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* 1. App ID */}
+            <div className="space-y-1">
+              <label className="text-[10.5px] font-extrabold text-slate-650 uppercase tracking-wide flex items-center gap-1 select-none">
+                Campay App ID <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={campayAppId}
+                onChange={(e) => setCampayAppId(e.target.value)}
+                placeholder="Ex: cpy_app_xxxxxxxxxx"
+                className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-xs font-mono transition focus:bg-white focus:outline-indigo-500 text-slate-800 ${
+                  errors.campayAppId ? 'border-red-300 focus:outline-red-500 bg-red-50/10' : 'border-slate-200'
+                }`}
+              />
+              {errors.campayAppId && (
+                <p className="text-[10px] text-red-600 font-bold flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3 shrink-0" /> {errors.campayAppId}
                 </p>
-              </div>
+              )}
             </div>
-            <label className="relative inline-flex items-center cursor-pointer select-none">
-              <input 
-                type="checkbox" 
-                checked={campayEnabled} 
-                onChange={(e) => setCampayEnabled(e.target.checked)}
-                className="sr-only peer" 
+
+            {/* 2. App Username */}
+            <div className="space-y-1">
+              <label className="text-[10.5px] font-extrabold text-slate-650 uppercase tracking-wide flex items-center gap-1 select-none">
+                Campay App Username <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={campayAppUsername}
+                onChange={(e) => setCampayAppUsername(e.target.value)}
+                placeholder="Ex: mon_username_api"
+                className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-xs font-mono transition focus:bg-white focus:outline-indigo-500 text-slate-800 ${
+                  errors.campayAppUsername ? 'border-red-300 focus:outline-red-500 bg-red-50/10' : 'border-slate-200'
+                }`}
               />
-              <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-slate-900"></div>
-            </label>
+              {errors.campayAppUsername && (
+                <p className="text-[10px] text-red-600 font-bold flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3 shrink-0" /> {errors.campayAppUsername}
+                </p>
+              )}
+            </div>
           </div>
 
-          {campayEnabled && (
-            <div className="space-y-4 pt-2 animate-scale">
-              {/* Info Banner */}
-              <div className="bg-indigo-50/50 border border-indigo-100 p-3.5 rounded-xl flex items-start gap-3 text-xxs text-slate-700">
-                <Info className="h-4 w-4 text-indigo-600 shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <p className="font-bold text-slate-900">
-                    {isEn ? 'Campay Real-time Webhook Configuration' : 'Configuration du Webhook Temps Réel Campay'}
-                  </p>
-                  <p className="leading-relaxed">
-                    {isEn 
-                      ? 'To automatically update school invoices when a parent completes their payment, configure the following webhook URL in your Campay Dev Console:' 
-                      : 'Pour mettre à jour automatiquement les factures lorsque les parents effectuent un paiement, renseignez cette URL de notification (webhook) sur votre console Campay :'}
-                  </p>
-                  <div className="flex items-center gap-2 mt-2 bg-white border border-slate-200 rounded-lg p-1.5 pl-3 font-mono text-slate-800 text-xxs select-all break-all shadow-2xs">
-                    <span className="flex-1 truncate">{getWebhookUrl()}</span>
-                    <button
-                      type="button"
-                      onClick={handleCopyWebhookUrl}
-                      className="px-2.5 py-1 bg-slate-900 text-white rounded-md text-xxxs font-bold font-sans hover:bg-slate-850 active:scale-95 transition-all flex items-center gap-1 shrink-0 cursor-pointer"
-                    >
-                      {copiedUrl ? (
-                        <>
-                          <Check className="h-3 w-3" />
-                          <span>Copied!</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="h-3 w-3" />
-                          <span>Copy</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* API IDs */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xxs font-bold uppercase text-slate-500">
-                    {isEn ? 'Campay App ID' : 'App ID Campay'}
-                  </label>
-                  <input
-                    type="text"
-                    value={campayAppId}
-                    onChange={(e) => setCampayAppId(e.target.value)}
-                    placeholder="UirmJUAg..."
-                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-mono focus:border-slate-800 focus:ring-1 focus:ring-slate-800 outline-none bg-slate-50/30"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xxs font-bold uppercase text-slate-500">
-                    {isEn ? 'Campay App Username' : 'Username de l\'application'}
-                  </label>
-                  <input
-                    type="text"
-                    value={campayAppUsername}
-                    onChange={(e) => setCampayAppUsername(e.target.value)}
-                    placeholder="Uahox..."
-                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-mono focus:border-slate-800 focus:ring-1 focus:ring-slate-800 outline-none bg-slate-50/30"
-                  />
-                </div>
-              </div>
-
-              {/* Password and Webhook Key */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xxs font-bold uppercase text-slate-500">
-                    {isEn ? 'Campay App Password' : 'Mot de passe Campay'}
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showCampayPassword ? 'text' : 'password'}
-                      value={campayAppPassword}
-                      onChange={(e) => setCampayAppPassword(e.target.value)}
-                      placeholder="jGJNkAYD..."
-                      className="w-full pl-3.5 pr-10 py-2 rounded-xl border border-slate-200 text-xs font-mono focus:border-slate-800 focus:ring-1 focus:ring-slate-800 outline-none bg-slate-50/30"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowCampayPassword(!showCampayPassword)}
-                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
-                    >
-                      {showCampayPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xxs font-bold uppercase text-slate-500">
-                    {isEn ? 'Webhook HMAC Secret Key' : 'Clé Secrète de Signature Webhook'}
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showCampayWebhookKey ? 'text' : 'password'}
-                      value={campayWebhookKey}
-                      onChange={(e) => setCampayWebhookKey(e.target.value)}
-                      placeholder="LpEvD_J1..."
-                      className="w-full pl-3.5 pr-10 py-2 rounded-xl border border-slate-200 text-xs font-mono focus:border-slate-800 focus:ring-1 focus:ring-slate-800 outline-none bg-slate-50/30"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowCampayWebhookKey(!showCampayWebhookKey)}
-                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
-                    >
-                      {showCampayWebhookKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Permanent Token */}
-              <div className="space-y-1">
-                <label className="text-xxs font-bold uppercase text-slate-500">
-                  {isEn ? 'Permanent JWT Access Token' : 'Jeton d\'accès permanent JWT'}
-                </label>
-                <div className="relative">
-                  <input
-                    type={showCampayToken ? 'text' : 'password'}
-                    value={campayToken}
-                    onChange={(e) => setCampayToken(e.target.value)}
-                    placeholder="ee362ee2..."
-                    className="w-full pl-3.5 pr-10 py-2 rounded-xl border border-slate-200 text-xs font-mono focus:border-slate-800 focus:ring-1 focus:ring-slate-800 outline-none bg-slate-50/30"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowCampayToken(!showCampayToken)}
-                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
-                  >
-                    {showCampayToken ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                  </button>
-                </div>
-              </div>
+          {/* 3. App Password */}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="text-[10.5px] font-extrabold text-slate-650 uppercase tracking-wide flex items-center gap-1 select-none">
+                Campay App Password <span className="text-red-500">*</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="text-[10px] font-black text-indigo-650 hover:underline cursor-pointer"
+              >
+                {showPassword ? 'Masquer' : 'Afficher'}
+              </button>
             </div>
-          )}
-        </div>
-
-        {/* Section Stripe */}
-        <div className="border border-slate-100 rounded-2xl p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <CreditCard className="h-5 w-5 text-indigo-600" />
-              <div>
-                <h3 className="text-sm font-extrabold text-slate-950">Stripe (Visa/Mastercard)</h3>
-                <p className="text-xxs text-slate-450">{isEn ? 'Credit & Debit card payment processor' : 'Règlement par carte bancaire internationale'}</p>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                <Lock className="h-3.5 w-3.5" />
               </div>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer select-none">
-              <input 
-                type="checkbox" 
-                checked={cardEnabled} 
-                onChange={(e) => setCardEnabled(e.target.checked)}
-                className="sr-only peer" 
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={campayAppPassword}
+                onChange={(e) => setCampayAppPassword(e.target.value)}
+                placeholder="Saisir le mot de passe d'application Campay"
+                className={`w-full pl-9 pr-10 py-2.5 bg-slate-50 border rounded-xl text-xs font-mono transition focus:bg-white focus:outline-indigo-500 text-slate-800 font-bold ${
+                  errors.campayAppPassword ? 'border-red-300 focus:outline-red-500 bg-red-50/10' : 'border-slate-200'
+                }`}
               />
-              <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-slate-900"></div>
-            </label>
+            </div>
+            {errors.campayAppPassword && (
+              <p className="text-[10px] text-red-600 font-bold flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3 shrink-0" /> {errors.campayAppPassword}
+              </p>
+            )}
           </div>
 
-          {cardEnabled && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 animate-scale">
-              <div className="space-y-1">
-                <label className="text-xxs font-bold uppercase text-slate-500">{isEn ? 'Stripe Public Key' : 'Clé Publique Stripe (Publishable Key)'}</label>
-                <input
-                  type="text"
-                  value={stripePublicKey}
-                  onChange={(e) => setStripePublicKey(e.target.value)}
-                  placeholder="pk_test_..."
-                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-mono focus:border-slate-800 focus:ring-1 focus:ring-slate-800 outline-none bg-slate-50/30"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xxs font-bold uppercase text-slate-500">{isEn ? 'Stripe Secret Key' : 'Clé Secrète Stripe (Secret Key)'}</label>
-                <div className="relative">
-                  <input
-                    type={showStripeSecret ? 'text' : 'password'}
-                    value={stripeSecretKey}
-                    onChange={(e) => setStripeSecretKey(e.target.value)}
-                    placeholder="sk_test_..."
-                    className="w-full pl-3.5 pr-10 py-2 rounded-xl border border-slate-200 text-xs font-mono focus:border-slate-800 focus:ring-1 focus:ring-slate-800 outline-none bg-slate-50/30"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowStripeSecret(!showStripeSecret)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition p-1 rounded-md"
-                  >
-                    {showStripeSecret ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                  </button>
-                </div>
-              </div>
+          {/* 4. API Token */}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="text-[10.5px] font-extrabold text-slate-650 uppercase tracking-wide flex items-center gap-1 select-none">
+                Campay API Token <span className="text-red-500">*</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowToken(!showToken)}
+                className="text-[10px] font-black text-indigo-650 hover:underline cursor-pointer"
+              >
+                {showToken ? 'Masquer' : 'Afficher'}
+              </button>
             </div>
-          )}
-        </div>
-
-        {/* Section MTN MoMo */}
-        <div className="border border-slate-100 rounded-2xl p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <Smartphone className="h-5 w-5 text-yellow-600" />
-              <div>
-                <h3 className="text-sm font-extrabold text-slate-950">MTN MoMo</h3>
-                <p className="text-xxs text-slate-450">{isEn ? 'Mobile Money integration' : 'Intégration MTN Mobile Money API'}</p>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                <KeyRound className="h-3.5 w-3.5" />
               </div>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer select-none">
-              <input 
-                type="checkbox" 
-                checked={mtnEnabled} 
-                onChange={(e) => setMtnEnabled(e.target.checked)}
-                className="sr-only peer" 
+              <input
+                type={showToken ? 'text' : 'password'}
+                value={campayToken}
+                onChange={(e) => setCampayToken(e.target.value)}
+                placeholder="Ex: Token eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                className={`w-full pl-9 pr-10 py-2.5 bg-slate-50 border rounded-xl text-xs font-mono transition focus:bg-white focus:outline-indigo-500 text-slate-800 font-bold ${
+                  errors.campayToken ? 'border-red-300 focus:outline-red-500 bg-red-50/10' : 'border-slate-200'
+                }`}
               />
-              <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-slate-900"></div>
-            </label>
+            </div>
+            {errors.campayToken && (
+              <p className="text-[10px] text-red-600 font-bold flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3 shrink-0" /> {errors.campayToken}
+              </p>
+            )}
+            <p className="text-[9.5px] text-slate-400 leading-tight">
+              Généralement généré via la console Campay sous l'onglet "Clés API" ou obtenu via l'authentification API. Doit commencer par <strong>"Token "</strong> ou correspondre au JWT brut.
+            </p>
           </div>
 
-          {mtnEnabled && (
-            <div className="space-y-4 pt-2 animate-scale">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xxs font-bold uppercase text-slate-500">{isEn ? 'Merchant Phone Number' : 'Numéro de Téléphone Marchand'}</label>
-                  <input
-                    type="text"
-                    value={mtnPhoneNumber}
-                    onChange={(e) => setMtnPhoneNumber(e.target.value)}
-                    placeholder="+237 6XX XX XX XX"
-                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs focus:border-slate-800 focus:ring-1 focus:ring-slate-800 outline-none bg-slate-50/30"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xxs font-bold uppercase text-slate-500">{isEn ? 'Merchant Registered Name' : 'Raison Sociale du Marchand'}</label>
-                  <input
-                    type="text"
-                    value={mtnMerchantName}
-                    onChange={(e) => setMtnMerchantName(e.target.value)}
-                    placeholder="ECOLE SECONDAIRE DE VOGT"
-                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs focus:border-slate-800 focus:ring-1 focus:ring-slate-800 outline-none bg-slate-50/30"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xxs font-bold uppercase text-slate-500">Client ID</label>
-                  <input
-                    type="text"
-                    value={mtnClientId}
-                    onChange={(e) => setMtnClientId(e.target.value)}
-                    placeholder="mtn-momo-client-id-..."
-                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-mono focus:border-slate-800 focus:ring-1 focus:ring-slate-800 outline-none bg-slate-50/30"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xxs font-bold uppercase text-slate-500">Client Secret</label>
-                  <div className="relative">
-                    <input
-                      type={showMtnSecret ? 'text' : 'password'}
-                      value={mtnClientSecret}
-                      onChange={(e) => setMtnClientSecret(e.target.value)}
-                      placeholder="••••••••••••••••••••••••••••••••"
-                      className="w-full pl-3.5 pr-10 py-2 rounded-xl border border-slate-200 text-xs font-mono focus:border-slate-800 focus:ring-1 focus:ring-slate-800 outline-none bg-slate-50/30"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowMtnSecret(!showMtnSecret)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition p-1 rounded-md"
-                    >
-                      {showMtnSecret ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                    </button>
-                  </div>
-                </div>
-              </div>
+          {/* 5. Webhook Key */}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="text-[10.5px] font-extrabold text-slate-650 uppercase tracking-wide flex items-center gap-1 select-none">
+                Campay Webhook Signature Key <span className="text-red-500">*</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowWebhookKey(!showWebhookKey)}
+                className="text-[10px] font-black text-indigo-650 hover:underline cursor-pointer"
+              >
+                {showWebhookKey ? 'Masquer' : 'Afficher'}
+              </button>
             </div>
-          )}
-        </div>
-
-        {/* Section Orange Money */}
-        <div className="border border-slate-100 rounded-2xl p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <Smartphone className="h-5 w-5 text-orange-600" />
-              <div>
-                <h3 className="text-sm font-extrabold text-slate-950">Orange Money</h3>
-                <p className="text-xxs text-slate-450">{isEn ? 'Orange Money API integration' : 'Intégration de la clé Orange Money Web Payment'}</p>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                <Shield className="h-3.5 w-3.5" />
               </div>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer select-none">
-              <input 
-                type="checkbox" 
-                checked={orangeEnabled} 
-                onChange={(e) => setOrangeEnabled(e.target.checked)}
-                className="sr-only peer" 
+              <input
+                type={showWebhookKey ? 'text' : 'password'}
+                value={campayWebhookKey}
+                onChange={(e) => setCampayWebhookKey(e.target.value)}
+                placeholder="Entrez votre clé de signature de webhook Campay"
+                className={`w-full pl-9 pr-10 py-2.5 bg-slate-50 border rounded-xl text-xs font-mono transition focus:bg-white focus:outline-indigo-500 text-slate-800 font-bold ${
+                  errors.campayWebhookKey ? 'border-red-300 focus:outline-red-500 bg-red-50/10' : 'border-slate-200'
+                }`}
               />
-              <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-slate-900"></div>
-            </label>
+            </div>
+            {errors.campayWebhookKey && (
+              <p className="text-[10px] text-red-600 font-bold flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3 shrink-0" /> {errors.campayWebhookKey}
+              </p>
+            )}
+            <p className="text-[9.5px] text-slate-400 leading-tight">
+              Cette clé secrète permet à l'application de valider que les notifications de statut de paiement reçues proviennent bien de Campay.
+            </p>
           </div>
-
-          {orangeEnabled && (
-            <div className="space-y-4 pt-2 animate-scale">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-xxs font-bold uppercase text-slate-500">{isEn ? 'Merchant Phone Number' : 'Numéro Marchand Orange'}</label>
-                  <input
-                    type="text"
-                    value={orangePhoneNumber}
-                    onChange={(e) => setOrangePhoneNumber(e.target.value)}
-                    placeholder="+237 6XX XX XX XX"
-                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs focus:border-slate-800 focus:ring-1 focus:ring-slate-800 outline-none bg-slate-50/30"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xxs font-bold uppercase text-slate-500">{isEn ? 'Merchant Registered Name' : 'Nom d\'Enregistrement Orange'}</label>
-                  <input
-                    type="text"
-                    value={orangeMerchantName}
-                    onChange={(e) => setOrangeMerchantName(e.target.value)}
-                    placeholder="ECOLE DE LA TRINITE"
-                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs focus:border-slate-800 focus:ring-1 focus:ring-slate-800 outline-none bg-slate-50/30"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-1 md:col-span-1">
-                  <label className="text-xxs font-bold uppercase text-slate-500">{isEn ? 'Merchant Key' : 'Clé Marchand (Merchant Key)'}</label>
-                  <input
-                    type="text"
-                    value={orangeMerchantKey}
-                    onChange={(e) => setOrangeMerchantKey(e.target.value)}
-                    placeholder="om-merchant-key-..."
-                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-mono focus:border-slate-800 focus:ring-1 focus:ring-slate-800 outline-none bg-slate-50/30"
-                  />
-                </div>
-
-                <div className="space-y-1 md:col-span-1">
-                  <label className="text-xxs font-bold uppercase text-slate-500">Client ID</label>
-                  <input
-                    type="text"
-                    value={orangeClientId}
-                    onChange={(e) => setOrangeClientId(e.target.value)}
-                    placeholder="orange-momo-client-id-..."
-                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-mono focus:border-slate-800 focus:ring-1 focus:ring-slate-800 outline-none bg-slate-50/30"
-                  />
-                </div>
-
-                <div className="space-y-1 md:col-span-1">
-                  <label className="text-xxs font-bold uppercase text-slate-500">Client Secret</label>
-                  <div className="relative">
-                    <input
-                      type={showOrangeSecret ? 'text' : 'password'}
-                      value={orangeClientSecret}
-                      onChange={(e) => setOrangeClientSecret(e.target.value)}
-                      placeholder="••••••••••••••••••••••••••••••••"
-                      className="w-full pl-3.5 pr-10 py-2 rounded-xl border border-slate-200 text-xs font-mono focus:border-slate-800 focus:ring-1 focus:ring-slate-800 outline-none bg-slate-50/30"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowOrangeSecret(!showOrangeSecret)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition p-1 rounded-md"
-                    >
-                      {showOrangeSecret ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* Section Wave */}
-        <div className="border border-slate-100 rounded-2xl p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <Smartphone className="h-5 w-5 text-sky-600" />
-              <div>
-                <h3 className="text-sm font-extrabold text-slate-950">Wave</h3>
-                <p className="text-xxs text-slate-450">{isEn ? 'Wave Money API credentials' : 'Clés de prélèvement d\'API Wave Mobile'}</p>
-              </div>
-            </div>
-            <label className="relative inline-flex inline-flex items-center cursor-pointer select-none">
-              <input 
-                type="checkbox" 
-                checked={waveEnabled} 
-                onChange={(e) => setWaveEnabled(e.target.checked)}
-                className="sr-only peer" 
-              />
-              <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-slate-900"></div>
-            </label>
-          </div>
-
-          {waveEnabled && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 animate-scale">
-              <div className="space-y-1">
-                <label className="text-xxs font-bold uppercase text-slate-500">{isEn ? 'Registered Phone' : 'Téléphone d\'Enregistrement'}</label>
-                <input
-                  type="text"
-                  value={wavePhoneNumber}
-                  onChange={(e) => setWavePhoneNumber(e.target.value)}
-                  placeholder="+237 6XX XX XX XX"
-                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs focus:border-slate-800 focus:ring-1 focus:ring-slate-800 outline-none bg-slate-50/30"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xxs font-bold uppercase text-slate-500">{isEn ? 'Merchant Legal Name' : 'Nom Légal du Marchand'}</label>
-                <input
-                  type="text"
-                  value={waveMerchantName}
-                  onChange={(e) => setWaveMerchantName(e.target.value)}
-                  placeholder="ECOLE DE L'EXCELLENCE"
-                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs focus:border-slate-800 focus:ring-1 focus:ring-slate-800 outline-none bg-slate-50/30"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xxs font-bold uppercase text-slate-500">Wave API Key</label>
-                <div className="relative">
-                  <input
-                    type={showWaveSecret ? 'text' : 'password'}
-                    value={waveApiKey}
-                    onChange={(e) => setWaveApiKey(e.target.value)}
-                    placeholder="wave_secret_api_..."
-                    className="w-full pl-3.5 pr-10 py-2 rounded-xl border border-slate-200 text-xs font-mono focus:border-slate-800 focus:ring-1 focus:ring-slate-800 outline-none bg-slate-50/30"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowWaveSecret(!showWaveSecret)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition p-1 rounded-md"
-                  >
-                    {showWaveSecret ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Security / SSL Certification Badge */}
-        <div className="bg-slate-50 border border-slate-100 p-3.5 rounded-2xl flex items-center gap-3">
-          <Lock className="h-4.5 w-4.5 text-slate-600 shrink-0" />
-          <p className="text-[10px] text-slate-550 leading-relaxed">
-            {isEn 
-              ? 'These API credentials are stored securely inside your private cloud. They are used exclusively to process secure digital invoicing transactions.' 
-              : 'Ces informations d\'API sont stockées de manière hautement sécurisée. Elles sont exclusivement utilisées pour la validation et l\'autorisation des règlements.'}
-          </p>
-        </div>
-
-        <div className="flex items-center justify-end pt-2">
+        {/* Submit Actions Button */}
+        <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3 select-none">
           <button
             type="submit"
-            disabled={saving}
-            className="px-6 py-2.5 bg-slate-900 hover:bg-slate-850 text-white font-extrabold rounded-xl text-xs transition flex items-center gap-2 cursor-pointer shadow-md hover:shadow-lg disabled:opacity-50"
+            disabled={isSaving}
+            className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-97 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {saving ? (
+            {isSaving ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                {isEn ? 'Saving...' : 'Sauvegarde...'}
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Enregistrement...
               </>
             ) : (
               <>
-                <Save className="h-4 w-4" />
-                {isEn ? 'Save Gateway Configurations' : 'Sauvegarder les configurations d\'API'}
+                <Save className="h-3.5 w-3.5" /> Enregistrer les Identifiants
               </>
             )}
           </button>

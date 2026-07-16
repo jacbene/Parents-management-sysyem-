@@ -1,5 +1,17 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, signInAnonymously, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
+import { 
+  getAuth, 
+  initializeAuth,
+  browserLocalPersistence,
+  browserSessionPersistence,
+  GoogleAuthProvider, 
+  signInWithPopup, 
+  signOut, 
+  signInAnonymously, 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  sendPasswordResetEmail 
+} from 'firebase/auth';
 import { initializeFirestore, setLogLevel, getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../firebase-applet-config.json';
@@ -106,7 +118,23 @@ export function queuePendingAction(
   }
 }
 
-export const auth = getAuth(app);
+let authInstance;
+if (typeof window !== 'undefined' && (window as any).__firebase_auth_instance) {
+  authInstance = (window as any).__firebase_auth_instance;
+} else {
+  try {
+    authInstance = initializeAuth(app, {
+      persistence: [browserLocalPersistence, browserSessionPersistence]
+    });
+  } catch (err) {
+    authInstance = getAuth(app);
+  }
+  if (typeof window !== 'undefined') {
+    (window as any).__firebase_auth_instance = authInstance;
+  }
+}
+
+export const auth = authInstance;
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.addScope('https://www.googleapis.com/auth/drive');
 googleProvider.addScope('https://www.googleapis.com/auth/drive.file');

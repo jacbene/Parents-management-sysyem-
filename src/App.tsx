@@ -60,6 +60,7 @@ import PortalOnboarding from './components/PortalOnboarding';
 import InstallPWA from './components/InstallPWA';
 import SuperAdminDashboard from './components/SuperAdminDashboard';
 import SyncIndicator from './components/SyncIndicator';
+import SchoolHelpCenter from './components/SchoolHelpCenter';
 // Reserved for future integration:
 // import LibraryDashboard from './components/LibraryDashboard';
 
@@ -102,7 +103,8 @@ import {
   CheckCircle,
   Sun,
   Moon,
-  Users
+  Users,
+  HelpCircle
 } from 'lucide-react';
 
 type TabType = 
@@ -126,7 +128,8 @@ type TabType =
   | 'attendance' 
   | 'billing' 
   | 'appointments' 
-  | 'messages';
+  | 'messages'
+  | 'help_center';
 
 interface PushNotificationSyncerProps {
   students: Student[];
@@ -3475,6 +3478,17 @@ export default function App() {
                         </button>
                       </>
                     )}
+
+                    <button
+                      onClick={() => setActiveTab('help_center')}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
+                        activeTab === 'help_center'
+                          ? 'bg-slate-900 text-white'
+                          : 'text-gray-650 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2"><HelpCircle className="h-4 w-4" /> {t('tab.help_center')}</span>
+                    </button>
                   </div>
                   
                   {/* Compact Profile & Share Buttons */}
@@ -3803,6 +3817,17 @@ export default function App() {
                           apeeParents={apeeParents} 
                           portalUserRole={portalUserRole}
                           apeeSettings={apeeSettings}
+                        />
+                      </motion.div>
+                    )}
+
+                    {activeTab === 'help_center' && (
+                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="help_center">
+                        <SchoolHelpCenter 
+                          apeeSettings={apeeSettings} 
+                          portalUserRole={portalUserRole} 
+                          onNavigateToTab={setActiveTab}
+                          userEmail={user?.email || ''}
                         />
                       </motion.div>
                     )}

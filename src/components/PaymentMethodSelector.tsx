@@ -15,7 +15,10 @@ import {
   Check,
   Send,
   Cpu,
-  RefreshCw
+  RefreshCw,
+  Download,
+  Printer,
+  X
 } from 'lucide-react';
 import { Invoice, Student } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -30,6 +33,7 @@ interface PaymentMethodSelectorProps {
   settings?: any;
   onPaymentSuccess: (invoice: Invoice) => void;
   onCancel: () => void;
+  onDownloadReceipt?: (invoice: Invoice) => void;
 }
 
 interface SandboxLog {
@@ -45,7 +49,8 @@ export default function PaymentMethodSelector({
   students,
   settings,
   onPaymentSuccess,
-  onCancel
+  onCancel,
+  onDownloadReceipt
 }: PaymentMethodSelectorProps) {
   const { language } = useLanguage();
   const isEn = language === 'en';
@@ -111,6 +116,7 @@ export default function PaymentMethodSelector({
   // UI state
   const [processing, setProcessing] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [successInvoice, setSuccessInvoice] = useState<Invoice | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
@@ -328,9 +334,9 @@ export default function PaymentMethodSelector({
         note: invoice.note ? `${invoice.note} | ${newNote}` : newNote
       };
 
+      setSuccessInvoice(updatedInvoice);
       setSimulationState('success');
       setSuccess(true);
-      await new Promise(resolve => setTimeout(resolve, 1500));
       onPaymentSuccess(updatedInvoice);
     } catch (err: any) {
       console.error(err);
@@ -346,6 +352,12 @@ export default function PaymentMethodSelector({
     setProcessing(false);
     setSuccess(false);
     setError(null);
+  };
+
+  const handleDownloadReceipt = () => {
+    if (onDownloadReceipt && successInvoice) {
+      onDownloadReceipt(successInvoice);
+    }
   };
 
   return (
@@ -910,7 +922,7 @@ export default function PaymentMethodSelector({
 
               {/* STEP 4: Successful Transaction token registration output */}
               {simulationState === 'success' && (
-                <div className="text-center py-6 space-y-4">
+                <div className="text-center py-6 space-y-4" id="payment_gateway_success_view">
                   <div className="h-14 w-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
                     <CheckCircle2 className="h-8 w-8 animate-bounce" />
                   </div>
@@ -919,7 +931,7 @@ export default function PaymentMethodSelector({
                       {isEn ? "Payment Gateway Approved !" : "Règlement API Validé !"}
                     </h4>
                     <p className="text-xs text-slate-500 max-w-[280px] mx-auto leading-relaxed">
-                      {isEn ? "Your fictional transaction token was successfully saved into the billing notes database." : "Votre jeton de transaction financière a été enregistré avec succès dans les notes d'échéances."}
+                      {isEn ? "Your transaction has been approved and saved successfully." : "Votre transaction a été approuvée et enregistrée avec succès."}
                     </p>
                   </div>
 
@@ -934,6 +946,28 @@ export default function PaymentMethodSelector({
                       <p><strong className="text-slate-800">Date:</strong> {new Date().toISOString().split('T')[0]}</p>
                       <p><strong className="text-slate-800">Canal:</strong> {paymentMethod.toUpperCase()}</p>
                     </div>
+                  </div>
+
+                  {/* PDF Receipt & Close buttons */}
+                  <div className="flex flex-col gap-2 max-w-xs mx-auto pt-3">
+                    <button
+                      type="button"
+                      id="download_receipt_btn"
+                      onClick={handleDownloadReceipt}
+                      className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-xl text-xs transition cursor-pointer flex items-center justify-center gap-1.5 shadow-sm active:scale-97"
+                    >
+                      <Download className="h-4 w-4" />
+                      {isEn ? 'Download Receipt (PDF)' : 'Télécharger le Reçu (PDF)'}
+                    </button>
+                    
+                    <button
+                      type="button"
+                      id="close_payment_modal_btn"
+                      onClick={onCancel}
+                      className="w-full py-2 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition cursor-pointer text-center"
+                    >
+                      {isEn ? 'Close & Return' : 'Fermer & Retourner'}
+                    </button>
                   </div>
                 </div>
               )}

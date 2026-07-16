@@ -3,6 +3,7 @@ import { Save, HelpCircle, Shield, Settings, Info, CheckCircle2, Plus, Trash2, E
 import { ApeeSettings, ApeeBudgetLine, ApeeParent } from '../../types';
 import { getApeeShortName } from '../../utils/apeeDb';
 import { useLanguage } from '../../utils/TranslationContext';
+import PaymentConfigurationForm from '../PaymentConfigurationForm';
 
 interface ApeeSettingsProps {
   settings: ApeeSettings;
@@ -271,6 +272,13 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
           wavePhoneNumber: (wavePhoneNumber || '').trim(),
           waveMerchantName: (waveMerchantName || '').trim(),
           waveApiKey: (waveApiKey || '').trim(),
+          
+          campayEnabled: settings.paymentConfig?.campayEnabled,
+          campayAppId: settings.paymentConfig?.campayAppId,
+          campayAppUsername: settings.paymentConfig?.campayAppUsername,
+          campayAppPassword: settings.paymentConfig?.campayAppPassword,
+          campayToken: settings.paymentConfig?.campayToken,
+          campayWebhookKey: settings.paymentConfig?.campayWebhookKey,
         },
         ...extra
       });
@@ -1827,6 +1835,12 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
           <Save className="h-4 w-4 text-emerald-400" /> Sauvegarder les configurations de paiement
         </button>
       </div>
+
+      {/* SECTION: Campay Mobile Money Payment Integration Form */}
+      <PaymentConfigurationForm
+        settings={settings}
+        onSaveSettings={onSaveSettings}
+      />
 
       {/* MODAL: Define / Edit Budget Line */}
       {isBudgetModalOpen && (

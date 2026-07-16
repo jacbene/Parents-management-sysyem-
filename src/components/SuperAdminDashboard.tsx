@@ -3,6 +3,7 @@ import { collection, doc, getDocs, setDoc, deleteDoc, query, where, writeBatch }
 import { db, auth } from '../firebase';
 import { logAuthError } from '../utils/authLogger';
 import AuthLogsViewer from './system/AuthLogsViewer';
+import PaymentWebhookHandler from './PaymentWebhookHandler';
 import { Establishment, Student, Invoice, SystemLog } from '../types';
 import { 
   Building2, 
@@ -54,7 +55,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
   );
   
   // Custom states
-  const [activeSubTab, setActiveSubTab] = useState<'schools' | 'admins' | 'auth_logs'>('schools');
+  const [activeSubTab, setActiveSubTab] = useState<'schools' | 'admins' | 'campay_webhook' | 'auth_logs'>('schools');
   const [secondaryAdmins, setSecondaryAdmins] = useState<any[]>([]);
   const isPrimarySuperAdmin = auth.currentUser?.email === 'jacquesbene301@gmail.com' || currentUserUid === 'sys_admin_jacques';
 
@@ -900,6 +901,17 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                     </button>
                     <button
                       type="button"
+                      onClick={() => setActiveSubTab('campay_webhook')}
+                      className={`px-4 py-1.5 text-xs font-black rounded-lg transition cursor-pointer border flex items-center gap-1.5 ${
+                        activeSubTab === 'campay_webhook'
+                          ? 'bg-indigo-950 text-indigo-400 border-indigo-950 shadow-xs'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      🔌 Intégration Campay & Webhook
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setActiveSubTab('auth_logs')}
                       className={`px-4 py-1.5 text-xs font-black rounded-lg transition cursor-pointer border flex items-center gap-1.5 ${
                         activeSubTab === 'auth_logs'
@@ -915,7 +927,9 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                       ? "Activez la supervision ou gérez les paramètres d'exploitation"
                       : activeSubTab === 'admins'
                         ? "Gérez et auditez les habilitations d'accès des superviseurs adjoints délégués"
-                        : "Consultez les rapports détaillés des permissions refusées et incidents de sécurité"}
+                        : activeSubTab === 'campay_webhook'
+                          ? "Simulez, testez et synchronisez en temps réel les webhooks de paiements Campay"
+                          : "Consultez les rapports détaillés des permissions refusées et incidents de sécurité"}
                   </p>
                 </div>
 
@@ -1308,6 +1322,10 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                       )}
                     </div>
                   </div>
+                </div>
+              ) : activeSubTab === 'campay_webhook' ? (
+                <div className="p-6">
+                  <PaymentWebhookHandler />
                 </div>
               ) : (
                 <div className="p-6">

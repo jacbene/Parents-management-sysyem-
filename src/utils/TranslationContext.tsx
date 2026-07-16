@@ -98,6 +98,7 @@ const translations: Record<LanguageType, Record<string, string>> = {
     'tab.billing': 'Facturation',
     'tab.appointments': 'Rendez-vous',
     'tab.messages': 'Messagerie',
+    'tab.help_center': 'Centre d\'aide',
 
     // Global UI Header / Controls
     'header.school_portal': 'Portail de l\'Établissement',
@@ -399,6 +400,7 @@ const translations: Record<LanguageType, Record<string, string>> = {
     'tab.billing': 'Billing Portal',
     'tab.appointments': 'Appointments',
     'tab.messages': 'Messages',
+    'tab.help_center': 'Help Center',
 
     // Global UI Header / Controls
     'header.school_portal': 'School Portal',

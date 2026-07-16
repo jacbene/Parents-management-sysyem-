@@ -29,6 +29,11 @@ export default function BillingPortal({
 }: BillingPortalProps) {
   const { t, language } = useLanguage();
   const isEn = language === 'en';
+  
+  const schoolExtracted = settings?.associationName 
+    ? settings.associationName.replace(/^(APEE|A\.P\.E\.E\.|Association des Parents d'élèves de l'|Association des Parents d'élèves du|Association des Parents d'élèves de|Association des Parents d'élèves|Association des Parents du|Association des Parents de|Association des Parents d'|Association des Parents)\s+/i, '').trim()
+    : (isEn ? "CES d'Ekali 1" : "CES d'Ekali 1");
+
   const [activeTab, setActiveTab] = useState<'all' | 'unpaid' | 'paid'>('all');
   const [payingInvoice, setPayingInvoice] = useState<Invoice | null>(null);
   const [invoiceSearchQuery, setInvoiceSearchQuery] = useState('');
@@ -1099,7 +1104,9 @@ export default function BillingPortal({
           <Smartphone className="h-5 w-5" />
         </div>
         <div className="space-y-0.5">
-          <p className="font-extrabold text-indigo-900">💳 Modes de règlement acceptés par l'APEE</p>
+          <p className="font-extrabold text-indigo-900">
+            💳 {isEn ? `Accepted payment modes by ${schoolExtracted}` : `Modes de règlement acceptés par le ${schoolExtracted}`}
+          </p>
           <p className="text-gray-600 leading-relaxed font-sans">
             Nous acceptons les paiements sécurisés par <strong>Orange Money</strong>, <strong>MTN Mobile Money (MoMo)</strong>, <strong>Wave</strong>, ou par <strong>Carte Bancaire Visa/Mastercard</strong>. Toutes les cotisations sont perçues directement en <strong>Francs CFA (FCFA)</strong>.
           </p>
@@ -1516,12 +1523,9 @@ export default function BillingPortal({
                   settings={settings}
                   onPaymentSuccess={(updated) => {
                     onUpdateInvoice(updated);
-                    // Hide modal after display success
-                    setTimeout(() => {
-                      setPayingInvoice(null);
-                    }, 1500);
                   }}
                   onCancel={() => setPayingInvoice(null)}
+                  onDownloadReceipt={handleDownloadReceiptPDF}
                 />
               </div>
             </motion.div>
