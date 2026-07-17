@@ -178,12 +178,13 @@ service cloud.firestore {
       allow get: if isSignedIn() && 
                  isSafeId(invoiceId) &&
                  (isSuperAdmin() || 
-                  (resource != null && isOwnerOrDemoRead(resource.data.parentId)) || 
+                  resource == null ||
+                  isOwnerOrDemoRead(resource.data.parentId) || 
                   invoiceId.matches('^log_.*'));
       allow list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
-      allow create: if isSignedIn() && (isSuperAdmin() || invoiceId.matches('^log_.*') || isOwnerOrDemoWrite(request.resource.data.parentId));
-      allow update: if isSignedIn() && (isSuperAdmin() || invoiceId.matches('^log_.*') || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
-      allow delete: if isSignedIn() && (isSuperAdmin() || invoiceId.matches('^log_.*') || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow create: if isSignedIn() && isSafeId(invoiceId) && (isSuperAdmin() || invoiceId.matches('^log_.*') || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && isSafeId(invoiceId) && (isSuperAdmin() || invoiceId.matches('^log_.*') || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && isSafeId(invoiceId) && (isSuperAdmin() || invoiceId.matches('^log_.*') || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 
     // reading_logs
@@ -197,18 +198,20 @@ service cloud.firestore {
 
     // announcements
     match /announcements/{announcementId} {
-      allow read: if isSignedIn() && isSafeId(announcementId);
-      allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
-      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
-      allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow get: if isSignedIn() && isSafeId(announcementId);
+      allow list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
+      allow create: if isSignedIn() && isSafeId(announcementId) && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && isSafeId(announcementId) && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && isSafeId(announcementId) && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 
     // lessons
     match /lessons/{lessonId} {
-      allow read: if isSignedIn() && isSafeId(lessonId);
-      allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
-      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
-      allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow get: if isSignedIn() && isSafeId(lessonId);
+      allow list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
+      allow create: if isSignedIn() && isSafeId(lessonId) && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && isSafeId(lessonId) && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow delete: if isSignedIn() && isSafeId(lessonId) && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 
     // super_admins
@@ -226,6 +229,18 @@ service cloud.firestore {
     // active_sessions
     match /active_sessions/{sessionId} {
       allow read, write: if isSignedIn() && isSafeId(sessionId) && request.auth.uid == sessionId;
+    }
+
+    // logs_auth
+    match /logs_auth/{logId} {
+      allow create: if isSafeId(logId);
+      allow get, list: if isSignedIn() && isSuperAdmin();
+    }
+
+    // help_requests
+    match /help_requests/{requestId} {
+      allow create: if isSignedIn() && isSafeId(requestId);
+      allow get, list: if isSignedIn() && isSuperAdmin();
     }
 
   }

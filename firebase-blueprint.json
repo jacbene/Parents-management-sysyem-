@@ -143,6 +143,59 @@
         "role": { "type": "string" }
       },
       "required": ["id", "name", "email", "createdAt", "addedBy", "role"]
+    },
+    "lesson": {
+      "title": "Lesson",
+      "description": "Classroom weekly lesson details.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "parentId": { "type": "string" },
+        "classRoom": { "type": "string" },
+        "subject": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "date": { "type": "string" },
+        "teacherName": { "type": "string" }
+      },
+      "required": ["id", "parentId", "classRoom", "subject", "title", "content", "date", "teacherName"]
+    },
+    "auth_log": {
+      "title": "Auth Log",
+      "description": "Secure logging of authentication errors and attempts.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "errorCode": { "type": "string" },
+        "errorMessage": { "type": "string" },
+        "action": { "type": "string" },
+        "component": { "type": "string" },
+        "schoolName": { "type": "string" },
+        "schoolId": { "type": "string" },
+        "details": { "type": "string" },
+        "userAgent": { "type": "string" }
+      },
+      "required": ["id", "timestamp", "userId", "errorCode", "errorMessage", "action", "component"]
+    },
+    "help_request": {
+      "title": "Help Request",
+      "description": "Help support request sent by school users.",
+      "type": "object",
+      "properties": {
+        "senderName": { "type": "string" },
+        "senderPhone": { "type": "string" },
+        "senderEmail": { "type": "string" },
+        "subject": { "type": "string" },
+        "message": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "status": { "type": "string", "enum": ["OPEN", "CLOSED", "PENDING"] },
+        "userRole": { "type": "string" },
+        "schoolName": { "type": "string" }
+      },
+      "required": ["senderName", "message", "timestamp", "status", "schoolName"]
     }
   },
   "firestore": {
@@ -181,6 +234,18 @@
     "super_admins": {
       "schema": "super_admin",
       "description": "Secondary system administrators details."
+    },
+    "lessons": {
+      "schema": "lesson",
+      "description": "Weekly classroom lessons."
+    },
+    "logs_auth": {
+      "schema": "auth_log",
+      "description": "Authentication audit trail."
+    },
+    "help_requests": {
+      "schema": "help_request",
+      "description": "Helpdesk support tickets."
     }
   }
 }
