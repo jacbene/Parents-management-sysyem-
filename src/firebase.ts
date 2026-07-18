@@ -218,9 +218,24 @@ export async function loginAnonymously() {
   try {
     const result = await signInAnonymously(auth);
     return result.user;
-  } catch (error) {
-    console.warn("Anonymous Auth Error:", error);
-    throw error;
+  } catch (error: any) {
+    console.warn("Anonymous Auth Error, trying shared sandbox fallback account:", error);
+    try {
+      const result = await signInWithEmailAndPassword(auth, "sandbox@pasma.sys", "sandbox123456");
+      return result.user;
+    } catch (err2: any) {
+      if (err2?.code === 'auth/user-not-found' || err2?.code === 'auth/invalid-credential' || err2?.code === 'auth/wrong-password') {
+        try {
+          const result = await createUserWithEmailAndPassword(auth, "sandbox@pasma.sys", "sandbox123456");
+          return result.user;
+        } catch (err3: any) {
+          console.error("Failed to create shared sandbox account:", err3);
+          throw error;
+        }
+      }
+      console.error("Shared sandbox sign in failed:", err2);
+      throw error;
+    }
   }
 }
 

@@ -4,6 +4,7 @@ import { ApeeSettings, ApeeBudgetLine, ApeeParent } from '../../types';
 import { getApeeShortName } from '../../utils/apeeDb';
 import { useLanguage } from '../../utils/TranslationContext';
 import PaymentConfigurationForm from '../PaymentConfigurationForm';
+import SmsConfigurationForm from './SmsConfigurationForm';
 
 interface ApeeSettingsProps {
   settings: ApeeSettings;
@@ -1838,6 +1839,12 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
 
       {/* SECTION: Campay Mobile Money Payment Integration Form */}
       <PaymentConfigurationForm
+        settings={settings}
+        onSaveSettings={onSaveSettings}
+      />
+
+      {/* SECTION: SMS Gateway Configuration & Test Form */}
+      <SmsConfigurationForm
         settings={settings}
         onSaveSettings={onSaveSettings}
       />

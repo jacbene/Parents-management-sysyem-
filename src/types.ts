@@ -276,6 +276,16 @@ export interface ApeePaymentConfig {
   campayWebhookKey?: string;
 }
 
+export interface ApeeSmsConfig {
+  provider?: 'campay' | 'twilio' | 'orange' | 'generic';
+  smsGatewayUrl?: string;
+  smsApiKey?: string;
+  smsSenderId?: string;
+  smsUsername?: string;
+  smsPassword?: string;
+  smsEnabled?: boolean;
+}
+
 export interface ApeeSettings {
   associationName: string;
   shortName?: string;
@@ -307,6 +317,7 @@ export interface ApeeSettings {
   censeurPhone?: string;
   classTeachers?: Array<{ classRoom: string; teacherName: string; teacherPhone: string; teacherEmail: string }>;
   paymentConfig?: ApeePaymentConfig;
+  smsConfig?: ApeeSmsConfig;
 }
 
 export interface Establishment {

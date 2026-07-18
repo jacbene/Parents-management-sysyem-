@@ -26,6 +26,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { doc, setDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useLanguage } from '../utils/TranslationContext';
+import BulkAnnouncementModal from './BulkAnnouncementModal';
 
 interface MessageInboxProps {
   messages: Message[];
@@ -73,6 +74,7 @@ export default function MessageInbox({
   // Local message inputs
   const [textInput, setTextInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
   
   // Custom sender identity selection for Administration
   const [adminSenderAlias, setAdminSenderAlias] = useState<'Director' | 'PedManager' | 'ClassTeacher'>('PedManager');
@@ -338,16 +340,29 @@ export default function MessageInbox({
           </p>
         </div>
 
-        {/* Legend block display role */}
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('msg.active_session')}</span>
-          <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-            isAdmin 
-              ? 'bg-amber-120 text-amber-900 border border-amber-200 shadow-3xs' 
-              : 'bg-indigo-50 text-indigo-700 border border-indigo-100'
-          }`}>
-            {isAdmin ? t('msg.role_admin') : t('msg.role_parent')}
-          </span>
+        {/* Legend block display role & Bulk messaging action */}
+        <div className="flex items-center gap-3 flex-wrap">
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setIsBulkModalOpen(true)}
+              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer transition flex items-center gap-1.5"
+              id="btn-open-bulk-announcement"
+            >
+              <span>📢 Diffusion Groupée</span>
+            </button>
+          )}
+
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('msg.active_session')}</span>
+            <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+              isAdmin 
+                ? 'bg-amber-120 text-amber-900 border border-amber-200 shadow-3xs' 
+                : 'bg-indigo-50 text-indigo-700 border border-indigo-100'
+            }`}>
+              {isAdmin ? t('msg.role_admin') : t('msg.role_parent')}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -1049,6 +1064,18 @@ export default function MessageInbox({
           </div>
         )}
       </AnimatePresence>
+
+      {isAdmin && (
+        <BulkAnnouncementModal
+          isOpen={isBulkModalOpen}
+          onClose={() => setIsBulkModalOpen(false)}
+          students={students}
+          apeeParents={apeeParents}
+          onAddMessage={onAddMessage}
+          apeeSettings={apeeSettings}
+          portalUserRole={portalUserRole}
+        />
+      )}
     </div>
   );
 }

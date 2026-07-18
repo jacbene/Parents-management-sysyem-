@@ -590,10 +590,31 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
               style={{ width: `${bulkProgress}%` }}
             />
           </div>
-          <div className="bg-black/40 border border-slate-800 p-3 rounded-lg text-[10px] h-32 overflow-y-auto space-y-1 select-none">
-            {bulkLog.map((log, idx) => (
-              <div key={idx}>{log}</div>
-            ))}
+          <div className="bg-black/40 border border-slate-800 p-3 rounded-lg text-[10px] h-32 overflow-y-auto space-y-1">
+            {bulkLog.map((log, idx) => {
+              const urlRegex = /(https?:\/\/[^\s]+)/g;
+              const parts = log.split(urlRegex);
+              return (
+                <div key={idx} className="font-mono leading-relaxed">
+                  {parts.map((part, pidx) => {
+                    if (part.match(urlRegex)) {
+                      return (
+                        <a 
+                          key={pidx} 
+                          href={part} 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          className="text-indigo-400 hover:text-indigo-300 font-bold underline break-all"
+                        >
+                          {part}
+                        </a>
+                      );
+                    }
+                    return <span key={pidx}>{part}</span>;
+                  })}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

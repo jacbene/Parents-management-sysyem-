@@ -57,7 +57,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
   // Custom states
   const [activeSubTab, setActiveSubTab] = useState<'schools' | 'admins' | 'campay_webhook' | 'auth_logs'>('schools');
   const [secondaryAdmins, setSecondaryAdmins] = useState<any[]>([]);
-  const isPrimarySuperAdmin = auth.currentUser?.email === 'jacquesbene301@gmail.com' || currentUserUid === 'sys_admin_jacques';
+  const isPrimarySuperAdmin = auth.currentUser?.email?.toLowerCase().trim() === 'jacquesbene301@gmail.com' || currentUserUid === 'sys_admin_jacques';
 
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');

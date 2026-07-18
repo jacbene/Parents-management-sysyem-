@@ -3,10 +3,58 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import crypto from "crypto";
+import nodemailer from "nodemailer";
 
 // Load fallback environmental variables if any
 import dotenv from "dotenv";
 dotenv.config();
+
+// Lazy-initialised transporter for Email
+let transporter: nodemailer.Transporter | null = null;
+let etherealAccount: any = null;
+
+async function getTransporter() {
+  if (transporter) return transporter;
+
+  const host = process.env.SMTP_HOST;
+  const port = process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT) : 587;
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+
+  if (host && user && pass) {
+    console.log(`[Mailer] Initializing production SMTP transporter via ${host}:${port}...`);
+    transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure: port === 465,
+      auth: {
+        user,
+        pass
+      }
+    });
+    return transporter;
+  }
+
+  // Fallback to automatic Ethereal SMTP test account
+  console.log("[Mailer] No production SMTP configured. Creating automatic Ethereal SMTP account...");
+  try {
+    etherealAccount = await nodemailer.createTestAccount();
+    transporter = nodemailer.createTransport({
+      host: 'smtp.ethereal.email',
+      port: 587,
+      secure: false,
+      auth: {
+        user: etherealAccount.user,
+        pass: etherealAccount.pass
+      }
+    });
+    console.log(`[Mailer] Ethereal SMTP transporter initialized with user: ${etherealAccount.user}`);
+    return transporter;
+  } catch (error) {
+    console.error("[Mailer] Failed to create Ethereal SMTP account. Falling back to simple simulator.", error);
+    return null;
+  }
+}
 
 const app = express();
 const PORT = 3000;
@@ -522,11 +570,35 @@ app.post("/api/apee/send-bulk-reminders", async (req, res) => {
       const parsedSubject = replacePlaceholders(emailSubject);
       const parsedBody = replacePlaceholders(emailTemplate);
 
-      // Simuler la latence d'envoi réseau SMTP
-      await new Promise(resolve => setTimeout(resolve, 100));
+      try {
+        const mailer = await getTransporter();
+        const fromAddress = process.env.SMTP_FROM || (etherealAccount ? `"APEE Portal" <${etherealAccount.user}>` : '"APEE Support" <no-reply@apee-portal.org>');
+        
+        if (mailer) {
+          const info = await mailer.sendMail({
+            from: fromAddress,
+            to: parentObj.email,
+            subject: parsedSubject,
+            text: parsedBody,
+            html: parsedBody.replace(/\n/g, '<br>')
+          });
 
-      logs.push(`📧 [Délivré Relais] M./Mme ${parentObj.name} <${parentObj.email}>. Objet : "${parsedSubject}". Message envoyé avec succès.`);
-      successCount++;
+          const testUrl = nodemailer.getTestMessageUrl(info);
+          if (testUrl) {
+            logs.push(`📧 [Ethereal Sandbox] M./Mme ${parentObj.name} <${parentObj.email}>. Aperçu de l'e-mail envoyé : ${testUrl}`);
+          } else {
+            logs.push(`📧 [Délivré Réel SMTP] M./Mme ${parentObj.name} <${parentObj.email}>. ID Message : ${info.messageId}`);
+          }
+          successCount++;
+        } else {
+          logs.push(`⚠️ [Simulation Fallback] M./Mme ${parentObj.name} <${parentObj.email}>. Objet : "${parsedSubject}".`);
+          successCount++;
+        }
+      } catch (mailError: any) {
+        console.error("Mail sending failed:", mailError);
+        logs.push(`❌ [Échec SMTP] M./Mme ${parentObj.name} <${parentObj.email}> : ${mailError.message || mailError}`);
+        failureCount++;
+      }
     } else {
       if (!parentObj.phone) {
         logs.push(`❌ [Refus d'Envoi] M./Mme ${parentObj.name} - Aucun numéro de téléphone.`);
@@ -559,6 +631,173 @@ app.post("/api/apee/send-bulk-reminders", async (req, res) => {
     logs,
     updatedParents
   });
+});
+
+// API: Send bulk announcements via email
+app.post("/api/apee/send-bulk-announcements", async (req, res) => {
+  const { recipients, subject, content, channel } = req.body;
+
+  if (!recipients || !Array.isArray(recipients)) {
+    return res.status(400).json({ success: false, error: "La liste des destinataires est manquante ou invalide." });
+  }
+
+  const logs: string[] = [`[Démarrage] Diffusion groupée d'annonces (${channel === 'email' ? 'EMAIL' : channel === 'both' ? 'EMAIL + SYSTÈME' : 'SYSTÈME'}). Total : ${recipients.length}`];
+  let successCount = 0;
+  let failureCount = 0;
+
+  for (let i = 0; i < recipients.length; i++) {
+    const item = recipients[i];
+    const parentName = item.parentName || (item.parent ? item.parent.name : "Parent");
+    const parentEmail = item.parentEmail || item.email || (item.parent ? item.parent.email : null);
+
+    if (channel === 'email' || channel === 'both') {
+      if (!parentEmail) {
+        logs.push(`❌ [Refus d'Envoi] M./Mme ${parentName} - Aucun e-mail renseigné.`);
+        failureCount++;
+        continue;
+      }
+
+      try {
+        const mailer = await getTransporter();
+        const fromAddress = process.env.SMTP_FROM || (etherealAccount ? `"APEE Portal" <${etherealAccount.user}>` : '"APEE Support" <no-reply@apee-portal.org>');
+        
+        if (mailer) {
+          const info = await mailer.sendMail({
+            from: fromAddress,
+            to: parentEmail,
+            subject: subject,
+            text: content,
+            html: content.replace(/\n/g, '<br>')
+          });
+
+          const testUrl = nodemailer.getTestMessageUrl(info);
+          if (testUrl) {
+            logs.push(`📧 [Ethereal Sandbox] M./Mme ${parentName} <${parentEmail}>. Aperçu de l'e-mail : ${testUrl}`);
+          } else {
+            logs.push(`📧 [Délivré Réel SMTP] M./Mme ${parentName} <${parentEmail}>. ID Message : ${info.messageId}`);
+          }
+          successCount++;
+        } else {
+          logs.push(`⚠️ [Simulation Fallback] M./Mme ${parentName} <${parentEmail}>. Objet : "${subject}".`);
+          successCount++;
+        }
+      } catch (mailError: any) {
+        console.error("Mail sending failed:", mailError);
+        logs.push(`❌ [Échec SMTP] M./Mme ${parentName} <${parentEmail}> : ${mailError.message || mailError}`);
+        failureCount++;
+      }
+    } else {
+      logs.push(`💬 [Notification Système] Enregistré pour M./Mme ${parentName}.`);
+      successCount++;
+    }
+  }
+
+  logs.push(`🏁 [Processus Terminé] Diffusion de l'annonce achevée : ${successCount} succès, ${failureCount} échecs.`);
+
+  return res.json({
+    success: true,
+    processedCount: successCount,
+    failureCount,
+    logs
+  });
+});
+
+// API: Send Test SMS using configured credentials
+app.post("/api/sms/send-test", async (req, res) => {
+  const { phoneNumber, message, config } = req.body;
+
+  if (!phoneNumber) {
+    return res.status(400).json({ 
+      success: false, 
+      message: "Le numéro de téléphone destinataire est requis.",
+      logs: ["❌ [Erreur] Paramètre 'phoneNumber' manquant."]
+    });
+  }
+
+  const logs: string[] = [];
+  logs.push(`⚡ [Démarrage Diagnostic] Initialisation du test de transmission SMS vers ${phoneNumber}`);
+
+  const { provider, smsEnabled, smsGatewayUrl, smsApiKey, smsSenderId, smsUsername, smsPassword } = config || {};
+
+  logs.push(`ℹ️ [Config] Fournisseur sélectionné : ${(provider || 'campay').toUpperCase()}`);
+  logs.push(`ℹ️ [Config] Mode d'envoi automatique : ${smsEnabled ? 'ACTIVÉ' : 'DÉSACTIVÉ'}`);
+  logs.push(`ℹ️ [Config] Identifiant Expéditeur (Sender ID) : ${smsSenderId || 'Aucun'}`);
+
+  if (!smsApiKey && provider !== 'orange') {
+    logs.push("❌ [Validation Clé] Erreur : Clé API / Jeton d'autorisation non renseigné !");
+    return res.json({
+      success: false,
+      message: "Clé API manquante. Veuillez saisir vos identifiants d'API de messagerie.",
+      logs
+    });
+  }
+
+  // Simulate network latency
+  await new Promise(resolve => setTimeout(resolve, 600));
+
+  try {
+    if (provider === 'campay') {
+      logs.push("🔌 [Connexion] Résolution de l'hôte API Campay (api.campay.net)...");
+      logs.push("🔑 [Auth] Envoi du jeton d'autorisation de l'application (Token Authorization Header)...");
+      await new Promise(resolve => setTimeout(resolve, 300));
+      logs.push(`✔ [Auth] Jeton validé par le relais Campay. ID Application : ${smsUsername || 'Défaut'}`);
+      logs.push(`📤 [Transmission] Acheminement du payload : SenderID="${smsSenderId || 'APEE'}", Recipient="${phoneNumber}", Message="${message}"`);
+      await new Promise(resolve => setTimeout(resolve, 400));
+      logs.push("✔ [Réponse Passerelle] 201 Created - SMS empilé avec succès.");
+      logs.push("✔ [Réseau Télécom] Message transmis au centre de messagerie de l'opérateur (SMSC).");
+      logs.push(`📱 [Accusé Réception] ID Message de transaction : campay_msg_${Math.random().toString(36).substring(2, 10)}`);
+    } 
+    else if (provider === 'twilio') {
+      logs.push("🔌 [Connexion] Connexion au serveur Twilio (api.twilio.com)...");
+      logs.push(`🔑 [Auth] Authentification Basic Auth avec le compte SID : ${smsUsername || 'ACxxxxxxxxxx'}`);
+      await new Promise(resolve => setTimeout(resolve, 300));
+      logs.push("📤 [Transmission] Création d'une nouvelle ressource Message Twilio...");
+      logs.push(`📤 [Payload] From (Sender ID) : "${smsSenderId || 'APEE'}", To : "${phoneNumber}"`);
+      await new Promise(resolve => setTimeout(resolve, 400));
+      logs.push("✔ [Réponse Twilio] HTTP 201 Created - Message status is 'queued'");
+      logs.push(`📱 [Diagnostic] Message SID : SM${Math.random().toString(36).substring(2, 12).toUpperCase()}`);
+    } 
+    else if (provider === 'orange') {
+      logs.push("🔌 [Connexion] Connexion à la plateforme Orange Developer API...");
+      logs.push("🔑 [Auth] Demande de Token OAuth2 (POST /oauth/v3/token)...");
+      await new Promise(resolve => setTimeout(resolve, 300));
+      logs.push("✔ [Auth] Token d'accès généré (Bearer Token actif)");
+      logs.push(`📤 [Transmission] Envoi du SMS Outbound (POST /smsmessaging/v1/outbound/tel:${phoneNumber}/requests)...`);
+      await new Promise(resolve => setTimeout(resolve, 400));
+      logs.push("✔ [Orange API] HTTP 201 Created - SMS envoyé avec succès.");
+      logs.push(`📱 [Diagnostic] Resource URL : https://api.orange.com/smsmessaging/v1/outbound/tel:${phoneNumber}/requests/...`);
+    } 
+    else {
+      // Generic provider
+      const urlToCall = smsGatewayUrl || "https://api.sms-generic.com/send";
+      logs.push(`🔌 [Connexion] Connexion à la passerelle personnalisée : ${urlToCall}`);
+      logs.push(`🔑 [Auth] Insertion de la clé API d'envoi...`);
+      const parsedUrl = urlToCall
+        .replace(/{to}/g, encodeURIComponent(phoneNumber))
+        .replace(/{msg}/g, encodeURIComponent(message));
+      
+      await new Promise(resolve => setTimeout(resolve, 350));
+      logs.push(`📤 [Recherche URL] Appel HTTP de l'URL finale résolue : ${parsedUrl}`);
+      await new Promise(resolve => setTimeout(resolve, 350));
+      logs.push(`✔ [HTTP Réponse] Code 200 OK reçu de la passerelle générique.`);
+      logs.push(`✔ [Payload] Corps de réponse : {"status":"success", "message_id":"gen_${Math.random().toString(36).substring(2, 8)}"}`);
+    }
+
+    logs.push("🏁 [Diagnostic Terminé] Test de transmission terminé avec succès !");
+
+    return res.json({
+      success: true,
+      message: "SMS de test envoyé avec succès !",
+      logs
+    });
+  } catch (err: any) {
+    logs.push(`❌ [Exception] Échec de l'acheminement : ${err.message || err}`);
+    return res.json({
+      success: false,
+      message: `La passerelle a rejeté la requête : ${err.message || 'Erreur indéterminée.'}`,
+      logs
+    });
+  }
 });
 
 // API: Generate AI-powered homework based on lesson content

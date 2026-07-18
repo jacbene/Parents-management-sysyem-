@@ -45,7 +45,7 @@ service cloud.firestore {
 
     function hasSuperAdminDoc(email) {
       return email is string && 
-             exists(/databases/$(database)/documents/super_admins/$(email));
+             exists(/databases/$(database)/documents/super_admins/$(email.lower()));
     }
 
     function isSuperAdmin() {
@@ -53,8 +53,8 @@ service cloud.firestore {
              (request.auth.uid == "sys_admin_jacques" ||
               (request.auth.token.email != null && 
                request.auth.token.email is string &&
-               (request.auth.token.email == "jacquesbene301@gmail.com" ||
-                request.auth.token.email == "adjoint@pasma.sys" ||
+               (request.auth.token.email.lower() == "jacquesbene301@gmail.com" ||
+                request.auth.token.email.lower() == "adjoint@pasma.sys" ||
                 hasSuperAdminDoc(request.auth.token.email))));
     }
 
@@ -105,8 +105,10 @@ service cloud.firestore {
       allow read: if isSignedIn() || isDemoId(establishmentId);
       allow write: if isSignedIn() && 
                     isSafeId(establishmentId) &&
-                    (resource == null || resource.data.ownerId == request.auth.uid) &&
-                    request.resource.data.ownerId == request.auth.uid;
+                    (isSuperAdmin() || (
+                      (resource == null || resource.data.ownerId == request.auth.uid) &&
+                      request.resource.data.ownerId == request.auth.uid
+                    ));
     }
 
     // students
