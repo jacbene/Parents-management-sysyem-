@@ -96,13 +96,13 @@ export default function SmsConfigurationForm({
         : "L'URL de la passerelle est requise pour le fournisseur générique.";
     }
 
-    if (!smsApiKey.trim() && provider !== 'orange') {
+    if (!smsApiKey.trim() && provider !== 'orange' && provider !== 'twilio') {
       newErrors.smsApiKey = language === 'en'
         ? 'API Key / Auth Token is required.'
         : "La clé API ou le jeton d'authentification est requis.";
     }
 
-    if (!smsSenderId.trim()) {
+    if (!smsSenderId.trim() && provider !== 'twilio') {
       newErrors.smsSenderId = language === 'en'
         ? 'Sender ID is required.'
         : "L'identifiant d'expéditeur (Sender ID) est requis.";
@@ -291,6 +291,28 @@ export default function SmsConfigurationForm({
 
         <div className={`space-y-4 transition duration-250 ${smsEnabled ? 'opacity-100' : 'opacity-50 pointer-events-none select-none'}`}>
           
+          {/* Global Twilio Fallback Notice */}
+          {provider === 'twilio' && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="p-4 bg-indigo-50/70 border border-indigo-150 rounded-2xl text-xs text-indigo-900 flex items-start gap-3 shadow-3xs"
+            >
+              <Info className="h-5 w-5 text-indigo-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <span className="font-extrabold uppercase text-[10px] tracking-wider text-indigo-700 block">Service SMS Global Actif (API Twilio)</span>
+                <p className="text-[11px] leading-relaxed text-slate-600">
+                  Le portail ENT dispose d'une **clé API Twilio globale préconfigurée** au niveau du serveur. 
+                  Vous n'avez pas besoin de renseigner vos propres identifiants (Account SID, Auth Token ou numéro expéditeur) ci-dessous. Ils seront automatiquement substitués par le compte par défaut de la plateforme.
+                </p>
+                <div className="flex items-center gap-1.5 mt-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="text-[10px] font-bold text-emerald-700">Canal Twilio global prêt et opérationnel</span>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             
             {/* Provider Selection */}
@@ -309,23 +331,38 @@ export default function SmsConfigurationForm({
                 <option value="generic">Passerelle HTTP Générique (GET/POST)</option>
               </select>
             </div>
-
+ 
             {/* Sender ID */}
             <div className="space-y-1">
               <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">
-                Identifiant d'expéditeur (Sender ID) <span className="text-red-500">*</span>
+                {provider === 'twilio' 
+                  ? "Numéro expéditeur Twilio (Phone Number / FROM)" 
+                  : "Identifiant d'expéditeur (Sender ID)"} 
+                {provider === 'twilio' ? ' (Optionnel - Twilio Global)' : <span className="text-red-500">*</span>}
               </label>
               <input 
                 type="text"
                 value={smsSenderId}
-                onChange={(e) => setSmsSenderId(e.target.value.substring(0, 11).toUpperCase())}
-                placeholder="Ex: APEE"
-                maxLength={11}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (provider === 'twilio') {
+                    setSmsSenderId(val.substring(0, 34));
+                  } else {
+                    setSmsSenderId(val.substring(0, 11).toUpperCase());
+                  }
+                }}
+                placeholder={provider === 'twilio' ? "Ex: +18559091234 ou MGxxxx..." : "Ex: APEE"}
+                maxLength={provider === 'twilio' ? 34 : 11}
                 className={`w-full px-3 py-2 text-xs bg-white border rounded-xl focus:outline-indigo-500 font-mono font-bold text-slate-800 ${errors.smsSenderId ? 'border-red-400' : 'border-slate-200'}`}
               />
+              <p className="text-[9px] text-slate-400 leading-relaxed mt-1">
+                {provider === 'twilio' 
+                  ? "⚠️ Ce champ désigne le NUMÉRO DE TÉLÉPHONE d'envoi certifié de votre compte Twilio (avec l'indicatif, ex: +18559091234) ou l'ID de service de messagerie (ex: MGxxxx). Ce n'est PAS une clé d'API."
+                  : "Le nom d'expéditeur qui s'affichera sur le téléphone des parents (Max. 11 caractères)."}
+              </p>
               {errors.smsSenderId && <p className="text-[10px] text-red-500 font-semibold">{errors.smsSenderId}</p>}
             </div>
-
+ 
           </div>
 
           {/* Conditional Gateway URL (Generic only) */}
@@ -351,14 +388,17 @@ export default function SmsConfigurationForm({
             {/* API Key / Token */}
             <div className="space-y-1">
               <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">
-                Clé d'API / Jeton d'autorisation (Token) <span className="text-red-500">*</span>
+                {provider === 'twilio' 
+                  ? "Twilio Auth Token (Token d'accès)" 
+                  : "Clé d'API / Jeton d'autorisation (Token)"} 
+                {provider === 'twilio' ? ' (Optionnel - Twilio Global)' : <span className="text-red-500">*</span>}
               </label>
               <div className="relative">
                 <input 
                   type={showApiKey ? "text" : "password"}
                   value={smsApiKey}
                   onChange={(e) => setSmsApiKey(e.target.value)}
-                  placeholder="Clé d'authentification ou jeton de passerelle..."
+                  placeholder={provider === 'twilio' ? "Auth Token secret Twilio..." : "Clé d'authentification ou jeton de passerelle..."}
                   className={`w-full pl-3 pr-16 py-2 text-xs bg-white border rounded-xl focus:outline-indigo-500 font-mono text-slate-800 font-bold ${errors.smsApiKey ? 'border-red-400' : 'border-slate-200'}`}
                 />
                 <button
@@ -369,27 +409,39 @@ export default function SmsConfigurationForm({
                   {showApiKey ? "Cacher" : "Afficher"}
                 </button>
               </div>
+              <p className="text-[9px] text-slate-400 mt-1">
+                {provider === 'twilio' 
+                  ? "Le jeton d'authentification secret (Auth Token) fourni par Twilio pour signer les requêtes."
+                  : "Clé secrète ou Token requis pour s'authentifier auprès de la passerelle de messagerie."}
+              </p>
               {errors.smsApiKey && <p className="text-[10px] text-red-500 font-semibold">{errors.smsApiKey}</p>}
             </div>
 
             {/* Account / Username (Optional) */}
             <div className="space-y-1">
               <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">
-                Identifiant de compte / Nom d'utilisateur (Optionnel)
+                {provider === 'twilio' 
+                  ? "Twilio Account SID (Identifiant AC...)" 
+                  : "Identifiant de compte / Nom d'utilisateur (Optionnel)"}
               </label>
               <input 
                 type="text"
                 value={smsUsername}
                 onChange={(e) => setSmsUsername(e.target.value)}
-                placeholder="Ex: ACxxxxxx ou login d'accès..."
+                placeholder={provider === 'twilio' ? "Ex: ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" : "Ex: ACxxxxxx ou login d'accès..."}
                 className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-indigo-500 font-mono text-slate-800"
               />
+              <p className="text-[9px] text-slate-400 mt-1">
+                {provider === 'twilio' 
+                  ? "L'identifiant de compte Twilio principal (Account SID) qui commence par 'AC'."
+                  : "Identifiant d'accès ou login s'il est requis par le fournisseur."}
+              </p>
             </div>
 
           </div>
 
           {/* Password (Optional, mostly for Twilio Auth token or generic basic auth) */}
-          {provider !== 'orange' && (
+          {provider !== 'orange' && provider !== 'twilio' && (
             <div className="space-y-1">
               <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">
                 Mot de passe de compte / Token secret (Optionnel)

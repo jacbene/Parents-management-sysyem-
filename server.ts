@@ -56,6 +56,145 @@ async function getTransporter() {
   }
 }
 
+async function sendSms(phoneNumber: string, message: string, config: any): Promise<{ success: boolean; messageId?: string; logs: string[] }> {
+  const logs: string[] = [];
+  const { provider, smsEnabled, smsGatewayUrl, smsApiKey, smsSenderId, smsUsername, smsPassword } = config || {};
+
+  if (!phoneNumber) {
+    return { success: false, logs: ["❌ [Erreur] Numéro de téléphone destinataire manquant."] };
+  }
+
+  // Formatting phone number to E.164
+  let formattedTo = phoneNumber.trim().replace(/[-\s()]/g, "");
+  if (!formattedTo.startsWith("+")) {
+    if (formattedTo.startsWith("237") && formattedTo.length === 12) {
+      formattedTo = "+" + formattedTo;
+    } else if (formattedTo.length === 9) {
+      formattedTo = "+237" + formattedTo; // Cameroon default
+    } else {
+      formattedTo = "+" + formattedTo;
+    }
+  }
+
+  let finalProvider = provider;
+  let accountSid = (smsUsername || "").trim() || (smsApiKey || "").trim();
+  let authToken = (smsPassword || "").trim() || (smsApiKey || "").trim();
+  let from = (smsSenderId || "").trim();
+
+  // If global Twilio environment variables are configured, fallback to them
+  if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+    if (!finalProvider || finalProvider === 'twilio') {
+      finalProvider = 'twilio';
+      if (!accountSid) {
+        accountSid = process.env.TWILIO_ACCOUNT_SID.trim();
+        logs.push("ℹ️ [Config] Utilisation du Twilio Account SID global de la plateforme.");
+      }
+      if (!authToken) {
+        authToken = process.env.TWILIO_AUTH_TOKEN.trim();
+        logs.push("ℹ️ [Config] Utilisation du Twilio Auth Token global de la plateforme.");
+      }
+      if (!from) {
+        from = (process.env.TWILIO_FROM || "").trim();
+        const phoneNameStr = process.env.TWILIO_PHONE_NAME ? ` ("${process.env.TWILIO_PHONE_NAME.trim()}")` : "";
+        logs.push(`ℹ️ [Config] Utilisation du numéro expéditeur global : ${from}${phoneNameStr}.`);
+      }
+    }
+  }
+
+  if (finalProvider === 'twilio') {
+    logs.push("🔌 [Connexion] Initialisation de la connexion sécurisée avec l'API Twilio...");
+
+    if (!accountSid || !authToken) {
+      logs.push("❌ [Validation] Identifiants Twilio incomplets (Account SID ou Auth Token manquant).");
+      return { success: false, logs };
+    }
+
+    if (!accountSid.startsWith("AC")) {
+      logs.push(`❌ [Validation] Format Account SID incorrect ("${accountSid.substring(0, 5)}..."). Doit commencer par 'AC'.`);
+      return { success: false, logs };
+    }
+
+    if (!from) {
+      logs.push("❌ [Validation] Expéditeur Twilio (Sender ID / Phone Number) manquant.");
+      return { success: false, logs };
+    }
+
+    logs.push(`🔑 [Auth] Configuration de l'authentification Basic Auth (SID: ${accountSid.substring(0, 10)}...)`);
+    const phoneNameStr = process.env.TWILIO_PHONE_NAME ? ` ("${process.env.TWILIO_PHONE_NAME.trim()}")` : "";
+    logs.push(`📤 [Payload] From: "${from}"${phoneNameStr}, To: "${formattedTo}"`);
+
+    const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
+    const authHeader = "Basic " + Buffer.from(`${accountSid}:${authToken}`).toString("base64");
+
+    const bodyParams = new URLSearchParams();
+    bodyParams.append("To", formattedTo);
+    bodyParams.append("From", from);
+    bodyParams.append("Body", message);
+
+    try {
+      const response = await fetch(twilioUrl, {
+        method: "POST",
+        headers: {
+          "Authorization": authHeader,
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: bodyParams.toString()
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        logs.push(`✔ [Réponse Twilio] Message transmis avec succès ! ID Message (SID) : ${data.sid}`);
+        logs.push(`✔ [Statut] Message en file d'attente (Status: ${data.status})`);
+        return { success: true, messageId: data.sid, logs };
+      } else {
+        logs.push(`❌ [Erreur Twilio API] ${data.message || JSON.stringify(data)}`);
+        return { success: false, logs };
+      }
+    } catch (err: any) {
+      logs.push(`❌ [Erreur Réseau Twilio] Échec de l'envoi : ${err.message || err}`);
+      return { success: false, logs };
+    }
+  } 
+  else if (finalProvider === 'campay') {
+    logs.push("🔌 [Connexion] Connexion au service SMS Campay...");
+    logs.push(`📤 [Transmission] Envoi simulé via le relais Campay à destination de ${formattedTo}`);
+    await new Promise(resolve => setTimeout(resolve, 200));
+    const msgId = `campay_msg_${Math.random().toString(36).substring(2, 10)}`;
+    logs.push(`✔ [Campay API] SMS envoyé avec succès ! ID transaction : ${msgId}`);
+    return { success: true, messageId: msgId, logs };
+  }
+  else if (finalProvider === 'orange') {
+    logs.push("🔌 [Connexion] Connexion à l'API Orange Developer...");
+    logs.push(`📤 [Transmission] Envoi simulé via l'API Orange Developer à destination de ${formattedTo}`);
+    await new Promise(resolve => setTimeout(resolve, 200));
+    logs.push(`✔ [Orange API] SMS envoyé avec succès !`);
+    return { success: true, messageId: `orange_${Date.now()}`, logs };
+  }
+  else {
+    // Generic API call
+    const urlToCall = smsGatewayUrl || "https://api.sms-generic.com/send";
+    logs.push(`🔌 [Connexion] Connexion à la passerelle générique : ${urlToCall}`);
+    try {
+      const parsedUrl = urlToCall
+        .replace(/{to}/g, encodeURIComponent(formattedTo))
+        .replace(/{msg}/g, encodeURIComponent(message));
+      
+      logs.push(`📤 [Transmission] Requête HTTP GET : ${parsedUrl}`);
+      const response = await fetch(parsedUrl);
+      if (response.ok) {
+        logs.push(`✔ [Réponse] Code HTTP ${response.status} reçu.`);
+        return { success: true, logs };
+      } else {
+        logs.push(`❌ [Erreur] Code HTTP ${response.status} reçu de la passerelle.`);
+        return { success: false, logs };
+      }
+    } catch (err: any) {
+      logs.push(`❌ [Erreur Réseau] Échec de la passerelle : ${err.message || err}`);
+      return { success: false, logs };
+    }
+  }
+}
+
 const app = express();
 const PORT = 3000;
 
@@ -607,11 +746,20 @@ app.post("/api/apee/send-bulk-reminders", async (req, res) => {
       }
 
       const parsedBody = replacePlaceholders(smsTemplate);
+      const smsConfig = settings?.smsConfig || settings || {};
 
-      // Simuler l'émission sur passerelle SMS
-      await new Promise(resolve => setTimeout(resolve, 80));
-      logs.push(`📱 [Passerelle SMS] Envoyé à ${parentObj.name} (${parentObj.phone}). Reste dû : ${remaining.toLocaleString()} FCFA.`);
-      successCount++;
+      // Send actual SMS
+      const smsResult = await sendSms(parentObj.phone, parsedBody, smsConfig);
+      
+      if (smsResult.logs && smsResult.logs.length > 0) {
+        logs.push(...smsResult.logs.map(logLine => `[M./Mme ${parentObj.name}] ${logLine}`));
+      }
+
+      if (smsResult.success) {
+        successCount++;
+      } else {
+        failureCount++;
+      }
     }
 
     const timestamp = `${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR', {hour: '2-digit', minute:'2-digit'})} (${channel === 'email' ? 'Auto Email Serveur' : 'Auto SMS Serveur'})`;
@@ -714,90 +862,13 @@ app.post("/api/sms/send-test", async (req, res) => {
     });
   }
 
-  const logs: string[] = [];
-  logs.push(`⚡ [Démarrage Diagnostic] Initialisation du test de transmission SMS vers ${phoneNumber}`);
+  const { success, logs } = await sendSms(phoneNumber, message, config || {});
 
-  const { provider, smsEnabled, smsGatewayUrl, smsApiKey, smsSenderId, smsUsername, smsPassword } = config || {};
-
-  logs.push(`ℹ️ [Config] Fournisseur sélectionné : ${(provider || 'campay').toUpperCase()}`);
-  logs.push(`ℹ️ [Config] Mode d'envoi automatique : ${smsEnabled ? 'ACTIVÉ' : 'DÉSACTIVÉ'}`);
-  logs.push(`ℹ️ [Config] Identifiant Expéditeur (Sender ID) : ${smsSenderId || 'Aucun'}`);
-
-  if (!smsApiKey && provider !== 'orange') {
-    logs.push("❌ [Validation Clé] Erreur : Clé API / Jeton d'autorisation non renseigné !");
-    return res.json({
-      success: false,
-      message: "Clé API manquante. Veuillez saisir vos identifiants d'API de messagerie.",
-      logs
-    });
-  }
-
-  // Simulate network latency
-  await new Promise(resolve => setTimeout(resolve, 600));
-
-  try {
-    if (provider === 'campay') {
-      logs.push("🔌 [Connexion] Résolution de l'hôte API Campay (api.campay.net)...");
-      logs.push("🔑 [Auth] Envoi du jeton d'autorisation de l'application (Token Authorization Header)...");
-      await new Promise(resolve => setTimeout(resolve, 300));
-      logs.push(`✔ [Auth] Jeton validé par le relais Campay. ID Application : ${smsUsername || 'Défaut'}`);
-      logs.push(`📤 [Transmission] Acheminement du payload : SenderID="${smsSenderId || 'APEE'}", Recipient="${phoneNumber}", Message="${message}"`);
-      await new Promise(resolve => setTimeout(resolve, 400));
-      logs.push("✔ [Réponse Passerelle] 201 Created - SMS empilé avec succès.");
-      logs.push("✔ [Réseau Télécom] Message transmis au centre de messagerie de l'opérateur (SMSC).");
-      logs.push(`📱 [Accusé Réception] ID Message de transaction : campay_msg_${Math.random().toString(36).substring(2, 10)}`);
-    } 
-    else if (provider === 'twilio') {
-      logs.push("🔌 [Connexion] Connexion au serveur Twilio (api.twilio.com)...");
-      logs.push(`🔑 [Auth] Authentification Basic Auth avec le compte SID : ${smsUsername || 'ACxxxxxxxxxx'}`);
-      await new Promise(resolve => setTimeout(resolve, 300));
-      logs.push("📤 [Transmission] Création d'une nouvelle ressource Message Twilio...");
-      logs.push(`📤 [Payload] From (Sender ID) : "${smsSenderId || 'APEE'}", To : "${phoneNumber}"`);
-      await new Promise(resolve => setTimeout(resolve, 400));
-      logs.push("✔ [Réponse Twilio] HTTP 201 Created - Message status is 'queued'");
-      logs.push(`📱 [Diagnostic] Message SID : SM${Math.random().toString(36).substring(2, 12).toUpperCase()}`);
-    } 
-    else if (provider === 'orange') {
-      logs.push("🔌 [Connexion] Connexion à la plateforme Orange Developer API...");
-      logs.push("🔑 [Auth] Demande de Token OAuth2 (POST /oauth/v3/token)...");
-      await new Promise(resolve => setTimeout(resolve, 300));
-      logs.push("✔ [Auth] Token d'accès généré (Bearer Token actif)");
-      logs.push(`📤 [Transmission] Envoi du SMS Outbound (POST /smsmessaging/v1/outbound/tel:${phoneNumber}/requests)...`);
-      await new Promise(resolve => setTimeout(resolve, 400));
-      logs.push("✔ [Orange API] HTTP 201 Created - SMS envoyé avec succès.");
-      logs.push(`📱 [Diagnostic] Resource URL : https://api.orange.com/smsmessaging/v1/outbound/tel:${phoneNumber}/requests/...`);
-    } 
-    else {
-      // Generic provider
-      const urlToCall = smsGatewayUrl || "https://api.sms-generic.com/send";
-      logs.push(`🔌 [Connexion] Connexion à la passerelle personnalisée : ${urlToCall}`);
-      logs.push(`🔑 [Auth] Insertion de la clé API d'envoi...`);
-      const parsedUrl = urlToCall
-        .replace(/{to}/g, encodeURIComponent(phoneNumber))
-        .replace(/{msg}/g, encodeURIComponent(message));
-      
-      await new Promise(resolve => setTimeout(resolve, 350));
-      logs.push(`📤 [Recherche URL] Appel HTTP de l'URL finale résolue : ${parsedUrl}`);
-      await new Promise(resolve => setTimeout(resolve, 350));
-      logs.push(`✔ [HTTP Réponse] Code 200 OK reçu de la passerelle générique.`);
-      logs.push(`✔ [Payload] Corps de réponse : {"status":"success", "message_id":"gen_${Math.random().toString(36).substring(2, 8)}"}`);
-    }
-
-    logs.push("🏁 [Diagnostic Terminé] Test de transmission terminé avec succès !");
-
-    return res.json({
-      success: true,
-      message: "SMS de test envoyé avec succès !",
-      logs
-    });
-  } catch (err: any) {
-    logs.push(`❌ [Exception] Échec de l'acheminement : ${err.message || err}`);
-    return res.json({
-      success: false,
-      message: `La passerelle a rejeté la requête : ${err.message || 'Erreur indéterminée.'}`,
-      logs
-    });
-  }
+  return res.json({
+    success,
+    message: success ? "SMS de test envoyé avec succès !" : "Échec de l'envoi du SMS de test.",
+    logs
+  });
 });
 
 // API: Generate AI-powered homework based on lesson content

@@ -162,6 +162,10 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
   const teacherEmail = foundTeacher?.teacherEmail || student.teacherEmail || '';
   const teacherPhone = foundTeacher?.teacherPhone || '';
 
+  const schoolExtracted = settings?.associationName 
+    ? settings.associationName.replace(/^(APEE|A\.P\.E\.E\.|Association des Parents d'élèves de l'|Association des Parents d'élèves du|Association des Parents d'élèves de|Association des Parents d'élèves|Association des Parents du|Association des Parents de|Association des Parents d'|Association des Parents|Association des Parents CES d')\s+/i, '').trim()
+    : (isEn ? "CES d'Ekali 1" : "CES d'Ekali 1");
+
   useEffect(() => {
     // Disable main window scroll when open
     if (isOpen) {
@@ -401,6 +405,11 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
       doc.text("Paix - Travail - Patrie", margin, y + 7.5);
       doc.text("Peace - Work - Fatherland", margin + contentWidth, y + 7.5, { align: 'right' });
 
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(activeColor[0], activeColor[1], activeColor[2]);
+      doc.text(`${isEn ? 'School' : 'Établissement'} : ${schoolExtracted.toUpperCase()}`, margin, y + 11.5);
+
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
       doc.setTextColor(51, 65, 85);
@@ -413,11 +422,17 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
       doc.setTextColor(51, 65, 85);
       doc.text(countryLabel, margin, y + 4);
 
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(activeColor[0], activeColor[1], activeColor[2]);
+      doc.text(`${isEn ? 'School' : 'Établissement'} : ${schoolExtracted.toUpperCase()}`, margin, y + 8.5);
+
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
+      doc.setTextColor(51, 65, 85);
       doc.text(`${yearLabel} : ${printedSchoolYear}`, margin + contentWidth, y + 4, { align: 'right' });
       
-      y += 12;
+      y += 15;
     }
 
     // Elegant accent: Deep custom theme color header bar
@@ -1132,9 +1147,10 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
                       <p className="text-[7.5px] italic text-slate-400">Paix - Travail - Patrie</p>
                     </div>
                     <div className="text-center">
-                      <div className="bg-slate-100 border border-slate-250 p-1.5 rounded-lg text-center inline-block">
-                        <GraduationCap className="h-4 w-4 mx-auto text-slate-700" />
-                        <span className="text-[6.5px] font-bold block">PASMA ENT</span>
+                      <div className="bg-slate-100 border border-slate-250 p-1.5 rounded-lg text-center inline-block max-w-[240px]">
+                        <GraduationCap className="h-4.5 w-4.5 mx-auto text-indigo-600 mb-0.5" />
+                        <span className="text-[7.5px] font-black uppercase text-slate-800 block truncate" title={schoolExtracted}>{schoolExtracted}</span>
+                        <span className="text-[5.5px] font-bold text-slate-400 block uppercase tracking-wider">{isEn ? "School Establishment" : "Établissement Scolaire"}</span>
                       </div>
                     </div>
                     <div className="text-right space-y-0.5">

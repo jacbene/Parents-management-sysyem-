@@ -993,9 +993,10 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
       doc.setFontSize(7.5);
       doc.setTextColor(71, 85, 105); // Slate 600
       doc.text("N°", margin + 4, y + 4.5);
-      doc.text("Nom complet de l'élève", margin + 15, y + 4.5);
-      doc.text("Classe assignée", margin + 105, y + 4.5);
-      doc.text("Date de l'opération", margin + 140, y + 4.5);
+      doc.text("Nom complet de l'élève", margin + 12, y + 4.5);
+      doc.text("Classe assignée", margin + 80, y + 4.5);
+      doc.text("Date de naissance", margin + 110, y + 4.5);
+      doc.text("Date de l'opération", margin + 142, y + 4.5);
 
       y += 6.5;
 
@@ -1006,11 +1007,13 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
 
         doc.text(String(idx + 1), margin + 4, y + 4.5);
         doc.setFont('helvetica', 'bold');
-        doc.text(kid.name.toUpperCase(), margin + 15, y + 4.5);
+        doc.text(kid.name.toUpperCase(), margin + 12, y + 4.5);
         doc.setFont('helvetica', 'normal');
-        doc.text(kid.classRoom, margin + 105, y + 4.5);
+        doc.text(kid.classRoom, margin + 80, y + 4.5);
+        const birthDateStr = kid.dob ? new Date(kid.dob).toLocaleDateString('fr-FR') : '-';
+        doc.text(birthDateStr, margin + 110, y + 4.5);
         const opDateStr = kid.dateOperation ? new Date(kid.dateOperation).toLocaleDateString('fr-FR') : '-';
-        doc.text(opDateStr, margin + 140, y + 4.5);
+        doc.text(opDateStr, margin + 142, y + 4.5);
 
         y += 6.5;
 
@@ -1522,6 +1525,17 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
                         </option>
                       ))}
                     </select>
+                  </div>
+                  <div className="sm:w-36 space-y-1">
+                    <label className="text-[9px] font-bold text-slate-500 uppercase flex items-center gap-1">
+                      <User className="h-2.5 w-2.5 text-pink-500" /> Date de naissance
+                    </label>
+                    <input
+                      type="date"
+                      value={student.dob || ''}
+                      onChange={(e) => handleStudentChange(idx, 'dob', e.target.value)}
+                      className="w-full px-2 py-1 text-xs border border-slate-200 rounded-lg focus:outline-indigo-500 bg-slate-50 text-slate-800"
+                    />
                   </div>
                   <div className="sm:w-36 space-y-1">
                     <label className="text-[9px] font-bold text-slate-500 uppercase flex items-center gap-1">
@@ -2157,6 +2171,7 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
                             <th className="py-2 px-3 border-r border-slate-200 font-extrabold text-[#111827]">N°</th>
                             <th className="py-2 px-3 border-r border-slate-200 font-extrabold text-[#111827]">Nom complet</th>
                             <th className="py-2 px-3 border-r border-slate-200 font-extrabold text-[#111827]">Classe assignée</th>
+                            <th className="py-2 px-3 border-r border-slate-200 font-extrabold text-[#111827]">Date de naissance</th>
                             <th className="py-2 px-3 font-extrabold text-[#111827]">Date d'opération</th>
                           </tr>
                         </thead>
@@ -2166,6 +2181,9 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
                               <td className="py-1.5 px-3 border-r border-slate-200 font-medium text-slate-500">{idx + 1}</td>
                               <td className="py-1.5 px-3 border-r border-slate-200 font-mono text-[11px] font-extrabold text-slate-900 uppercase tracking-wide">{s.name}</td>
                               <td className="py-1.5 px-3 border-r border-slate-200 font-semibold text-slate-700">{s.classRoom}</td>
+                              <td className="py-1.5 px-3 border-r border-slate-200 font-mono font-bold text-gray-600 text-[11px]">
+                                {s.dob ? new Date(s.dob).toLocaleDateString('fr-FR') : '-'}
+                              </td>
                               <td className="py-1.5 px-3 font-mono font-bold text-gray-600 text-[11px]">
                                 {s.dateOperation ? new Date(s.dateOperation).toLocaleDateString('fr-FR') : '-'}
                               </td>

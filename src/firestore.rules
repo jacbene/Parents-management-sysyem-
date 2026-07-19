@@ -178,11 +178,26 @@ service cloud.firestore {
       allow get: if isSignedIn() && 
                  isSafeId(invoiceId) &&
                  (isSuperAdmin() || 
+                  invoiceId.endsWith('_settings') ||
                   (resource != null && isOwnerOrDemoRead(resource.data.parentId)) || 
                   invoiceId.matches('^log_.*'));
       allow list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
-      allow create: if isSignedIn() && (isSuperAdmin() || invoiceId.matches('^log_.*') || isOwnerOrDemoWrite(request.resource.data.parentId));
-      allow update: if isSignedIn() && (isSuperAdmin() || invoiceId.matches('^log_.*') || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow create: if isSignedIn() && 
+                    (isSuperAdmin() || 
+                     invoiceId.matches('^log_.*') || 
+                     (invoiceId.endsWith('_settings') && isOwnerOrDemoWrite(request.resource.data.parentId)) ||
+                     isOwnerOrDemoWrite(request.resource.data.parentId));
+      allow update: if isSignedIn() && 
+                    (isSuperAdmin() || 
+                     invoiceId.matches('^log_.*') || 
+                     (invoiceId.endsWith('_settings') && (
+                       isOwnerOrDemoWrite(request.resource.data.parentId) ||
+                       (resource != null && isOwnerOrDemoWrite(resource.data.parentId))
+                     )) ||
+                     (resource != null && (
+                       isOwnerOrDemoWrite(resource.data.parentId) ||
+                       isOwnerOrDemoWrite(request.resource.data.parentId)
+                     )));
       allow delete: if isSignedIn() && (isSuperAdmin() || invoiceId.matches('^log_.*') || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 

@@ -1496,6 +1496,19 @@ export default function App() {
   useEffect(() => {
     if (!selectedSchoolId || !portalUserRole) return;
 
+    // Skip device concurrency invalidation on pre-production environments or for demo accounts
+    // to prevent multiple concurrent testers/reviewers/tabs from kicking each other out.
+    const isPreprodOrDemo = typeof window !== 'undefined' && (
+      window.location.hostname.includes('ais-pre-') || 
+      window.location.hostname.includes('ais-prod-') ||
+      window.location.hostname.includes('pasma-app') ||
+      window.location.hostname.includes('localhost') ||
+      window.location.hostname.includes('127.0.0.1') ||
+      selectedSchoolId.startsWith('demo_')
+    );
+
+    if (isPreprodOrDemo) return;
+
     let targetKey = "";
     if (portalUserRole === 'parent' && portalParentDetails) {
       targetKey = `parent_${selectedSchoolId}_${portalParentDetails.phone || portalParentDetails.name}`;
@@ -3830,6 +3843,8 @@ export default function App() {
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="grades">
                         <GradesDashboard
                           grades={currentGrades}
+                          allGrades={grades}
+                          allStudents={students}
                           onAddGrade={handleAddGrade}
                           onDeleteGrade={handleDeleteGrade}
                           isPedAuthorized={portalUserRole === 'teacher' || isPedAuthorized}

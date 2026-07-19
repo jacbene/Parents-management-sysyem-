@@ -8,6 +8,8 @@ import { useLanguage } from '../utils/TranslationContext';
 
 interface GradesDashboardProps {
   grades: Grade[];
+  allGrades?: Grade[];
+  allStudents?: Student[];
   onAddGrade?: (grade: Grade) => Promise<boolean>;
   onDeleteGrade?: (id: string) => Promise<boolean>;
   isPedAuthorized?: boolean;
@@ -22,6 +24,8 @@ interface GradesDashboardProps {
 
 export default function GradesDashboard({
   grades,
+  allGrades = [],
+  allStudents = [],
   onAddGrade,
   onDeleteGrade,
   isPedAuthorized = false,
@@ -76,6 +80,47 @@ export default function GradesDashboard({
     examName: g.examName
   }));
 
+  // --- CLASS AVERAGES & COMPARATIVE CONTEXT ---
+  const classStudents = (allStudents && activeStudent)
+    ? allStudents.filter(s => s.grade === activeStudent.grade && s.classRoom === activeStudent.classRoom)
+    : (activeStudent ? [activeStudent] : []);
+
+  const classStudentIds = new Set(classStudents.map(s => s.id));
+  const classGrades = allGrades ? allGrades.filter(g => classStudentIds.has(g.studentId)) : [];
+
+  // Calculate each student's average in this class
+  const studentAverages = classStudents.map(student => {
+    const studentGrades = allGrades
+      ? allGrades.filter(g => g.studentId === student.id)
+      : (student.id === activeStudent?.id ? grades : []);
+    
+    if (studentGrades.length === 0) return null;
+    const total = studentGrades.reduce((sum, g) => sum + (g.score / g.maxScore) * 20, 0);
+    return total / studentGrades.length;
+  }).filter((avg): avg is number => avg !== null);
+
+  const classAverageNum = studentAverages.length > 0
+    ? studentAverages.reduce((sum, val) => sum + val, 0) / studentAverages.length
+    : Number(averageMark);
+
+  const classAverage = classAverageNum.toFixed(1);
+
+  // Student vs Class comparison
+  const diffFromClass = Number(averageMark) - classAverageNum;
+  const isAboveClass = diffFromClass > 0;
+  const isEqualClass = Math.abs(diffFromClass) < 0.05;
+
+  // Class subject averages map
+  const classSubjectAveragesMap = new Map<string, { total: number; count: number }>();
+  classGrades.forEach(g => {
+    const score20 = (g.score / g.maxScore) * 20;
+    const existing = classSubjectAveragesMap.get(g.subject) || { total: 0, count: 0 };
+    classSubjectAveragesMap.set(g.subject, {
+      total: existing.total + score20,
+      count: existing.count + 1
+    });
+  });
+
   // --- ADVANCED METRICS FOR PERFORMANCE DASHBOARD ---
   // 1. Subject averages (using all student grades)
   const subjectAveragesMap = new Map<string, { total: number; count: number }>();
@@ -88,14 +133,27 @@ export default function GradesDashboard({
     });
   });
   
-  const subjectAveragesData = Array.from(subjectAveragesMap.entries()).map(([subj, data]) => ({
-    subject: subj,
-    average: Number((data.total / data.count).toFixed(1)),
-    count: data.count
-  })).sort((a, b) => b.average - a.average);
+  const subjectAveragesData = Array.from(subjectAveragesMap.entries()).map(([subj, data]) => {
+    const classData = classSubjectAveragesMap.get(subj);
+    const classAvgVal = classData ? Number((classData.total / classData.count).toFixed(1)) : null;
+    return {
+      subject: subj,
+      average: Number((data.total / data.count).toFixed(1)),
+      classAverage: classAvgVal !== null ? classAvgVal : Number((data.total / data.count).toFixed(1)),
+      count: data.count
+    };
+  }).sort((a, b) => b.average - a.average);
 
   const strongestSubject = subjectAveragesData.length > 0 ? subjectAveragesData[0] : null;
   const weakestSubject = subjectAveragesData.length > 0 ? subjectAveragesData[subjectAveragesData.length - 1] : null;
+
+  const strongestSubjectClassAvg = strongestSubject && classSubjectAveragesMap.get(strongestSubject.subject)
+    ? classSubjectAveragesMap.get(strongestSubject.subject)!.total / classSubjectAveragesMap.get(strongestSubject.subject)!.count
+    : null;
+
+  const weakestSubjectClassAvg = weakestSubject && classSubjectAveragesMap.get(weakestSubject.subject)
+    ? classSubjectAveragesMap.get(weakestSubject.subject)!.total / classSubjectAveragesMap.get(weakestSubject.subject)!.count
+    : null;
 
   // 2. Grade Bracket Distribution
   let bracketUnder10 = 0;
@@ -323,7 +381,7 @@ export default function GradesDashboard({
 
     const assocName = settings?.associationName || (isEn ? "PARENT TEACHER ASSOCIATION (PTA)" : "BUREAU DES PARENTS D'ÉLÈVES (APEE)");
     const schoolExtracted = settings?.associationName 
-      ? settings.associationName.replace(/^(APEE|A\.P\.E\.E\.)\s+/i, '')
+      ? settings.associationName.replace(/^(APEE|A\.P\.E\.E\.|Association des Parents d'élèves de l'|Association des Parents d'élèves du|Association des Parents d'élèves de|Association des Parents d'élèves|Association des Parents du|Association des Parents de|Association des Parents d'|Association des Parents|Association des Parents CES d')\s+/i, '').trim()
       : (isEn ? "CES d'Ekali 1" : "CES d'Ekali 1");
     const yearLabel = isEn ? "Academic Year" : "Année Académique";
 
@@ -340,10 +398,14 @@ export default function GradesDashboard({
       doc.text("Paix - Travail - Patrie", margin, y + 7.5);
       doc.text("Peace - Work - Fatherland", margin + contentWidth, y + 7.5, { align: 'right' });
 
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(79, 70, 229); // Modern Indigo theme color
+      doc.text(`${isEn ? 'School' : 'Établissement'} : ${schoolExtracted.toUpperCase()}`, margin, y + 11.5);
+
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
       doc.setTextColor(51, 65, 85);
-      doc.text(assocName.toUpperCase(), margin, y + 11.5);
       doc.text(`${yearLabel} : ${settings?.schoolYear || "2025/2026"}`, margin + contentWidth, y + 11.5, { align: 'right' });
       
       y += 18;
@@ -353,11 +415,15 @@ export default function GradesDashboard({
       doc.setTextColor(51, 65, 85);
       doc.text(countryLabel, margin, y + 4);
 
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(79, 70, 229);
+      doc.text(`${isEn ? 'School' : 'Établissement'} : ${schoolExtracted.toUpperCase()}`, margin, y + 8.5);
+
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
-      doc.text(assocName.toUpperCase(), margin, y + 9);
-      doc.text(schoolExtracted, margin + contentWidth, y + 4, { align: 'right' });
-      doc.text(`${yearLabel} : ${settings?.schoolYear || "2025/2026"}`, margin + contentWidth, y + 9, { align: 'right' });
+      doc.setTextColor(51, 65, 85);
+      doc.text(`${yearLabel} : ${settings?.schoolYear || "2025/2026"}`, margin + contentWidth, y + 4, { align: 'right' });
       
       y += 15;
     }
@@ -469,55 +535,67 @@ export default function GradesDashboard({
     // KPI Left: Average score
     doc.setFillColor(245, 247, 255); // Indigo light background
     doc.setDrawColor(199, 210, 254);
-    doc.rect(margin, y, kpiWidth, 24, 'FD');
+    doc.rect(margin, y, kpiWidth, 28, 'FD');
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.5);
+    doc.setFontSize(8);
     doc.setTextColor(79, 70, 229);
     const kpiLeftTitle = isEn ? "GENERAL ACADEMIC GRADE AVERAGE" : "MOYENNE ACADÉMIQUE GÉNÉRALE";
-    doc.text(kpiLeftTitle, margin + 5, y + 5.5);
+    doc.text(kpiLeftTitle, margin + 5, y + 5);
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
+    doc.setFontSize(13);
     doc.setTextColor(15, 23, 42);
     const textAvgString = totalTestsNum > 0 ? `${avgBase20Val.toFixed(2)} / 20` : "-- / 20";
-    doc.text(textAvgString, margin + 5, y + 14);
+    doc.text(textAvgString, margin + 5, y + 12);
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
+    doc.setFontSize(7.5);
     doc.setTextColor(100, 116, 139);
     const globalApp = isEn 
       ? `Overall remarks: ${totalTestsNum > 0 ? getApprecTextEn(avgBase20Val) : 'Not evaluated'}` 
       : `Mention globale : ${totalTestsNum > 0 ? appText : 'Non évalué'}`;
-    doc.text(globalApp, margin + 5, y + 20);
+    doc.text(globalApp, margin + 5, y + 18);
+
+    const classAverageLabel = isEn
+      ? `Class average: ${classAverage} / 20 (${diffFromClass >= 0 ? '+' : ''}${diffFromClass.toFixed(2)} vs Class)`
+      : `Moyenne de classe : ${classAverage} / 20 (${diffFromClass >= 0 ? '+' : ''}${diffFromClass.toFixed(2)} vs Classe)`;
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(51, 65, 85);
+    doc.text(classAverageLabel, margin + 5, y + 23.5);
 
     // KPI Right: Total tests
     doc.setFillColor(240, 253, 244); // Green light background
     doc.setDrawColor(187, 247, 208);
-    doc.rect(margin + kpiWidth + 6, y, kpiWidth, 24, 'FD');
+    doc.rect(margin + kpiWidth + 6, y, kpiWidth, 28, 'FD');
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.5);
+    doc.setFontSize(8);
     doc.setTextColor(21, 128, 61);
     const kpiRightTitle = isEn ? "COMPLETED TESTS & EXAMINATIONS" : "ÉVALUATIONS ET EXAMENS TERMINÉS";
-    doc.text(kpiRightTitle, margin + kpiWidth + 11, y + 5.5);
+    doc.text(kpiRightTitle, margin + kpiWidth + 11, y + 5);
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
+    doc.setFontSize(13);
     doc.setTextColor(15, 23, 42);
     const completedEvalText = isEn ? `${totalTestsNum} tests` : `${totalTestsNum} éval.`;
-    doc.text(completedEvalText, margin + kpiWidth + 11, y + 14);
+    doc.text(completedEvalText, margin + kpiWidth + 11, y + 12);
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
+    doc.setFontSize(7.5);
     doc.setTextColor(100, 116, 139);
     const bestGrade = totalTestsNum > 0
       ? Math.max(...grades.map(g => (g.score / g.maxScore) * 20)).toFixed(1)
       : '0.0';
     const bestPerfLabel = isEn ? `Best grade: ${bestGrade} / 20` : `Meilleure performance : ${bestGrade} / 20`;
-    doc.text(bestPerfLabel, margin + kpiWidth + 11, y + 20);
+    doc.text(bestPerfLabel, margin + kpiWidth + 11, y + 18);
 
-    y += 30;
+    const rightSubLabel = isEn ? "Official school curriculum tracking" : "Suivi du programme scolaire officiel";
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(51, 65, 85);
+    doc.text(rightSubLabel, margin + kpiWidth + 11, y + 23.5);
+
+    y += 34;
 
     // Grades Table Block
     const checkPageBreak = (heightNeeded: number) => {
@@ -713,7 +791,7 @@ export default function GradesDashboard({
 
     const assocName = settings?.associationName || (isEn ? "PARENT TEACHER ASSOCIATION (PTA)" : "BUREAU DES PARENTS D'ÉLÈVES (APEE)");
     const schoolExtracted = settings?.associationName 
-      ? settings.associationName.replace(/^(APEE|A\.P\.E\.E\.)\s+/i, '')
+      ? settings.associationName.replace(/^(APEE|A\.P\.E\.E\.|Association des Parents d'élèves de l'|Association des Parents d'élèves du|Association des Parents d'élèves de|Association des Parents d'élèves|Association des Parents du|Association des Parents de|Association des Parents d'|Association des Parents|Association des Parents CES d')\s+/i, '').trim()
       : (isEn ? "CES d'Ekali 1" : "CES d'Ekali 1");
     const yearLabel = isEn ? "Academic Year" : "Année Académique";
 
@@ -730,10 +808,14 @@ export default function GradesDashboard({
       doc.text("Paix - Travail - Patrie", margin, y + 7.5);
       doc.text("Peace - Work - Fatherland", margin + contentWidth, y + 7.5, { align: 'right' });
 
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(79, 70, 229); // Modern Indigo active theme color
+      doc.text(`${isEn ? 'School' : 'Établissement'} : ${schoolExtracted.toUpperCase()}`, margin, y + 11.5);
+
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
       doc.setTextColor(51, 65, 85);
-      doc.text(assocName.toUpperCase(), margin, y + 11.5);
       doc.text(`${yearLabel} : ${settings?.schoolYear || "2025/2026"}`, margin + contentWidth, y + 11.5, { align: 'right' });
       
       y += 18;
@@ -743,11 +825,15 @@ export default function GradesDashboard({
       doc.setTextColor(51, 65, 85);
       doc.text(countryLabel, margin, y + 4);
 
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(79, 70, 229);
+      doc.text(`${isEn ? 'School' : 'Établissement'} : ${schoolExtracted.toUpperCase()}`, margin, y + 8.5);
+
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
-      doc.text(assocName.toUpperCase(), margin, y + 9);
-      doc.text(schoolExtracted, margin + contentWidth, y + 4, { align: 'right' });
-      doc.text(`${yearLabel} : ${settings?.schoolYear || "2025/2026"}`, margin + contentWidth, y + 9, { align: 'right' });
+      doc.setTextColor(51, 65, 85);
+      doc.text(`${yearLabel} : ${settings?.schoolYear || "2025/2026"}`, margin + contentWidth, y + 4, { align: 'right' });
       
       y += 15;
     }
@@ -862,7 +948,8 @@ export default function GradesDashboard({
     doc.text(`${avgBase20Val.toFixed(2)}`, margin + 3, y + 13);
     doc.setFontSize(6.5);
     doc.setTextColor(100, 116, 139);
-    doc.text(getMentionStr(avgBase20Val), margin + 3, y + 18);
+    const mentionWithClass = `${getMentionStr(avgBase20Val)} | ${isEn ? 'Class' : 'Classe'} : ${classAverage}`;
+    doc.text(mentionWithClass, margin + 3, y + 18);
 
     // 2. Consistency / Volatility (Std Dev)
     doc.setFillColor(245, 243, 255); // Purple 50
@@ -1353,104 +1440,136 @@ export default function GradesDashboard({
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-600 uppercase">Matière / Discipline <span className="text-red-500">*</span></label>
-                  <select
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-indigo-500 font-medium text-slate-850"
-                  >
-                    <option value="Mathématiques">Mathématiques</option>
-                    <option value="Physique-Chimie">Physique-Chimie</option>
-                    <option value="Sciences de la Vie">Sciences de la Vie (SVT)</option>
-                    <option value="Français / Littérature">Français</option>
-                    <option value="Anglais">Anglais</option>
-                    <option value="Histoire-Géographie">Histoire-Géographie</option>
-                    <option value="Informatique">Informatique</option>
-                    <option value="Allemand / Espagnol">Langue Vivante II</option>
-                    <option value="Arts / Musique">Arts / Musique</option>
-                  </select>
-                </div>
+              {(() => {
+                const isScoreOverMax = score > maxScore;
+                return (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-600 uppercase">
+                          Matière / Discipline <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                          value={subject}
+                          onChange={(e) => setSubject(e.target.value)}
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-indigo-500 font-medium text-slate-850"
+                        >
+                          <option value="Mathématiques">Mathématiques</option>
+                          <option value="Physique-Chimie">Physique-Chimie</option>
+                          <option value="Sciences de la Vie">Sciences de la Vie (SVT)</option>
+                          <option value="Français / Littérature">Français</option>
+                          <option value="Anglais">Anglais</option>
+                          <option value="Histoire-Géographie">Histoire-Géographie</option>
+                          <option value="Informatique">Informatique</option>
+                          <option value="Allemand / Espagnol">Langue Vivante II</option>
+                          <option value="Arts / Musique">Arts / Musique</option>
+                        </select>
+                      </div>
 
-                <div className="md:col-span-2 space-y-1">
-                  <label className="text-[10px] font-bold text-slate-600 uppercase">Intitulé de l'Évaluation <span className="text-red-500">*</span></label>
-                  <input
-                    type="text"
-                    required
-                    value={examName}
-                    onChange={(e) => setExamName(e.target.value)}
-                    placeholder="Ex: Devoir Harmonisé / Examen Trimestre 1"
-                    className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-indigo-500 font-medium text-slate-800"
-                  />
-                </div>
+                      <div className="md:col-span-2 space-y-1">
+                        <label className="text-[10px] font-bold text-slate-600 uppercase">
+                          Intitulé de l'Évaluation <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={examName}
+                          onChange={(e) => setExamName(e.target.value)}
+                          placeholder="Ex: Devoir Harmonisé / Examen Trimestre 1"
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-indigo-500 font-medium text-slate-800"
+                        />
+                      </div>
 
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-600 uppercase">Date de l'évaluation <span className="text-red-500">*</span></label>
-                  <input
-                    type="date"
-                    required
-                    value={gradeDate}
-                    onChange={(e) => setGradeDate(e.target.value)}
-                    className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-indigo-500 font-medium text-slate-800"
-                  />
-                </div>
-              </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-600 uppercase">
+                          Date de l'évaluation <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="date"
+                          required
+                          value={gradeDate}
+                          onChange={(e) => setGradeDate(e.target.value)}
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-indigo-500 font-medium text-slate-800"
+                        />
+                      </div>
+                    </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-600 uppercase">Note obtenue <span className="text-red-500">*</span></label>
-                  <input
-                    type="number"
-                    step="0.25"
-                    required
-                    min="0"
-                    max={maxScore}
-                    value={score}
-                    onChange={(e) => setScore(Number(e.target.value))}
-                    className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-indigo-500 font-medium text-slate-800"
-                  />
-                </div>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-600 uppercase">
+                          Note obtenue <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="number"
+                          step="0.25"
+                          required
+                          min="0"
+                          max={maxScore}
+                          value={score}
+                          onChange={(e) => setScore(Number(e.target.value))}
+                          className={`w-full px-3 py-2 text-xs font-medium rounded-lg transition duration-200 focus:outline-none ${
+                            isScoreOverMax
+                              ? 'bg-red-50 border-2 border-red-500 text-red-950 focus:ring-2 focus:ring-red-200'
+                              : 'bg-white border border-slate-200 text-slate-800 focus:outline-indigo-500'
+                          }`}
+                        />
+                        {isScoreOverMax && (
+                          <div className="flex items-center gap-1 text-[10px] font-extrabold text-red-600 mt-1 select-none animate-pulse">
+                            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                            <span>La note ne peut pas dépasser {maxScore} !</span>
+                          </div>
+                        )}
+                      </div>
 
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-600 uppercase">Sur (/ Max possible) <span className="text-red-500">*</span></label>
-                  <input
-                    type="number"
-                    required
-                    min="1"
-                    value={maxScore}
-                    onChange={(e) => setMaxScore(Number(e.target.value))}
-                    className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-indigo-500 font-medium text-slate-805"
-                  />
-                </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-600 uppercase">
+                          Sur (/ Max possible) <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="number"
+                          required
+                          min="1"
+                          value={maxScore}
+                          onChange={(e) => setMaxScore(Number(e.target.value))}
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-indigo-500 font-medium text-slate-805"
+                        />
+                      </div>
 
-                <div className="md:col-span-2 space-y-1">
-                  <label className="text-[10px] font-bold text-slate-600 uppercase">Appréciation / Remarques</label>
-                  <input
-                    type="text"
-                    value={remarks}
-                    onChange={(e) => setRemarks(e.target.value)}
-                    placeholder="Ex: Excellent trimestre, poursuivez ainsi."
-                    className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-indigo-500 font-medium text-slate-800"
-                  />
-                </div>
-              </div>
+                      <div className="md:col-span-2 space-y-1">
+                        <label className="text-[10px] font-bold text-slate-600 uppercase">Appréciation / Remarques</label>
+                        <input
+                          type="text"
+                          value={remarks}
+                          onChange={(e) => setRemarks(e.target.value)}
+                          placeholder="Ex: Excellent trimestre, poursuivez ainsi."
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-indigo-500 font-medium text-slate-800"
+                        />
+                      </div>
+                    </div>
 
-              <div className="flex justify-end gap-2.5 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAddForm(false)}
-                  className="px-4 py-2 border border-slate-250 bg-white text-slate-800 text-xs font-bold uppercase tracking-wider rounded-lg hover:bg-slate-50 cursor-pointer text-center"
-                >
-                  Annuler
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg flex items-center gap-1 cursor-pointer text-center shadow-xs"
-                >
-                  <CheckCircle className="h-4 w-4" /> Enregistrer Note
-                </button>
-              </div>
+                    <div className="flex justify-end gap-2.5 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowAddForm(false)}
+                        className="px-4 py-2 border border-slate-250 bg-white text-slate-800 text-xs font-bold uppercase tracking-wider rounded-lg hover:bg-slate-50 cursor-pointer text-center"
+                      >
+                        Annuler
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isScoreOverMax}
+                        className={`px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-lg flex items-center gap-1 transition duration-200 text-center shadow-xs ${
+                          isScoreOverMax
+                            ? 'bg-slate-200 border border-slate-300 text-slate-400 cursor-not-allowed opacity-75'
+                            : 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
+                        }`}
+                      >
+                        <CheckCircle className="h-4 w-4" /> Enregistrer Note
+                      </button>
+                    </div>
+                  </>
+                );
+              })()}
             </form>
           </motion.div>
         )}
@@ -1464,19 +1583,54 @@ export default function GradesDashboard({
       ) : (
         <>
           {/* Key Stats Section */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className={`p-5 rounded-2xl border flex items-center justify-between ${getAverageBadgeColor(Number(averageMark))}`}
+              className={`p-5 rounded-2xl border flex flex-col justify-between ${getAverageBadgeColor(Number(averageMark))}`}
+            >
+              <div className="flex items-center justify-between w-full">
+                <div className="space-y-1">
+                  <span className="text-xs uppercase tracking-wider font-semibold opacity-80">Moyenne Générale</span>
+                  <div className="text-3xl font-black flex items-baseline gap-1">
+                    {averageMark} <span className="text-xs font-normal opacity-70">/ 20</span>
+                  </div>
+                </div>
+                <TrendingUp className="h-10 w-10 opacity-30" />
+              </div>
+              <div className="mt-2.5 text-[11px] font-bold flex items-center gap-1.5 opacity-90">
+                {isAboveClass ? (
+                  <span className="bg-white/30 text-emerald-950 px-2 py-0.5 rounded-md flex items-center gap-0.5">
+                    ▲ +{diffFromClass.toFixed(1)} {language === 'fr' ? 'vs classe' : 'vs class'}
+                  </span>
+                ) : isEqualClass ? (
+                  <span className="bg-white/30 text-slate-900 px-2 py-0.5 rounded-md">
+                    = {language === 'fr' ? 'moyenne classe' : 'class average'}
+                  </span>
+                ) : (
+                  <span className="bg-white/35 text-rose-950 px-2 py-0.5 rounded-md flex items-center gap-0.5">
+                    ▼ {diffFromClass.toFixed(1)} {language === 'fr' ? 'vs classe' : 'vs class'}
+                  </span>
+                )}
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.05 }}
+              className="p-5 bg-white border border-gray-100 rounded-2xl flex items-center justify-between"
             >
               <div className="space-y-1">
-                <span className="text-xs uppercase tracking-wider font-semibold opacity-80">Moyenne Générale</span>
-                <div className="text-3xl font-black flex items-baseline gap-1">
-                  {averageMark} <span className="text-xs font-normal opacity-70">/ 20</span>
+                <span className="text-xs uppercase tracking-wider font-semibold text-gray-500">Moyenne de la Classe</span>
+                <div className="text-3xl font-bold text-slate-800 flex items-baseline gap-1">
+                  {classAverage} <span className="text-xs font-normal text-gray-400">/ 20</span>
+                </div>
+                <div className="text-[10px] text-gray-400 font-medium">
+                  {language === 'fr' ? `Calculée sur ${classStudents.length} élève(s)` : `Based on ${classStudents.length} student(s)`}
                 </div>
               </div>
-              <TrendingUp className="h-10 w-10 opacity-30" />
+              <BarChart2 className="h-10 w-10 text-indigo-100" />
             </motion.div>
 
             <motion.div
@@ -1720,17 +1874,18 @@ export default function GradesDashboard({
                                     boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
                                     fontSize: '11px',
                                   }}
-                                  formatter={(value: any, name: string, props: any) => {
-                                    const payload = props.payload;
-                                    return [
-                                      <div className="space-y-1" key="content">
-                                        <div className="font-bold text-slate-800">{payload.subject}</div>
-                                        <div className="text-indigo-600 font-bold">Moyenne : {value} / 20</div>
-                                        <div className="text-[10px] text-gray-500">{payload.count} {language === 'fr' ? 'évaluation(s)' : 'evaluation(s)'}</div>
-                                      </div>,
-                                      null
-                                    ];
+                                  formatter={(value: any, name: string) => {
+                                    const displayName = name === 'average' 
+                                      ? (language === 'fr' ? 'Moyenne de l\'Élève' : 'Student Average') 
+                                      : (language === 'fr' ? 'Moyenne de la Classe' : 'Class Average');
+                                    return [`${value} / 20`, displayName];
                                   }}
+                                />
+                                <Legend 
+                                  verticalAlign="top" 
+                                  height={32} 
+                                  iconSize={10} 
+                                  wrapperStyle={{ fontSize: '10px', fontWeight: 600 }} 
                                 />
                                 <ReferenceLine 
                                   y={10} 
@@ -1740,14 +1895,18 @@ export default function GradesDashboard({
                                 />
                                 <Bar 
                                   dataKey="average" 
-                                  radius={[8, 8, 0, 0]} 
-                                  maxBarSize={45}
-                                >
-                                  {subjectAveragesData.map((entry, idx) => {
-                                    const fillVal = entry.average >= 14 ? '#10b981' : entry.average >= 10 ? '#3b82f6' : '#ef4444';
-                                    return <Cell key={`cell-${idx}`} fill={fillVal} />;
-                                  })}
-                                </Bar>
+                                  name={language === 'fr' ? "Moyenne de l'Élève" : "Student Average"}
+                                  radius={[4, 4, 0, 0]} 
+                                  maxBarSize={25}
+                                  fill="#4f46e5"
+                                />
+                                <Bar 
+                                  dataKey="classAverage" 
+                                  name={language === 'fr' ? "Moyenne de la Classe" : "Class Average"}
+                                  radius={[4, 4, 0, 0]} 
+                                  maxBarSize={25}
+                                  fill="#94a3b8"
+                                />
                               </BarChart>
                             </ResponsiveContainer>
                           </div>
@@ -1841,6 +2000,13 @@ export default function GradesDashboard({
                                       <Sparkles className="h-3 w-3" /> {language === 'fr' ? 'Point fort' : 'Strength'}
                                     </div>
                                     <div className="text-xs font-bold text-slate-800 truncate max-w-[120px]">{strongestSubject.subject}</div>
+                                    {strongestSubjectClassAvg !== null && (
+                                      <div className="text-[9px] text-slate-400 font-medium">
+                                        {language === 'fr' ? 'Classe : ' : 'Class: '}
+                                        <span className="font-bold text-slate-600">{strongestSubjectClassAvg.toFixed(1)}/20</span>
+                                        {` (${strongestSubject.average - strongestSubjectClassAvg >= 0 ? '+' : ''}${(strongestSubject.average - strongestSubjectClassAvg).toFixed(1)})`}
+                                      </div>
+                                    )}
                                   </div>
                                   <div className="text-sm font-black text-emerald-600">{strongestSubject.average} <span className="text-[9px] font-medium text-slate-400">/20</span></div>
                                 </div>
@@ -1853,6 +2019,13 @@ export default function GradesDashboard({
                                       <AlertCircle className="h-3 w-3" /> {language === 'fr' ? 'À consolider' : 'Needs Work'}
                                     </div>
                                     <div className="text-xs font-bold text-slate-800 truncate max-w-[120px]">{weakestSubject.subject}</div>
+                                    {weakestSubjectClassAvg !== null && (
+                                      <div className="text-[9px] text-slate-400 font-medium">
+                                        {language === 'fr' ? 'Classe : ' : 'Class: '}
+                                        <span className="font-bold text-slate-600">{weakestSubjectClassAvg.toFixed(1)}/20</span>
+                                        {` (${weakestSubject.average - weakestSubjectClassAvg >= 0 ? '+' : ''}${(weakestSubject.average - weakestSubjectClassAvg).toFixed(1)})`}
+                                      </div>
+                                    )}
                                   </div>
                                   <div className="text-sm font-black text-rose-500">{weakestSubject.average} <span className="text-[9px] font-medium text-slate-400">/20</span></div>
                                 </div>

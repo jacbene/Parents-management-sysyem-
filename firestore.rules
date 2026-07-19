@@ -126,7 +126,7 @@ service cloud.firestore {
       
       allow update: if isSignedIn() && 
                     isSafeId(studentId) &&
-                    (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId))) &&
+                    (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)) || isOwnerOrDemoWrite(request.resource.data.parentId)) &&
                     (isSuperAdmin() || isImmutable('parentId')) &&
                     isImmutable('id');
       
@@ -139,7 +139,7 @@ service cloud.firestore {
     match /grades/{gradeId} {
       allow get, list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
       allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
-      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)) || isOwnerOrDemoWrite(request.resource.data.parentId));
       allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 
@@ -147,7 +147,7 @@ service cloud.firestore {
     match /attendance/{attendanceId} {
       allow get, list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
       allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
-      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)) || isOwnerOrDemoWrite(request.resource.data.parentId));
       allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 
@@ -155,7 +155,7 @@ service cloud.firestore {
     match /homeworks/{homeworkId} {
       allow get, list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
       allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
-      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)) || isOwnerOrDemoWrite(request.resource.data.parentId));
       allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 
@@ -163,7 +163,7 @@ service cloud.firestore {
     match /appointments/{appointmentId} {
       allow get, list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
       allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
-      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)) || isOwnerOrDemoWrite(request.resource.data.parentId));
       allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 
@@ -171,7 +171,7 @@ service cloud.firestore {
     match /messages/{messageId} {
       allow get, list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
       allow create: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoWrite(request.resource.data.parentId));
-      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow update: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)) || isOwnerOrDemoWrite(request.resource.data.parentId));
       allow delete: if isSignedIn() && (isSuperAdmin() || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 
@@ -185,7 +185,7 @@ service cloud.firestore {
                   invoiceId.matches('^log_.*'));
       allow list: if isSignedIn() && (isSuperAdmin() || isOwnerOrDemoRead(resource.data.parentId));
       allow create: if isSignedIn() && isSafeId(invoiceId) && (isSuperAdmin() || invoiceId.matches('^log_.*') || isOwnerOrDemoWrite(request.resource.data.parentId));
-      allow update: if isSignedIn() && isSafeId(invoiceId) && (isSuperAdmin() || invoiceId.matches('^log_.*') || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
+      allow update: if isSignedIn() && isSafeId(invoiceId) && (isSuperAdmin() || invoiceId.matches('^log_.*') || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)) || isOwnerOrDemoWrite(request.resource.data.parentId));
       allow delete: if isSignedIn() && isSafeId(invoiceId) && (isSuperAdmin() || invoiceId.matches('^log_.*') || (resource != null && isOwnerOrDemoWrite(resource.data.parentId)));
     }
 

@@ -274,134 +274,170 @@ export default function AnnouncementsFeed({
 
     // Arrêter toute lecture en cours
     window.speechSynthesis.cancel();
-    
-    // Nettoyer le texte
-    const cleanTitle = title.replace(/[#*_`~[\]]/g, '');
-    const cleanContent = content.replace(/[#*_`~[\]]/g, '');
-    
-    // Créer l'utterance
-    const utterance = new SpeechSynthesisUtterance(`${cleanTitle}. ${cleanContent}`);
-    utteranceRef.current = utterance;
-    
-    // Définir la langue
-    const targetLang = language === 'en' ? 'en-US' : 'fr-FR';
-    utterance.lang = targetLang;
-    utterance.rate = 0.9; // Légèrement plus lent pour une meilleure compréhension
-    utterance.pitch = 1;
-    utterance.volume = 1;
-    
-    // Sélectionner une voix appropriée
-    const setVoice = () => {
-      const voices = window.speechSynthesis.getVoices();
-      if (voices.length > 0) {
+    setSpeakingAnnId(null);
+    utteranceRef.current = null;
+
+    // Délai de sécurité pour permettre à speechSynthesis.cancel() de libérer le canal audio
+    setTimeout(() => {
+      try {
+        // Nettoyer le texte
+        const cleanTitle = title.replace(/[#*_`~[\]]/g, '');
+        const cleanContent = content.replace(/[#*_`~[\]]/g, '');
+        
+        // Créer l'utterance
+        const utterance = new SpeechSynthesisUtterance(`${cleanTitle}. ${cleanContent}`);
+        utteranceRef.current = utterance;
+        
+        // Définir les paramètres
+        utterance.rate = 0.95; // Rythme naturel
+        utterance.pitch = 1.0;
+        utterance.volume = 1.0;
+        
         const preferredLang = language === 'en' ? 'en' : 'fr';
-        // Chercher une voix native
-        let voice = voices.find(v => v.lang.toLowerCase().startsWith(preferredLang) && v.localService);
-        if (!voice) {
-          voice = voices.find(v => v.lang.toLowerCase().startsWith(preferredLang));
-        }
-        if (!voice) {
-          voice = voices.find(v => v.lang.toLowerCase().includes(preferredLang));
-        }
-        if (voice) {
-          utterance.voice = voice;
-          console.log('Voice selected:', voice.name, voice.lang);
-        }
-      }
-    };
+        const defaultLang = language === 'en' ? 'en-US' : 'fr-FR';
+        utterance.lang = defaultLang;
 
-    // Essayer de définir la voix immédiatement
-    setVoice();
-    
-    // Et réessayer quand les voix sont chargées
-    const voicesChangedHandler = () => {
-      setVoice();
-      window.speechSynthesis.removeEventListener('voiceschanged', voicesChangedHandler);
-    };
-    window.speechSynthesis.addEventListener('voiceschanged', voicesChangedHandler);
+        // Sélectionner et configurer la voix de manière extrêmement synchrone et résiliente avant speak()
+        const voices = window.speechSynthesis.getVoices();
+        if (voices.length > 0) {
+          // 1. Chercher d'abord une voix locale (localService === true) dans la langue préférée
+          let voice = voices.find(v => 
+            v.localService && 
+            (v.lang.toLowerCase().startsWith(preferredLang) || v.lang.toLowerCase().includes(preferredLang))
+          );
 
-    // Événements
-    utterance.onstart = () => {
-      console.log('Speech started for:', id);
-      setSpeakingAnnId(id);
-      
-      // Keep-alive interval pour Chrome
-      resumeIntervalRef.current = setInterval(() => {
-        if (window.speechSynthesis.speaking) {
+          // 2. Si non trouvée, chercher n'importe quelle voix dans la langue préférée (locale ou cloud)
+          if (!voice) {
+            voice = voices.find(v => 
+              v.lang.toLowerCase().startsWith(preferredLang) || v.lang.toLowerCase().includes(preferredLang)
+            );
+          }
+
+          // 3. Si non trouvée, chercher par nom contenant des mots-clés de la langue préférée
+          if (!voice) {
+            voice = voices.find(v => 
+              preferredLang === 'fr' 
+                ? (v.name.toLowerCase().includes('french') || v.name.toLowerCase().includes('français'))
+                : (v.name.toLowerCase().includes('english') || v.name.toLowerCase().includes('us') || v.name.toLowerCase().includes('uk'))
+            );
+          }
+
+          // 4. Si non trouvée, chercher une voix locale de l'autre langue
+          if (!voice) {
+            const otherLang = preferredLang === 'fr' ? 'en' : 'fr';
+            voice = voices.find(v => 
+              v.localService && 
+              (v.lang.toLowerCase().startsWith(otherLang) || v.lang.toLowerCase().includes(otherLang))
+            );
+          }
+
+          // 5. Si non trouvée, chercher n'importe quelle voix de l'autre langue
+          if (!voice) {
+            const otherLang = preferredLang === 'fr' ? 'en' : 'fr';
+            voice = voices.find(v => 
+              v.lang.toLowerCase().startsWith(otherLang) || v.lang.toLowerCase().includes(otherLang)
+            );
+          }
+
+          // 6. Si toujours non trouvée, chercher n'importe quelle voix locale disponible
+          if (!voice) {
+            voice = voices.find(v => v.localService);
+          }
+
+          // 7. Ultime recours : la voix par défaut ou la première voix de la liste
+          if (!voice) {
+            voice = voices.find(v => v.default) || voices[0];
+          }
+
+          if (voice) {
+            utterance.voice = voice;
+            utterance.lang = voice.lang; // Force la langue de l'utterance à correspondre exactement à la voix pour éviter les conflits
+            console.log('Voice selected for announcement speech:', voice.name, voice.lang, 'local:', voice.localService);
+          }
+        }
+
+        // Événements
+        utterance.onstart = () => {
+          console.log('Speech started for:', id);
+          setSpeakingAnnId(id);
+          
+          // Keep-alive interval pour Chrome pour éviter que l'utterance s'arrête au bout de 15s
+          resumeIntervalRef.current = setInterval(() => {
+            if (window.speechSynthesis.speaking) {
+              window.speechSynthesis.resume();
+              console.log('Resuming speech (keep-alive)...');
+            } else {
+              clearInterval(resumeIntervalRef.current);
+              resumeIntervalRef.current = null;
+            }
+          }, 5000);
+        };
+
+        utterance.onend = () => {
+          console.log('Speech ended for:', id);
+          if (utteranceRef.current === utterance) {
+            if (resumeIntervalRef.current) {
+              clearInterval(resumeIntervalRef.current);
+              resumeIntervalRef.current = null;
+            }
+            setSpeakingAnnId(null);
+            utteranceRef.current = null;
+          }
+        };
+
+        utterance.onerror = (e) => {
+          console.warn('Speech synthesis warning:', e.error || e);
+          
+          // Only clean up state if this error belongs to the active utterance
+          if (utteranceRef.current === utterance) {
+            if (resumeIntervalRef.current) {
+              clearInterval(resumeIntervalRef.current);
+              resumeIntervalRef.current = null;
+            }
+            setSpeakingAnnId(null);
+            utteranceRef.current = null;
+          }
+
+          // Avoid showing alert or handling errors if it is an expected cancellation/interruption
+          if (e.error !== 'interrupted' && e.error !== 'canceled') {
+            if (e.error === 'not-allowed') {
+              alert(isEn 
+                ? "Your browser blocked text-to-speech. Please click the page and try again, or use the 'Open in new tab' button." 
+                : "Votre navigateur a bloqué la synthèse vocale. Veuillez cliquer sur la page et réessayer, ou utiliser le bouton 'Ouvrir dans un nouvel onglet'."
+              );
+            } else if (e.error === 'network') {
+              alert(isEn 
+                ? "Network error with speech synthesis. Please try again." 
+                : "Erreur réseau avec la synthèse vocale. Veuillez réessayer."
+              );
+            }
+          }
+        };
+
+        // S'assurer que la synthèse n'est pas en pause
+        if (window.speechSynthesis.paused) {
           window.speechSynthesis.resume();
-          console.log('Resuming speech...');
-        } else {
-          clearInterval(resumeIntervalRef.current);
-          resumeIntervalRef.current = null;
         }
-      }, 5000);
-    };
+        
+        window.speechSynthesis.speak(utterance);
+        
+        // Forcer la reprise immédiate pour Chrome
+        setTimeout(() => {
+          if (window.speechSynthesis.speaking) {
+            window.speechSynthesis.resume();
+          }
+        }, 50);
 
-    utterance.onend = () => {
-      console.log('Speech ended for:', id);
-      if (utteranceRef.current === utterance) {
-        if (resumeIntervalRef.current) {
-          clearInterval(resumeIntervalRef.current);
-          resumeIntervalRef.current = null;
-        }
+      } catch (err) {
+        console.error('Failed to speak:', err);
         setSpeakingAnnId(null);
         utteranceRef.current = null;
+        alert(isEn 
+          ? "Failed to start speech. Please try again." 
+          : "Impossible de démarrer la lecture vocale. Veuillez réessayer."
+        );
       }
-      window.speechSynthesis.removeEventListener('voiceschanged', voicesChangedHandler);
-    };
-
-    utterance.onerror = (e) => {
-      console.warn('Speech synthesis warning:', e.error || e);
-      
-      // Only clean up state if this error belongs to the active utterance
-      if (utteranceRef.current === utterance) {
-        if (resumeIntervalRef.current) {
-          clearInterval(resumeIntervalRef.current);
-          resumeIntervalRef.current = null;
-        }
-        setSpeakingAnnId(null);
-        utteranceRef.current = null;
-      }
-      window.speechSynthesis.removeEventListener('voiceschanged', voicesChangedHandler);
-
-      // Avoid showing alert or handling errors if it is an expected cancellation/interruption
-      if (e.error !== 'interrupted' && e.error !== 'canceled') {
-        if (e.error === 'not-allowed') {
-          alert(isEn 
-            ? "Your browser blocked text-to-speech. Please click the page and try again, or use the 'Open in new tab' button." 
-            : "Votre navigateur a bloqué la synthèse vocale. Veuillez cliquer sur la page et réessayer, ou utiliser le bouton 'Ouvrir dans un nouvel onglet'."
-          );
-        } else if (e.error === 'network') {
-          alert(isEn 
-            ? "Network error with speech synthesis. Please try again." 
-            : "Erreur réseau avec la synthèse vocale. Veuillez réessayer."
-          );
-        }
-      }
-    };
-
-    // Démarrer la lecture
-    try {
-      // S'assurer que la synthèse n'est pas en pause
-      if (window.speechSynthesis.paused) {
-        window.speechSynthesis.resume();
-      }
-      window.speechSynthesis.speak(utterance);
-      // Forcer la reprise pour Chrome
-      setTimeout(() => {
-        if (window.speechSynthesis.speaking) {
-          window.speechSynthesis.resume();
-        }
-      }, 100);
-    } catch (err) {
-      console.error('Failed to speak:', err);
-      setSpeakingAnnId(null);
-      utteranceRef.current = null;
-      alert(isEn 
-        ? "Failed to start speech. Please try again." 
-        : "Impossible de démarrer la lecture vocale. Veuillez réessayer."
-      );
-    }
+    }, 150); // Petit délai suffisant de 150ms pour que cancel() libère le thread
   };
 
   // Merge custom dynamic announcements with static ones

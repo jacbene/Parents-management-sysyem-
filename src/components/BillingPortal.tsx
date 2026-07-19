@@ -336,6 +336,16 @@ export default function BillingPortal({
       if (reminderChannel === 'email' && reminderEmail) {
         const mailtoUrl = `mailto:${encodeURIComponent(reminderEmail)}?subject=${encodeURIComponent(reminderSubject)}&body=${encodeURIComponent(reminderMessage)}`;
         window.location.href = mailtoUrl;
+      } else if (reminderChannel === 'sms') {
+        const phone = reminderPhone || selectedReminderInvoice.phone || parentPhone || '';
+        let cleanPhone = phone.replace(/[\s\-\(\)\+]/g, '');
+        if (cleanPhone.length === 9 && cleanPhone.startsWith('6')) {
+          cleanPhone = `237${cleanPhone}`;
+        }
+        const waUrl = cleanPhone 
+          ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(reminderMessage)}`
+          : `https://wa.me/?text=${encodeURIComponent(reminderMessage)}`;
+        window.open(waUrl, '_blank', 'noopener,noreferrer');
       }
     } catch (err) {
       console.error(err);
@@ -1081,6 +1091,41 @@ export default function BillingPortal({
     return true;
   });
 
+  const getWhatsAppLink = (inv: Invoice) => {
+    const student = students?.find(s => s.id === inv.studentId);
+    let studentName = student ? student.name : "l'élève";
+    let studentInfo = student ? `${student.grade} - ${student.classRoom}` : "";
+    
+    if (inv.studentId === 'apee_ces_ekali_1' && inv.studentsList) {
+      try {
+        const parsed = JSON.parse(inv.studentsList);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          studentName = parsed.map((s: any) => s.name).join(', ');
+          studentInfo = parsed.map((s: any) => s.classRoom).join(', ');
+        }
+      } catch (e) {}
+    }
+
+    const remainingAmount = inv.amount - (inv.amountPaid || 0);
+    const amountStr = `${remainingAmount.toLocaleString('fr-FR')} FCFA`;
+    const schoolYearStr = settings?.schoolYear || '2025/2026';
+    const assocName = settings?.associationName || "APEE du CES d'Ékali 1";
+    
+    const message = `Bonjour,\n\nVoici le rappel de paiement pour la facture en attente concernant ${studentName} (${studentInfo || 'N/A'}).\n\n📌 *Détails de la facture :*\n- *Objet :* ${inv.title}\n- *Référence :* ${inv.id.toUpperCase()}\n- *Montant restant dû :* ${amountStr}\n- *Échéance :* ${new Date(inv.dueDate).toLocaleDateString('fr-FR')}\n\nVous pouvez régulariser cette facture directement depuis votre portail de paiement.\n\nCordialement,\n${assocName}`;
+    
+    const phone = inv.phone || parentPhone || '';
+    let cleanPhone = phone.replace(/[\s\-\(\)\+]/g, '');
+    
+    if (cleanPhone.length === 9 && cleanPhone.startsWith('6')) {
+      cleanPhone = `237${cleanPhone}`;
+    }
+    
+    if (cleanPhone) {
+      return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+    }
+    return `https://wa.me/?text=${encodeURIComponent(message)}`;
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'Paid':
@@ -1419,6 +1464,16 @@ export default function BillingPortal({
                         <span>Relancer</span>
                       </button>
                     )}
+                    <a
+                      href={getWhatsAppLink(inv)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer"
+                      title="Relancer ou partager via WhatsApp avec un message pré-rempli"
+                    >
+                      <MessageSquare className="h-3.5 w-3.5" />
+                      <span>Relance WhatsApp</span>
+                    </a>
                     <button
                       type="button"
                       onClick={() => setSelectedQrInvoice(inv)}
