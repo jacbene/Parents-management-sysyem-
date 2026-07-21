@@ -197,7 +197,7 @@ export default function QRScannerModal({ isOpen, onClose, allStudents, onAddAtte
 
     // Filter, clean, or find matching student
     const cleanedId = scannedId.trim();
-    const student = allStudents.find(s => s.id === cleanedId || s.name.toLowerCase() === cleanedId.toLowerCase());
+    const student = allStudents.find(s => s.id === cleanedId || (s.name || '').toLowerCase() === (cleanedId || '').toLowerCase());
     
     if (!student) {
       playBuzzerChime();

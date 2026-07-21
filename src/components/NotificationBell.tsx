@@ -65,8 +65,8 @@ export default function NotificationBell({ portalUserRole, selectedStudentName =
       if ('getVoices' in window.speechSynthesis) {
         const voices = window.speechSynthesis.getVoices();
         const preferredLang = language === 'en' ? 'en' : 'fr';
-        const matchingVoice = voices.find(v => v.lang.toLowerCase().startsWith(preferredLang))
-          || voices.find(v => v.lang.toLowerCase().includes(preferredLang));
+        const matchingVoice = voices.find(v => (v.lang || '').toLowerCase().startsWith(preferredLang))
+          || voices.find(v => (v.lang || '').toLowerCase().includes(preferredLang));
         if (matchingVoice) {
           utterance.voice = matchingVoice;
         }

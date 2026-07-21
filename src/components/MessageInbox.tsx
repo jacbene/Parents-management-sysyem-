@@ -127,7 +127,7 @@ export default function MessageInbox({
 
     // Attempt 2: By exact student name matching in any parent's student links
     const foundByName = apeeParents.find(p =>
-      p.students?.some(stu => stu.name.trim().toLowerCase() === student.name.trim().toLowerCase())
+      p.students?.some(stu => (stu.name || '').trim().toLowerCase() === (student.name || '').trim().toLowerCase())
     );
     if (foundByName) return foundByName;
 
@@ -139,10 +139,11 @@ export default function MessageInbox({
   // Find class teacher info for a student
   const getStudentTeacherInfo = (student: Student | undefined) => {
     if (!student) return { name: '', email: '', phone: '' };
-    const foundTeacher = apeeSettings?.classTeachers?.find(t => 
-      t.classRoom.toLowerCase() === student.classRoom.toLowerCase() ||
-      student.classRoom.toLowerCase().includes(t.classRoom.toLowerCase())
-    );
+    const foundTeacher = apeeSettings?.classTeachers?.find(t => {
+      const studentClass = (student.classRoom || '').toLowerCase();
+      const teacherClass = (t.classRoom || '').toLowerCase();
+      return teacherClass === studentClass || studentClass.includes(teacherClass);
+    });
 
     return {
       name: foundTeacher?.teacherName || student.teacherName || 'Professeur Principal',
@@ -187,10 +188,10 @@ export default function MessageInbox({
       if (adminSearch.trim()) {
         const queryNorm = adminSearch.toLowerCase().trim();
         const parent = getMatchingParent(student);
-        const nameMatches = student.name.toLowerCase().includes(queryNorm);
-        const classMatches = student.classRoom.toLowerCase().includes(queryNorm);
-        const parentNameMatches = parent ? parent.name.toLowerCase().includes(queryNorm) : false;
-        const parentPhoneMatches = parent ? parent.phone.includes(queryNorm) : false;
+        const nameMatches = (student.name || '').toLowerCase().includes(queryNorm);
+        const classMatches = (student.classRoom || '').toLowerCase().includes(queryNorm);
+        const parentNameMatches = parent ? (parent.name || '').toLowerCase().includes(queryNorm) : false;
+        const parentPhoneMatches = parent ? (parent.phone || '').includes(queryNorm) : false;
 
         return nameMatches || classMatches || parentNameMatches || parentPhoneMatches;
       }

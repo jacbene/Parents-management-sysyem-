@@ -83,7 +83,7 @@ export default function BulkAnnouncementModal({
       }
     }
     const foundByName = apeeParents.find(p =>
-      p.students?.some(stu => stu.name.trim().toLowerCase() === student.name.trim().toLowerCase())
+      p.students?.some(stu => (stu?.name || '').trim().toLowerCase() === (student?.name || '').trim().toLowerCase())
     );
     return foundByName;
   };

@@ -64,10 +64,11 @@ export default function StudentCard({
 
   // Find titular teacher for classroom in settings
   const foundTeacher = settings?.classTeachers?.find(t => {
-    const classRoomName = student.classRoom || '';
-    return t.classRoom.toLowerCase() === classRoomName.toLowerCase() || 
-           classRoomName.toLowerCase().includes(t.classRoom.toLowerCase()) ||
-           t.classRoom.toLowerCase().includes(classRoomName.toLowerCase());
+    const classRoomName = (student.classRoom || '').toLowerCase();
+    const tClassRoom = (t.classRoom || '').toLowerCase();
+    return tClassRoom === classRoomName || 
+           classRoomName.includes(tClassRoom) ||
+           tClassRoom.includes(classRoomName);
   });
 
   const teacherName = foundTeacher?.teacherName || student.teacherName || 'Enseignant principal';
@@ -85,7 +86,7 @@ export default function StudentCard({
       }
     }
     const foundByName = apeeParents.find(p =>
-      p.students?.some(stu => stu.name.trim().toLowerCase() === student.name.trim().toLowerCase())
+      p.students?.some(stu => (stu?.name || '').trim().toLowerCase() === (student?.name || '').trim().toLowerCase())
     );
     if (foundByName) return foundByName;
     return undefined;

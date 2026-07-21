@@ -1056,21 +1056,21 @@ export default function BillingPortal({
       const queryClean = query.replace(/\D/g, ''); // for clean phone matches
 
       // Match invoice id
-      const matchesId = inv.id.toLowerCase().includes(query);
+      const matchesId = (inv.id || '').toLowerCase().includes(query);
 
       // Match invoice title
-      const matchesTitle = inv.title.toLowerCase().includes(query);
+      const matchesTitle = (inv.title || '').toLowerCase().includes(query);
 
       // Match invoice description
-      const matchesDesc = inv.description ? inv.description.toLowerCase().includes(query) : false;
+      const matchesDesc = inv.description ? (inv.description || '').toLowerCase().includes(query) : false;
 
       // Match invoice phone
       const invPhoneClean = inv.phone ? inv.phone.replace(/\D/g, '') : '';
-      const matchesPhone = inv.phone ? inv.phone.toLowerCase().includes(query) || (queryClean && invPhoneClean.includes(queryClean)) : false;
+      const matchesPhone = inv.phone ? (inv.phone || '').toLowerCase().includes(query) || (queryClean && invPhoneClean.includes(queryClean)) : false;
 
       // Match student associated with the invoice
       const student = students?.find(s => s.id === inv.studentId);
-      const matchesStudentName = student ? student.name.toLowerCase().includes(query) : false;
+      const matchesStudentName = student ? (student.name || '').toLowerCase().includes(query) : false;
 
       // Match names in studentsList (for APEE cotisations)
       let matchesStudentsList = false;
@@ -1079,7 +1079,7 @@ export default function BillingPortal({
           const parsed = JSON.parse(inv.studentsList);
           if (Array.isArray(parsed)) {
             matchesStudentsList = parsed.some((s: any) => 
-              s.name && s.name.toLowerCase().includes(query)
+              s && s.name && (s.name || '').toLowerCase().includes(query)
             );
           }
         } catch (e) {}

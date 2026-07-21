@@ -23,6 +23,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
   const [subventionsAndAids, setSubventionsAndAids] = useState<number>(settings.subventionsAndAids || 0);
   const [actualHonoraryContributions, setActualHonoraryContributions] = useState<number>(settings.actualHonoraryContributions || 0);
   const [actualSubventionsAndAids, setActualSubventionsAndAids] = useState<number>(settings.actualSubventionsAndAids || 0);
+  const [syncIntervalSeconds, setSyncIntervalSeconds] = useState<number>(settings.syncIntervalSeconds || 30);
   
   // Country & Currency addition inputs
   const [country, setCountry] = useState(settings.country || 'Cameroun');
@@ -202,6 +203,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
       setWavePhoneNumber(pCfg?.wavePhoneNumber || '');
       setWaveMerchantName(pCfg?.waveMerchantName || '');
       setWaveApiKey(pCfg?.waveApiKey || '');
+      setSyncIntervalSeconds(settings.syncIntervalSeconds || 30);
     }
   }, [settings]);
 
@@ -254,6 +256,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
         country,
         currency,
         financialObligations,
+        syncIntervalSeconds,
         paymentConfig: {
           cardEnabled,
           stripePublicKey: (stripePublicKey || '').trim(),
@@ -821,6 +824,38 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
                   <p className="text-[8.5px] text-gray-400 leading-tight">Subventions ministérielles ou dons de municipalités prévus.</p>
                 </div>
 
+              </div>
+            </div>
+
+            {/* Sync interval configurations */}
+            <div className="border-t border-slate-100 pt-4 mt-4 space-y-3">
+              <div className="flex items-center gap-2 select-none">
+                <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wider block">2. Fréquence de Synchronisation / Sync Interval</span>
+                <span className="h-px bg-slate-100 flex-1" />
+              </div>
+              
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-600 uppercase block">Intervalle de mise à jour des données (Poll Interval)</label>
+                <select
+                  value={syncIntervalSeconds}
+                  onChange={(e) => setSyncIntervalSeconds(Number(e.target.value))}
+                  className="w-full px-3 py-1.5 text-xs border rounded-lg focus:outline-indigo-550 font-bold font-mono text-slate-750"
+                >
+                  <option value={10}>10 secondes (Ultra-rapide)</option>
+                  <option value={30}>30 secondes (Défaut / Default)</option>
+                  <option value={60}>1 minute</option>
+                  <option value={120}>2 minutes</option>
+                  <option value={300}>5 minutes</option>
+                  <option value={600}>10 minutes</option>
+                  <option value={900}>15 minutes</option>
+                  <option value={1800}>30 minutes</option>
+                </select>
+                <p className="text-[8.5px] text-gray-400 leading-tight">
+                  {language === 'en' 
+                    ? "Defines how often the application requests and synchronizes school updates (grades, homework, billing, etc.) in the background."
+                    : "Définit la fréquence à laquelle l'application interroge le serveur et synchronise les notes, devoirs, factures et nouveautés en arrière-plan."
+                  }
+                </p>
               </div>
             </div>
 

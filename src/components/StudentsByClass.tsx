@@ -22,11 +22,13 @@ import {
   Receipt,
   Download,
   ShieldAlert,
-  ArrowRight
+  ArrowRight,
+  QrCode
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLanguage } from '../utils/TranslationContext';
 import { jsPDF } from 'jspdf';
+import StudentQRBadge, { generateBulkBadgesPDF } from './StudentQRBadge';
 
 interface StudentsByClassProps {
   students: Student[];
@@ -55,7 +57,7 @@ export default function StudentsByClass({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClass, setSelectedClass] = useState<string>('all');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [activeDetailTab, setActiveDetailTab] = useState<'profile' | 'grades' | 'attendance' | 'finance' | 'messages'>('profile');
+  const [activeDetailTab, setActiveDetailTab] = useState<'profile' | 'grades' | 'attendance' | 'finance' | 'messages' | 'badge'>('profile');
 
   // Helper to extract unique classes
   const classes = Array.from(new Set(students.map(s => s.classRoom || 'Non spécifiée'))).sort();
@@ -73,8 +75,8 @@ export default function StudentsByClass({
   // Filter students based on classroom & search query
   const filteredStudents = students.filter(s => {
     const classMatches = selectedClass === 'all' || (s.classRoom || 'Non spécifiée') === selectedClass;
-    const nameMatches = s.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                        (s.classRoom || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const nameMatches = (s.name || '').toLowerCase().includes((searchQuery || '').toLowerCase()) || 
+                        (s.classRoom || '').toLowerCase().includes((searchQuery || '').toLowerCase());
     return classMatches && nameMatches;
   });
 
@@ -82,7 +84,7 @@ export default function StudentsByClass({
   const getStudentParent = (student: Student): ApeeParent | undefined => {
     // 1. Try finding by matching student in parent profile linked students
     const foundByLink = apeeParents.find(p => 
-      p.students?.some(s => s.name.trim().toLowerCase() === student.name.trim().toLowerCase())
+      p.students?.some(s => (s.name || '').trim().toLowerCase() === (student.name || '').trim().toLowerCase())
     );
     if (foundByLink) return foundByLink;
 
@@ -394,6 +396,46 @@ export default function StudentsByClass({
               ))}
             </div>
           </div>
+
+          {/* Badges Action Box for Manager */}
+          <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white p-4.5 rounded-2xl border border-slate-800 shadow-sm space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-indigo-500/15 rounded-lg text-indigo-400 border border-indigo-500/10">
+                <QrCode className="h-4 w-4" />
+              </div>
+              <h4 className="text-xs font-black tracking-wider uppercase text-white">
+                {isFr ? "Badges d'émargement" : "Attendance Badges"}
+              </h4>
+            </div>
+            
+            <p className="text-[10.5px] text-slate-300 leading-normal font-normal">
+              {isFr 
+                ? "Générez et imprimez une planche de badges A4 avec QR Code unique pour l'émargement automatique de vos élèves." 
+                : "Generate and print an A4 badge sheet with unique QR Codes for automated student attendance tracking."}
+            </p>
+
+            <button
+              onClick={() => {
+                const studentsToPrint = selectedClass === 'all' 
+                  ? students 
+                  : students.filter(s => (s.classRoom || 'Non spécifiée') === selectedClass);
+                generateBulkBadgesPDF(
+                  studentsToPrint, 
+                  settings, 
+                  selectedClass === 'all' ? undefined : selectedClass
+                );
+              }}
+              disabled={filteredStudents.length === 0}
+              className="w-full flex items-center justify-center gap-2 bg-indigo-650 hover:bg-indigo-600 disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold text-xs py-2 px-3 rounded-xl shadow-sm transition-all cursor-pointer border border-indigo-500/30"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              <span>
+                {selectedClass === 'all' 
+                  ? (isFr ? `Imprimer tous les badges (${students.length})` : `Print all badges (${students.length})`)
+                  : (isFr ? `Badges ${selectedClass} (${studentsByClass[selectedClass]?.length || 0})` : `Badges ${selectedClass} (${studentsByClass[selectedClass]?.length || 0})`)}
+              </span>
+            </button>
+          </div>
         </div>
 
         {/* Right Column: Nominal List Grid */}
@@ -662,6 +704,16 @@ export default function StudentsByClass({
                 >
                   💬 {isFr ? "Messages" : "Message Logs"}
                 </button>
+                <button
+                  onClick={() => setActiveDetailTab('badge')}
+                  className={`px-5 py-3 text-xs font-bold border-b-2 cursor-pointer whitespace-nowrap transition-colors ${
+                    activeDetailTab === 'badge'
+                      ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                      : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-800'
+                  }`}
+                >
+                  🎫 {isFr ? "Badge QR Code" : "QR Badge"}
+                </button>
               </div>
 
               {/* Modal scrollable body */}
@@ -900,15 +952,15 @@ export default function StudentsByClass({
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                               <div className="bg-white dark:bg-slate-900 p-4.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs">
                                 <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest">{isFr ? "Exigible total" : "Total Dues"}</span>
-                                <p className="text-base font-black text-slate-800 dark:text-white mt-0.5 font-mono">{parent.totalDue.toLocaleString()} {currency}</p>
+                                <p className="text-base font-black text-slate-800 dark:text-white mt-0.5 font-mono">{(parent.totalDue || 0).toLocaleString()} {currency}</p>
                               </div>
                               <div className="bg-white dark:bg-slate-900 p-4.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs">
                                 <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest">{isFr ? "Déjà versé" : "Total Paid"}</span>
-                                <p className="text-base font-black text-emerald-600 dark:text-emerald-400 mt-0.5 font-mono">{parent.totalPaid.toLocaleString()} {currency}</p>
+                                <p className="text-base font-black text-emerald-600 dark:text-emerald-400 mt-0.5 font-mono">{(parent.totalPaid || 0).toLocaleString()} {currency}</p>
                               </div>
                               <div className="bg-white dark:bg-slate-900 p-4.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs">
                                 <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest">{isFr ? "Reste à payer" : "Remaining Balance"}</span>
-                                <p className="text-base font-black text-rose-600 dark:text-rose-400 mt-0.5 font-mono">{(parent.totalDue - parent.totalPaid).toLocaleString()} {currency}</p>
+                                <p className="text-base font-black text-rose-600 dark:text-rose-400 mt-0.5 font-mono">{((parent.totalDue || 0) - (parent.totalPaid || 0)).toLocaleString()} {currency}</p>
                               </div>
                             </div>
 
@@ -933,7 +985,7 @@ export default function StudentsByClass({
                                         <tr key={pay.id} className="hover:bg-slate-50/20 dark:hover:bg-slate-800/10 font-medium">
                                           <td className="p-2.5 font-mono text-indigo-600 dark:text-indigo-400 font-bold">{pay.transactionId || pay.id.substring(0, 10).toUpperCase()}</td>
                                           <td className="p-2.5 text-slate-500">{new Date(pay.date).toLocaleDateString('fr-FR')}</td>
-                                          <td className="p-2.5 font-mono font-bold text-emerald-600 dark:text-emerald-400">+{pay.amount.toLocaleString()} {currency}</td>
+                                          <td className="p-2.5 font-mono font-bold text-emerald-600 dark:text-emerald-400">+{(pay.amount || 0).toLocaleString()} {currency}</td>
                                           <td className="p-2.5">
                                             <span className="bg-slate-100 dark:bg-slate-800 text-[10px] px-1.5 py-0.5 rounded font-extrabold uppercase">
                                               {pay.method || "Espèces"}
@@ -994,6 +1046,24 @@ export default function StudentsByClass({
                         </div>
                       )}
                     </div>
+                  </div>
+                )}
+
+                {/* TAB 6: BADGE & QR CODE */}
+                {activeDetailTab === 'badge' && (
+                  <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-4 animate-in fade-in duration-200">
+                    <div className="border-b pb-2">
+                      <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-widest">
+                        {isFr ? "Badge d'Accès Physique & QR Code" : "Physical ID Badge & QR Code"}
+                      </h4>
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        {isFr 
+                          ? "Voici l'aperçu du badge d'émargement de l'élève. Vous pouvez l'imprimer directement pour l'insérer dans un porte-badge standard." 
+                          : "This is the student check-in badge preview. You can print it for a standard lanyard or badge holder."}
+                      </p>
+                    </div>
+
+                    <StudentQRBadge student={selectedStudent} settings={settings} isFr={isFr} />
                   </div>
                 )}
 

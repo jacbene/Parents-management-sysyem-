@@ -447,7 +447,7 @@ export default function SheetsPortal({ parents, invoices, students, onSaveParent
       setPreviewRows(records);
 
       // Deduce target import mode based on sheet tab title keywords
-      const tabLower = selectedTab.toLowerCase();
+      const tabLower = (selectedTab || '').toLowerCase();
       if (tabLower.includes('parent') || tabLower.includes('apee') || tabLower.includes('finance')) {
         setImportTargetType('parents');
       } else if (tabLower.includes('student') || tabLower.includes('élève') || tabLower.includes('classe') || tabLower.includes('register')) {
@@ -518,7 +518,7 @@ export default function SheetsPortal({ parents, invoices, students, onSaveParent
 
       setPreviewRows(records);
 
-      const tabLower = selectedTab.toLowerCase();
+      const tabLower = (selectedTab || '').toLowerCase();
       if (tabLower.includes('parent') || tabLower.includes('apee') || tabLower.includes('finance')) {
         setImportTargetType('parents');
       } else if (tabLower.includes('student') || tabLower.includes('élève') || tabLower.includes('classe') || tabLower.includes('register')) {

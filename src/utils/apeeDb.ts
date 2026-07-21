@@ -42,7 +42,8 @@ export const DEFAULT_SETTINGS: ApeeSettings = {
   finManagerPassword: '',
   pedManagerName: '',
   pedManagerPhone: '',
-  pedManagerPassword: ''
+  pedManagerPassword: '',
+  syncIntervalSeconds: 30
 };
 
 /**
@@ -941,8 +942,8 @@ export function generateApeeReminderMessage(
       .replace(/{short_name}/g, shortName)
       .replace(/{school_year}/g, schoolYear)
       .replace(/{student_names}/g, kidsList)
-      .replace(/{remaining_amount}/g, remaining.toLocaleString())
-      .replace(/{total_due_amount}/g, parent.totalDue.toLocaleString());
+      .replace(/{remaining_amount}/g, (remaining || 0).toLocaleString())
+      .replace(/{total_due_amount}/g, (parent.totalDue || 0).toLocaleString());
   };
 
   if (type === 'sms') {

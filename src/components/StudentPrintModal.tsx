@@ -52,6 +52,18 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
     setIsMounted(true);
   }, []);
 
+  useEffect(() => {
+    // Disable main window scroll when open
+    if (isOpen && student) {
+      document.body.style.overflow = 'hidden';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen, student]);
+
+  if (!isOpen || !student) return null;
+
   // Theme definition mapping for cohesive premium design
   const themeColors = {
     indigo: {
@@ -152,10 +164,14 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
 
   // Find titular teacher for student's classroom in global ApeeSettings
   const foundTeacher = settings?.classTeachers?.find(t => {
-    const classRoomName = student.classRoom || '';
-    return t.classRoom.toLowerCase() === classRoomName.toLowerCase() || 
-           classRoomName.toLowerCase().includes(t.classRoom.toLowerCase()) ||
-           t.classRoom.toLowerCase().includes(classRoomName.toLowerCase());
+    if (!t) return false;
+    const classRoomName = (student?.classRoom || '').toLowerCase();
+    const tClassRoom = (t?.classRoom || '').toLowerCase();
+    return tClassRoom && classRoomName && (
+           tClassRoom === classRoomName || 
+           classRoomName.includes(tClassRoom) ||
+           tClassRoom.includes(classRoomName)
+    );
   });
 
   const teacherName = foundTeacher?.teacherName || student.teacherName || 'Enseignant principal';
@@ -165,18 +181,6 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
   const schoolExtracted = settings?.associationName 
     ? settings.associationName.replace(/^(APEE|A\.P\.E\.E\.|Association des Parents d'élèves de l'|Association des Parents d'élèves du|Association des Parents d'élèves de|Association des Parents d'élèves|Association des Parents du|Association des Parents de|Association des Parents d'|Association des Parents|Association des Parents CES d')\s+/i, '').trim()
     : (isEn ? "CES d'Ekali 1" : "CES d'Ekali 1");
-
-  useEffect(() => {
-    // Disable main window scroll when open
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    }
-    return () => {
-      document.body.style.overflow = 'unset';
-    };
-  }, [isOpen]);
-
-  if (!isOpen) return null;
 
   // 1. Grade stats computations (using filtered grades)
   const totalTests = filteredGrades.length;
@@ -326,7 +330,7 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
     link.href = url;
     
     // Clean filename
-    const safeStudentName = student.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const safeStudentName = (student?.name || '').toLowerCase().replace(/[^a-z0-9]/g, '_');
     link.setAttribute('download', `bulletin_${safeStudentName}.csv`);
     document.body.appendChild(link);
     link.click();
@@ -911,7 +915,7 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
        doc.text("PASMA-SYS ENT • BULLETIN TRIMESTRIEL DE L'ÉLÈVE", margin, pageHeight - 8);
     }
 
-    const safePdfFileName = student.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const safePdfFileName = (student?.name || '').toLowerCase().replace(/[^a-z0-9]/g, '_');
     doc.save(`bulletin_${safePdfFileName}.pdf`);
   };
 

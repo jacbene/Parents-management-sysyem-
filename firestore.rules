@@ -79,7 +79,9 @@ service cloud.firestore {
               isSafeId(parentId) && 
               (parentId == request.auth.uid || 
                (exists(/databases/$(database)/documents/establishments/$(parentId)) && 
-                get(/databases/$(database)/documents/establishments/$(parentId)).data.ownerId == request.auth.uid)));
+                get(/databases/$(database)/documents/establishments/$(parentId)).data.ownerId == request.auth.uid) ||
+               (existsAfter(/databases/$(database)/documents/establishments/$(parentId)) && 
+                getAfter(/databases/$(database)/documents/establishments/$(parentId)).data.ownerId == request.auth.uid)));
     }
 
     function studentExists(studentId) {

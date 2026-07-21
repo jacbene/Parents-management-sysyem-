@@ -303,13 +303,13 @@ export default function AnnouncementsFeed({
           // 1. Chercher d'abord une voix locale (localService === true) dans la langue préférée
           let voice = voices.find(v => 
             v.localService && 
-            (v.lang.toLowerCase().startsWith(preferredLang) || v.lang.toLowerCase().includes(preferredLang))
+            ((v.lang || '').toLowerCase().startsWith(preferredLang) || (v.lang || '').toLowerCase().includes(preferredLang))
           );
 
           // 2. Si non trouvée, chercher n'importe quelle voix dans la langue préférée (locale ou cloud)
           if (!voice) {
             voice = voices.find(v => 
-              v.lang.toLowerCase().startsWith(preferredLang) || v.lang.toLowerCase().includes(preferredLang)
+              (v.lang || '').toLowerCase().startsWith(preferredLang) || (v.lang || '').toLowerCase().includes(preferredLang)
             );
           }
 
@@ -317,8 +317,8 @@ export default function AnnouncementsFeed({
           if (!voice) {
             voice = voices.find(v => 
               preferredLang === 'fr' 
-                ? (v.name.toLowerCase().includes('french') || v.name.toLowerCase().includes('français'))
-                : (v.name.toLowerCase().includes('english') || v.name.toLowerCase().includes('us') || v.name.toLowerCase().includes('uk'))
+                ? ((v.name || '').toLowerCase().includes('french') || (v.name || '').toLowerCase().includes('français'))
+                : ((v.name || '').toLowerCase().includes('english') || (v.name || '').toLowerCase().includes('us') || (v.name || '').toLowerCase().includes('uk'))
             );
           }
 
@@ -327,7 +327,7 @@ export default function AnnouncementsFeed({
             const otherLang = preferredLang === 'fr' ? 'en' : 'fr';
             voice = voices.find(v => 
               v.localService && 
-              (v.lang.toLowerCase().startsWith(otherLang) || v.lang.toLowerCase().includes(otherLang))
+              ((v.lang || '').toLowerCase().startsWith(otherLang) || (v.lang || '').toLowerCase().includes(otherLang))
             );
           }
 
@@ -335,7 +335,7 @@ export default function AnnouncementsFeed({
           if (!voice) {
             const otherLang = preferredLang === 'fr' ? 'en' : 'fr';
             voice = voices.find(v => 
-              v.lang.toLowerCase().startsWith(otherLang) || v.lang.toLowerCase().includes(otherLang)
+              (v.lang || '').toLowerCase().startsWith(otherLang) || (v.lang || '').toLowerCase().includes(otherLang)
             );
           }
 

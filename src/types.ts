@@ -318,6 +318,7 @@ export interface ApeeSettings {
   classTeachers?: Array<{ classRoom: string; teacherName: string; teacherPhone: string; teacherEmail: string }>;
   paymentConfig?: ApeePaymentConfig;
   smsConfig?: ApeeSmsConfig;
+  syncIntervalSeconds?: number;
 }
 
 export interface Establishment {

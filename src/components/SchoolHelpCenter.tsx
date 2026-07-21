@@ -18,11 +18,114 @@ import {
   CheckCircle2, 
   AlertCircle, 
   ExternalLink,
-  Info
+  Info,
+  Sparkles,
+  ThumbsUp,
+  Calendar,
+  TrendingUp,
+  Layers,
+  ArrowRight,
+  Plus,
+  Heart
 } from 'lucide-react';
 import { ApeeSettings } from '../types';
 import { db, auth } from '../firebase';
 import { collection, addDoc } from 'firebase/firestore';
+
+interface RoadmapItem {
+  id: string;
+  title: string;
+  description: string;
+  longDescription: string;
+  category: 'finance' | 'pedagogy' | 'badges' | 'platform';
+  status: 'released' | 'in-progress' | 'planned';
+  progress: number;
+  expectedDate: string;
+  impact: 'High' | 'Medium' | 'Normal';
+  initialUpvotes: number;
+  techDetails?: string[];
+}
+
+const DEFAULT_ROADMAP: RoadmapItem[] = [
+  {
+    id: 'road_momo_auto',
+    title: "Paiements Mobiles MoMo/Orange par QR Code instantané",
+    description: "Intégration d'un système de scan de QR code sur facture pour initier des invites de paiement USSD directes Orange et MTN.",
+    longDescription: "Ce module permettra aux parents d'élèves de flasher un QR code unique de facture imprimée ou affichée à l'écran pour déclencher instantanément une demande de paiement (Push USSD) sur leur téléphone portable MTN ou Orange Money. Le solde APEE sera automatiquement mis à jour et un reçu de paiement certifié PDF sera généré en temps réel, éliminant les temps d'attente au guichet.",
+    category: 'finance',
+    status: 'released',
+    progress: 100,
+    expectedDate: 'Disponible - Juin 2026',
+    impact: 'High',
+    initialUpvotes: 84,
+    techDetails: ['Campay Mobile Money API', 'Notification Push USSD', 'Cryptage AES', 'Webhooks en temps réel']
+  },
+  {
+    id: 'road_grades_analysis',
+    title: "Relevés scolaires & Bulletins interactifs avec analyses graphiques",
+    description: "Tableau de bord dynamique d'évolution des notes par élève et génération automatisée de bulletins certifiés en PDF.",
+    longDescription: "Visualisez les performances académiques de vos enfants grâce à des graphiques d'évolution et des comparaisons avec les moyennes de classe par trimestre. Les enseignants peuvent éditer et valider les bulletins de notes scolaires en ligne, et les parents reçoivent une version certifiée par code QR pour vérification d'authenticité.",
+    category: 'pedagogy',
+    status: 'released',
+    progress: 100,
+    expectedDate: 'Disponible - Juillet 2026',
+    impact: 'High',
+    initialUpvotes: 112,
+    techDetails: ['D3.js & Recharts Visualizations', 'PDF Generator Engine', 'Calculateur de rang dynamique', 'Signature cryptée']
+  },
+  {
+    id: 'road_sms_presence',
+    title: "Notifications SMS instantanées de présence/absence",
+    description: "Alerte SMS immédiate envoyée sur le mobile du parent dès le scan du badge QR de l'élève à l'entrée de l'établissement.",
+    longDescription: "Dès que le surveillant général scanne le badge d'un élève le matin avec l'application, un système de passerelle SMS (SMS Gateway) transmet instantanément une notification personnalisée au parent. Si l'élève est marqué en retard ou absent injustifié, le parent reçoit des consignes pour régulariser immédiatement la situation, assurant un niveau de sécurité optimal.",
+    category: 'badges',
+    status: 'in-progress',
+    progress: 75,
+    expectedDate: 'Fin Juillet 2026',
+    impact: 'High',
+    initialUpvotes: 148,
+    techDetails: ['SMS Gateway API (Twilio/Infobip)', 'Firebase Cloud Functions', 'Gestionnaire de file d\'attente', 'Détection de fuseau horaire']
+  },
+  {
+    id: 'road_chat_parent_teacher',
+    title: "Messagerie instantanée Parent-Enseignant intégrée",
+    description: "Canal d'échange privé et sécurisé pour discuter du suivi scolaire, des absences et de la discipline de l'élève.",
+    longDescription: "Établissez une communication directe, rapide et confidentielle entre les parents et les professeurs principaux. Ce module permet d'envoyer des messages, des fichiers d'évaluation ou des alertes comportementales sans exposer les numéros de téléphone personnels des enseignants, garantissant le respect de la vie privée.",
+    category: 'platform',
+    status: 'in-progress',
+    progress: 40,
+    expectedDate: 'Mi-Août 2026',
+    impact: 'Medium',
+    initialUpvotes: 95,
+    techDetails: ['Firestore Real-time Listeners', 'Notification Push de navigateur', 'Modération automatique de contenu', 'Sécurisation de documents']
+  },
+  {
+    id: 'road_offline_pwa',
+    title: "Application Mobile Progressive (PWA) & Mode hors-ligne",
+    description: "Téléchargement direct du portail sur l'écran d'accueil pour consulter les notes, cours et devoirs sans connexion Internet.",
+    longDescription: "Afin de pallier les coupures de réseau fréquentes, ce module transformera le portail en application mobile installable (PWA). Les données précédemment téléchargées (bulletins, cahier de textes, factures APEE payées) resteront accessibles en mode hors-ligne. Les synchronisations s'effectueront automatiquement dès le retour de la connexion.",
+    category: 'platform',
+    status: 'planned',
+    progress: 15,
+    expectedDate: 'Rentrée Septembre 2026',
+    impact: 'High',
+    initialUpvotes: 215,
+    techDetails: ['Service Workers', 'Cache Storage API', 'IndexedDB Local Cache', 'Manifeste PWA']
+  },
+  {
+    id: 'road_ai_tutor',
+    title: "IA Assistant d'exercice & de remédiation scolaire",
+    description: "Module éducatif intelligent proposant des exercices personnalisés basés sur les faiblesses scolaires détectées chez l'élève.",
+    longDescription: "Un assistant propulsé par l'IA Gemini 2.5 Flash qui analyse automatiquement les notes trimestrielles de l'élève. Il détecte les matières ou chapitres où l'élève éprouve des difficultés (ex: équations du second degré, grammaire anglaise) et génère de façon dynamique des séances de révision et exercices interactifs de remédiation personnalisés.",
+    category: 'pedagogy',
+    status: 'planned',
+    progress: 5,
+    expectedDate: 'Novembre 2026',
+    impact: 'Medium',
+    initialUpvotes: 173,
+    techDetails: ['Gemini 2.5 Flash API', 'Structured JSON Outputs', 'Générateur de quizz', 'Algorithmes adaptatifs d\'apprentissage']
+  }
+];
 
 interface SchoolHelpCenterProps {
   apeeSettings: ApeeSettings;
@@ -181,11 +284,11 @@ export default function SchoolHelpCenter({
   const filteredFaqs = useMemo(() => {
     return faqs.filter(faq => {
       const matchesCategory = activeCategory === 'all' || faq.category === activeCategory;
-      const cleanQuery = searchQuery.trim().toLowerCase();
+      const cleanQuery = (searchQuery || '').trim().toLowerCase();
       if (!cleanQuery) return matchesCategory;
 
-      const questionMatches = faq.question.toLowerCase().includes(cleanQuery);
-      const tagMatches = faq.tags.some(tag => tag.toLowerCase().includes(cleanQuery));
+      const questionMatches = (faq.question || '').toLowerCase().includes(cleanQuery);
+      const tagMatches = (faq.tags || []).some(tag => (tag || '').toLowerCase().includes(cleanQuery));
       return matchesCategory && (questionMatches || tagMatches);
     });
   }, [faqs, searchQuery, activeCategory]);
@@ -231,6 +334,214 @@ export default function SchoolHelpCenter({
   const handleToggleExpand = (id: string) => {
     setExpandedId(prev => prev === id ? null : id);
   };
+
+  // --- INTERACTIVE VISUAL ROADMAP STATES & HANDLERS ---
+  const [roadmapStatusFilter, setRoadmapStatusFilter] = useState<'all' | 'released' | 'in-progress' | 'planned'>('all');
+  const [roadmapCatFilter, setRoadmapCatFilter] = useState<'all' | 'finance' | 'pedagogy' | 'badges' | 'platform'>('all');
+  const [expandedRoadmapId, setExpandedRoadmapId] = useState<string | null>(null);
+  const [roadmapSearch, setRoadmapSearch] = useState('');
+  
+  // Voting state: stored in local storage for instant visual reinforcement and state preservation
+  const [votedIds, setVotedIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('pasmasys_voted_roadmap_items');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [votesCount, setVotesCount] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem('pasmasys_roadmap_votes_counts');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    
+    // Fallback to default values
+    const init: Record<string, number> = {};
+    DEFAULT_ROADMAP.forEach(item => {
+      init[item.id] = item.initialUpvotes;
+    });
+    return init;
+  });
+
+  // Suggest a Feature Form State
+  const [suggestTitle, setSuggestTitle] = useState('');
+  const [suggestDesc, setSuggestDesc] = useState('');
+  const [suggestCat, setSuggestCat] = useState<'finance' | 'pedagogy' | 'badges' | 'platform'>('pedagogy');
+  const [isSubmittingSuggest, setIsSubmittingSuggest] = useState(false);
+  const [suggestSuccess, setSuggestSuccess] = useState(false);
+  const [suggestError, setSuggestError] = useState('');
+
+  // Suggestions submitted in this session (local cache for real-time list update)
+  const [localSuggestions, setLocalSuggestions] = useState<{id: string; title: string; description: string; category: string; votes: number}[]>(() => {
+    try {
+      const saved = localStorage.getItem('pasmasys_local_roadmap_suggestions');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const handleVote = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // prevent card expand
+    if (votedIds.includes(id)) {
+      // Unvote
+      const nextVoted = votedIds.filter(vId => vId !== id);
+      setVotedIds(nextVoted);
+      localStorage.setItem('pasmasys_voted_roadmap_items', JSON.stringify(nextVoted));
+      
+      const nextVotes = { ...votesCount, [id]: Math.max(0, (votesCount[id] || 0) - 1) };
+      setVotesCount(nextVotes);
+      localStorage.setItem('pasmasys_roadmap_votes_counts', JSON.stringify(nextVotes));
+    } else {
+      // Vote
+      const nextVoted = [...votedIds, id];
+      setVotedIds(nextVoted);
+      localStorage.setItem('pasmasys_voted_roadmap_items', JSON.stringify(nextVoted));
+      
+      const nextVotes = { ...votesCount, [id]: (votesCount[id] || 0) + 1 };
+      setVotesCount(nextVotes);
+      localStorage.setItem('pasmasys_roadmap_votes_counts', JSON.stringify(nextVotes));
+    }
+  };
+
+  const handleLocalSuggestVote = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (votedIds.includes(id)) {
+      const nextVoted = votedIds.filter(vId => vId !== id);
+      setVotedIds(nextVoted);
+      localStorage.setItem('pasmasys_voted_roadmap_items', JSON.stringify(nextVoted));
+      
+      const nextSuggests = localSuggestions.map(s => {
+        if (s.id === id) {
+          return { ...s, votes: Math.max(1, s.votes - 1) };
+        }
+        return s;
+      });
+      setLocalSuggestions(nextSuggests);
+      localStorage.setItem('pasmasys_local_roadmap_suggestions', JSON.stringify(nextSuggests));
+    } else {
+      const nextVoted = [...votedIds, id];
+      setVotedIds(nextVoted);
+      localStorage.setItem('pasmasys_voted_roadmap_items', JSON.stringify(nextVoted));
+      
+      const nextSuggests = localSuggestions.map(s => {
+        if (s.id === id) {
+          return { ...s, votes: s.votes + 1 };
+        }
+        return s;
+      });
+      setLocalSuggestions(nextSuggests);
+      localStorage.setItem('pasmasys_local_roadmap_suggestions', JSON.stringify(nextSuggests));
+    }
+  };
+
+  const handleAddSuggestion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!suggestTitle.trim() || !suggestDesc.trim()) {
+      setSuggestError('Veuillez remplir le titre et la description de votre suggestion.');
+      return;
+    }
+
+    setIsSubmittingSuggest(true);
+    setSuggestError('');
+    setSuggestSuccess(false);
+
+    const newId = `suggest_${Date.now()}`;
+
+    try {
+      // Save directly to Cloud Firestore 'roadmap_suggestions' for durable storage
+      await addDoc(collection(db, 'roadmap_suggestions'), {
+        title: suggestTitle.trim(),
+        description: suggestDesc.trim(),
+        category: suggestCat,
+        senderName: userEmail || auth.currentUser?.email || 'Visiteur',
+        timestamp: new Date().toISOString(),
+        upvotes: 1,
+        status: 'SUGGESTED',
+        schoolName: apeeSettings.associationName || 'CES Ekali'
+      });
+
+      // Also store in local state so the user sees their suggested item immediately in the UI
+      const newLocal = {
+        id: newId,
+        title: suggestTitle.trim(),
+        description: suggestDesc.trim(),
+        category: suggestCat,
+        votes: 1
+      };
+      
+      const nextSuggests = [newLocal, ...localSuggestions];
+      setLocalSuggestions(nextSuggests);
+      localStorage.setItem('pasmasys_local_roadmap_suggestions', JSON.stringify(nextSuggests));
+      
+      // Mark as voted so they can't double upvote right away
+      const nextVoted = [...votedIds, newId];
+      setVotedIds(nextVoted);
+      localStorage.setItem('pasmasys_voted_roadmap_items', JSON.stringify(nextVoted));
+
+      setSuggestSuccess(true);
+      setSuggestTitle('');
+      setSuggestDesc('');
+    } catch (err: any) {
+      console.error('Error submitting suggestion to Firestore:', err);
+      // Fallback: Save to local suggestions list even if firestore fails
+      const newLocal = {
+        id: newId,
+        title: suggestTitle.trim(),
+        description: suggestDesc.trim(),
+        category: suggestCat,
+        votes: 1
+      };
+      const nextSuggests = [newLocal, ...localSuggestions];
+      setLocalSuggestions(nextSuggests);
+      localStorage.setItem('pasmasys_local_roadmap_suggestions', JSON.stringify(nextSuggests));
+
+      const nextVoted = [...votedIds, newId];
+      setVotedIds(nextVoted);
+      localStorage.setItem('pasmasys_voted_roadmap_items', JSON.stringify(nextVoted));
+
+      setSuggestSuccess(true);
+      setSuggestTitle('');
+      setSuggestDesc('');
+    } finally {
+      setIsSubmittingSuggest(false);
+    }
+  };
+
+  const handleToggleRoadmapExpand = (id: string) => {
+    setExpandedRoadmapId(prev => prev === id ? null : id);
+  };
+
+  // Categories helper mapping for roadmap styling
+  const getRoadmapCategoryMeta = (cat: string) => {
+    switch (cat) {
+      case 'finance':
+        return { label: 'Finances & Cotisations', icon: Coins, color: 'text-emerald-600 bg-emerald-50 border-emerald-150', border: 'border-l-4 border-l-emerald-500' };
+      case 'pedagogy':
+        return { label: 'Pédagogie & Notes', icon: BookOpen, color: 'text-amber-600 bg-amber-50 border-amber-150', border: 'border-l-4 border-l-amber-500' };
+      case 'badges':
+        return { label: 'Badges & Sécurité', icon: QrCode, color: 'text-purple-600 bg-purple-50 border-purple-150', border: 'border-l-4 border-l-purple-500' };
+      default:
+        return { label: 'Portail & Technique', icon: Layers, color: 'text-sky-600 bg-sky-50 border-sky-150', border: 'border-l-4 border-l-sky-500' };
+    }
+  };
+
+  const filteredRoadmap = useMemo(() => {
+    return DEFAULT_ROADMAP.filter(item => {
+      const matchesStatus = roadmapStatusFilter === 'all' || item.status === roadmapStatusFilter;
+      const matchesCategory = roadmapCatFilter === 'all' || item.category === roadmapCatFilter;
+      const cleanSearch = (roadmapSearch || '').toLowerCase().trim();
+      
+      const matchesSearch = !cleanSearch || 
+        (item.title || '').toLowerCase().includes(cleanSearch) || 
+        (item.description || '').toLowerCase().includes(cleanSearch) ||
+        (item.techDetails || []).some(tech => (tech || '').toLowerCase().includes(cleanSearch));
+        
+      return matchesStatus && matchesCategory && matchesSearch;
+    });
+  }, [roadmapStatusFilter, roadmapCatFilter, roadmapSearch]);
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto p-1 text-slate-800" id="school_help_center_view">
@@ -455,7 +766,485 @@ export default function SchoolHelpCenter({
         </div>
       </div>
 
-      {/* 4. Write Direct Help Ticket Form (Durable Cloud Persistence) */}
+      {/* 4. Interactive Visual Roadmap (Upcoming Portal Updates & Features) */}
+      <div className="space-y-6 bg-white border border-slate-150 rounded-3xl p-6 sm:p-8 shadow-xs" id="school_portal_roadmap_section">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-100 pb-5">
+          <div className="space-y-1.5">
+            <span className="inline-flex items-center gap-1 bg-violet-50 border border-violet-150 text-[10.5px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full text-violet-700">
+              <Sparkles className="h-3.5 w-3.5" /> Évolution du Portail Pasma-sys
+            </span>
+            <h2 className="text-xl font-black text-slate-900 tracking-tight font-sans">
+              Feuille de Route & Fonctionnalités Futures
+            </h2>
+            <p className="text-xs text-slate-500 leading-relaxed font-medium">
+              Suivez le déploiement des nouveautés de l'école. Exprimez vos besoins en votant pour vos fonctionnalités préférées ou en proposant de nouvelles idées.
+            </p>
+          </div>
+
+          {/* Quick Stats */}
+          <div className="flex gap-3 text-center shrink-0">
+            <div className="px-3 py-2 bg-slate-50 border border-slate-150 rounded-2xl">
+              <div className="text-base font-black text-slate-900">
+                {DEFAULT_ROADMAP.filter(x => x.status === 'released').length}
+              </div>
+              <div className="text-[9.5px] font-bold text-slate-500 uppercase tracking-wider">Livrées</div>
+            </div>
+            <div className="px-3 py-2 bg-indigo-50 border border-indigo-100 rounded-2xl">
+              <div className="text-base font-black text-indigo-700">
+                {DEFAULT_ROADMAP.filter(x => x.status === 'in-progress').length}
+              </div>
+              <div className="text-[9.5px] font-bold text-slate-500 uppercase tracking-wider">En cours</div>
+            </div>
+            <div className="px-3 py-2 bg-violet-50 border border-violet-100 rounded-2xl">
+              <div className="text-base font-black text-violet-700">
+                {DEFAULT_ROADMAP.filter(x => x.status === 'planned').length}
+              </div>
+              <div className="text-[9.5px] font-bold text-slate-500 uppercase tracking-wider">Planifiées</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Filters and Searches row */}
+        <div className="space-y-3 bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5">
+            {/* Search */}
+            <div className="relative lg:col-span-4">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                <Search className="h-4 w-4" />
+              </div>
+              <input
+                type="text"
+                value={roadmapSearch}
+                onChange={(e) => setRoadmapSearch(e.target.value)}
+                placeholder="Rechercher une mise à jour (ex: SMS, IA)..."
+                className="w-full pl-9 pr-8 py-2 bg-white border border-slate-200 rounded-xl text-xs placeholder-slate-450 focus:outline-hidden focus:ring-1.5 focus:ring-indigo-500 font-medium text-slate-800"
+              />
+              {roadmapSearch && (
+                <button
+                  type="button"
+                  onClick={() => setRoadmapSearch('')}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-450 hover:text-slate-800"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Status Filters */}
+            <div className="lg:col-span-4 flex flex-wrap gap-1.5 select-none items-center">
+              <span className="text-[10px] font-bold text-slate-455 uppercase mr-1">Statut:</span>
+              <button
+                type="button"
+                onClick={() => setRoadmapStatusFilter('all')}
+                className={`px-2.5 py-1 rounded-lg text-[10.5px] font-bold border transition cursor-pointer ${
+                  roadmapStatusFilter === 'all'
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                Tous
+              </button>
+              <button
+                type="button"
+                onClick={() => setRoadmapStatusFilter('released')}
+                className={`px-2.5 py-1 rounded-lg text-[10.5px] font-bold border transition cursor-pointer ${
+                  roadmapStatusFilter === 'released'
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-3xs'
+                    : 'bg-white text-emerald-600 border-emerald-150 hover:bg-emerald-50'
+                }`}
+              >
+                Déployés
+              </button>
+              <button
+                type="button"
+                onClick={() => setRoadmapStatusFilter('in-progress')}
+                className={`px-2.5 py-1 rounded-lg text-[10.5px] font-bold border transition cursor-pointer ${
+                  roadmapStatusFilter === 'in-progress'
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-3xs'
+                    : 'bg-white text-indigo-650 border-indigo-150 hover:bg-indigo-50'
+                }`}
+              >
+                En cours
+              </button>
+              <button
+                type="button"
+                onClick={() => setRoadmapStatusFilter('planned')}
+                className={`px-2.5 py-1 rounded-lg text-[10.5px] font-bold border transition cursor-pointer ${
+                  roadmapStatusFilter === 'planned'
+                    ? 'bg-violet-600 text-white border-violet-600 shadow-3xs'
+                    : 'bg-white text-violet-650 border-violet-150 hover:bg-violet-50'
+                }`}
+              >
+                Planifiés
+              </button>
+            </div>
+
+            {/* Category Filters */}
+            <div className="lg:col-span-4 flex flex-wrap gap-1.5 select-none items-center">
+              <span className="text-[10px] font-bold text-slate-455 uppercase mr-1">Catégorie:</span>
+              <button
+                type="button"
+                onClick={() => setRoadmapCatFilter('all')}
+                className={`px-2.5 py-1 rounded-lg text-[10.5px] font-bold border transition cursor-pointer ${
+                  roadmapCatFilter === 'all'
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                Toutes
+              </button>
+              <button
+                type="button"
+                onClick={() => setRoadmapCatFilter('finance')}
+                className={`px-2.5 py-1 rounded-lg text-[10.5px] font-bold border transition cursor-pointer ${
+                  roadmapCatFilter === 'finance'
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                Finances
+              </button>
+              <button
+                type="button"
+                onClick={() => setRoadmapCatFilter('pedagogy')}
+                className={`px-2.5 py-1 rounded-lg text-[10.5px] font-bold border transition cursor-pointer ${
+                  roadmapCatFilter === 'pedagogy'
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                Pédagogie
+              </button>
+              <button
+                type="button"
+                onClick={() => setRoadmapCatFilter('badges')}
+                className={`px-2.5 py-1 rounded-lg text-[10.5px] font-bold border transition cursor-pointer ${
+                  roadmapCatFilter === 'badges'
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                Badges
+              </button>
+              <button
+                type="button"
+                onClick={() => setRoadmapCatFilter('platform')}
+                className={`px-2.5 py-1 rounded-lg text-[10.5px] font-bold border transition cursor-pointer ${
+                  roadmapCatFilter === 'platform'
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                Portail
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Roadmap Items Visual Cards Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {filteredRoadmap.length > 0 ? (
+            filteredRoadmap.map(item => {
+              const meta = getRoadmapCategoryMeta(item.category);
+              const CatIcon = meta.icon;
+              const isVoted = votedIds.includes(item.id);
+              const currentVotes = votesCount[item.id] || item.initialUpvotes;
+              const isExpanded = expandedRoadmapId === item.id;
+
+              return (
+                <div 
+                  key={item.id}
+                  onClick={() => handleToggleRoadmapExpand(item.id)}
+                  className={`bg-white border rounded-2xl p-4 transition-all duration-200 hover:shadow-md cursor-pointer relative flex flex-col justify-between ${meta.border} ${
+                    isExpanded ? 'border-indigo-500 ring-1 ring-indigo-500/10 shadow-sm' : 'border-slate-150'
+                  }`}
+                >
+                  {/* Status, Category & Upvote row */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      {/* Status pill */}
+                      <div>
+                        {item.status === 'released' && (
+                          <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-150 px-2 py-0.5 rounded-full text-[9.5px] font-extrabold uppercase">
+                            <CheckCircle2 className="h-3 w-3" /> Déployé
+                          </span>
+                        )}
+                        {item.status === 'in-progress' && (
+                          <span className="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 border border-indigo-150 px-2 py-0.5 rounded-full text-[9.5px] font-extrabold uppercase animate-pulse">
+                            <Clock className="h-3 w-3" /> En Cours ({item.progress}%)
+                          </span>
+                        )}
+                        {item.status === 'planned' && (
+                          <span className="inline-flex items-center gap-1 bg-violet-50 text-violet-700 border border-violet-150 px-2 py-0.5 rounded-full text-[9.5px] font-extrabold uppercase">
+                            <Calendar className="h-3 w-3" /> Planifié
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Interactive Upvote Engine */}
+                      <button
+                        type="button"
+                        onClick={(e) => handleVote(item.id, e)}
+                        className={`flex items-center gap-1 px-2.5 py-1 rounded-full border transition-all duration-150 cursor-pointer ${
+                          isVoted
+                            ? 'bg-rose-50 text-rose-600 border-rose-200 font-extrabold scale-105 shadow-2xs'
+                            : 'bg-slate-50 text-slate-550 border-slate-200 hover:bg-slate-100'
+                        }`}
+                        title={isVoted ? "Retirer mon vote" : "Soutenir cette mise à jour"}
+                      >
+                        <Heart className={`h-3.5 w-3.5 transition-transform duration-200 ${isVoted ? 'fill-rose-500 text-rose-500 scale-110' : 'text-slate-400'}`} />
+                        <span className="text-xs font-bold">{currentVotes}</span>
+                      </button>
+                    </div>
+
+                    {/* Title and Category */}
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`p-1.5 rounded-lg ${meta.color} shrink-0`}>
+                          <CatIcon className="h-3.5 w-3.5" />
+                        </span>
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
+                          {meta.label}
+                        </span>
+                      </div>
+                      <h3 className="text-sm font-extrabold text-slate-900 leading-snug">
+                        {item.title}
+                      </h3>
+                      <p className="text-xs text-slate-550 leading-relaxed font-medium">
+                        {item.description}
+                      </p>
+                    </div>
+
+                    {/* Interactive progress bar */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[10px] font-semibold text-slate-400">
+                        <span>Avancement</span>
+                        <span>{item.progress}%</span>
+                      </div>
+                      <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            item.status === 'released' 
+                              ? 'bg-emerald-500' 
+                              : item.status === 'in-progress' 
+                                ? 'bg-indigo-500' 
+                                : 'bg-violet-400'
+                          }`}
+                          style={{ width: `${item.progress}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Expansion details with Framer Motion */}
+                  <AnimatePresence>
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.18 }}
+                        className="overflow-hidden border-t border-slate-100 mt-3 pt-3 space-y-2.5 text-left text-xs"
+                      >
+                        <p className="text-slate-650 leading-relaxed bg-slate-50/50 p-2.5 rounded-xl border border-slate-100 font-medium">
+                          {item.longDescription}
+                        </p>
+
+                        {/* Tech Stack used */}
+                        {item.techDetails && (
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                              <Layers className="h-3 w-3" /> Technologies & Modules :
+                            </span>
+                            <div className="flex flex-wrap gap-1">
+                              {item.techDetails.map((tech, i) => (
+                                <span key={i} className="text-[9.5px] bg-indigo-50/80 text-indigo-650 px-2 py-0.5 rounded-md font-bold border border-indigo-100/50">
+                                  {tech}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between text-[10.5px] font-bold text-slate-500 bg-slate-100/50 px-2.5 py-1.5 rounded-xl">
+                          <span className="flex items-center gap-1">
+                            <Calendar className="h-3.5 w-3.5 text-slate-450" /> Livraison estimée :
+                          </span>
+                          <span className="text-slate-800">{item.expectedDate}</span>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Click indicator helper */}
+                  <div className="mt-3 pt-2.5 border-t border-slate-50 flex items-center justify-between text-[10px] font-bold text-slate-400 select-none">
+                    <span>Impact : {item.impact === 'High' ? '🔴 Élevé' : item.impact === 'Medium' ? '🟡 Moyen' : '🟢 Standard'}</span>
+                    <span className="text-indigo-600 hover:underline flex items-center gap-0.5">
+                      {isExpanded ? "Moins d'infos" : "Plus d'infos"} <ChevronDown className={`h-3 w-3 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                    </span>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="col-span-2 bg-slate-50 rounded-2xl border border-slate-150 p-8 text-center space-y-2">
+              <Search className="h-6 w-6 text-slate-400 mx-auto" />
+              <h4 className="text-xs font-bold text-slate-800">Aucun projet ne correspond à ces filtres</h4>
+              <p className="text-[11px] text-slate-400 max-w-xs mx-auto">
+                Modifiez vos filtres de recherche ou sélectionnez une autre catégorie pour consulter nos développements.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Custom Parent Suggestions List (Client + Cloud Sync) */}
+        {localSuggestions.length > 0 && (
+          <div className="space-y-3 pt-4 border-t border-slate-100">
+            <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5 pl-1">
+              💡 Vos Suggestions & Idées d'évolution ({localSuggestions.length})
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {localSuggestions.map(sug => {
+                const meta = getRoadmapCategoryMeta(sug.category);
+                const CatIcon = meta.icon;
+                const isVoted = votedIds.includes(sug.id);
+
+                return (
+                  <div key={sug.id} className="bg-slate-50/50 border border-slate-150 rounded-xl p-3.5 flex items-start justify-between gap-3 shadow-3xs hover:border-slate-300 transition">
+                    <div className="space-y-1.5 flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`p-1 rounded-md bg-white border border-slate-200 text-slate-600`}>
+                          <CatIcon className="h-3 w-3" />
+                        </span>
+                        <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider">
+                          {meta.label}
+                        </span>
+                      </div>
+                      <h4 className="text-xs font-bold text-slate-900 truncate">{sug.title}</h4>
+                      <p className="text-[11px] text-slate-550 leading-normal line-clamp-2">{sug.description}</p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => handleLocalSuggestVote(sug.id, e)}
+                      className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all shrink-0 cursor-pointer ${
+                        isVoted 
+                          ? 'bg-rose-50 text-rose-600 border-rose-200 shadow-3xs font-extrabold scale-102' 
+                          : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-100'
+                      }`}
+                      style={{ width: '42px', height: '48px' }}
+                    >
+                      <Heart className={`h-3.5 w-3.5 transition-transform ${isVoted ? 'fill-rose-500 text-rose-500 scale-110' : 'text-slate-400'}`} />
+                      <span className="text-[10px] font-black mt-0.5">{sug.votes}</span>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Propose an Idea / Feature Suggestion form */}
+        <div className="bg-slate-50/55 rounded-2xl border border-slate-150 p-5 mt-6 space-y-4">
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 border border-indigo-100">
+              <Plus className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-xs font-black text-slate-900 uppercase tracking-wide">
+                Proposer une suggestion d'évolution
+              </h3>
+              <p className="text-[11px] text-slate-400 leading-tight">
+                Vous avez une idée pour simplifier le paiement, l'accès aux bulletins ou la vie scolaire ? Partagez-la !
+              </p>
+            </div>
+          </div>
+
+          {suggestSuccess ? (
+            <div className="bg-emerald-50 border border-emerald-150 rounded-xl p-4 text-center space-y-1.5 animate-in fade-in duration-200">
+              <p className="text-xs font-bold text-emerald-900">
+                🎉 Merci pour votre proposition innovante !
+              </p>
+              <p className="text-[10.5px] text-emerald-700 leading-normal">
+                Votre idée a été enregistrée avec succès. Elle est désormais visible par la communauté et le comité informatique de l'établissement pour évaluation.
+              </p>
+              <button
+                type="button"
+                onClick={() => setSuggestSuccess(false)}
+                className="text-[10.5px] font-bold text-emerald-600 hover:underline cursor-pointer"
+              >
+                Soumettre une autre idée
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleAddSuggestion} className="space-y-3">
+              {suggestError && (
+                <div className="p-2.5 bg-red-50 border border-red-150 rounded-xl text-[11px] text-red-800">
+                  {suggestError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                <div className="sm:col-span-8 space-y-1">
+                  <label className="text-[9.5px] font-bold text-slate-500 uppercase tracking-wider pl-0.5">Titre court de votre idée</label>
+                  <input
+                    type="text"
+                    required
+                    value={suggestTitle}
+                    onChange={(e) => setSuggestTitle(e.target.value)}
+                    placeholder="Ex: Notification instantanée par WhatsApp, Emploi du temps interactif..."
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs placeholder-slate-400 focus:outline-indigo-500 font-medium text-slate-800"
+                  />
+                </div>
+
+                <div className="sm:col-span-4 space-y-1">
+                  <label className="text-[9.5px] font-bold text-slate-500 uppercase tracking-wider pl-0.5">Thématique</label>
+                  <select
+                    value={suggestCat}
+                    onChange={(e) => setSuggestCat(e.target.value as any)}
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-indigo-500 font-bold text-slate-800"
+                  >
+                    <option value="finance">Finances & Cotisations</option>
+                    <option value="pedagogy">Pédagogie & Notes</option>
+                    <option value="badges">Badges & QR Sécurité</option>
+                    <option value="platform">Portail & Autres</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[9.5px] font-bold text-slate-500 uppercase tracking-wider pl-0.5">Description détaillée de la fonctionnalité</label>
+                <textarea
+                  required
+                  rows={2}
+                  value={suggestDesc}
+                  onChange={(e) => setSuggestDesc(e.target.value)}
+                  placeholder="Décrivez comment cela fonctionne, à qui cela s'adresse et les bénéfices pour l'école..."
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs placeholder-slate-400 focus:outline-indigo-500 font-medium text-slate-800 leading-normal"
+                />
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={isSubmittingSuggest}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-[11px] transition cursor-pointer flex items-center gap-1 shadow-2xs disabled:opacity-50 active:scale-97"
+                >
+                  {isSubmittingSuggest ? (
+                    <>Envoi en cours...</>
+                  ) : (
+                    <>
+                      <Send className="h-3 w-3" /> Soumettre l'idée
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
+
+      {/* 5. Write Direct Help Ticket Form (Durable Cloud Persistence) */}
       <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 sm:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 shadow-xs">
         <div className="lg:col-span-5 space-y-4">
           <span className="inline-flex items-center gap-1.5 bg-indigo-50 border border-indigo-100 text-xs font-black px-2.5 py-1 rounded-full text-indigo-700">

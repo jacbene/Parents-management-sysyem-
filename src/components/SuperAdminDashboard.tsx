@@ -380,6 +380,9 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
       const newSchoolId = `sch_${Date.now()}`;
       const batch = writeBatch(db);
       
+      // Determine real Firestore authenticated user ID to satisfy security rules
+      const firestoreOwnerId = auth.currentUser?.uid || currentUserUid || 'sys_admin_jacques';
+
       // 1. Save school to 'establishments'
       const estDoc: Establishment = {
         id: newSchoolId,
@@ -393,7 +396,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
         pedManagerPhone: pedPhone.trim() || '',
         pedManagerPassword: pedPassword.trim() || '1234',
         schoolYear,
-        ownerId: currentUserUid || 'sys_admin_jacques'
+        ownerId: firestoreOwnerId
       };
 
       batch.set(doc(db, 'establishments', newSchoolId), estDoc);
@@ -719,11 +722,12 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
   const globalRate = totalFundsRequired > 0 ? Math.round((totalFundsCollected / totalFundsRequired) * 100) : 0;
 
   // Filtered Schools
-  const filteredSchools = schools.filter(sch => 
-    sch.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    sch.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    sch.finManagerName?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredSchools = schools.filter(sch => {
+    const q = (searchQuery || '').toLowerCase();
+    return (sch.name || '').toLowerCase().includes(q) ||
+           (sch.id || '').toLowerCase().includes(q) ||
+           (sch.finManagerName || '').toLowerCase().includes(q);
+  });
 
   // Dynamic user data resolving for super-admin
   const currentUserEmail = auth.currentUser?.email || currentUserUid || 'jacquesbene301@gmail.com';
@@ -1038,14 +1042,14 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                                 </td>
                                 <td className="px-4 py-4.5">
                                   <div className="space-y-1">
-                                    <div className="font-black text-slate-900">{collected.toLocaleString()} / {(school.financialGoal).toLocaleString()} FCFA</div>
+                                    <div className="font-black text-slate-900">{collected.toLocaleString()} / {(school.financialGoal || 0).toLocaleString()} FCFA</div>
                                     <div className="flex items-center gap-2">
                                       <div className="w-16 bg-slate-100 h-1.5 rounded-full overflow-hidden">
                                         <div className="bg-indigo-600 h-1.5 rounded-full" style={{ width: `${Math.min(progressPercent, 100)}%` }} />
                                       </div>
                                       <span className="font-mono text-[9.5px] font-bold text-indigo-600">{progressPercent}%</span>
                                     </div>
-                                    <div className="text-[9px] text-slate-400 font-bold">{school.cotisationAmount.toLocaleString()} FCFA / Adhérent</div>
+                                    <div className="text-[9px] text-slate-400 font-bold">{(school.cotisationAmount || 0).toLocaleString()} FCFA / Adhérent</div>
                                   </div>
                                 </td>
                                 <td className="px-4 py-4.5">

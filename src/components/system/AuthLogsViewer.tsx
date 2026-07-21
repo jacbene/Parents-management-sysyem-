@@ -149,14 +149,14 @@ export default function AuthLogsViewer() {
   };
 
   const filteredLogs = logs.filter(log => {
-    const term = searchQuery.toLowerCase();
+    const term = (searchQuery || '').toLowerCase();
     return (
-      log.errorMessage.toLowerCase().includes(term) ||
-      (log.errorCode && log.errorCode.toLowerCase().includes(term)) ||
-      log.action.toLowerCase().includes(term) ||
-      log.component.toLowerCase().includes(term) ||
-      (log.userEmail && log.userEmail.toLowerCase().includes(term)) ||
-      (log.schoolName && log.schoolName.toLowerCase().includes(term))
+      ((log.errorMessage || '').toLowerCase().includes(term)) ||
+      (log.errorCode && (log.errorCode || '').toLowerCase().includes(term)) ||
+      ((log.action || '').toLowerCase().includes(term)) ||
+      ((log.component || '').toLowerCase().includes(term)) ||
+      (log.userEmail && (log.userEmail || '').toLowerCase().includes(term)) ||
+      (log.schoolName && (log.schoolName || '').toLowerCase().includes(term))
     );
   });
 

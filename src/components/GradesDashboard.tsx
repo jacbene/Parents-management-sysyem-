@@ -740,7 +740,7 @@ export default function GradesDashboard({
     doc.text(stampAuth, margin + (signatureColWidth * 2) + 5, y);
 
     // Save PDF file
-    doc.save(`bulletin_${activeStudent.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}.pdf`);
+    doc.save(`bulletin_${(activeStudent.name || '').toLowerCase().replace(/[^a-z0-9]/g, '_')}.pdf`);
   };
 
   const handleExportTrendPDF = () => {
@@ -1290,7 +1290,7 @@ export default function GradesDashboard({
     doc.text(isEn ? "(Approved & Verified)" : "(Approuvé et visé)", margin + colW + 5, y);
     doc.text(isEn ? "(Read & Approved)" : "(Lu et approuvé)", margin + (colW * 2) + 5, y);
 
-    doc.save(`diagnostic_tendance_${activeStudent.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}.pdf`);
+    doc.save(`diagnostic_tendance_${(activeStudent.name || '').toLowerCase().replace(/[^a-z0-9]/g, '_')}.pdf`);
   };
 
   return (

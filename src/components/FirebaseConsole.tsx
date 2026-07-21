@@ -229,11 +229,11 @@ export default function FirebaseConsole() {
   };
 
   const filteredProjects = projects.filter(project => {
-    const query = searchQuery.toLowerCase();
+    const query = (searchQuery || '').toLowerCase();
     return (
-      project.displayName?.toLowerCase().includes(query) ||
-      project.projectId?.toLowerCase().includes(query) ||
-      project.projectNumber?.includes(query)
+      (project.displayName || '').toLowerCase().includes(query) ||
+      (project.projectId || '').toLowerCase().includes(query) ||
+      (project.projectNumber ? String(project.projectNumber).includes(query) : false)
     );
   });
 

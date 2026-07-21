@@ -587,7 +587,7 @@ export default function DrivePortal({ parents, invoices, students }: DrivePortal
 
   // Filter files by query
   const filteredFiles = files.filter(f => 
-    f.name.toLowerCase().includes(searchQuery.toLowerCase())
+    f && f.name && (f.name || '').toLowerCase().includes((searchQuery || '').toLowerCase())
   );
 
   return (

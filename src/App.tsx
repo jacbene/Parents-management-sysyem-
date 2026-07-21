@@ -140,6 +140,7 @@ interface PushNotificationSyncerProps {
   setGrades: React.Dispatch<React.SetStateAction<Grade[]>>;
   setHomeworks: React.Dispatch<React.SetStateAction<Homework[]>>;
   invoices: Invoice[];
+  syncIntervalSeconds?: number;
 }
 
 function PushNotificationSyncer({
@@ -150,7 +151,8 @@ function PushNotificationSyncer({
   isOffline,
   setGrades,
   setHomeworks,
-  invoices
+  invoices,
+  syncIntervalSeconds = 30
 }: PushNotificationSyncerProps) {
   const { triggerNotification } = useLocalNotifications();
   const { t, language } = useLanguage();
@@ -181,7 +183,7 @@ function PushNotificationSyncer({
         studentsRef.current.some(s => s.id === inv.studentId) ||
         inv.id === 'apee_par_bene_jacques' ||
         inv.id.startsWith('apee_par_bene_jacques') ||
-        (inv.email && inv.email.toLowerCase() === user?.email?.toLowerCase())
+        ((inv.email || '').toLowerCase() === (user?.email || '').toLowerCase())
       );
     });
 
@@ -342,6 +344,9 @@ function PushNotificationSyncer({
         });
         lastHomeworksMap = newHomeworksMap;
 
+        // Dispatch sync success to notify UI SyncIndicator
+        window.dispatchEvent(new Event('pasma_db_sync_update'));
+
       } catch (error) {
         console.warn("[Pasma-sys Local Sync] Error loading parental data:", error);
       }
@@ -350,16 +355,16 @@ function PushNotificationSyncer({
     // Initial load
     fetchGradesAndHomeworks(true);
 
-    // Polling setup: fetch every 30 seconds
+    // Polling setup: fetch on user configured interval (default to 30s)
     const intervalId = setInterval(() => {
       fetchGradesAndHomeworks(false);
-    }, 30000);
+    }, syncIntervalSeconds * 1000);
 
     return () => {
       active = false;
       clearInterval(intervalId);
     };
-  }, [userId, user, portalUserRole]); // Extremely stable dependencies!
+  }, [userId, user, portalUserRole, syncIntervalSeconds]); // Extremely stable dependencies!
 
   return null;
 }
@@ -376,8 +381,12 @@ export default function App() {
   });
   const [secondaryAdmins, setSecondaryAdmins] = useState<{ id: string; email: string; name: string; createdAt: string; addedBy: string }[]>([]);
   
-  const isPrimarySuperAdmin = user?.email?.toLowerCase().trim() === 'jacquesbene301@gmail.com';
-  const isSecondarySuperAdmin = !!user && secondaryAdmins.some(admin => admin.email?.toLowerCase().trim() === user.email?.toLowerCase().trim());
+  const isPrimarySuperAdmin = !!user?.email && user.email.toLowerCase().trim() === 'jacquesbene301@gmail.com';
+  const isSecondarySuperAdmin = !!user?.email && secondaryAdmins.some(admin => {
+    const adminEmail = (admin.email || '').toLowerCase().trim();
+    const userEmail = (user.email || '').toLowerCase().trim();
+    return adminEmail && userEmail && adminEmail === userEmail;
+  });
   const showSuperAdminButton = isPrimarySuperAdmin || isSecondarySuperAdmin;
 
   const [loading, setLoading] = useState(true);
@@ -1008,10 +1017,11 @@ export default function App() {
 
   // Filter students based on Parent authorized subset for Visitor role
   const filteredStudents = students.filter(s => {
+    if (!s) return false;
     if (portalUserRole === 'parent') {
       let allowedNames: string[] = [];
       if (portalParentDetails?.studentSubsetNames && portalParentDetails.studentSubsetNames.length > 0) {
-        allowedNames = portalParentDetails.studentSubsetNames.map(name => name.toLowerCase().trim());
+        allowedNames = portalParentDetails.studentSubsetNames.map(name => (name || '').toLowerCase().trim()).filter(Boolean);
       } else {
         // Safe Fallbacks for demo presets
         const parentNameLower = (portalParentDetails?.name || '').toLowerCase();
@@ -1023,7 +1033,7 @@ export default function App() {
         } else {
           // If still no matches, we search if the student's name shares any common words with the parent's name (like last name)
           const parentWords = parentNameLower.split(/\s+/).filter(w => w.length > 2);
-          const studentNameLower = s.name.toLowerCase();
+          const studentNameLower = (s.name || '').toLowerCase();
           const hasCommonWord = parentWords.some(word => studentNameLower.includes(word));
           if (hasCommonWord) return true;
           
@@ -1032,13 +1042,13 @@ export default function App() {
         }
       }
       
-      const sNameLower = s.name.toLowerCase().trim();
+      const sNameLower = (s.name || '').toLowerCase().trim();
       return allowedNames.includes(sNameLower) || 
              allowedNames.some(allowed => sNameLower.includes(allowed) || allowed.includes(sNameLower));
     }
     if (portalUserRole === 'teacher') {
       if (!portalTeacherDetails?.classRoom) return true;
-      const teacherClassLower = portalTeacherDetails.classRoom.toLowerCase().trim();
+      const teacherClassLower = (portalTeacherDetails.classRoom || '').toLowerCase().trim();
       const studentClassLower = (s.classRoom || '').toLowerCase().trim();
       // Match if classrooms contain each other (e.g. "cm2" and "CM2-A" or "Classe CM2-A")
       return studentClassLower.includes(teacherClassLower) || teacherClassLower.includes(studentClassLower);
@@ -1059,7 +1069,7 @@ export default function App() {
       try {
         const simulatedUser = JSON.parse(savedSimulated);
         setUser(simulatedUser);
-        const email = simulatedUser.email?.toLowerCase().trim();
+        const email = (simulatedUser.email || '').toLowerCase().trim();
         const isPrimary = email === 'jacquesbene301@gmail.com';
         const isDeputy = email === 'adjoint@pasma.sys';
         if (isPrimary || isDeputy) {
@@ -1069,6 +1079,12 @@ export default function App() {
           setShowSuperAdmin(false);
           setShowMainLogin(false);
         }
+        
+        // Ensure active background token is registered for Firestore queries/writes
+        if (!auth.currentUser) {
+          loginAnonymously().catch(e => console.warn("Failed background auth during simulated session restoration:", e));
+        }
+
         setLoading(false);
       } catch (err) {
         console.warn("Failed parsing simulated session:", err);
@@ -2054,7 +2070,7 @@ export default function App() {
 
           if (isNew) {
             const logId = 'log_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
-            const description = `Création du dossier de ${parent.name}. Cotisation exigible : ${parent.totalDue.toLocaleString()} FCFA pour ${parent.students.length} élève(s). Statut de base : ${parent.status.toUpperCase()}`;
+            const description = `Création du dossier de ${parent.name}. Cotisation exigible : ${(parent.totalDue || 0).toLocaleString()} FCFA pour ${parent.students.length} élève(s). Statut de base : ${parent.status.toUpperCase()}`;
             const logObj: ApeeActivityLog = {
               id: logId,
               parentId: userId,
@@ -2074,7 +2090,7 @@ export default function App() {
                 const refPart = pay.transactionId 
                   ? ` (Réf : ${pay.transactionId}${pay.note ? ' - Note : ' + pay.note : ''})` 
                   : (pay.note ? ` (Note : ${pay.note})` : '');
-                const payDesc = `Versement de ${pay.amount.toLocaleString()} FCFA enregistré par ${pay.method} pour ${parent.name}${refPart}`;
+                const payDesc = `Versement de ${(pay.amount || 0).toLocaleString()} FCFA enregistré par ${pay.method} pour ${parent.name}${refPart}`;
                 const payLogObj: ApeeActivityLog = {
                   id: payLogId,
                   parentId: userId,
@@ -2093,7 +2109,7 @@ export default function App() {
           } else if (oldParent) {
             if (oldParent.totalDue !== parent.totalDue || oldParent.name !== parent.name || oldParent.students.length !== parent.students.length) {
               const logId = 'log_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
-              const description = `Mise à jour de la fiche parent de ${parent.name}. Dues totales exigibles ajustées : de ${oldParent.totalDue.toLocaleString()} à ${parent.totalDue.toLocaleString()} FCFA (${parent.students.length} élève(s)).`;
+              const description = `Mise à jour de la fiche parent de ${parent.name}. Dues totales exigibles ajustées : de ${(oldParent.totalDue || 0).toLocaleString()} à ${(parent.totalDue || 0).toLocaleString()} FCFA (${parent.students.length} élève(s)).`;
               const logObj: ApeeActivityLog = {
                 id: logId,
                 parentId: userId,
@@ -2115,7 +2131,7 @@ export default function App() {
               const refPart = pay.transactionId 
                 ? ` (Réf : ${pay.transactionId}${pay.note ? ' - Note : ' + pay.note : ''})` 
                 : (pay.note ? ` (Note : ${pay.note})` : '');
-              const payDesc = `Nouveau versement de ${pay.amount.toLocaleString()} FCFA enregistré par ${pay.method} pour les les redevances de ${parent.name}${refPart}.`;
+              const payDesc = `Nouveau versement de ${(pay.amount || 0).toLocaleString()} FCFA enregistré par ${pay.method} pour les les redevances de ${parent.name}${refPart}.`;
               const payLogObj: ApeeActivityLog = {
                 id: payLogId,
                 parentId: userId,
@@ -2135,7 +2151,7 @@ export default function App() {
             const deletedPayments = (oldParent.payments || []).filter(p => !currentPaymentIds.has(p.id));
             for (const pay of deletedPayments) {
               const payLogId = 'log_' + Date.now() + '_del_' + Math.random().toString(36).substr(2, 4);
-              const payDesc = `Le versement de ${pay.amount.toLocaleString()} FCFA effectué par ${pay.method} pour ${parent.name} a été annulé de l'historique financier.`;
+              const payDesc = `Le versement de ${(pay.amount || 0).toLocaleString()} FCFA effectué par ${pay.method} pour ${parent.name} a été annulé de l'historique financier.`;
               const payLogObj: ApeeActivityLog = {
                 id: payLogId,
                 parentId: userId,
@@ -2230,7 +2246,7 @@ export default function App() {
         if (deletedParent) {
           const operator = apeeSettings.finManagerName || "Gérant Financier";
           const logId = 'log_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
-          const description = `Suppression définitive du dossier de ${deletedParent.name} (Attente de redevance perdue : -${deletedParent.totalDue.toLocaleString()} FCFA, Versements annulés : -${deletedParent.totalPaid.toLocaleString()} FCFA).`;
+          const description = `Suppression définitive du dossier de ${deletedParent.name} (Attente de redevance perdue : -${(deletedParent.totalDue || 0).toLocaleString()} FCFA, Versements annulés : -${(deletedParent.totalPaid || 0).toLocaleString()} FCFA).`;
           const logObj: ApeeActivityLog = {
             id: logId,
             parentId: userId,
@@ -2523,6 +2539,11 @@ export default function App() {
           photoURL: '',
           isAnonymous: false
         };
+        try {
+          await loginAnonymously(); // ensure background token is active for Firestore
+        } catch (e2) {
+          console.error("Could not sign in shared background sandbox:", e2);
+        }
         localStorage.setItem('pasma_simulated_user', JSON.stringify(simulatedUser));
         setUser(simulatedUser as any);
         setShowSuperAdmin(true);
@@ -2626,6 +2647,7 @@ export default function App() {
         setGrades={setGrades}
         setHomeworks={setHomeworks}
         invoices={invoices}
+        syncIntervalSeconds={apeeSettings.syncIntervalSeconds}
       />
       <div className="min-h-screen bg-slate-50/50 dark:bg-slate-950 flex flex-col text-slate-900 dark:text-slate-100 selection:bg-indigo-100 dark:selection:bg-indigo-900 selection:text-indigo-900 dark:selection:text-indigo-100 transition-colors">
       <AnimatePresence mode="wait">
@@ -3114,7 +3136,7 @@ export default function App() {
                           <span className="text-[9px] bg-slate-100 dark:bg-slate-800 text-slate-550 dark:text-slate-400 font-bold px-1.5 py-0.5 rounded-md animate-in fade-in duration-150">
                             {filteredStudents.filter(stu => {
                               const q = studentSearchQuery.toLowerCase().trim();
-                              return stu.name.toLowerCase().includes(q) || (stu.classRoom || '').toLowerCase().includes(q);
+                              return (stu.name || '').toLowerCase().includes(q) || (stu.classRoom || '').toLowerCase().includes(q);
                             }).length} {language === 'en' ? 'found' : 'trouvé(s)'}
                           </span>
                         )}
@@ -3145,7 +3167,7 @@ export default function App() {
                           .filter((stu) => {
                             if (!studentSearchQuery.trim()) return true;
                             const q = studentSearchQuery.toLowerCase().trim();
-                            return stu.name.toLowerCase().includes(q) || (stu.classRoom || '').toLowerCase().includes(q);
+                            return (stu.name || '').toLowerCase().includes(q) || (stu.classRoom || '').toLowerCase().includes(q);
                           })
                           .map((stu) => (
                             <StudentCard
@@ -3167,7 +3189,7 @@ export default function App() {
                         {filteredStudents.filter((stu) => {
                           if (!studentSearchQuery.trim()) return true;
                           const q = studentSearchQuery.toLowerCase().trim();
-                          return stu.name.toLowerCase().includes(q) || (stu.classRoom || '').toLowerCase().includes(q);
+                          return (stu.name || '').toLowerCase().includes(q) || (stu.classRoom || '').toLowerCase().includes(q);
                         }).length === 0 && (
                           <div className="text-center py-6 bg-slate-50/50 dark:bg-slate-950/20 rounded-xl border border-dashed border-slate-250 dark:border-slate-800/80 animate-in fade-in duration-200">
                             <p className="text-[11px] font-bold text-slate-450 dark:text-slate-500">
@@ -3892,8 +3914,11 @@ export default function App() {
                                     const invPhoneSan = inv.phone?.replace(/\D/g, '').slice(-9) || '';
                                     const phoneMatches = parentPhoneSan && invPhoneSan && parentPhoneSan === invPhoneSan;
 
-                                    const parentNameNorm = portalParentDetails?.name?.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim() || '';
-                                    const invNameNorm = inv.title?.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim() || '';
+                                    const parentNameRaw = portalParentDetails?.name || '';
+                                    const parentNameNorm = parentNameRaw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+
+                                    const invTitleRaw = inv.title || '';
+                                    const invNameNorm = invTitleRaw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
                                     const nameMatches = parentNameNorm && invNameNorm && (parentNameNorm.includes(invNameNorm) || invNameNorm.includes(parentNameNorm));
 
                                     return phoneMatches || nameMatches;

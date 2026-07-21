@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { collection, doc, getDoc, getDocs, query, setDoc, writeBatch, where } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, auth } from '../firebase';
 import { logAuthError } from '../utils/authLogger';
 import { Landmark, Plus, CheckCircle, AlertOctagon, UserCheck, Phone, ShieldCheck, ArrowRight, X, Sparkles, User, HelpCircle, Mail, Smartphone, Key, RotateCw, Bell, Share2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -151,7 +151,11 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
       );
 
       if (isPreprod) {
-        setSchools(list);
+        if (list.length === 0) {
+          setSchools(fallbackList);
+        } else {
+          setSchools(list);
+        }
       } else {
         if (list.length === 0) {
           setSchools(fallbackList);
@@ -189,10 +193,38 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
           pedManagerPassword: '1234',
           schoolYear: '2025/2026',
           ownerId: 'demo_admin'
+        },
+        {
+          id: 'demo_school_vogt',
+          name: "Collège Vogt - Yaoundé",
+          cotisationAmount: 35000,
+          financialGoal: 12000000,
+          finManagerName: 'Abbé Ondoa',
+          finManagerPhone: '699445522',
+          finManagerPassword: '1234',
+          pedManagerName: 'Abbé Ondoa',
+          pedManagerPhone: '699445522',
+          pedManagerPassword: '1234',
+          schoolYear: '2025/2026',
+          ownerId: 'demo_admin'
+        },
+        {
+          id: 'demo_school_bilingue',
+          name: "Lycée Bilingue d'Ekounou",
+          cotisationAmount: 25000,
+          financialGoal: 8000000,
+          finManagerName: 'M. Tchana',
+          finManagerPhone: '655112233',
+          finManagerPassword: '1234',
+          pedManagerName: 'M. Tchana',
+          pedManagerPhone: '655112233',
+          pedManagerPassword: '1234',
+          schoolYear: '2025/2026',
+          ownerId: 'demo_admin'
         }
       ];
 
-      const merged = isPreprod ? [] : [...fallbackList];
+      const merged = [...fallbackList];
       try {
         const localEstsStr = localStorage.getItem('pasma_local_establishments');
         if (localEstsStr) {
@@ -475,8 +507,9 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
         let matchedInvoice: any = null;
 
         // Helper to strip diacritics/accents and convert to lowercase
-        const normalizeTextForLogin = (str: string) => {
-          return str
+        const normalizeTextForLogin = (str: string | null | undefined) => {
+          if (!str) return '';
+          return String(str)
             .normalize('NFD')
             .replace(/[\u0300-\u036f]/g, '') // remove accents
             .toLowerCase()
@@ -697,6 +730,9 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
         currentUid = currentUid || `temp_mgr_${Date.now()}`;
       }
 
+      // Determine the real Firestore authenticated owner ID to satisfy Firestore rules
+      const firestoreOwnerId = auth.currentUser?.uid || currentUid;
+
       // Check account quotas: Query fresh list of schools to see if they reached the limit of 3 establishments per user
       let freshSchools = schools;
       try {
@@ -711,8 +747,9 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
         console.warn("Could not fetch fresh establishments list for quota check, falling back to local state:", quotaErr);
       }
 
-      const userOwnedSchools = freshSchools.filter(s => s.ownerId === currentUid);
-      if (userOwnedSchools.length >= 3 && currentUid !== 'sys_admin_jacques') {
+      const userOwnedSchools = freshSchools.filter(s => s.ownerId === currentUid || s.ownerId === firestoreOwnerId);
+      const isSuperAdminBypass = currentUid === 'sys_admin_jacques' || auth.currentUser?.email === 'jacquesbene301@gmail.com';
+      if (userOwnedSchools.length >= 3 && !isSuperAdminBypass) {
         throw new Error(`Account quota exceeded : Vous possédez déjà ${userOwnedSchools.length} établissement(s). La création est limitée à 3 établissements scolaires par compte de démonstration.`);
       }
 
@@ -731,14 +768,31 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
         pedManagerPhone: pedPhone.trim() || '',
         pedManagerPassword: pedPassword.trim() || '1234',
         schoolYear,
-        ownerId: currentUid,
+        ownerId: firestoreOwnerId,
         logoUrl: schoolLogo
       };
 
-      const batch = writeBatch(db);
+      // To satisfy Firestore Security Rules which require the parent establishment to exist BEFORE writing child documents,
+      // we must write the establishment document first as a separate awaitable operation, rather than within the same batch.
+      let dbWriteSucceeded = false;
+      try {
+        await setDoc(doc(db, 'establishments', newSchoolId), estDoc);
+        dbWriteSucceeded = true;
+      } catch (estWriteErr: any) {
+        console.warn("Firestore establishment write failed (proceeding to local offline storage cache mode):", estWriteErr);
+        // Log the error to logs_auth for administrator diagnosis
+        logAuthError({
+          errorMessage: estWriteErr?.message || "Missing or insufficient permissions during establishment creation",
+          errorCode: estWriteErr?.code || 'permission-denied',
+          action: 'SET_DOC_ESTABLISHMENT',
+          component: 'PortalOnboarding',
+          schoolName: schoolName.trim(),
+          schoolId: newSchoolId,
+          details: `Cotisation: ${cotisationAmount}, Goal: ${financialGoal}`
+        });
+      }
 
-      // Write school profile to 'establishments'
-      batch.set(doc(db, 'establishments', newSchoolId), estDoc);
+      const batch = writeBatch(db);
 
       // 3. Write default APEE Settings inside the invoices collection
       const budgetLines = [
@@ -1015,21 +1069,23 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
         console.warn("Failed to pre-populate local cache:", cacheErr);
       }
 
-      // Commit full batch write
-      try {
-        await batch.commit();
-      } catch (commitErr: any) {
-        console.warn("Firestore batch write restricted (Missing or insufficient permissions), proceeding with fully functional local fallback:", commitErr);
-        // Log the error to logs_auth for administrator diagnosis
-        logAuthError({
-          errorMessage: commitErr?.message || "Missing or insufficient permissions during batch commit of new school",
-          errorCode: commitErr?.code || 'permission-denied',
-          action: 'BATCH_COMMIT_SCHOOL',
-          component: 'PortalOnboarding',
-          schoolName: schoolName.trim(),
-          schoolId: newSchoolId,
-          details: `Cotisation: ${cotisationAmount}, Goal: ${financialGoal}`
-        });
+      // Commit full batch write if the parent establishment exists in Firestore
+      if (dbWriteSucceeded) {
+        try {
+          await batch.commit();
+        } catch (commitErr: any) {
+          console.warn("Firestore batch write restricted (Missing or insufficient permissions), proceeding with fully functional local fallback:", commitErr);
+          // Log the error to logs_auth for administrator diagnosis
+          logAuthError({
+            errorMessage: commitErr?.message || "Missing or insufficient permissions during batch commit of new school",
+            errorCode: commitErr?.code || 'permission-denied',
+            action: 'BATCH_COMMIT_SCHOOL',
+            component: 'PortalOnboarding',
+            schoolName: schoolName.trim(),
+            schoolId: newSchoolId,
+            details: `Cotisation: ${cotisationAmount}, Goal: ${financialGoal}`
+          });
+        }
       }
 
       setSuccessMessage("✨ Établissement créé et configuré avec succès ! Seeding de démo rattaché.");
@@ -1208,8 +1264,16 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
                     Établissement Scolaire de référence <span className="text-red-500">*</span>
                   </label>
                   {loadingSchools ? (
-                    <div className="py-2.5 px-3 bg-slate-50 border border-slate-150 rounded-xl text-xs text-slate-500">
-                      Chargement des établissements disponibles...
+                    <div className="w-full flex items-center justify-between px-3.5 py-3.5 bg-slate-50/50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-500 select-none animate-pulse">
+                      <div className="flex items-center gap-2">
+                        <RotateCw className="h-4 w-4 text-indigo-500 animate-spin shrink-0" />
+                        <span>Chargement des établissements disponibles...</span>
+                      </div>
+                      <div className="flex gap-1.5 shrink-0">
+                        <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                        <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                        <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                      </div>
                     </div>
                   ) : (
                     <select
