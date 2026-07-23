@@ -44,6 +44,24 @@ export default function AttendanceTracker({
   const excusedDays = attendanceLogs.filter(a => a.status === 'Excused').length;
   const absentDays = attendanceLogs.filter(a => a.status === 'Absent').length;
 
+  // Calculate current consecutive absent days ending at the most recent attendance date
+  const consecutiveAbsentCount = (() => {
+    if (!attendanceLogs || attendanceLogs.length === 0) return 0;
+    const logMap = new Map<string, Attendance>();
+    attendanceLogs.forEach(l => logMap.set(l.date, l));
+    const sortedDates = Array.from(logMap.keys()).sort((a, b) => a.localeCompare(b));
+    let count = 0;
+    for (let i = sortedDates.length - 1; i >= 0; i--) {
+      const logItem = logMap.get(sortedDates[i]);
+      if (logItem && logItem.status === 'Absent') {
+        count++;
+      } else {
+        break;
+      }
+    }
+    return count;
+  })();
+
   const attendanceRate = totalDays > 0
     ? (((presentDays + excusedDays + lateDays / 2) / totalDays) * 100).toFixed(0)
     : '100';
@@ -257,6 +275,20 @@ export default function AttendanceTracker({
       </div>
 
       {/* Validated Attendance Banner locked status */}
+      {consecutiveAbsentCount > 3 && activeStudent && (
+        <div className="p-4 rounded-2xl border bg-red-50 text-red-950 border-red-200 text-xs flex items-center gap-3 animate-fade-in shadow-2xs">
+          <AlertCircle className="h-5 w-5 text-red-600 shrink-0" />
+          <div className="space-y-0.5">
+            <span className="font-extrabold uppercase tracking-wide text-[10px] text-red-800 flex items-center gap-1">
+              🚨 Alerte Automatique : Absence Prolongée ({consecutiveAbsentCount} Jours Consécutifs)
+            </span>
+            <p className="font-medium text-red-900">
+              L'élève <strong>{activeStudent.name}</strong> cumule plus de 3 jours d'absence consécutifs. Une notification d'alerte a été transmise automatiquement au professeur principal assigné (<strong>{activeStudent.teacherName || 'Professeur Principal'}</strong>).
+            </p>
+          </div>
+        </div>
+      )}
+
       {activeStudent?.attendanceValidated && (
         <div className="p-4 rounded-2xl border bg-amber-50/50 text-amber-950 border-amber-250 text-xs flex items-center gap-3 animate-fade-in shadow-2xs">
           <Lock className="h-5 w-5 text-amber-600 shrink-0" />

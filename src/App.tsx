@@ -1905,7 +1905,9 @@ export default function App() {
   };
 
   const handleAddAttendance = async (log: Attendance) => {
-    if (!await checkPedAuthorization()) return false;
+    if (portalUserRole !== 'parent') {
+      if (!await checkPedAuthorization()) return false;
+    }
     setAttendanceLogs(prev => [log, ...prev]);
     if (userId) {
       await runFirestoreWrite(
@@ -1916,6 +1918,70 @@ export default function App() {
         `Ajouter présence : ${log.status} pour l'élève`
       );
     }
+
+    // Automated notification trigger: when marked absent for more than 3 consecutive days
+    if (log.status === 'Absent') {
+      const student = students.find(s => s.id === log.studentId);
+      if (student) {
+        const studentLogs = [log, ...attendanceLogs.filter(a => a.studentId === log.studentId)];
+        const logMap = new Map<string, Attendance>();
+        studentLogs.forEach(l => logMap.set(l.date, l));
+
+        const sortedDates = Array.from(logMap.keys()).sort((a, b) => a.localeCompare(b));
+        const currentIndex = sortedDates.indexOf(log.date);
+        let consecutiveAbsentCount = 0;
+
+        if (currentIndex !== -1) {
+          for (let i = currentIndex; i >= 0; i--) {
+            const dateKey = sortedDates[i];
+            const logItem = logMap.get(dateKey);
+            if (logItem && logItem.status === 'Absent') {
+              consecutiveAbsentCount++;
+            } else {
+              break;
+            }
+          }
+        }
+
+        if (consecutiveAbsentCount > 3) {
+          const teacherName = student.teacherName || 'Professeur Principal';
+          const autoMsgId = 'msg_att_alert_' + Date.now();
+          const alertMessageText = `⚠️ ALERTE AUTOMATIQUE DE PRÉSENCE : L'élève ${student.name} (${student.classRoom}) a été marqué(e) absent(e) pour ${consecutiveAbsentCount} jours consécutifs (Dernière absence : ${log.date}). ${log.remarks ? `Motif / Justification : "${log.remarks}"` : 'Aucun motif précisé.'} Merci de contacter la famille pour le suivi pédagogique.`;
+
+          const autoMsg: Message = {
+            id: autoMsgId,
+            studentId: student.id,
+            parentId: student.parentId || log.parentId || userId || 'unknown_parent',
+            senderType: 'Parent',
+            content: alertMessageText,
+            timestamp: new Date().toISOString(),
+            teacherName: teacherName,
+            ...({
+              recipientName: teacherName,
+              recipientRole: 'Professeur Principal',
+              senderRole: 'Système d\'Alerte Assiduité Parent',
+              isAutoAlert: true,
+              consecutiveDays: consecutiveAbsentCount
+            } as any)
+          };
+
+          setMessages(prev => [...prev, autoMsg]);
+
+          if (userId) {
+            await runFirestoreWrite(
+              'messages',
+              autoMsg.id,
+              'CREATE',
+              autoMsg,
+              `Alerte absence prolongée (${consecutiveAbsentCount} jours) transmise à ${teacherName}`
+            );
+          }
+
+          alert(`🚨 ALERTE AUTOMATIQUE D'ABSENCE PROLONGÉE ENVOYÉE\n\nL'élève ${student.name} cumule ${consecutiveAbsentCount} jours d'absence consécutifs (plus de 3 jours).\n\nUne notification prioritaire a été automatiquement transmise à son professeur principal assigné : ${teacherName}.`);
+        }
+      }
+    }
+
     return true;
   };
 
