@@ -5,6 +5,8 @@ import { jsPDF } from 'jspdf';
 import { motion, AnimatePresence } from 'motion/react';
 import { ResponsiveContainer, LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, Legend, Cell } from 'recharts';
 import { useLanguage } from '../utils/TranslationContext';
+import ClassroomViewD3 from './ClassroomViewD3';
+import StudentAverageTrendD3 from './StudentAverageTrendD3';
 
 interface GradesDashboardProps {
   grades: Grade[];
@@ -40,7 +42,8 @@ export default function GradesDashboard({
   const { t, language } = useLanguage();
   const [selectedSubject, setSelectedSubject] = useState<string>('all');
   const [isMounted, setIsMounted] = useState(false);
-  const [activeVisualTab, setActiveVisualTab] = useState<'trends' | 'subjects' | 'distribution' | 'diagnostic'>('trends');
+  const [activeVisualTab, setActiveVisualTab] = useState<'overall_d3' | 'trends' | 'subjects' | 'distribution' | 'diagnostic'>('overall_d3');
+  const [dashboardMode, setDashboardMode] = useState<'individual' | 'classroom'>('individual');
   
   React.useEffect(() => {
     setIsMounted(true);
@@ -1352,7 +1355,44 @@ export default function GradesDashboard({
         </div>
       </div>
 
-      {/* Validated Bulletin Banner locked status */}
+      {/* View Switcher: Individual Student vs Classroom Analysis */}
+      <div className="flex bg-slate-100 p-1 rounded-xl self-start gap-1 max-w-md border border-slate-200/40 select-none" id="grades-view-switcher">
+        <button
+          type="button"
+          onClick={() => setDashboardMode('individual')}
+          className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer transition-all duration-200 ${
+            dashboardMode === 'individual'
+              ? 'bg-white text-indigo-700 shadow-xs border border-indigo-100/80'
+              : 'text-slate-500 hover:text-slate-950'
+          }`}
+        >
+          <Award className="h-4 w-4 text-indigo-600" />
+          {language === 'fr' ? 'Suivi Individuel (Bulletin)' : 'Individual Tracking (Report)'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setDashboardMode('classroom')}
+          className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer transition-all duration-200 ${
+            dashboardMode === 'classroom'
+              ? 'bg-white text-indigo-700 shadow-xs border border-indigo-100/80'
+              : 'text-slate-500 hover:text-slate-950'
+          }`}
+        >
+          <Activity className="h-4 w-4 text-emerald-600 animate-pulse" />
+          {language === 'fr' ? 'Analyse Collective Classe' : 'Classroom View (Collective)'}
+        </button>
+      </div>
+
+      {dashboardMode === 'classroom' ? (
+        <ClassroomViewD3
+          allGrades={allGrades}
+          allStudents={allStudents}
+          activeStudent={activeStudent}
+          language={language}
+        />
+      ) : (
+        <>
+          {/* Validated Bulletin Banner locked status */}
       {activeStudent?.gradesValidated && (
         <div className="p-4 rounded-2xl border bg-amber-50/50 text-amber-950 border-amber-250 text-xs flex items-center gap-3 animate-fade-in shadow-2xs">
           <Lock className="h-5 w-5 text-amber-600 shrink-0" />
@@ -1669,7 +1709,8 @@ export default function GradesDashboard({
           {/* Graphic Section */}
           {chartData.length > 0 && (() => {
             const visualTabs = [
-              { id: 'trends', label: language === 'fr' ? 'Tendances de notes' : 'Grade Trends', icon: TrendingUp },
+              { id: 'overall_d3', label: language === 'fr' ? 'Évolution Moyenne (D3)' : 'D3 Overall Average', icon: TrendingUp },
+              { id: 'trends', label: language === 'fr' ? 'Tendances de notes' : 'Grade Trends', icon: Activity },
               { id: 'subjects', label: language === 'fr' ? 'Matières & Comparatif' : 'Subjects Comparison', icon: BarChart2 },
               { id: 'distribution', label: language === 'fr' ? 'Répartition / Distribution' : 'Grade Distribution', icon: Activity },
               { id: 'diagnostic', label: language === 'fr' ? 'Diagnostic Académique' : 'Academic Insights', icon: Sparkles }
@@ -1723,16 +1764,32 @@ export default function GradesDashboard({
                 </div>
 
                 {/* Tab Contents */}
-                <div className="h-76 w-full pt-2">
+                <div className="w-full pt-2">
                   {isMounted ? (
                     <AnimatePresence mode="wait">
+                      {activeVisualTab === 'overall_d3' && (
+                        <motion.div
+                          key="overall_d3"
+                          initial={{ opacity: 0, y: 5 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -5 }}
+                          className="w-full"
+                        >
+                          <StudentAverageTrendD3
+                            grades={filteredGrades}
+                            classAverage={classAverageNum}
+                            language={language}
+                          />
+                        </motion.div>
+                      )}
+
                       {activeVisualTab === 'trends' && (
                         <motion.div
                           key="trends"
                           initial={{ opacity: 0, y: 5 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: -5 }}
-                          className="h-full flex flex-col justify-between"
+                          className="h-76 flex flex-col justify-between"
                         >
                           <div className="flex items-center justify-between text-[11px] font-medium text-slate-500 px-1 mb-2">
                             <span>
@@ -2228,6 +2285,8 @@ export default function GradesDashboard({
             </div>
           </div>
         </>
+      )}
+      </>
       )}
     </div>
   );

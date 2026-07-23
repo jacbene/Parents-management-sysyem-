@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { collection, doc, getDoc, getDocs, query, setDoc, writeBatch, where } from 'firebase/firestore';
-import { db, auth } from '../firebase';
+import { db, auth, loginAnonymously } from '../firebase';
 import { logAuthError } from '../utils/authLogger';
 import { Landmark, Plus, CheckCircle, AlertOctagon, UserCheck, Phone, ShieldCheck, ArrowRight, X, Sparkles, User, HelpCircle, Mail, Smartphone, Key, RotateCw, Bell, Share2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ApeeSettings, ApeeParent, Student, Grade, Homework, Attendance, Invoice, Establishment } from '../types';
+import { syncLocalSchoolsToFirestore, saveAndSyncEstablishment } from '../utils/schoolSync';
 
 
 interface PortalOnboardingProps {
@@ -76,6 +77,9 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
   const fetchSchools = async () => {
     setLoadingSchools(true);
     try {
+      // First sync any cached local schools into Firestore
+      await syncLocalSchoolsToFirestore();
+
       const q = query(collection(db, 'establishments'));
       const snapshot = await getDocs(q);
       const list: Establishment[] = [];
@@ -88,11 +92,13 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
         const localEstsStr = localStorage.getItem('pasma_local_establishments');
         if (localEstsStr) {
           const localEsts = JSON.parse(localEstsStr);
-          localEsts.forEach((le: any) => {
+          for (const le of localEsts) {
             if (!list.some(m => m.id === le.id)) {
               list.push(le);
+              // Save to Firestore so it's registered in DB
+              saveAndSyncEstablishment(le).catch(err => console.warn('Sync fallback school failed:', err));
             }
-          });
+          }
         }
       } catch (e) {
         console.warn("Failed to parse local establishments:", e);
@@ -417,7 +423,10 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
             classRoom: foundTeacher.classRoom || '',
             email: foundTeacher.teacherEmail || ''
           };
-          localStorage.setItem('portal_teacher_details', JSON.stringify(teacherDetails));
+          try {
+            localStorage.setItem('portal_teacher_details', JSON.stringify(teacherDetails));
+            sessionStorage.setItem('portal_teacher_details', JSON.stringify(teacherDetails));
+          } catch (e) {}
           onSelectSchool(selectedSchoolId, 'teacher', teacherDetails as any);
         }, 1200);
 
@@ -713,8 +722,16 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
 
     setCreatingSchool(true);
     try {
-      // 1. Authenticate guest in background if not already signed in
-      let currentUid = currentUserUid;
+      // 1. Ensure active Firebase Auth session so request.auth != null in Firestore rules
+      if (!auth.currentUser) {
+        try {
+          await loginAnonymously();
+        } catch (authErr) {
+          console.warn("Firebase Anonymous auth fallback active:", authErr);
+        }
+      }
+
+      let currentUid = auth.currentUser?.uid || currentUserUid;
       if (!currentUid) {
         try {
           currentUid = await onAutoLoginGuest();
@@ -722,12 +739,6 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
           console.warn("Firebase Anonymous auth is disabled or offline. Safe navigation fallback active.", authErr);
           currentUid = `temp_mgr_${Date.now()}`;
         }
-      }
-
-      // Verify that we have sufficient credentials to write to Firestore
-      if (!currentUid || currentUid.startsWith('temp_mgr_')) {
-        console.warn("Missing or insufficient permissions: Session de connexion anonyme ou compte non authentifié. Poursuite en mode sécurisé local.");
-        currentUid = currentUid || `temp_mgr_${Date.now()}`;
       }
 
       // Determine the real Firestore authenticated owner ID to satisfy Firestore rules

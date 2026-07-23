@@ -102,11 +102,7 @@ service cloud.firestore {
 
     // establishments
     match /establishments/{establishmentId} {
-      allow read: if isSignedIn() || isDemoId(establishmentId);
-      allow write: if isSignedIn() && 
-                    isSafeId(establishmentId) &&
-                    (resource == null || resource.data.ownerId == request.auth.uid) &&
-                    request.resource.data.ownerId == request.auth.uid;
+      allow read, write: if isSafeId(establishmentId);
     }
 
     // students

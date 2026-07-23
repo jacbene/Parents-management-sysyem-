@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { collection, doc, getDocs, setDoc, deleteDoc, query, where, writeBatch } from 'firebase/firestore';
-import { db, auth } from '../firebase';
+import { db, auth, loginAnonymously } from '../firebase';
 import { logAuthError } from '../utils/authLogger';
 import AuthLogsViewer from './system/AuthLogsViewer';
 import PaymentWebhookHandler from './PaymentWebhookHandler';
 import { Establishment, Student, Invoice, SystemLog } from '../types';
+import { syncLocalSchoolsToFirestore, saveAndSyncEstablishment } from '../utils/schoolSync';
 import { 
   Building2, 
   Plus, 
@@ -32,7 +33,9 @@ import {
   ShieldCheck,
   Download,
   Ban,
-  Play
+  Play,
+  Database,
+  CloudOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -60,8 +63,35 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
   const isPrimarySuperAdmin = auth.currentUser?.email?.toLowerCase().trim() === 'jacquesbene301@gmail.com' || currentUserUid === 'sys_admin_jacques';
 
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [dbSchoolIds, setDbSchoolIds] = useState<Set<string>>(new Set());
+
+  const handleSyncSchoolsToDb = async () => {
+    setIsSyncing(true);
+    try {
+      const res = await syncLocalSchoolsToFirestore();
+      const schoolsMap = new Map<string, Establishment>();
+      fallbackSchools.forEach(s => schoolsMap.set(s.id, s));
+      schools.forEach(s => schoolsMap.set(s.id, s));
+
+      let savedCount = 0;
+      for (const [_, school] of schoolsMap.entries()) {
+        const saved = await saveAndSyncEstablishment(school);
+        if (saved) savedCount++;
+      }
+
+      const totalCount = Math.max(res.syncedCount, savedCount);
+      setSuccessMessage(`Base de données synchronisée : ${totalCount} école(s) vérifiée(s) et enregistrée(s) en BD avec succès.`);
+      setRefreshTrigger(p => p + 1);
+    } catch (e: any) {
+      setErrorMessage("Erreur lors de la synchronisation des écoles en BD: " + (e?.message || e));
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   // Creation State
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -136,29 +166,38 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
   useEffect(() => {
     const loadSystemData = async () => {
       setLoading(true);
+      setIsRefreshing(true);
       try {
+        // Sync local cached schools to Firestore
+        await syncLocalSchoolsToFirestore();
+
         // 1. Fetch schools
         const schoolList: Establishment[] = [];
+        const registeredDbIds = new Set<string>();
         try {
           const schoolsQuery = query(collection(db, 'establishments'));
           const schoolSnap = await getDocs(schoolsQuery);
           schoolSnap.forEach((doc) => {
+            registeredDbIds.add(doc.id);
             schoolList.push({ id: doc.id, ...doc.data() } as Establishment);
           });
         } catch (schoolErr) {
           console.warn("Could not fetch establishments from Firestore (falling back to cached/demo):", schoolErr);
         }
+        setDbSchoolIds(registeredDbIds);
 
         // Merge local-only establishments (resilient fallback)
         try {
           const localEstsStr = localStorage.getItem('pasma_local_establishments');
           if (localEstsStr) {
             const localEsts = JSON.parse(localEstsStr);
-            localEsts.forEach((le: any) => {
+            for (const le of localEsts) {
               if (!schoolList.some(m => m.id === le.id)) {
                 schoolList.push(le);
+                // Save to Firestore so it's registered in DB
+                saveAndSyncEstablishment(le).catch(err => console.warn('Sync fallback school failed:', err));
               }
-            });
+            }
           }
         } catch (e) {
           console.warn("Failed to parse local establishments:", e);
@@ -313,10 +352,14 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
           }
         }
 
+        if (refreshTrigger > 0) {
+          setSuccessMessage(`Données du système et des établissements actualisées en direct (${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })})`);
+        }
       } catch (err) {
         console.warn("System data loading encountered a non-fatal warning:", err);
       } finally {
         setLoading(false);
+        setIsRefreshing(false);
       }
     };
 
@@ -325,6 +368,14 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
 
   const handleWriteSystemLog = async (type: string, description: string, amount: number = 0, schoolId: string = 'system') => {
     try {
+      if (!auth.currentUser) {
+        try {
+          await loginAnonymously();
+        } catch (authErr) {
+          console.warn("Failed to establish anonymous Firebase Auth session for system log:", authErr);
+        }
+      }
+
       const logId = `log_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
       const logInvoice: Invoice = {
         id: logId,
@@ -377,8 +428,16 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
         throw new Error("Quota système atteint : La limite globale du serveur de démonstration est fixée à 25 établissements scolaires pour éviter les abus.");
       }
 
+      // Ensure active Firebase Auth session so request.auth != null in Firestore rules
+      if (!auth.currentUser) {
+        try {
+          await loginAnonymously();
+        } catch (authErr) {
+          console.warn("Failed to establish anonymous Firebase Auth session:", authErr);
+        }
+      }
+
       const newSchoolId = `sch_${Date.now()}`;
-      const batch = writeBatch(db);
       
       // Determine real Firestore authenticated user ID to satisfy security rules
       const firestoreOwnerId = auth.currentUser?.uid || currentUserUid || 'sys_admin_jacques';
@@ -399,7 +458,23 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
         ownerId: firestoreOwnerId
       };
 
-      batch.set(doc(db, 'establishments', newSchoolId), estDoc);
+      // Write establishment document directly
+      try {
+        await setDoc(doc(db, 'establishments', newSchoolId), estDoc);
+        setDbSchoolIds(prev => new Set(prev).add(newSchoolId));
+      } catch (estWriteErr: any) {
+        console.warn("Firestore establishment setDoc failed (proceeding with local fallback):", estWriteErr);
+        logAuthError({
+          errorMessage: estWriteErr?.message || "Missing or insufficient permissions during establishment creation",
+          errorCode: estWriteErr?.code || 'permission-denied',
+          action: 'SET_DOC_ESTABLISHMENT_ADMIN',
+          component: 'SuperAdminDashboard',
+          schoolName: schoolName.trim(),
+          schoolId: newSchoolId
+        });
+      }
+
+      const batch = writeBatch(db);
 
       // 2. Save settings to 'invoices'
       const budgetLines = [
@@ -506,6 +581,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
       // Commit all documents atomically
       try {
         await batch.commit();
+        setDbSchoolIds(prev => new Set(prev).add(newSchoolId));
       } catch (commitErr: any) {
         console.warn("Firestore batch write restricted (Missing or insufficient permissions), proceeding with local fallback:", commitErr);
         // Log the error to logs_auth for administrator diagnosis
@@ -775,12 +851,24 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
             </div>
           </div>
 
-          <div className="flex items-center gap-2 w-full md:w-auto self-stretch md:self-auto justify-end">
+          <div className="flex items-center gap-2 w-full md:w-auto self-stretch md:self-auto justify-end flex-wrap">
+            <button
+              onClick={handleSyncSchoolsToDb}
+              disabled={loading || isSyncing}
+              className="px-4 py-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-2xl font-bold text-xs shadow-3xs flex items-center gap-1.5 cursor-pointer disabled:opacity-60 transition-all active:scale-95"
+              title="Synchroniser et enregistrer toutes les écoles en cache dans la BD Firestore"
+            >
+              <Sparkles className={`h-3.5 w-3.5 text-emerald-600 ${isSyncing ? 'animate-spin' : ''}`} />
+              {isSyncing ? "Enregistrement BD..." : "Synchroniser BD"}
+            </button>
             <button
               onClick={() => setRefreshTrigger(p => p + 1)}
-              className="px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 rounded-2xl border border-slate-200 font-bold text-xs shadow-3xs flex items-center gap-1.5 cursor-pointer"
+              disabled={loading || isRefreshing}
+              className="px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 rounded-2xl border border-slate-200 font-bold text-xs shadow-3xs flex items-center gap-1.5 cursor-pointer disabled:opacity-60 transition-all active:scale-95"
+              title="Actualiser les données du système et des établissements"
             >
-              <RefreshCw className="h-3.5 w-3.5" /> Actualiser
+              <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin text-indigo-600' : ''}`} />
+              {isRefreshing ? "Actualisation..." : "Actualiser"}
             </button>
             <button
               onClick={() => setIsCreateOpen(true)}
@@ -815,8 +903,12 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
               <p className="text-[10px] text-slate-450 uppercase tracking-wider font-extrabold">Établissements</p>
               <p className="text-2xl font-black text-slate-900 tracking-tight mt-0.5">{totalSchools}</p>
             </div>
-            <div className="bg-indigo-50/50 text-indigo-700 text-[9.5px] font-bold px-2 py-0.5 rounded-md absolute top-4 right-4">
-              Enregistrés
+            <div 
+              className="bg-emerald-50 text-emerald-700 text-[9.5px] font-extrabold px-2 py-0.5 rounded-md absolute top-4 right-4 border border-emerald-200/80 flex items-center gap-1 shadow-2xs"
+              title={`${dbSchoolIds.size} établissement(s) effectivement présent(s) en base de données Firestore`}
+            >
+              <Database className="h-2.5 w-2.5 text-emerald-600 shrink-0" />
+              <span>{dbSchoolIds.size} en BD</span>
             </div>
           </div>
 
@@ -1020,8 +1112,29 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                                       </div>
                                     )}
                                     <div>
-                                      <div className="flex items-center gap-1.5">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
                                         <span className="font-extrabold text-slate-900 text-[12.5px] leading-snug">{school.name}</span>
+                                        {/* Badge pour école effectivement enregistrée en base de données */}
+                                        {dbSchoolIds.has(school.id) ? (
+                                          <span 
+                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-[8.5px] font-black uppercase rounded-md shadow-2xs"
+                                            title="Établissement effectivement enregistré et vérifié dans la base de données Firestore"
+                                          >
+                                            <Database className="h-2.5 w-2.5 text-emerald-600 shrink-0" />
+                                            <span className="flex items-center gap-1">
+                                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                                              Enregistré BD
+                                            </span>
+                                          </span>
+                                        ) : (
+                                          <span 
+                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-slate-100 text-slate-500 border border-slate-200 text-[8.5px] font-bold uppercase rounded-md"
+                                            title="Établissement local ou de démonstration (hors base de données)"
+                                          >
+                                            <CloudOff className="h-2.5 w-2.5 text-slate-400 shrink-0" />
+                                            <span>Démo / Local</span>
+                                          </span>
+                                        )}
                                         {school.status === 'suspended' && (
                                           <span className="px-1.5 py-0.5 bg-rose-100 text-rose-800 text-[8px] font-black uppercase rounded">Suspendu</span>
                                         )}
