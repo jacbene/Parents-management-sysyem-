@@ -137,7 +137,7 @@ function normalizeToInvoice(parent: ApeeParent, parentId: string): Invoice {
   
   return {
     id: parent.id,
-    studentId: 'apee_ces_ekali_1', // Marker for parent cotisation
+    studentId: 'apee_parent', // Generic marker for parent cotisation
     parentId,
     title: name,
     amount,
@@ -321,7 +321,7 @@ export async function fetchApeeData(parentId: string) {
 
     snapshot.forEach((docSnap) => {
       const data = docSnap.data() as Invoice;
-      if (data.studentId === 'apee_ces_ekali_1') {
+      if (data.studentId === 'apee_parent') {
         dbParents.push(normalizeToApeeParent(data));
       } else if (data.studentId === 'apee_expense') {
         dbExpenses.push(normalizeToApeeExpense(data));
@@ -475,7 +475,8 @@ export async function fetchApeeData(parentId: string) {
 
     // Background self-healing: Push any local-only cache items to Firestore
     if (canSyncToWrite && parentId) {
-      finalParents.forEach(async (p) => {
+      // Fix: Use Promise.all instead of forEach(async) to ensure all writes complete
+      const parentSyncPromises = finalParents.map(async (p) => {
         if (!dbParents.some(dp => dp.id === p.id)) {
           try {
             const invData = normalizeToInvoice(p, parentId);
@@ -486,7 +487,7 @@ export async function fetchApeeData(parentId: string) {
         }
       });
 
-      finalExpenses.forEach(async (exp) => {
+      const expenseSyncPromises = finalExpenses.map(async (exp) => {
         if (!dbExpenses.some(de => de.id === exp.id)) {
           try {
             const invData = normalizeExpenseToInvoice(exp, parentId);
@@ -495,6 +496,11 @@ export async function fetchApeeData(parentId: string) {
             console.warn("Auto background sync failed for expense", exp.title, e);
           }
         }
+      });
+
+      // Fire and forget to avoid blocking the UI
+      Promise.all([...parentSyncPromises, ...expenseSyncPromises]).catch((e) => {
+        console.warn('Background sync encountered errors:', e);
       });
     }
 
@@ -1109,7 +1115,7 @@ export function subscribeApeeData(
 
       snapshot.forEach((docSnap) => {
         const data = docSnap.data() as Invoice;
-        if (data.studentId === 'apee_ces_ekali_1') {
+        if (data.studentId === 'apee_parent') {
           dbParents.push(normalizeToApeeParent(data));
         } else if (data.studentId === 'apee_expense') {
           dbExpenses.push(normalizeToApeeExpense(data));
