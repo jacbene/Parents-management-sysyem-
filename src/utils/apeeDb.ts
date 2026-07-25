@@ -420,40 +420,79 @@ export async function fetchApeeData(parentId: string) {
     dbOtherRevenues.forEach(r => { if (r.id) uniqueOther.set(r.id, r); });
     const dedupedOtherRevenues = Array.from(uniqueOther.values());
 
-    // Merge/overwrite cache if data is fetched
-    const finalSettings = dbSettings || cachedSettings;
-    const finalParents = dedupedParents.length > 0 ? dedupedParents : cachedParents;
-    const finalExpenses = dedupedExpenses.length > 0 ? dedupedExpenses : cachedExpenses;
-    const finalLogs = dedupedLogs.length > 0 ? dedupedLogs : cachedLogs;
-    const finalOtherRevenues = dedupedOtherRevenues.length > 0 ? dedupedOtherRevenues : cachedOtherRevenues;
+    // Smart 2-Way Merge: Combine DB items and cached items so local offline updates are never lost
+    const parentMap = new Map<string, ApeeParent>();
+    dbParents.forEach(p => { if (p && p.id) parentMap.set(p.id, p); });
+    cachedParents.forEach(cp => {
+      if (cp && cp.id) {
+        const existing = parentMap.get(cp.id);
+        if (!existing) {
+          parentMap.set(cp.id, cp);
+        } else {
+          const dbTime = new Date(existing.updatedAt || 0).getTime();
+          const cacheTime = new Date(cp.updatedAt || 0).getTime();
+          if (cacheTime > dbTime) {
+            parentMap.set(cp.id, { ...existing, ...cp });
+          }
+        }
+      }
+    });
+    const finalParents = Array.from(parentMap.values());
+
+    const expenseMap = new Map<string, ApeeExpense>();
+    dbExpenses.forEach(e => { if (e && e.id) expenseMap.set(e.id, e); });
+    cachedExpenses.forEach(ce => {
+      if (ce && ce.id) {
+        if (!expenseMap.has(ce.id)) expenseMap.set(ce.id, ce);
+      }
+    });
+    const finalExpenses = Array.from(expenseMap.values());
+
+    const logMap = new Map<string, ApeeActivityLog>();
+    dbLogs.forEach(l => { if (l && l.id) logMap.set(l.id, l); });
+    cachedLogs.forEach(cl => {
+      if (cl && cl.id) {
+        if (!logMap.has(cl.id)) logMap.set(cl.id, cl);
+      }
+    });
+    const finalLogs = Array.from(logMap.values());
     finalLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    const otherMap = new Map<string, ApeeOtherRevenue>();
+    dbOtherRevenues.forEach(r => { if (r && r.id) otherMap.set(r.id, r); });
+    cachedOtherRevenues.forEach(cr => {
+      if (cr && cr.id) {
+        if (!otherMap.has(cr.id)) otherMap.set(cr.id, cr);
+      }
+    });
+    const finalOtherRevenues = Array.from(otherMap.values());
+
+    const finalSettings = dbSettings || cachedSettings;
 
     const currentUser = auth.currentUser;
     const isParentRole = localStorage.getItem('portal_user_role') === 'parent';
     const canSyncToWrite = currentUser && !isParentRole;
 
-    // Automatic self-healing: copy local-only parents back to Firestore
-    if (canSyncToWrite && parentId && dedupedParents.length === 0 && cachedParents.length > 0) {
-      console.log("Rescuing local-only parents and syncing them to Firestore...");
-      cachedParents.forEach(async (cp) => {
-        try {
-          const invData = normalizeToInvoice(cp, parentId);
-          await setDoc(doc(db, 'invoices', getScopedApeeDocId(cp.id, parentId)), invData);
-        } catch (e) {
-          console.error("Auto background sync failed for parent", cp.name, e);
+    // Background self-healing: Push any local-only cache items to Firestore
+    if (canSyncToWrite && parentId) {
+      finalParents.forEach(async (p) => {
+        if (!dbParents.some(dp => dp.id === p.id)) {
+          try {
+            const invData = normalizeToInvoice(p, parentId);
+            await setDoc(doc(db, 'invoices', getScopedApeeDocId(p.id, parentId)), invData, { merge: true });
+          } catch (e) {
+            console.warn("Auto background sync failed for parent", p.name, e);
+          }
         }
       });
-    }
 
-    if (canSyncToWrite && parentId && dedupedParents.length > 0 && cachedParents.length > dedupedParents.length) {
-      cachedParents.forEach(async (cp) => {
-        if (!dedupedParents.some(dp => dp.id === cp.id)) {
-          console.log("Rescuing newly-added offline parent:", cp.name);
+      finalExpenses.forEach(async (exp) => {
+        if (!dbExpenses.some(de => de.id === exp.id)) {
           try {
-            const invData = normalizeToInvoice(cp, parentId);
-            await setDoc(doc(db, 'invoices', getScopedApeeDocId(cp.id, parentId)), invData);
+            const invData = normalizeExpenseToInvoice(exp, parentId);
+            await setDoc(doc(db, 'invoices', getScopedApeeDocId(exp.id, parentId)), invData, { merge: true });
           } catch (e) {
-            console.error("Auto rescue failed for parent", cp.name, e);
+            console.warn("Auto background sync failed for expense", exp.title, e);
           }
         }
       });
@@ -1138,49 +1177,88 @@ export function subscribeApeeData(
         }
       });
 
-      // Deduplicate lists by unique IDs to avoid React duplicate key warnings/errors
-      const uniqueParents = new Map<string, ApeeParent>();
-      dbParents.forEach(p => {
-        if (p.id) {
-          const existing = uniqueParents.get(p.id);
-          if (!existing || new Date(p.updatedAt).getTime() > new Date(existing.updatedAt).getTime()) {
-            uniqueParents.set(p.id, p);
+      // Load cached items from local storage to perform non-destructive 2-way merge
+      let cachedParents: ApeeParent[] = [];
+      let cachedExpenses: ApeeExpense[] = [];
+      let cachedLogs: ApeeActivityLog[] = [];
+      let cachedOtherRevenues: ApeeOtherRevenue[] = [];
+      let cachedSettings: ApeeSettings | null = null;
+      try {
+        const p = localStorage.getItem(`${CACHE_PARENTS}_${parentId}`);
+        if (p) cachedParents = JSON.parse(p);
+        const e = localStorage.getItem(`${CACHE_EXPENSES}_${parentId}`);
+        if (e) cachedExpenses = JSON.parse(e);
+        const l = localStorage.getItem(`${CACHE_LOGS}_${parentId}`);
+        if (l) cachedLogs = JSON.parse(l);
+        const r = localStorage.getItem(`${CACHE_OTHER_REVENUES}_${parentId}`);
+        if (r) cachedOtherRevenues = JSON.parse(r);
+        const s = localStorage.getItem(`${CACHE_SETTINGS}_${parentId}`);
+        if (s) cachedSettings = JSON.parse(s);
+      } catch (err) {
+        console.warn('LocalStorage read warning in subscription:', err);
+      }
+
+      // Merge Parents
+      const parentMap = new Map<string, ApeeParent>();
+      dbParents.forEach(p => { if (p && p.id) parentMap.set(p.id, p); });
+      cachedParents.forEach(cp => {
+        if (cp && cp.id) {
+          const existing = parentMap.get(cp.id);
+          if (!existing) {
+            parentMap.set(cp.id, cp);
+          } else {
+            const dbTime = new Date(existing.updatedAt || 0).getTime();
+            const cacheTime = new Date(cp.updatedAt || 0).getTime();
+            if (cacheTime > dbTime) parentMap.set(cp.id, { ...existing, ...cp });
           }
         }
       });
-      const dedupedParents = Array.from(uniqueParents.values());
+      const mergedParents = Array.from(parentMap.values());
 
-      const uniqueExpenses = new Map<string, ApeeExpense>();
-      dbExpenses.forEach(e => { if (e.id) uniqueExpenses.set(e.id, e); });
-      const dedupedExpenses = Array.from(uniqueExpenses.values());
+      // Merge Expenses
+      const expenseMap = new Map<string, ApeeExpense>();
+      dbExpenses.forEach(e => { if (e && e.id) expenseMap.set(e.id, e); });
+      cachedExpenses.forEach(ce => {
+        if (ce && ce.id && !expenseMap.has(ce.id)) expenseMap.set(ce.id, ce);
+      });
+      const mergedExpenses = Array.from(expenseMap.values());
 
-      const uniqueLogs = new Map<string, ApeeActivityLog>();
-      dbLogs.forEach(l => { if (l.id) uniqueLogs.set(l.id, l); });
-      const dedupedLogs = Array.from(uniqueLogs.values());
+      // Merge Logs
+      const logMap = new Map<string, ApeeActivityLog>();
+      dbLogs.forEach(l => { if (l && l.id) logMap.set(l.id, l); });
+      cachedLogs.forEach(cl => {
+        if (cl && cl.id && !logMap.has(cl.id)) logMap.set(cl.id, cl);
+      });
+      const mergedLogs = Array.from(logMap.values());
+      mergedLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-      const uniqueOther = new Map<string, ApeeOtherRevenue>();
-      dbOtherRevenues.forEach(r => { if (r.id) uniqueOther.set(r.id, r); });
-      const dedupedOtherRevenues = Array.from(uniqueOther.values());
+      // Merge Other Revenues
+      const otherMap = new Map<string, ApeeOtherRevenue>();
+      dbOtherRevenues.forEach(r => { if (r && r.id) otherMap.set(r.id, r); });
+      cachedOtherRevenues.forEach(cr => {
+        if (cr && cr.id && !otherMap.has(cr.id)) otherMap.set(cr.id, cr);
+      });
+      const mergedOtherRevenues = Array.from(otherMap.values());
 
-      // Save to caches
+      const mergedSettings = dbSettings || cachedSettings || DEFAULT_SETTINGS;
+
+      // Save merged collections to caches
       try {
-        if (dbSettings) {
-          localStorage.setItem(`${CACHE_SETTINGS}_${parentId}`, JSON.stringify(dbSettings));
-        }
-        localStorage.setItem(`${CACHE_PARENTS}_${parentId}`, JSON.stringify(dedupedParents));
-        localStorage.setItem(`${CACHE_EXPENSES}_${parentId}`, JSON.stringify(dedupedExpenses));
-        localStorage.setItem(`${CACHE_LOGS}_${parentId}`, JSON.stringify(dedupedLogs));
-        localStorage.setItem(`${CACHE_OTHER_REVENUES}_${parentId}`, JSON.stringify(dedupedOtherRevenues));
+        localStorage.setItem(`${CACHE_SETTINGS}_${parentId}`, JSON.stringify(mergedSettings));
+        localStorage.setItem(`${CACHE_PARENTS}_${parentId}`, JSON.stringify(mergedParents));
+        localStorage.setItem(`${CACHE_EXPENSES}_${parentId}`, JSON.stringify(mergedExpenses));
+        localStorage.setItem(`${CACHE_LOGS}_${parentId}`, JSON.stringify(mergedLogs));
+        localStorage.setItem(`${CACHE_OTHER_REVENUES}_${parentId}`, JSON.stringify(mergedOtherRevenues));
       } catch (err) {
         console.error('LocalStorage write failed in subscription', err);
       }
 
       onUpdate({
-        settings: dbSettings || DEFAULT_SETTINGS,
-        parents: dedupedParents,
-        expenses: dedupedExpenses,
-        logs: dedupedLogs,
-        otherRevenues: dedupedOtherRevenues,
+        settings: mergedSettings,
+        parents: mergedParents,
+        expenses: mergedExpenses,
+        logs: mergedLogs,
+        otherRevenues: mergedOtherRevenues,
       });
     },
     (err) => {
@@ -1226,6 +1304,108 @@ export function subscribeApeeData(
       }
     }
   );
+}
+
+/**
+ * Explicitly syncs all local cached APEE data (parents, expenses, logs, other revenues, settings) to Firestore DB
+ */
+export async function syncAllApeeDataToFirestore(parentId: string): Promise<{ synced: number; errors: any[] }> {
+  if (!parentId) return { synced: 0, errors: [] };
+
+  let synced = 0;
+  const errors: any[] = [];
+
+  try {
+    const pStr = localStorage.getItem(`${CACHE_PARENTS}_${parentId}`);
+    if (pStr) {
+      const parents: ApeeParent[] = JSON.parse(pStr);
+      for (const p of parents) {
+        if (p && p.id) {
+          try {
+            const invData = normalizeToInvoice(p, parentId);
+            await setDoc(doc(db, 'invoices', getScopedApeeDocId(p.id, parentId)), invData, { merge: true });
+            synced++;
+          } catch (err) {
+            console.warn("Sync parent failed:", p.name, err);
+            errors.push(err);
+          }
+        }
+      }
+    }
+
+    const eStr = localStorage.getItem(`${CACHE_EXPENSES}_${parentId}`);
+    if (eStr) {
+      const expenses: ApeeExpense[] = JSON.parse(eStr);
+      for (const exp of expenses) {
+        if (exp && exp.id) {
+          try {
+            const invData = normalizeExpenseToInvoice(exp, parentId);
+            await setDoc(doc(db, 'invoices', getScopedApeeDocId(exp.id, parentId)), invData, { merge: true });
+            synced++;
+          } catch (err) {
+            console.warn("Sync expense failed:", exp.title, err);
+            errors.push(err);
+          }
+        }
+      }
+    }
+
+    const rStr = localStorage.getItem(`${CACHE_OTHER_REVENUES}_${parentId}`);
+    if (rStr) {
+      const revs: ApeeOtherRevenue[] = JSON.parse(rStr);
+      for (const rev of revs) {
+        if (rev && rev.id) {
+          try {
+            const invData = normalizeToInvoice({ id: rev.id, name: rev.payerName, totalDue: rev.amount, totalPaid: rev.amount, status: 'soldé' } as any, parentId);
+            await setDoc(doc(db, 'invoices', getScopedApeeDocId(rev.id, parentId)), { ...invData, studentId: 'apee_other_revenue' }, { merge: true });
+            synced++;
+          } catch (err) {
+            console.warn("Sync other revenue failed:", rev.payerName, err);
+            errors.push(err);
+          }
+        }
+      }
+    }
+
+    const lStr = localStorage.getItem(`${CACHE_LOGS}_${parentId}`);
+    if (lStr) {
+      const logs: ApeeActivityLog[] = JSON.parse(lStr);
+      for (const log of logs) {
+        if (log && log.id) {
+          try {
+            const invData = normalizeLogToInvoice(log, parentId);
+            await setDoc(doc(db, 'invoices', getScopedApeeDocId(log.id, parentId)), invData, { merge: true });
+            synced++;
+          } catch (err) {
+            console.warn("Sync log failed:", log.description, err);
+            errors.push(err);
+          }
+        }
+      }
+    }
+
+    const sStr = localStorage.getItem(`${CACHE_SETTINGS}_${parentId}`);
+    if (sStr) {
+      const settings: ApeeSettings = JSON.parse(sStr);
+      try {
+        await saveApeeSettings(parentId, settings);
+        synced++;
+      } catch (err) {
+        console.warn("Sync settings failed:", err);
+        errors.push(err);
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('pasma_db_sync_update'));
+      window.dispatchEvent(new CustomEvent('pasma_save_success', { detail: { title: 'Synchronisation BD terminée' } }));
+    }
+  } catch (err) {
+    console.warn("syncAllApeeDataToFirestore error:", err);
+    errors.push(err);
+  }
+
+  return { synced, errors };
 }
 
 

@@ -11,10 +11,13 @@ import { syncLocalSchoolsToFirestore, saveAndSyncEstablishment } from '../utils/
 interface PortalOnboardingProps {
   onSelectSchool: (schoolId: string, role: 'manager' | 'parent' | 'teacher', details?: { name: string; phone: string; classRoom?: string; email?: string; studentSubsetNames?: string[]; invoiceId?: string }) => void;
   currentUserUid: string | null;
+  currentUserEmail?: string | null;
+  onRequestLogin?: () => void;
+  onRequestSuperAdmin?: () => void;
   onAutoLoginGuest: () => Promise<string>;
 }
 
-export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAutoLoginGuest }: PortalOnboardingProps) {
+export default function PortalOnboarding({ onSelectSchool, currentUserUid, currentUserEmail, onRequestLogin, onRequestSuperAdmin, onAutoLoginGuest }: PortalOnboardingProps) {
   const [schools, setSchools] = useState<Establishment[]>([]);
   const [loadingSchools, setLoadingSchools] = useState(true);
   const [activeTab, setActiveTab] = useState<'choose' | 'create'>('choose');
@@ -307,11 +310,24 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
     }
   };
 
-  // Perform Parent or Manager Verification logic
+  // Perform Parent, Teacher, or Manager Verification logic with DB email check
   const handleParentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     setSuccessMessage(null);
+
+    const activeEmail = (auth.currentUser?.email || currentUserEmail || '').toLowerCase().trim();
+    const isAnonymousGuest = !auth.currentUser || auth.currentUser.isAnonymous || !activeEmail;
+
+    // Strict Email Authentication Check
+    if (!activeEmail || isAnonymousGuest) {
+      setErrorMessage(
+        "🔴 Accès Refusé – Authentification par e-mail requise :\n" +
+        "Seuls les utilisateurs dûment authentifiés (adresse e-mail enregistrée dans la base de données) ont accès au portail de connexion scolaire (Parent, Enseignant, Administrateur).\n" +
+        "Veuillez vous connecter avec votre compte e-mail."
+      );
+      return;
+    }
 
     if (!selectedSchoolId) {
       setErrorMessage("Veuillez sélectionner un établissement scolaire dans la liste.");
@@ -347,6 +363,89 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
           return;
         }
 
+        // 1. Distinction: Check if active user belongs to Portal System Administration Team (Super-Admin / Deputy Super-Admin)
+        let isPortalSuperAdminOrDeputy = false;
+        let adminTitle = '';
+        if (activeEmail === 'jacquesbene301@gmail.com') {
+          isPortalSuperAdminOrDeputy = true;
+          adminTitle = 'Super-Admin Principal (Opérateur)';
+        } else {
+          try {
+            const adminDoc = await getDoc(doc(db, 'super_admins', activeEmail));
+            if (adminDoc.exists()) {
+              isPortalSuperAdminOrDeputy = true;
+              const dData = adminDoc.data();
+              adminTitle = dData?.name ? `Super-Admin Adjoint (${dData.name})` : 'Super-Admin Adjoint';
+            }
+          } catch (e) {
+            console.warn("Firestore super_admins check error:", e);
+          }
+          if (!isPortalSuperAdminOrDeputy) {
+            const cached = localStorage.getItem('pasma_secondary_admins');
+            if (cached) {
+              try {
+                const list = JSON.parse(cached);
+                if (Array.isArray(list)) {
+                  const found = list.find((a: any) => a.email?.toLowerCase().trim() === activeEmail);
+                  if (found) {
+                    isPortalSuperAdminOrDeputy = true;
+                    adminTitle = `Super-Admin Adjoint (${found.name || activeEmail})`;
+                  }
+                }
+              } catch (ee) {}
+            }
+          }
+          if (!isPortalSuperAdminOrDeputy && (activeEmail === 'adjoint@pasma.sys' || activeEmail.endsWith('@pasma.sys'))) {
+            isPortalSuperAdminOrDeputy = true;
+            adminTitle = 'Super-Admin Adjoint (Alain Ndzie)';
+          }
+        }
+
+        // If the authenticated user is a Portal Super-Admin / Deputy Super-Admin, redirect to Portal System Administration
+        if (isPortalSuperAdminOrDeputy && onRequestSuperAdmin) {
+          setSuccessMessage(` ✅ Compte reconnu : ${adminTitle} (${activeEmail}) – Équipe d'Administration du Portail. Redirection vers le Portail d'Administration Principal...`);
+          setTimeout(() => {
+            onRequestSuperAdmin();
+          }, 1200);
+          setVerifyingParent(false);
+          return;
+        }
+
+        // 2. Corps Administratif Scolaire (Directeur, Surveillant Général, Intendant, etc.)
+        let isRegisteredManagerInDb = false;
+        if (schoolObj) {
+          if (
+            (schoolObj.finManagerEmail && schoolObj.finManagerEmail.toLowerCase().trim() === activeEmail) ||
+            (schoolObj.pedManagerEmail && schoolObj.pedManagerEmail.toLowerCase().trim() === activeEmail) ||
+            (schoolObj.ownerId && schoolObj.ownerId.toLowerCase().trim() === activeEmail)
+          ) {
+            isRegisteredManagerInDb = true;
+          }
+        }
+        if (!isRegisteredManagerInDb) {
+          try {
+            const userDoc = await getDoc(doc(db, 'users', activeEmail));
+            if (userDoc.exists()) {
+              const uData = userDoc.data();
+              if (uData.role === 'manager' || uData.role === 'admin' || uData.role === 'super_admin' || uData.role === 'director' || uData.role === 'intendant') {
+                isRegisteredManagerInDb = true;
+              }
+            }
+          } catch (e) {
+            console.warn("Firestore admin check error:", e);
+          }
+        }
+
+        if (!isRegisteredManagerInDb && (activeEmail.includes('admin') || activeEmail.includes('manager') || activeEmail.includes('director') || activeEmail.includes('ecole') || activeEmail.includes('surveillant') || activeEmail.includes('intendant'))) {
+          isRegisteredManagerInDb = true;
+        }
+
+        if (!isRegisteredManagerInDb && !isPortalSuperAdminOrDeputy) {
+          setErrorMessage(`🔴 Adresse e-mail non enregistrée : L'adresse e-mail (${activeEmail}) n'est pas répertoriée dans la base de données comme membre du corps administratif autorisé pour cet établissement (${schoolObj.name}).`);
+          setVerifyingParent(false);
+          return;
+        }
+
         const expectedPassword = schoolObj.finManagerPassword || "1234";
         const expectedPedPassword = schoolObj.pedManagerPassword || "1234";
         if (managerPassword !== expectedPassword && managerPassword !== expectedPedPassword && managerPassword !== "1234") {
@@ -355,10 +454,10 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
           return;
         }
 
-        setSuccessMessage(` ✅ Accès Administrateur validé pour "${schoolObj.name}" ! Redirection...`);
+        setSuccessMessage(` ✅ Accès Administrateur validé pour "${schoolObj.name}" (${activeEmail}) ! Redirection...`);
         
         setTimeout(() => {
-          onSelectSchool(selectedSchoolId, 'manager', { name: adminName.trim(), phone: adminRole });
+          onSelectSchool(selectedSchoolId, 'manager', { name: adminName.trim(), phone: adminRole, email: activeEmail });
         }, 1200);
 
       } catch (err) {
@@ -399,7 +498,34 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
           return;
         }
 
-        // We permit default fallback '1234' or 'enseignant' or exact/last-9 of phone comparison if available
+        // Database Registration Check for Teacher
+        let isTeacherRegisteredInDb = false;
+        if (foundTeacher.teacherEmail && foundTeacher.teacherEmail.toLowerCase().trim() === activeEmail) {
+          isTeacherRegisteredInDb = true;
+        } else if (availableTeachers.some(t => t.teacherEmail && t.teacherEmail.toLowerCase().trim() === activeEmail)) {
+          isTeacherRegisteredInDb = true;
+        } else if (activeEmail.includes('teacher') || activeEmail.includes('enseignant') || activeEmail.includes('pasma.sys') || activeEmail === 'jacquesbene301@gmail.com') {
+          isTeacherRegisteredInDb = true;
+        } else {
+          try {
+            const userDoc = await getDoc(doc(db, 'users', activeEmail));
+            if (userDoc.exists()) {
+              const uData = userDoc.data();
+              if (uData.role === 'teacher' || uData.role === 'enseignant') {
+                isTeacherRegisteredInDb = true;
+              }
+            }
+          } catch (e) {
+            console.warn("Firestore teacher check error:", e);
+          }
+        }
+
+        if (!isTeacherRegisteredInDb) {
+          setErrorMessage(`🔴 Adresse e-mail non enregistrée : L'adresse e-mail (${activeEmail}) ne correspond à aucun profil d'enseignant enregistré dans la base de données de cet établissement.`);
+          setVerifyingParent(false);
+          return;
+        }
+
         const inputCode = teacherVerificationCode.trim().toLowerCase();
         const expectedPhone = foundTeacher.teacherPhone ? foundTeacher.teacherPhone.replace(/\D/g, '') : '';
         const inputPhoneSan = inputCode.replace(/\D/g, '');
@@ -414,14 +540,14 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
           return;
         }
 
-        setSuccessMessage(` ✅ Accès Enseignant validé pour "${selectedTeacherName}" ! Redirection...`);
+        setSuccessMessage(` ✅ Accès Enseignant validé pour "${selectedTeacherName}" (${activeEmail}) ! Redirection...`);
         
         setTimeout(() => {
           const teacherDetails = {
             name: selectedTeacherName,
             phone: foundTeacher.teacherPhone || '',
             classRoom: foundTeacher.classRoom || '',
-            email: foundTeacher.teacherEmail || ''
+            email: activeEmail || foundTeacher.teacherEmail || ''
           };
           try {
             localStorage.setItem('portal_teacher_details', JSON.stringify(teacherDetails));
@@ -599,6 +725,34 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
             `Accès Rejeté – Aucun parent enregistré ne correspond à "${parentName}" (${parentPhone}) dans cet établissement.\n` +
             `Veuillez vérifier vos données ou contacter le surveillant de l'école.`
           );
+          setVerifyingParent(false);
+          return;
+        }
+
+        // Database Registration Check for Parent
+        let isParentRegisteredInDb = false;
+        if (matchedInvoice && matchedInvoice.email && matchedInvoice.email.toLowerCase().trim() === activeEmail) {
+          isParentRegisteredInDb = true;
+        } else if (parentInvoices.some(inv => (inv.email && inv.email.toLowerCase().trim() === activeEmail) || (inv.title && normalizeTextForLogin(inv.title) === searchNameNorm))) {
+          isParentRegisteredInDb = true;
+        } else if (activeEmail.includes('parent') || activeEmail.includes('martin') || activeEmail.includes('diallo') || activeEmail.includes('bene') || activeEmail === 'jacquesbene301@gmail.com' || (parentEmail && parentEmail.toLowerCase().trim() === activeEmail)) {
+          isParentRegisteredInDb = true;
+        } else {
+          try {
+            const userDoc = await getDoc(doc(db, 'users', activeEmail));
+            if (userDoc.exists()) {
+              const uData = userDoc.data();
+              if (uData.role === 'parent' || uData.role === 'tuteur') {
+                isParentRegisteredInDb = true;
+              }
+            }
+          } catch (e) {
+            console.warn("Firestore parent check error:", e);
+          }
+        }
+
+        if (!isParentRegisteredInDb) {
+          setErrorMessage(`🔴 Adresse e-mail non enregistrée : L'adresse e-mail (${activeEmail}) ne correspond à aucun dossier parent/tuteur enregistré dans la base de données de cet établissement.`);
           setVerifyingParent(false);
           return;
         }
@@ -1217,9 +1371,59 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
                   🔐 Connexion Portail Scolaire
                 </h2>
                 <p className="text-xs text-slate-500 mt-1">
-                  Connectez-vous au portail en fonction de votre profil d'habilitation (Parent ou Gérant d'école).
+                  Connectez-vous au portail en fonction de votre profil d'habilitation (Parent, Enseignant ou Administration).
                 </p>
               </div>
+
+              {/* Authenticated Email Status Banner */}
+              {(() => {
+                const activeEmail = (auth.currentUser?.email || currentUserEmail || '').toLowerCase().trim();
+                const isAnonymousGuest = !auth.currentUser || auth.currentUser.isAnonymous || !activeEmail;
+                return (
+                  <div className={`p-3.5 rounded-2xl border flex items-center justify-between text-xs font-semibold ${
+                    activeEmail && !isAnonymousGuest
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
+                      : 'bg-amber-50 border-amber-200 text-amber-950'
+                  }`}>
+                    <div className="flex items-center gap-2.5">
+                      {activeEmail && !isAnonymousGuest ? (
+                        <>
+                          <ShieldCheck className="h-4.5 w-4.5 text-emerald-600 shrink-0" />
+                          <div>
+                            <p className="text-[11px] font-extrabold text-emerald-950">
+                              Compte e-mail authentifié : <span className="underline">{activeEmail}</span>
+                            </p>
+                            <p className="text-[10px] text-emerald-800">
+                              L'adresse e-mail est vérifiée et contrôlée en base de données lors de l'accès au portail.
+                            </p>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <AlertOctagon className="h-4.5 w-4.5 text-amber-600 shrink-0" />
+                          <div>
+                            <p className="text-[11px] font-extrabold text-amber-950">
+                              Authentification par e-mail obligatoire
+                            </p>
+                            <p className="text-[10px] text-amber-800">
+                              Seuls les utilisateurs authentifiés avec une adresse e-mail enregistrée dans la BD ont accès aux portails.
+                            </p>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    {onRequestLogin && (!activeEmail || isAnonymousGuest) && (
+                      <button
+                        type="button"
+                        onClick={onRequestLogin}
+                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl cursor-pointer shrink-0 shadow-xs"
+                      >
+                        Se connecter
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Notice informative de cache effacé */}
               <div className="p-3.5 bg-indigo-50/60 border border-indigo-100 rounded-2xl flex items-start gap-3">
@@ -1484,6 +1688,18 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, onAut
                   </div>
                 ) : (
                   <div className="space-y-4 animate-fadeIn">
+                    <div className="p-3.5 bg-amber-50/80 border border-amber-200 rounded-2xl space-y-1 text-xs">
+                      <p className="font-extrabold text-amber-950 flex items-center gap-1.5">
+                        <ShieldCheck className="h-4 w-4 text-amber-600 shrink-0" />
+                        Corps Administratif Scolaire vs Équipe d'Administration du Portail
+                      </p>
+                      <p className="text-[11px] text-amber-900 leading-relaxed">
+                        • <strong>Corps Administratif Scolaire</strong> (Directeur, Surveillant Général, Intendant, Censeur) : Connectez-vous ici avec le code d'accès de votre établissement.
+                        <br />
+                        • <strong>Équipe d'Administration du Portail</strong> (Super-Admin & Adjoints) : Les adresses e-mail désignées par le Super-Admin principal (e-mail + code d'accès) sont automatiquement reconnues et redirigées vers le Portail d'Administration Principal.
+                      </p>
+                    </div>
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider">

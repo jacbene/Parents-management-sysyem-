@@ -6,6 +6,7 @@ import AuthLogsViewer from './system/AuthLogsViewer';
 import PaymentWebhookHandler from './PaymentWebhookHandler';
 import { Establishment, Student, Invoice, SystemLog } from '../types';
 import { syncLocalSchoolsToFirestore, saveAndSyncEstablishment } from '../utils/schoolSync';
+import { syncAllApeeDataToFirestore } from '../utils/apeeDb';
 import { 
   Building2, 
   Plus, 
@@ -78,13 +79,15 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
       schools.forEach(s => schoolsMap.set(s.id, s));
 
       let savedCount = 0;
-      for (const [_, school] of schoolsMap.entries()) {
+      for (const [id, school] of schoolsMap.entries()) {
         const saved = await saveAndSyncEstablishment(school);
         if (saved) savedCount++;
+        // Also sync all APEE cached data for each school
+        await syncAllApeeDataToFirestore(id);
       }
 
       const totalCount = Math.max(res.syncedCount, savedCount);
-      setSuccessMessage(`Base de données synchronisée : ${totalCount} école(s) vérifiée(s) et enregistrée(s) en BD avec succès.`);
+      setSuccessMessage(`Base de données synchronisée : ${totalCount} établissement(s) et données APEE vérifié(s) et enregistré(s) en BD avec succès.`);
       setRefreshTrigger(p => p + 1);
     } catch (e: any) {
       setErrorMessage("Erreur lors de la synchronisation des écoles en BD: " + (e?.message || e));
@@ -1284,6 +1287,11 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                                 <p className="text-[10.5px] text-slate-450 font-mono truncate">
                                   {admin.email}
                                 </p>
+                                {admin.accessCode && (
+                                  <p className="text-[10px] text-amber-700 font-mono font-bold">
+                                    🔑 Code d'accès: {admin.accessCode}
+                                  </p>
+                                )}
                                 <p className="text-[9px] text-slate-400 font-mono">
                                   Créé le {new Date(admin.createdAt).toLocaleDateString()} par Jacques
                                 </p>
@@ -1369,10 +1377,12 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
 
                             try {
                               const newAdminId = email.toLowerCase().trim();
+                              const accessCode = (fd.get('accessCode') as string || '').trim() || 'ADM-' + Math.floor(100000 + Math.random() * 900000);
                               const adminDoc = {
                                 id: newAdminId,
                                 name,
                                 email: email.toLowerCase(),
+                                accessCode,
                                 createdAt: new Date().toISOString(),
                                 addedBy: 'jacquesbene301@gmail.com',
                                 role: 'secondary'
@@ -1386,12 +1396,12 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
 
                               await handleWriteSystemLog(
                                 'CREATE_SUPER_ADMIN', 
-                                `Nomination d'un Super-Admin secondaire : ${name} (${email})`, 
+                                `Nomination d'un Super-Admin secondaire : ${name} (${email}) - Code: ${accessCode}`, 
                                 0
                               );
 
                               targetForm.reset();
-                              setSuccessMessage(`Habilitation accordée avec succès à l'adjoint ${name} (${email})`);
+                              setSuccessMessage(`Habilitation accordée avec succès à l'adjoint ${name} (${email}) - Code d'accès attribué: ${accessCode}`);
                               setRefreshTrigger(p => p + 1);
                             } catch (err: any) {
                               setErrorMessage("Une erreur est survenue lors de l'attribution des privilèges.");
@@ -1418,6 +1428,16 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                               required
                               placeholder="Ex: adjoint@pasma.sys"
                               className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500/15"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[10.5px] font-bold text-slate-600 uppercase">Code d'accès secret de l'adjoint (Optionnel)</label>
+                            <input
+                              type="text"
+                              name="accessCode"
+                              placeholder="Ex: ADM-789012 (généré auto si vide)"
+                              className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500/15"
                             />
                           </div>
 

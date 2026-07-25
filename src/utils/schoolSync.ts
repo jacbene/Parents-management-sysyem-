@@ -1,5 +1,5 @@
-import { doc, setDoc, getDocs, collection } from 'firebase/firestore';
-import { db, auth, loginAnonymously } from '../firebase';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { db, auth, loginAnonymously, queuePendingAction } from '../firebase';
 import { Establishment } from '../types';
 
 export const DEFAULT_FALLBACK_SCHOOLS: Establishment[] = [
@@ -47,15 +47,40 @@ export const DEFAULT_FALLBACK_SCHOOLS: Establishment[] = [
   }
 ];
 
+function sanitizeFirestoreId(id: string): string {
+  if (!id) return `sch_${Date.now()}`;
+  return id.replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+export function cleanPayload(data: Record<string, any>): Record<string, any> {
+  const clean: Record<string, any> = {};
+  Object.keys(data).forEach((k) => {
+    if (data[k] !== undefined && typeof data[k] !== 'function') {
+      clean[k] = data[k];
+    }
+  });
+  return clean;
+}
+
 /**
  * Utility to sync locally cached establishments (from localStorage/sessionStorage)
- * directly into the Firestore database (`establishments` collection).
+ * directly into the Firestore database (`establishments` collection) along with
+ * their settings and initial student/invoice records.
  */
 export async function syncLocalSchoolsToFirestore(): Promise<{ syncedCount: number; errors: any[] }> {
   let syncedCount = 0;
   const errors: any[] = [];
 
   try {
+    // Ensure authentication state
+    if (!auth.currentUser) {
+      try {
+        await loginAnonymously();
+      } catch (authErr) {
+        console.warn('[schoolSync] Unauthenticated, proceeding with fallback sync:', authErr);
+      }
+    }
+
     // 1. Gather local establishments from localStorage and sessionStorage
     const localEstsMap = new Map<string, any>();
 
@@ -77,7 +102,7 @@ export async function syncLocalSchoolsToFirestore(): Promise<{ syncedCount: numb
           }
         }
       } catch (e) {
-        // ignore storage parse errors
+        // ignore parse errors
       }
 
       try {
@@ -99,40 +124,98 @@ export async function syncLocalSchoolsToFirestore(): Promise<{ syncedCount: numb
       return { syncedCount: 0, errors: [] };
     }
 
-    if (!auth.currentUser) {
-      try {
-        await loginAnonymously();
-      } catch (authErr) {
-        console.warn('[schoolSync] Unauthenticated, proceeding with fallback sync:', authErr);
-      }
-    }
+    const currentUid = auth.currentUser?.uid || 'demo_admin';
 
     // 2. Write each cached school to Firestore `establishments` collection
-    for (const [id, estData] of localEstsMap.entries()) {
+    for (const [rawId, estData] of localEstsMap.entries()) {
+      const id = sanitizeFirestoreId(rawId);
       try {
         const docRef = doc(db, 'establishments', id);
-        const cleanData: Record<string, any> = {
+        const cleanEstData = cleanPayload({
           ...estData,
+          id,
+          ownerId: estData.ownerId || currentUid,
           syncedAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
-        };
-        // Remove undefined fields
-        Object.keys(cleanData).forEach((key) => {
-          if (cleanData[key] === undefined) {
-            delete cleanData[key];
-          }
         });
 
-        await setDoc(docRef, cleanData, { merge: true });
+        await setDoc(docRef, cleanEstData, { merge: true });
         syncedCount++;
+
+        // 3. Ensure settings document `invoices/${id}_settings` exists
+        try {
+          const settingsRef = doc(db, 'invoices', `${id}_settings`);
+          const budgetLines = [
+            { id: 'bl_1', name: 'Soutien Pédagogique et Matériel Didactique', allocatedAmount: Math.round((estData.financialGoal || 5000000) * 0.3), description: 'Frais de craie, vacataires, etc.' },
+            { id: 'bl_2', name: 'Aménagement & Réparations', allocatedAmount: Math.round((estData.financialGoal || 5000000) * 0.25), description: 'Tables-bancs, entretien' },
+            { id: 'bl_3', name: 'Santé et Hygiène', allocatedAmount: Math.round((estData.financialGoal || 5000000) * 0.15), description: 'Secourisme, eau potable' },
+            { id: 'bl_4', name: 'Activités Périscolaires FENASSCO', allocatedAmount: Math.round((estData.financialGoal || 5000000) * 0.15), description: 'Compétitions de sport' },
+            { id: 'bl_5', name: 'Fonds d\'Administration Générale', allocatedAmount: Math.round((estData.financialGoal || 5000000) * 0.15), description: 'Frais divers de bureau' }
+          ];
+
+          await setDoc(settingsRef, cleanPayload({
+            id: 'apee_settings',
+            studentId: 'apee_settings',
+            parentId: id,
+            title: estData.name || 'Établissement',
+            amount: Number(estData.cotisationAmount || 25000),
+            dueDate: estData.schoolYear || '2025/2026',
+            status: 'Paid',
+            amountPaid: Number(estData.financialGoal || 5000000),
+            budgetLinesList: JSON.stringify(budgetLines),
+            finManagerName: estData.finManagerName || '',
+            finManagerPhone: estData.finManagerPhone || '',
+            finManagerPassword: estData.finManagerPassword || '1234',
+            pedManagerName: estData.pedManagerName || '',
+            pedManagerPhone: estData.pedManagerPhone || '',
+            pedManagerPassword: estData.pedManagerPassword || '1234'
+          }), { merge: true });
+        } catch (settingsErr) {
+          console.warn(`[schoolSync] Settings sync note for ${id}:`, settingsErr);
+        }
+
+        // 4. Sync cached students for this school if present in local storage
+        try {
+          const cachedStudentsStr = localStorage.getItem(`pasma_students_${rawId}`) || localStorage.getItem(`pasma_students_${id}`);
+          if (cachedStudentsStr) {
+            const cachedStudents = JSON.parse(cachedStudentsStr);
+            if (Array.isArray(cachedStudents)) {
+              for (const stu of cachedStudents) {
+                if (stu && stu.id) {
+                  const stuId = sanitizeFirestoreId(stu.id);
+                  await setDoc(doc(db, 'students', stuId), cleanPayload({
+                    ...stu,
+                    id: stuId,
+                    parentId: id
+                  }), { merge: true });
+                }
+              }
+            }
+          }
+        } catch (stuErr) {
+          console.warn(`[schoolSync] Students sync note for ${id}:`, stuErr);
+        }
+
       } catch (err: any) {
-        console.warn(`[schoolSync] Handled sync note for ${id}:`, err?.message || err);
-        // Still count as local verified school to avoid blocking UI
-        syncedCount++;
+        console.warn(`[schoolSync] Sync notice for school ${id}:`, err?.message || err);
+        errors.push({ schoolId: id, error: err?.message || err });
       }
     }
+
+    // Update local cache with synced school items to maintain parity
+    try {
+      const updatedList = Array.from(localEstsMap.values()).map(e => ({
+        ...e,
+        id: sanitizeFirestoreId(e.id)
+      }));
+      localStorage.setItem('pasma_local_establishments', JSON.stringify(updatedList));
+      sessionStorage.setItem('pasma_local_establishments', JSON.stringify(updatedList));
+    } catch (cacheErr) {
+      console.warn('[schoolSync] Local cache sync warning:', cacheErr);
+    }
+
   } catch (err) {
-    console.error('[schoolSync] Global error syncing local schools to Firestore:', err);
+    console.warn('[schoolSync] Sync fallback for local schools:', err);
     errors.push(err);
   }
 
@@ -145,15 +228,18 @@ export async function syncLocalSchoolsToFirestore(): Promise<{ syncedCount: numb
 export async function saveAndSyncEstablishment(est: Establishment): Promise<boolean> {
   if (!est || !est.id) return false;
 
+  const id = sanitizeFirestoreId(est.id);
+  const updatedEst = { ...est, id, updatedAt: new Date().toISOString() };
+
   // 1. Save to localStorage cache for offline/instant resilience
   try {
     const existingStr = localStorage.getItem('pasma_local_establishments');
     const existing: Establishment[] = existingStr ? JSON.parse(existingStr) : [];
-    const idx = existing.findIndex((e) => e.id === est.id);
+    const idx = existing.findIndex((e) => e.id === id || e.id === est.id);
     if (idx >= 0) {
-      existing[idx] = { ...existing[idx], ...est };
+      existing[idx] = { ...existing[idx], ...updatedEst };
     } else {
-      existing.push(est);
+      existing.push(updatedEst);
     }
     localStorage.setItem('pasma_local_establishments', JSON.stringify(existing));
     sessionStorage.setItem('pasma_local_establishments', JSON.stringify(existing));
@@ -163,17 +249,14 @@ export async function saveAndSyncEstablishment(est: Establishment): Promise<bool
 
   // 2. Save directly to Firestore
   try {
-    const docRef = doc(db, 'establishments', est.id);
-    const cleanData: Record<string, any> = { ...est, updatedAt: new Date().toISOString() };
-    Object.keys(cleanData).forEach((key) => {
-      if (cleanData[key] === undefined) {
-        delete cleanData[key];
-      }
-    });
+    const docRef = doc(db, 'establishments', id);
+    const cleanData = cleanPayload(updatedEst);
     await setDoc(docRef, cleanData, { merge: true });
     return true;
   } catch (err) {
-    console.error(`[schoolSync] Failed to save establishment ${est.id} to Firestore:`, err);
+    console.warn(`[schoolSync] Firestore save note for establishment ${id}:`, err);
+    queuePendingAction('UPDATE', 'establishments', id, `Enregistrer établissement ${updatedEst.name || id}`, cleanPayload(updatedEst));
     return false;
   }
 }
+

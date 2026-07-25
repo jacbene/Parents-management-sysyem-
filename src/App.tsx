@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, query, where, getDocs, doc, setDoc, deleteDoc, writeBatch, getDoc, onSnapshot } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
-import { auth, loginWithGoogle, logout, db, handleFirestoreError, OperationType, loginAnonymously, goOffline, goOnline, isOffline as isOfflineCheck, queuePendingAction, signUpWithEmail, loginWithEmail, resetPassword } from './firebase';
+import { auth, loginWithGoogle, logout, db, handleFirestoreError, OperationType, loginAnonymously, goOffline, goOnline, isOffline as isOfflineCheck, queuePendingAction, signUpWithEmail, loginWithEmail, resetPassword, sendUserEmailVerification } from './firebase';
 import { isDatabaseSeeded, seedUserData, getOfflineMockData, purgeUserData } from './seeder';
 import { Student, Grade, Attendance, Homework, Lesson, Appointment, Message, Invoice, ApeeParent, ApeeExpense, ApeeSettings, Announcement, AnnouncementCategory, ApeeActivityLog, ApeeOtherRevenue, PendingAction } from './types';
 
@@ -25,8 +25,10 @@ import {
   resetApeeData,
   saveApeeLog,
   getApeeShortName,
-  DEFAULT_SETTINGS
+  DEFAULT_SETTINGS,
+  syncAllApeeDataToFirestore
 } from './utils/apeeDb';
+import { syncLocalSchoolsToFirestore, cleanPayload } from './utils/schoolSync';
 
 import ApeeDashboard from './components/apee/ApeeDashboard';
 import ApeeForm from './components/apee/ApeeForm';
@@ -104,7 +106,8 @@ import {
   Sun,
   Moon,
   Users,
-  HelpCircle
+  HelpCircle,
+  Mail
 } from 'lucide-react';
 
 type TabType = 
@@ -397,6 +400,26 @@ export default function App() {
   const [showSuperAdmin, setShowSuperAdmin] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [resendingEmailVerification, setResendingEmailVerification] = useState(false);
+  const [emailVerificationNotice, setEmailVerificationNotice] = useState<string | null>(null);
+
+  const handleResendVerificationEmail = async () => {
+    setResendingEmailVerification(true);
+    setEmailVerificationNotice(null);
+    try {
+      const success = await sendUserEmailVerification(auth.currentUser || user);
+      if (success) {
+        setEmailVerificationNotice("✅ Un nouvel e-mail de confirmation avec un lien de vérification a été transmis à " + (user?.email || emailInput || "votre adresse") + ". Veuillez vérifier votre boîte de réception et vos courriels indésirables.");
+      } else {
+        setEmailVerificationNotice("ℹ️ Un e-mail de confirmation est déjà en cours d'envoi ou votre adresse e-mail est déjà vérifiée.");
+      }
+    } catch (err: any) {
+      console.error("Error resending email verification:", err);
+      setEmailVerificationNotice("⚠️ Impossible d'envoyer l'e-mail de confirmation. " + (err?.message || "Veuillez réessayer plus tard."));
+    } finally {
+      setResendingEmailVerification(false);
+    }
+  };
 
 
   // Establishment and role-based access state (with persistence)
@@ -569,7 +592,8 @@ export default function App() {
           if (action.type === 'DELETE') {
             await deleteDoc(doc(db, action.collection, action.targetId));
           } else {
-            await setDoc(doc(db, action.collection, action.targetId), action.data);
+            const cleaned = cleanPayload(action.data || {});
+            await setDoc(doc(db, action.collection, action.targetId), cleaned, { merge: true });
           }
           successCount++;
         } catch (err: any) {
@@ -612,6 +636,12 @@ export default function App() {
       if (successCount > 0) {
         console.log(`[Pasma-sys Sync] Synchronisé avec succès ${successCount} modification(s) !`);
         window.dispatchEvent(new CustomEvent('pasma_sync_success', { detail: { count: successCount } }));
+        // Also trigger full background sync of local schools and APEE cache to ensure complete sync
+        syncLocalSchoolsToFirestore().catch(e => console.warn('Sync schools failed:', e));
+        const activeId = selectedSchoolId || auth.currentUser?.uid || localStorage.getItem('portal_selected_school_id');
+        if (activeId) {
+          syncAllApeeDataToFirestore(activeId).catch(e => console.warn('Sync APEE failed:', e));
+        }
       }
 
       if (remaining.length > 0) {
@@ -1363,12 +1393,21 @@ export default function App() {
               onSnapshot(
                 query(collection(db, 'students'), where('parentId', '==', userId)),
                 (snapshot) => {
-                  const list = snapshot.docs.map(doc => doc.data() as Student);
-                  setStudents(list);
-                  if (list.length > 0) {
-                    setSelectedStudentId(prev => prev || list[0]?.id || '');
+                  const dbList = snapshot.docs.map(doc => doc.data() as Student);
+                  let localList: Student[] = [];
+                  try {
+                    const c = localStorage.getItem(`pasma_students_${userId}`);
+                    if (c) localList = JSON.parse(c);
+                  } catch (e) {}
+                  const map = new Map<string, Student>();
+                  dbList.forEach(item => { if (item?.id) map.set(item.id, item); });
+                  localList.forEach(item => { if (item?.id && !map.has(item.id)) map.set(item.id, item); });
+                  const merged = Array.from(map.values());
+                  setStudents(merged);
+                  if (merged.length > 0) {
+                    setSelectedStudentId(prev => prev || merged[0]?.id || '');
                   }
-                  localStorage.setItem(`pasma_students_${userId}`, JSON.stringify(list));
+                  localStorage.setItem(`pasma_students_${userId}`, JSON.stringify(merged));
                 },
                 (err) => {
                   console.warn("Real-time students listener failed (offline fallback active):", err);
@@ -1380,9 +1419,18 @@ export default function App() {
               onSnapshot(
                 query(collection(db, 'grades'), where('parentId', '==', userId)),
                 (snapshot) => {
-                  const list = snapshot.docs.map(doc => doc.data() as Grade);
-                  setGrades(list);
-                  localStorage.setItem(`pasma_grades_${userId}`, JSON.stringify(list));
+                  const dbList = snapshot.docs.map(doc => doc.data() as Grade);
+                  let localList: Grade[] = [];
+                  try {
+                    const c = localStorage.getItem(`pasma_grades_${userId}`);
+                    if (c) localList = JSON.parse(c);
+                  } catch (e) {}
+                  const map = new Map<string, Grade>();
+                  dbList.forEach(item => { if (item?.id) map.set(item.id, item); });
+                  localList.forEach(item => { if (item?.id && !map.has(item.id)) map.set(item.id, item); });
+                  const merged = Array.from(map.values());
+                  setGrades(merged);
+                  localStorage.setItem(`pasma_grades_${userId}`, JSON.stringify(merged));
                 },
                 (err) => {
                   console.warn("Real-time grades listener failed:", err);
@@ -1394,9 +1442,18 @@ export default function App() {
               onSnapshot(
                 query(collection(db, 'attendance'), where('parentId', '==', userId)),
                 (snapshot) => {
-                  const list = snapshot.docs.map(doc => doc.data() as Attendance);
-                  setAttendanceLogs(list);
-                  localStorage.setItem(`pasma_attendance_${userId}`, JSON.stringify(list));
+                  const dbList = snapshot.docs.map(doc => doc.data() as Attendance);
+                  let localList: Attendance[] = [];
+                  try {
+                    const c = localStorage.getItem(`pasma_attendance_${userId}`);
+                    if (c) localList = JSON.parse(c);
+                  } catch (e) {}
+                  const map = new Map<string, Attendance>();
+                  dbList.forEach(item => { if (item?.id) map.set(item.id, item); });
+                  localList.forEach(item => { if (item?.id && !map.has(item.id)) map.set(item.id, item); });
+                  const merged = Array.from(map.values());
+                  setAttendanceLogs(merged);
+                  localStorage.setItem(`pasma_attendance_${userId}`, JSON.stringify(merged));
                 },
                 (err) => {
                   console.warn("Real-time attendance listener failed:", err);
@@ -1408,9 +1465,18 @@ export default function App() {
               onSnapshot(
                 query(collection(db, 'homeworks'), where('parentId', '==', userId)),
                 (snapshot) => {
-                  const list = snapshot.docs.map(doc => doc.data() as Homework);
-                  setHomeworks(list);
-                  localStorage.setItem(`pasma_homeworks_${userId}`, JSON.stringify(list));
+                  const dbList = snapshot.docs.map(doc => doc.data() as Homework);
+                  let localList: Homework[] = [];
+                  try {
+                    const c = localStorage.getItem(`pasma_homeworks_${userId}`);
+                    if (c) localList = JSON.parse(c);
+                  } catch (e) {}
+                  const map = new Map<string, Homework>();
+                  dbList.forEach(item => { if (item?.id) map.set(item.id, item); });
+                  localList.forEach(item => { if (item?.id && !map.has(item.id)) map.set(item.id, item); });
+                  const merged = Array.from(map.values());
+                  setHomeworks(merged);
+                  localStorage.setItem(`pasma_homeworks_${userId}`, JSON.stringify(merged));
                 },
                 (err) => {
                   console.warn("Real-time homeworks listener failed:", err);
@@ -1422,9 +1488,18 @@ export default function App() {
               onSnapshot(
                 query(collection(db, 'appointments'), where('parentId', '==', userId)),
                 (snapshot) => {
-                  const list = snapshot.docs.map(doc => doc.data() as Appointment);
-                  setAppointments(list);
-                  localStorage.setItem(`pasma_appointments_${userId}`, JSON.stringify(list));
+                  const dbList = snapshot.docs.map(doc => doc.data() as Appointment);
+                  let localList: Appointment[] = [];
+                  try {
+                    const c = localStorage.getItem(`pasma_appointments_${userId}`);
+                    if (c) localList = JSON.parse(c);
+                  } catch (e) {}
+                  const map = new Map<string, Appointment>();
+                  dbList.forEach(item => { if (item?.id) map.set(item.id, item); });
+                  localList.forEach(item => { if (item?.id && !map.has(item.id)) map.set(item.id, item); });
+                  const merged = Array.from(map.values());
+                  setAppointments(merged);
+                  localStorage.setItem(`pasma_appointments_${userId}`, JSON.stringify(merged));
                 },
                 (err) => {
                   console.warn("Real-time appointments listener failed:", err);
@@ -1436,9 +1511,18 @@ export default function App() {
               onSnapshot(
                 query(collection(db, 'messages'), where('parentId', '==', userId)),
                 (snapshot) => {
-                  const list = snapshot.docs.map(doc => doc.data() as Message);
-                  setMessages(list);
-                  localStorage.setItem(`pasma_messages_${userId}`, JSON.stringify(list));
+                  const dbList = snapshot.docs.map(doc => doc.data() as Message);
+                  let localList: Message[] = [];
+                  try {
+                    const c = localStorage.getItem(`pasma_messages_${userId}`);
+                    if (c) localList = JSON.parse(c);
+                  } catch (e) {}
+                  const map = new Map<string, Message>();
+                  dbList.forEach(item => { if (item?.id) map.set(item.id, item); });
+                  localList.forEach(item => { if (item?.id && !map.has(item.id)) map.set(item.id, item); });
+                  const merged = Array.from(map.values());
+                  setMessages(merged);
+                  localStorage.setItem(`pasma_messages_${userId}`, JSON.stringify(merged));
                 },
                 (err) => {
                   console.warn("Real-time messages listener failed:", err);
@@ -1450,9 +1534,18 @@ export default function App() {
               onSnapshot(
                 query(collection(db, 'announcements'), where('parentId', '==', userId)),
                 (snapshot) => {
-                  const list = snapshot.docs.map(doc => doc.data() as Announcement);
-                  setAnnouncements(list);
-                  localStorage.setItem(`pasma_announcements_${userId}`, JSON.stringify(list));
+                  const dbList = snapshot.docs.map(doc => doc.data() as Announcement);
+                  let localList: Announcement[] = [];
+                  try {
+                    const c = localStorage.getItem(`pasma_announcements_${userId}`);
+                    if (c) localList = JSON.parse(c);
+                  } catch (e) {}
+                  const map = new Map<string, Announcement>();
+                  dbList.forEach(item => { if (item?.id) map.set(item.id, item); });
+                  localList.forEach(item => { if (item?.id && !map.has(item.id)) map.set(item.id, item); });
+                  const merged = Array.from(map.values());
+                  setAnnouncements(merged);
+                  localStorage.setItem(`pasma_announcements_${userId}`, JSON.stringify(merged));
                 },
                 (err) => {
                   console.warn("Real-time announcements listener failed:", err);
@@ -1464,9 +1557,18 @@ export default function App() {
               onSnapshot(
                 query(collection(db, 'lessons'), where('parentId', '==', userId)),
                 (snapshot) => {
-                  const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Lesson);
-                  setLessons(list);
-                  localStorage.setItem(`pasma_lessons_${userId}`, JSON.stringify(list));
+                  const dbList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Lesson);
+                  let localList: Lesson[] = [];
+                  try {
+                    const c = localStorage.getItem(`pasma_lessons_${userId}`);
+                    if (c) localList = JSON.parse(c);
+                  } catch (e) {}
+                  const map = new Map<string, Lesson>();
+                  dbList.forEach(item => { if (item?.id) map.set(item.id, item); });
+                  localList.forEach(item => { if (item?.id && !map.has(item.id)) map.set(item.id, item); });
+                  const merged = Array.from(map.values());
+                  setLessons(merged);
+                  localStorage.setItem(`pasma_lessons_${userId}`, JSON.stringify(merged));
                 },
                 (err) => {
                   console.warn("Real-time lessons listener failed:", err);
@@ -2646,7 +2748,7 @@ export default function App() {
         try {
           const userCred = await signUpWithEmail(email, passwordInput);
           if (userCred) {
-            setAuthSuccessMessage("Votre compte a été créé avec succès et vous êtes maintenant connecté !");
+            setAuthSuccessMessage("Votre compte a été créé avec succès ! Un e-mail de confirmation contenant un lien de vérification a été transmis à l'adresse " + email + ". Veuillez vérifier votre boîte de réception.");
             setShowMainLogin(false);
           }
         } catch (err: any) {
@@ -2920,6 +3022,9 @@ export default function App() {
             <div className="w-full max-w-4xl space-y-4">
               <PortalOnboarding
                 currentUserUid={user?.uid || null}
+                currentUserEmail={user?.email || null}
+                onRequestLogin={() => setShowMainLogin(true)}
+                onRequestSuperAdmin={() => setShowSuperAdmin(true)}
                 onSelectSchool={handleSelectSchool}
                 onAutoLoginGuest={async () => {
                   const guestUser = await loginAnonymously();
@@ -2928,13 +3033,17 @@ export default function App() {
                 }}
               />
 
-              {/* Discrete, elegant super-admin entrance bar */}
-              {isPrimarySuperAdmin && (
+              {/* Discrete, elegant portal super-admin entrance bar */}
+              {showSuperAdminButton && (
                 <div className="flex flex-col sm:flex-row justify-between items-center bg-slate-950 text-slate-300 px-6 py-3.5 rounded-2xl border border-slate-800 shadow-md gap-3 mt-4">
                   <div className="flex items-center gap-2">
                     <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
                     <p className="text-[11px] font-semibold text-slate-200">
-                      Compte Administrateur Principal : <strong className="text-white">jacquesbene301@gmail.com</strong>
+                      {isPrimarySuperAdmin ? (
+                        <>Compte Super-Admin Principal : <strong className="text-white">jacquesbene301@gmail.com</strong></>
+                      ) : (
+                        <>Compte Super-Admin Adjoint : <strong className="text-white">{user?.email}</strong></>
+                      )}
                     </p>
                   </div>
                   <button
@@ -2942,7 +3051,7 @@ export default function App() {
                     onClick={() => setShowSuperAdmin(true)}
                     className="px-4 py-1.5 bg-amber-400 hover:bg-amber-500 text-slate-955 text-xs font-black rounded-lg transition shrink-0 cursor-pointer shadow-xs"
                   >
-                    ⚙️ Ouvrir l'Espace Super-Admin (Jacques)
+                    ⚙️ Ouvrir le Portail d'Administration Principal ({isPrimarySuperAdmin ? 'Principal' : 'Adjoint'})
                   </button>
                 </div>
               )}
@@ -3170,6 +3279,33 @@ export default function App() {
                 )}
               </div>
             </header>
+
+            {/* Email Verification Alert Banner */}
+            {user && !user.isAnonymous && user.email && !user.emailVerified && (
+              <div className="bg-amber-500/10 dark:bg-amber-500/20 border-b border-amber-500/20 px-4 py-2.5 text-xs text-amber-900 dark:text-amber-200 flex flex-wrap items-center justify-between gap-2 shadow-2xs animate-fade-in">
+                <div className="flex items-center gap-2">
+                  <Mail className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 animate-bounce" />
+                  <span>
+                    <strong>Confirmation de l'adresse e-mail requise :</strong> Un e-mail avec un lien de vérification a été transmis à <u>{user.email}</u>. Veuillez valider votre e-mail pour sécuriser votre compte.
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {emailVerificationNotice && (
+                    <span className="text-[10px] font-bold text-amber-800 dark:text-amber-300">
+                      {emailVerificationNotice}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleResendVerificationEmail}
+                    disabled={resendingEmailVerification}
+                    className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-extrabold rounded-lg text-[10.5px] transition cursor-pointer shadow-2xs disabled:opacity-50 shrink-0"
+                  >
+                    {resendingEmailVerification ? "Envoi..." : "Renvoyer l'e-mail de confirmation"}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Global Loader or Seeding Alert */}
             {dataLoading || seeding ? (
