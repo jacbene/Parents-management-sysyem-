@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Homework, Student, HomeworkStatus } from '../types';
 import { BookOpen, CheckCircle, Circle, Clock, CheckCircle2, AlertCircle, Plus, Trash2, Lock, Unlock, CheckSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -33,6 +33,16 @@ export default function HomeworkBoard({
   
   // Add Homework states
   const [showAddForm, setShowAddForm] = useState(false);
+
+  useEffect(() => {
+    const handleQuickAction = (e: any) => {
+      if (e.detail?.actionKey === 'add_homework') {
+        setShowAddForm(true);
+      }
+    };
+    window.addEventListener('pasma_trigger_quick_action', handleQuickAction);
+    return () => window.removeEventListener('pasma_trigger_quick_action', handleQuickAction);
+  }, []);
   const [subject, setSubject] = useState('Mathématiques');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');

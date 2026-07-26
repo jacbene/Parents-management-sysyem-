@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../../firebase';
+import { db, auth, loginAnonymously } from '../../firebase';
 import { 
   collection, 
   getDocs, 
@@ -24,7 +24,9 @@ import {
   Database,
   Chrome,
   Terminal,
-  HelpCircle
+  HelpCircle,
+  WifiOff,
+  CheckCircle2
 } from 'lucide-react';
 
 export interface AuthLog {
@@ -46,30 +48,51 @@ export interface AuthLog {
 export default function AuthLogsViewer() {
   const [logs, setLogs] = useState<AuthLog[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isClearing, setIsClearing] = useState(false);
 
   const fetchLogs = async () => {
     setLoading(true);
-    setError(null);
+    setNotice(null);
     let firestoreLogs: AuthLog[] = [];
+    let isFromFirestore = false;
+
+    // Ensure background authentication if unauthenticated
+    if (!auth.currentUser) {
+      try {
+        await loginAnonymously();
+      } catch (authErr) {
+        console.warn("[AuthLogsViewer] Background auth check:", authErr);
+      }
+    }
     
     // 1. Fetch from Firestore if online/possible
     try {
       const logsRef = collection(db, 'logs_auth');
-      const q = query(logsRef, orderBy('timestamp', 'desc'), limit(150));
-      const querySnapshot = await getDocs(q);
-      querySnapshot.forEach((docSnap) => {
-        firestoreLogs.push({
-          id: docSnap.id,
-          ...docSnap.data()
-        } as AuthLog);
-      });
+      let querySnapshot;
+      try {
+        const q = query(logsRef, orderBy('timestamp', 'desc'), limit(150));
+        querySnapshot = await getDocs(q);
+      } catch (qErr) {
+        console.warn("[AuthLogsViewer] orderBy query failed, attempting simple limit query fallback:", qErr);
+        const fallbackQ = query(logsRef, limit(150));
+        querySnapshot = await getDocs(fallbackQ);
+      }
+
+      if (querySnapshot) {
+        querySnapshot.forEach((docSnap) => {
+          firestoreLogs.push({
+            id: docSnap.id,
+            ...docSnap.data()
+          } as AuthLog);
+        });
+        isFromFirestore = true;
+      }
     } catch (fsErr: any) {
-      console.warn("Could not fetch auth logs from Firestore:", fsErr);
-      setError("Impossible de charger les logs depuis Firestore (Problème de permissions ou réseau). Affichage du cache local.");
+      console.warn("Could not fetch auth logs from Firestore (using local storage cache):", fsErr);
+      isFromFirestore = false;
     }
 
     // 2. Load and merge local-only logs from localStorage
@@ -102,6 +125,15 @@ export default function AuthLogsViewer() {
     );
 
     setLogs(mergedList);
+
+    if (!isFromFirestore && mergedList.length > 0) {
+      setNotice("Mode hors-ligne / Cache local actif : Affichage des rapports sauvegardés sur cet appareil.");
+    } else if (!isFromFirestore && mergedList.length === 0) {
+      setNotice("Accès réseau Firestore en cours de rétablissement. Aucun rapport temporaire en cache.");
+    } else {
+      setNotice(null);
+    }
+
     setLoading(false);
   };
 
@@ -225,11 +257,11 @@ export default function AuthLogsViewer() {
         />
       </div>
 
-      {/* Error or Alert banner */}
-      {error && (
-        <div className="bg-slate-900 border border-slate-800 text-slate-400 p-3 rounded-xl text-[11px] font-mono flex items-center gap-2">
-          <Database className="h-4 w-4 text-amber-500 shrink-0" />
-          <span>{error}</span>
+      {/* Informational Sync / Offline Cache Notice */}
+      {notice && (
+        <div className="bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 p-3 rounded-xl text-xs font-medium flex items-center gap-2.5 shadow-3xs">
+          <WifiOff className="h-4 w-4 text-indigo-500 shrink-0" />
+          <span>{notice}</span>
         </div>
       )}
 

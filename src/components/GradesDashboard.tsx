@@ -47,6 +47,13 @@ export default function GradesDashboard({
   
   React.useEffect(() => {
     setIsMounted(true);
+    const handleQuickAction = (e: any) => {
+      if (e.detail?.actionKey === 'add_grade') {
+        setShowAddForm(true);
+      }
+    };
+    window.addEventListener('pasma_trigger_quick_action', handleQuickAction);
+    return () => window.removeEventListener('pasma_trigger_quick_action', handleQuickAction);
   }, []);
   
   // Add Grade states

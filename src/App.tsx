@@ -63,6 +63,7 @@ import InstallPWA from './components/InstallPWA';
 import SuperAdminDashboard from './components/SuperAdminDashboard';
 import SyncIndicator from './components/SyncIndicator';
 import SchoolHelpCenter from './components/SchoolHelpCenter';
+import QuickActionsMenu from './components/QuickActionsMenu';
 // Reserved for future integration:
 // import LibraryDashboard from './components/LibraryDashboard';
 
@@ -581,6 +582,14 @@ export default function App() {
         return;
       }
 
+      if (!auth.currentUser) {
+        try {
+          await loginAnonymously();
+        } catch (e) {
+          console.warn("Background auto-login note during sync:", e);
+        }
+      }
+
       window.dispatchEvent(new CustomEvent('pasma_sync_started', { detail: { count: actions.length } }));
 
       let successCount = 0;
@@ -597,7 +606,7 @@ export default function App() {
           }
           successCount++;
         } catch (err: any) {
-          console.error("Failed syncing item:", action, err);
+          console.warn("Notice syncing item:", action?.id, err?.message || err);
 
           const errMsg = String(err?.message || err || '').toLowerCase();
           const errCode = String(err?.code || '').toLowerCase();
@@ -4179,6 +4188,13 @@ export default function App() {
                     <span>© {new Date().getFullYear()} {t('app.name')} ENT Portal</span>
                   </div>
                 </div>
+
+                {/* Floating Quick Actions Menu */}
+                <QuickActionsMenu 
+                  activeTab={activeTab} 
+                  onNavigateTab={setActiveTab} 
+                  portalUserRole={portalUserRole} 
+                />
 
               </div>
             )}

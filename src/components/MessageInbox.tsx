@@ -68,6 +68,21 @@ export default function MessageInbox({
   // Selected thread identification
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
 
+  useEffect(() => {
+    const handleQuickAction = (e: any) => {
+      if (e.detail?.actionKey === 'compose_message') {
+        setMobileView('chat');
+        // Auto focus text input if available
+        setTimeout(() => {
+          const inputEl = document.querySelector('textarea, input[placeholder*="message"]') as HTMLElement;
+          inputEl?.focus();
+        }, 150);
+      }
+    };
+    window.addEventListener('pasma_trigger_quick_action', handleQuickAction);
+    return () => window.removeEventListener('pasma_trigger_quick_action', handleQuickAction);
+  }, []);
+
   // Mobile responsive layout view toggle (list vs chat)
   const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
 
