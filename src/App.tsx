@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, query, where, getDocs, doc, setDoc, deleteDoc, writeBatch, getDoc, onSnapshot } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
-import { auth, loginWithGoogle, logout, db, handleFirestoreError, OperationType, loginAnonymously, goOffline, goOnline, isOffline as isOfflineCheck, queuePendingAction, signUpWithEmail, loginWithEmail, resetPassword, sendUserEmailVerification } from './firebase';
+import { auth, loginWithGoogle, logout, db, handleFirestoreError, OperationType, loginAnonymously, goOffline, goOnline, isOffline as isOfflineCheck, queuePendingAction, signUpWithEmail, loginWithEmail, resetPassword, sendUserEmailVerification, markEmailAsVerifiedLocally, isEmailVerifiedLocally, isUserEmailVerified } from './firebase';
 import { isDatabaseSeeded, seedUserData, getOfflineMockData, purgeUserData } from './seeder';
 import { Student, Grade, Attendance, Homework, Lesson, Appointment, Message, Invoice, ApeeParent, ApeeExpense, ApeeSettings, Announcement, AnnouncementCategory, ApeeActivityLog, ApeeOtherRevenue, PendingAction } from './types';
 
@@ -28,7 +28,7 @@ import {
   DEFAULT_SETTINGS,
   syncAllApeeDataToFirestore
 } from './utils/apeeDb';
-import { syncLocalSchoolsToFirestore, cleanPayload } from './utils/schoolSync';
+import { syncLocalSchoolsToFirestore, cleanPayload, isSchoolDeleted, fetchAndSyncDeletedSchoolIds, sanitizeFirestoreId } from './utils/schoolSync';
 
 import ApeeDashboard from './components/apee/ApeeDashboard';
 import ApeeForm from './components/apee/ApeeForm';
@@ -45,6 +45,7 @@ import DrivePortal from './components/DrivePortal';
 import SheetsPortal from './components/SheetsPortal';
 import FirebaseConsole from './components/FirebaseConsole';
 import SyncToastContainer from './components/SyncToastContainer';
+import ForgotPasswordModal from './components/ForgotPasswordModal';
 
 // Components
 import StudentCard from './components/StudentCard';
@@ -401,8 +402,41 @@ export default function App() {
   const [showSuperAdmin, setShowSuperAdmin] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
   const [resendingEmailVerification, setResendingEmailVerification] = useState(false);
+  const [isCheckingVerification, setIsCheckingVerification] = useState(false);
+  const [dismissedVerificationNotice, setDismissedVerificationNotice] = useState(false);
   const [emailVerificationNotice, setEmailVerificationNotice] = useState<string | null>(null);
+
+  const handleCheckVerificationStatus = async () => {
+    setIsCheckingVerification(true);
+    setEmailVerificationNotice(null);
+    try {
+      if (auth.currentUser) {
+        await auth.currentUser.reload();
+        if (auth.currentUser.emailVerified) {
+          if (auth.currentUser.email) markEmailAsVerifiedLocally(auth.currentUser.email);
+          setUser({ ...auth.currentUser });
+          setEmailVerificationNotice("✅ Votre adresse e-mail a été vérifiée et confirmée avec succès !");
+          setIsCheckingVerification(false);
+          return;
+        }
+      }
+
+      if (user?.email && isEmailVerifiedLocally(user.email)) {
+        setEmailVerificationNotice("✅ Votre adresse e-mail est confirmée.");
+        setIsCheckingVerification(false);
+        return;
+      }
+
+      setEmailVerificationNotice("ℹ️ Le statut n'est pas encore mis à jour. Assurez-vous d'avoir cliqué sur le lien reçu par e-mail.");
+    } catch (err: any) {
+      console.warn("Error checking verification status:", err);
+      setEmailVerificationNotice("⚠️ Impossible de vérifier le statut auprès du serveur.");
+    } finally {
+      setIsCheckingVerification(false);
+    }
+  };
 
   const handleResendVerificationEmail = async () => {
     setResendingEmailVerification(true);
@@ -424,9 +458,26 @@ export default function App() {
 
 
   // Establishment and role-based access state (with persistence)
-  const [selectedSchoolId, setSelectedSchoolId] = useState<string | null>(() => localStorage.getItem('portal_selected_school_id'));
+  const [selectedSchoolId, setSelectedSchoolId] = useState<string | null>(() => {
+    const saved = localStorage.getItem('portal_selected_school_id');
+    if (saved && isSchoolDeleted(saved)) {
+      localStorage.removeItem('portal_selected_school_id');
+      sessionStorage.removeItem('portal_selected_school_id');
+      localStorage.removeItem('portal_user_role');
+      localStorage.removeItem('portal_parent_details');
+      localStorage.removeItem('portal_teacher_details');
+      localStorage.removeItem('portal_manager_details');
+      localStorage.removeItem('portal_login_timestamp');
+      return null;
+    }
+    return saved;
+  });
   const [schoolStatus, setSchoolStatus] = useState<string>('active');
-  const [portalUserRole, setPortalUserRole] = useState<'manager' | 'parent' | 'teacher' | null>(() => localStorage.getItem('portal_user_role') as 'manager' | 'parent' | 'teacher' | null);
+  const [portalUserRole, setPortalUserRole] = useState<'manager' | 'parent' | 'teacher' | null>(() => {
+    const savedSchool = localStorage.getItem('portal_selected_school_id');
+    if (!savedSchool || isSchoolDeleted(savedSchool)) return null;
+    return localStorage.getItem('portal_user_role') as 'manager' | 'parent' | 'teacher' | null;
+  });
   const [portalParentDetails, setPortalParentDetails] = useState<{ name: string; phone: string; studentSubsetNames?: string[] } | null>(() => {
     const s = localStorage.getItem('portal_parent_details');
     return s ? JSON.parse(s) : null;
@@ -447,11 +498,96 @@ export default function App() {
     const loginTime = localStorage.getItem('portal_login_timestamp');
     const isExpired = loginTime ? Date.now() - Number(loginTime) > 24 * 60 * 60 * 1000 : true;
 
-    if (schoolSelected && roleSelected && !isExpired) {
+    if (schoolSelected && !isSchoolDeleted(schoolSelected) && roleSelected && !isExpired) {
       return false; // Direct bypass to their dashboard!
     }
     return true; // Require login screen by default
   });
+
+  // 0. Listen for email verification URL params (?verified=true&email=...) and window focus
+  useEffect(() => {
+    const checkVerificationFromUrlAndFocus = async () => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const verified = params.get('verified') === 'true';
+        const emailParam = params.get('email');
+        const mode = params.get('mode');
+
+        if (verified && emailParam) {
+          const cleanEmail = decodeURIComponent(emailParam).toLowerCase().trim();
+          markEmailAsVerifiedLocally(cleanEmail);
+          
+          if (auth.currentUser) {
+            try {
+              await auth.currentUser.reload();
+            } catch (e) {
+              console.warn("User reload notice:", e);
+            }
+            setUser({ ...auth.currentUser });
+          }
+
+          setEmailVerificationNotice(`✅ Votre adresse e-mail (${cleanEmail}) a été confirmée avec succès !`);
+          
+          // Clean URL params
+          const cleanUrl = window.location.origin + window.location.pathname;
+          window.history.replaceState({}, document.title, cleanUrl);
+        } else if (mode === 'verifyEmail' || mode === 'signIn') {
+          if (auth.currentUser) {
+            try {
+              await auth.currentUser.reload();
+              if (auth.currentUser.emailVerified && auth.currentUser.email) {
+                markEmailAsVerifiedLocally(auth.currentUser.email);
+                setUser({ ...auth.currentUser });
+                setEmailVerificationNotice(`✅ Votre adresse e-mail a été vérifiée avec succès !`);
+              }
+            } catch (e) {
+              console.warn("User reload failed on verifyEmail mode:", e);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Error parsing verification URL params:", err);
+      }
+    };
+
+    checkVerificationFromUrlAndFocus();
+
+    const handleWindowFocus = () => {
+      if (auth.currentUser && !auth.currentUser.emailVerified) {
+        auth.currentUser.reload().then(() => {
+          if (auth.currentUser?.emailVerified && auth.currentUser.email) {
+            markEmailAsVerifiedLocally(auth.currentUser.email);
+            setUser({ ...auth.currentUser });
+            setEmailVerificationNotice("✅ Adresse e-mail confirmée !");
+          }
+        }).catch((err) => console.warn("Focus auth reload notice:", err));
+      }
+    };
+
+    window.addEventListener('focus', handleWindowFocus);
+    return () => window.removeEventListener('focus', handleWindowFocus);
+  }, []);
+
+  // Verify selected school validity on startup against central deleted registry
+  useEffect(() => {
+    fetchAndSyncDeletedSchoolIds().then((deletedSet) => {
+      const saved = localStorage.getItem('portal_selected_school_id');
+      if (saved && (deletedSet.has(saved) || deletedSet.has(sanitizeFirestoreId(saved)))) {
+        console.warn(`[App] Active school ${saved} was deleted. Clearing portal_selected_school_id and resetting to school selection view.`);
+        localStorage.removeItem('portal_selected_school_id');
+        sessionStorage.removeItem('portal_selected_school_id');
+        localStorage.removeItem('portal_user_role');
+        localStorage.removeItem('portal_parent_details');
+        localStorage.removeItem('portal_teacher_details');
+        localStorage.removeItem('portal_manager_details');
+        localStorage.removeItem('portal_login_timestamp');
+        sessionStorage.removeItem('portal_user_role');
+        setSelectedSchoolId(null);
+        setPortalUserRole(null);
+        setShowMainLogin(true);
+      }
+    }).catch(err => console.warn('[App] Error syncing deleted school IDs:', err));
+  }, []);
 
   const [sessionExpired, setSessionExpired] = useState(false);
   const [deviceChanged, setDeviceChanged] = useState(false);
@@ -1137,6 +1273,16 @@ export default function App() {
       }
       
       if (currentUser && currentUser.email) {
+        try {
+          await currentUser.reload();
+        } catch (reloadErr) {
+          console.warn("Notice reloading currentUser in onAuthStateChanged:", reloadErr);
+        }
+
+        if (currentUser.emailVerified) {
+          markEmailAsVerifiedLocally(currentUser.email);
+        }
+
         const email = currentUser.email.toLowerCase().trim();
         const isPrimary = email === 'jacquesbene301@gmail.com';
         
@@ -1303,12 +1449,27 @@ export default function App() {
 
     const unsubscribers: (() => void)[] = [];
 
-    // Real-time school status subscription to enforce suspension blocks in real-time
+    // Real-time school status subscription to enforce suspension blocks & handle deletions in real-time
     if (selectedSchoolId) {
       try {
         const unsubSchool = onSnapshot(doc(db, 'establishments', selectedSchoolId), (snapshot) => {
           if (snapshot.exists()) {
             const data = snapshot.data();
+            if (data.isDeleted) {
+              console.warn(`[App] Active school ${selectedSchoolId} was marked deleted. Resetting state to school selection view.`);
+              localStorage.removeItem('portal_selected_school_id');
+              sessionStorage.removeItem('portal_selected_school_id');
+              localStorage.removeItem('portal_user_role');
+              localStorage.removeItem('portal_parent_details');
+              localStorage.removeItem('portal_teacher_details');
+              localStorage.removeItem('portal_manager_details');
+              localStorage.removeItem('portal_login_timestamp');
+              sessionStorage.removeItem('portal_user_role');
+              setSelectedSchoolId(null);
+              setPortalUserRole(null);
+              setShowMainLogin(true);
+              return;
+            }
             setSchoolStatus(data.status || 'active');
           }
         }, (err) => {
@@ -2708,76 +2869,21 @@ export default function App() {
     
     setSubmittingEmailLogin(true);
     try {
-      if (authMode === 'login' && (email.toLowerCase().trim() === 'jacquesbene301@gmail.com' || email.toLowerCase().trim() === 'adjoint@pasma.sys')) {
-        const targetEmail = email.toLowerCase().trim();
-        const simulatedUser = {
-          uid: targetEmail === 'jacquesbene301@gmail.com' ? 'sys_admin_jacques' : 'sys_admin_adjoint',
-          email: targetEmail,
-          displayName: targetEmail === 'jacquesbene301@gmail.com' ? "Jacques Béné (Super-Admin)" : "Alain Ndzie (Adjoint)",
-          photoURL: '',
-          isAnonymous: false
-        };
-        try {
-          await loginAnonymously(); // ensure background token is active for Firestore
-        } catch (e2) {
-          console.error("Could not sign in shared background sandbox:", e2);
-        }
-        localStorage.setItem('pasma_simulated_user', JSON.stringify(simulatedUser));
-        setUser(simulatedUser as any);
-        setShowSuperAdmin(true);
-        setShowMainLogin(false);
-        setSubmittingEmailLogin(false);
-        return;
-      }
-
       if (authMode === 'login') {
-        try {
-          const userCred = await loginWithEmail(email, passwordInput);
-          if (userCred) {
-            setShowMainLogin(false);
+        const userCred = await loginWithEmail(email, passwordInput);
+        if (userCred) {
+          if (email.toLowerCase().trim() === 'jacquesbene301@gmail.com') {
+            setShowSuperAdmin(true);
           }
-        } catch (err: any) {
-          console.warn("Standard Firebase login failed. Activating secure local simulation fallback:", err);
-          const simulatedUser = {
-            uid: 'sim_' + email.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase().slice(0, 30),
-            email: email,
-            displayName: email.split('@')[0],
-            photoURL: '',
-            isAnonymous: false
-          };
-          try {
-            await loginAnonymously(); // ensure background token is active for Firestore
-          } catch (e2) {
-            console.error("Could not sign in shared background sandbox:", e2);
-          }
-          localStorage.setItem('pasma_simulated_user', JSON.stringify(simulatedUser));
-          setUser(simulatedUser as any);
           setShowMainLogin(false);
         }
       } else if (authMode === 'signup') {
-        try {
-          const userCred = await signUpWithEmail(email, passwordInput);
-          if (userCred) {
-            setAuthSuccessMessage("Votre compte a été créé avec succès ! Un e-mail de confirmation contenant un lien de vérification a été transmis à l'adresse " + email + ". Veuillez vérifier votre boîte de réception.");
-            setShowMainLogin(false);
+        const userCred = await signUpWithEmail(email, passwordInput);
+        if (userCred) {
+          if (email.toLowerCase().trim() === 'jacquesbene301@gmail.com') {
+            setShowSuperAdmin(true);
           }
-        } catch (err: any) {
-          console.warn("Standard Firebase signup failed. Activating secure local simulation fallback:", err);
-          const simulatedUser = {
-            uid: 'sim_' + email.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase().slice(0, 30),
-            email: email,
-            displayName: email.split('@')[0],
-            photoURL: '',
-            isAnonymous: false
-          };
-          try {
-            await loginAnonymously(); // ensure background token is active for Firestore
-          } catch (e2) {
-            console.error("Could not sign in shared background sandbox:", e2);
-          }
-          localStorage.setItem('pasma_simulated_user', JSON.stringify(simulatedUser));
-          setUser(simulatedUser as any);
-          setAuthSuccessMessage("Votre compte de test a été initialisé en toute sécurité !");
+          setAuthSuccessMessage("Votre compte a été créé avec succès dans Firebase Auth ! Un e-mail de confirmation contenant un lien de vérification a été transmis à l'adresse " + email + ". Veuillez vérifier votre boîte de réception.");
           setShowMainLogin(false);
         }
       } else if (authMode === 'forgot') {
@@ -2786,7 +2892,7 @@ export default function App() {
       }
     } catch (err: any) {
       console.error("Firebase auth error details:", err);
-      const errorMessage = err?.code ? mapAuthErrorToFrench(err.code) : (err?.message || "Une erreur inattendue est survenue.");
+      const errorMessage = err?.code ? mapAuthErrorToFrench(err.code) : (err?.message || "Une erreur inattendue est survenue lors de l'authentification Firebase.");
       setEmailLoginError(errorMessage);
     } finally {
       setSubmittingEmailLogin(false);
@@ -2962,7 +3068,11 @@ export default function App() {
                         {authMode === 'login' && (
                           <button
                             type="button"
-                            onClick={() => { setAuthMode('forgot'); setEmailLoginError(null); setAuthSuccessMessage(null); }}
+                            onClick={() => {
+                              setShowForgotPasswordModal(true);
+                              setEmailLoginError(null);
+                              setAuthSuccessMessage(null);
+                            }}
                             className="text-[9px] font-bold text-indigo-600 hover:underline cursor-pointer"
                           >
                             Mot de passe oublié ?
@@ -3300,15 +3410,15 @@ export default function App() {
             </header>
 
             {/* Email Verification Alert Banner */}
-            {user && !user.isAnonymous && user.email && !user.emailVerified && (
+            {user && !user.isAnonymous && user.email && !isUserEmailVerified(user) && !dismissedVerificationNotice && (
               <div className="bg-amber-500/10 dark:bg-amber-500/20 border-b border-amber-500/20 px-4 py-2.5 text-xs text-amber-900 dark:text-amber-200 flex flex-wrap items-center justify-between gap-2 shadow-2xs animate-fade-in">
                 <div className="flex items-center gap-2">
                   <Mail className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 animate-bounce" />
                   <span>
-                    <strong>Confirmation de l'adresse e-mail requise :</strong> Un e-mail avec un lien de vérification a été transmis à <u>{user.email}</u>. Veuillez valider votre e-mail pour sécuriser votre compte.
+                    <strong>Confirmation de l'adresse e-mail requise :</strong> Un e-mail avec un lien de confirmation a été transmis à <u>{user.email}</u>. Veuillez cliquer sur le lien pour valider votre compte.
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center justify-end gap-2 shrink-0 flex-wrap">
                   {emailVerificationNotice && (
                     <span className="text-[10px] font-bold text-amber-800 dark:text-amber-300">
                       {emailVerificationNotice}
@@ -3316,11 +3426,34 @@ export default function App() {
                   )}
                   <button
                     type="button"
+                    onClick={handleCheckVerificationStatus}
+                    disabled={isCheckingVerification}
+                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-lg text-[10.5px] transition cursor-pointer shadow-2xs disabled:opacity-50 flex items-center gap-1 shrink-0"
+                    title="Vérifier le statut de confirmation auprès du serveur"
+                  >
+                    <RefreshCw className={`h-3 w-3 ${isCheckingVerification ? 'animate-spin' : ''}`} />
+                    {isCheckingVerification ? "Vérification..." : "Vérifier le statut"}
+                  </button>
+                  <button
+                    type="button"
                     onClick={handleResendVerificationEmail}
                     disabled={resendingEmailVerification}
-                    className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-extrabold rounded-lg text-[10.5px] transition cursor-pointer shadow-2xs disabled:opacity-50 shrink-0"
+                    className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-extrabold rounded-lg text-[10.5px] transition cursor-pointer shadow-2xs disabled:opacity-50 shrink-0"
                   >
-                    {resendingEmailVerification ? "Envoi..." : "Renvoyer l'e-mail de confirmation"}
+                    {resendingEmailVerification ? "Envoi..." : "Renvoyer l'e-mail"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDismissedVerificationNotice(true);
+                      if (user?.email) {
+                        markEmailAsVerifiedLocally(user.email);
+                      }
+                    }}
+                    className="px-2 py-1 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold rounded-lg text-[10.5px] transition cursor-pointer shrink-0"
+                    title="Masquer cette alerte"
+                  >
+                    J'ai déjà vérifié / Masquer
                   </button>
                 </div>
               </div>
@@ -4716,6 +4849,17 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Forgot Password Modal */}
+      <ForgotPasswordModal
+        isOpen={showForgotPasswordModal}
+        onClose={() => setShowForgotPasswordModal(false)}
+        initialEmail={emailInput}
+        onBackToLogin={() => {
+          setAuthMode('login');
+          setShowForgotPasswordModal(false);
+        }}
+      />
 
       {/* Dynamic Sync Toast Notification System */}
       <SyncToastContainer />

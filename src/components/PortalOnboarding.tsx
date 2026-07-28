@@ -5,7 +5,7 @@ import { logAuthError } from '../utils/authLogger';
 import { Landmark, Plus, CheckCircle, AlertOctagon, UserCheck, Phone, ShieldCheck, ArrowRight, X, Sparkles, User, HelpCircle, Mail, Smartphone, Key, RotateCw, Bell, Share2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ApeeSettings, ApeeParent, Student, Grade, Homework, Attendance, Invoice, Establishment } from '../types';
-import { syncLocalSchoolsToFirestore, saveAndSyncEstablishment, getDeletedSchoolIds } from '../utils/schoolSync';
+import { syncLocalSchoolsToFirestore, saveAndSyncEstablishment, getDeletedSchoolIds, fetchAndSyncDeletedSchoolIds, sanitizeFirestoreId } from '../utils/schoolSync';
 
 
 interface PortalOnboardingProps {
@@ -80,16 +80,20 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
   const fetchSchools = async () => {
     setLoadingSchools(true);
     try {
+      // First sync deleted school IDs from Firestore central registry
+      const deletedSet = await fetchAndSyncDeletedSchoolIds();
+
       // First sync any cached local schools into Firestore
       await syncLocalSchoolsToFirestore();
 
-      const deletedSet = getDeletedSchoolIds();
       const q = query(collection(db, 'establishments'));
       const snapshot = await getDocs(q);
       const list: Establishment[] = [];
       snapshot.forEach(docSnap => {
-        if (!deletedSet.has(docSnap.id)) {
-          list.push({ id: docSnap.id, ...docSnap.data() } as Establishment);
+        const data = docSnap.data();
+        const sanId = sanitizeFirestoreId(docSnap.id);
+        if (!data.isDeleted && !deletedSet.has(docSnap.id) && !deletedSet.has(sanId)) {
+          list.push({ id: docSnap.id, ...data } as Establishment);
         }
       });
 
@@ -99,7 +103,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
         if (localEstsStr) {
           const localEsts = JSON.parse(localEstsStr);
           for (const le of localEsts) {
-            if (le && le.id && !deletedSet.has(le.id) && !list.some(m => m.id === le.id)) {
+            if (le && le.id && !deletedSet.has(le.id) && !deletedSet.has(sanitizeFirestoreId(le.id)) && !list.some(m => m.id === le.id)) {
               list.push(le);
               // Save to Firestore so it's registered in DB
               saveAndSyncEstablishment(le).catch(err => console.warn('Sync fallback school failed:', err));
@@ -110,8 +114,8 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
         console.warn("Failed to parse local establishments:", e);
       }
 
-      // Default fallback schools so there's always an active list
-      const fallbackList: Establishment[] = [
+      // Default fallback schools so there's always an active list (if not deleted)
+      const rawFallbackList: Establishment[] = [
         {
           id: 'demo_school_ekali',
           name: "CES d'Ekali 1 - MFOU",
@@ -156,6 +160,10 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
         }
       ];
 
+      const fallbackList = rawFallbackList.filter(fb => 
+        !deletedSet.has(fb.id) && !deletedSet.has(sanitizeFirestoreId(fb.id))
+      );
+
       const isPreprod = typeof window !== 'undefined' && (
         window.location.hostname.includes('ais-pre-') || 
         window.location.hostname.includes('ais-prod-') ||
@@ -175,7 +183,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
           // Merge list with fallback fallback fallback to ensure variety
           const merged = [...list];
           fallbackList.forEach(fb => {
-            if (!merged.some(m => m.id === fb.id)) {
+            if (!deletedSet.has(fb.id) && !deletedSet.has(sanitizeFirestoreId(fb.id)) && !merged.some(m => m.id === fb.id)) {
               merged.push(fb);
             }
           });

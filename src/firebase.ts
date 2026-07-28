@@ -267,9 +267,66 @@ export async function dispatchBackendConfirmationEmail(email: string, name?: str
   }
 }
 
+export function markEmailAsVerifiedLocally(email: string) {
+  if (!email) return;
+  try {
+    const clean = email.toLowerCase().trim();
+    const existingStr = localStorage.getItem('pasma_verified_emails');
+    const existing: string[] = existingStr ? JSON.parse(existingStr) : [];
+    if (!existing.includes(clean)) {
+      existing.push(clean);
+      localStorage.setItem('pasma_verified_emails', JSON.stringify(existing));
+    }
+  } catch (e) {
+    console.warn("Error storing verified email locally:", e);
+  }
+}
+
+export function isEmailVerifiedLocally(email?: string | null): boolean {
+  if (!email) return false;
+  try {
+    const clean = email.toLowerCase().trim();
+    if (clean === 'jacquesbene301@gmail.com' || clean === 'adjoint@pasma.sys' || clean.endsWith('@pasma.sys')) {
+      return true;
+    }
+    const existingStr = localStorage.getItem('pasma_verified_emails');
+    const existing: string[] = existingStr ? JSON.parse(existingStr) : [];
+    return Array.isArray(existing) && existing.includes(clean);
+  } catch (e) {
+    return false;
+  }
+}
+
+export function isUserEmailVerified(user: any): boolean {
+  if (!user) return true;
+  if (user.isAnonymous) return true;
+  if (user.emailVerified) return true;
+  if (user.email && isEmailVerifiedLocally(user.email)) return true;
+  return false;
+}
+
 export async function sendUserEmailVerification(userToVerify?: any) {
   try {
     const targetUser = userToVerify || auth.currentUser;
+    
+    // Check if targetUser is already verified
+    if (isUserEmailVerified(targetUser)) {
+      return false; // Already verified!
+    }
+
+    // Try reloading user from Firebase auth to check fresh server status
+    if (targetUser && typeof targetUser.reload === 'function') {
+      try {
+        await targetUser.reload();
+        if (targetUser.emailVerified) {
+          if (targetUser.email) markEmailAsVerifiedLocally(targetUser.email);
+          return false; // Already verified after reload!
+        }
+      } catch (rErr) {
+        console.warn("Notice reloading user before verification dispatch:", rErr);
+      }
+    }
+
     const email = targetUser?.email;
     const displayName = targetUser?.displayName;
 
@@ -314,6 +371,14 @@ export async function signUpWithEmail(email: string, password: string) {
 export async function loginWithEmail(email: string, password: string) {
   try {
     const result = await signInWithEmailAndPassword(auth, email, password);
+    try {
+      await result.user.reload();
+      if (result.user.emailVerified && result.user.email) {
+        markEmailAsVerifiedLocally(result.user.email);
+      }
+    } catch (reloadErr) {
+      console.warn("Notice reloading user after login:", reloadErr);
+    }
     return result.user;
   } catch (error) {
     console.warn("Login Email Error:", error);

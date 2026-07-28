@@ -3,9 +3,10 @@ import { collection, doc, getDocs, setDoc, deleteDoc, query, where, writeBatch }
 import { db, auth, loginAnonymously } from '../firebase';
 import { logAuthError } from '../utils/authLogger';
 import AuthLogsViewer from './system/AuthLogsViewer';
+import EmailInfrastructure from './system/EmailInfrastructure';
 import PaymentWebhookHandler from './PaymentWebhookHandler';
 import { Establishment, Student, Invoice, SystemLog } from '../types';
-import { syncLocalSchoolsToFirestore, saveAndSyncEstablishment, deleteAndPurgeSchool, getDeletedSchoolIds } from '../utils/schoolSync';
+import { syncLocalSchoolsToFirestore, saveAndSyncEstablishment, deleteAndPurgeSchool, getDeletedSchoolIds, fetchAndSyncDeletedSchoolIds, sanitizeFirestoreId } from '../utils/schoolSync';
 import { syncAllApeeDataToFirestore } from '../utils/apeeDb';
 import { 
   Building2, 
@@ -59,7 +60,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
   );
   
   // Custom states
-  const [activeSubTab, setActiveSubTab] = useState<'schools' | 'admins' | 'campay_webhook' | 'auth_logs'>('schools');
+  const [activeSubTab, setActiveSubTab] = useState<'schools' | 'admins' | 'campay_webhook' | 'email_infrastructure' | 'auth_logs'>('schools');
   const [secondaryAdmins, setSecondaryAdmins] = useState<any[]>([]);
   const isPrimarySuperAdmin = auth.currentUser?.email?.toLowerCase().trim() === 'jacquesbene301@gmail.com' || currentUserUid === 'sys_admin_jacques';
 
@@ -74,9 +75,18 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
     setIsSyncing(true);
     try {
       const res = await syncLocalSchoolsToFirestore();
+      const deletedSchoolSet = getDeletedSchoolIds();
       const schoolsMap = new Map<string, Establishment>();
-      fallbackSchools.forEach(s => schoolsMap.set(s.id, s));
-      schools.forEach(s => schoolsMap.set(s.id, s));
+      fallbackSchools.forEach(s => {
+        if (!deletedSchoolSet.has(s.id) && !deletedSchoolSet.has(sanitizeFirestoreId(s.id))) {
+          schoolsMap.set(s.id, s);
+        }
+      });
+      schools.forEach(s => {
+        if (!deletedSchoolSet.has(s.id) && !deletedSchoolSet.has(sanitizeFirestoreId(s.id))) {
+          schoolsMap.set(s.id, s);
+        }
+      });
 
       let savedCount = 0;
       for (const [id, school] of schoolsMap.entries()) {
@@ -171,10 +181,11 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
       setLoading(true);
       setIsRefreshing(true);
       try {
+        // Fetch deleted school IDs from Firestore central registry
+        const deletedSchoolSet = await fetchAndSyncDeletedSchoolIds();
+
         // Sync local cached schools to Firestore
         await syncLocalSchoolsToFirestore();
-
-        const deletedSchoolSet = getDeletedSchoolIds();
 
         // 1. Fetch schools
         const schoolList: Establishment[] = [];
@@ -183,9 +194,11 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
           const schoolsQuery = query(collection(db, 'establishments'));
           const schoolSnap = await getDocs(schoolsQuery);
           schoolSnap.forEach((docSnap) => {
-            if (!deletedSchoolSet.has(docSnap.id)) {
+            const data = docSnap.data();
+            const sanId = sanitizeFirestoreId(docSnap.id);
+            if (!data.isDeleted && !deletedSchoolSet.has(docSnap.id) && !deletedSchoolSet.has(sanId)) {
               registeredDbIds.add(docSnap.id);
-              schoolList.push({ id: docSnap.id, ...docSnap.data() } as Establishment);
+              schoolList.push({ id: docSnap.id, ...data } as Establishment);
             }
           });
         } catch (schoolErr) {
@@ -199,7 +212,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
           if (localEstsStr) {
             const localEsts = JSON.parse(localEstsStr);
             for (const le of localEsts) {
-              if (le && le.id && !deletedSchoolSet.has(le.id) && !schoolList.some(m => m.id === le.id)) {
+              if (le && le.id && !deletedSchoolSet.has(le.id) && !deletedSchoolSet.has(sanitizeFirestoreId(le.id)) && !schoolList.some(m => m.id === le.id)) {
                 schoolList.push(le);
                 // Save to Firestore so it's registered in DB
                 saveAndSyncEstablishment(le).catch(err => console.warn('Sync fallback school failed:', err));
@@ -214,7 +227,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
         const mergedSchools = [...schoolList];
         if (!isPreprod) {
           fallbackSchools.forEach(fb => {
-            if (!deletedSchoolSet.has(fb.id) && !mergedSchools.some(m => m.id === fb.id)) {
+            if (!deletedSchoolSet.has(fb.id) && !deletedSchoolSet.has(sanitizeFirestoreId(fb.id)) && !mergedSchools.some(m => m.id === fb.id)) {
               mergedSchools.push(fb);
             }
           });
@@ -659,9 +672,25 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
     }
 
     try {
+      const currentSelected = localStorage.getItem('portal_selected_school_id') || sessionStorage.getItem('portal_selected_school_id');
+      const sanitizedId = sanitizeFirestoreId(schoolId);
+      const isCurrentlySelected = currentSelected === schoolId || currentSelected === sanitizedId;
+
       // 1. Delete from establishments & purge local cache & store in pasma_deleted_schools
       await deleteAndPurgeSchool(schoolId);
-      
+
+      // Explicitly clear portal_selected_school_id and reset selection keys from localStorage
+      if (isCurrentlySelected || !currentSelected) {
+        localStorage.removeItem('portal_selected_school_id');
+        sessionStorage.removeItem('portal_selected_school_id');
+        localStorage.removeItem('portal_user_role');
+        localStorage.removeItem('portal_parent_details');
+        localStorage.removeItem('portal_teacher_details');
+        localStorage.removeItem('portal_manager_details');
+        localStorage.removeItem('portal_login_timestamp');
+        sessionStorage.removeItem('portal_user_role');
+      }
+
       // 2. Log deletion
       await handleWriteSystemLog(
         'DELETE_SCHOOL',
@@ -671,10 +700,15 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
       );
 
       // Instantly filter from state for reactive UI feedback
-      setSchools(prev => prev.filter(s => s.id !== schoolId));
+      setSchools(prev => prev.filter(s => s.id !== schoolId && s.id !== sanitizedId));
 
       setSuccessMessage(`L'établissement "${name}" a été supprimé du registre de surveillance Pasma-sys.`);
       setRefreshTrigger(p => p + 1);
+
+      // If the deleted school was currently selected, trigger reload so app initializes cleanly at school selection view
+      if (isCurrentlySelected) {
+        window.location.reload();
+      }
     } catch (err: any) {
       alert(`Erreur de suppression: ${err.message || err}`);
     }
@@ -1009,6 +1043,17 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                     </button>
                     <button
                       type="button"
+                      onClick={() => setActiveSubTab('email_infrastructure')}
+                      className={`px-4 py-1.5 text-xs font-black rounded-lg transition cursor-pointer border flex items-center gap-1.5 ${
+                        activeSubTab === 'email_infrastructure'
+                          ? 'bg-slate-900 text-emerald-400 border-slate-900 shadow-xs'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      📧 Infrastructure E-mail & DNS
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setActiveSubTab('auth_logs')}
                       className={`px-4 py-1.5 text-xs font-black rounded-lg transition cursor-pointer border flex items-center gap-1.5 ${
                         activeSubTab === 'auth_logs'
@@ -1026,7 +1071,9 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                         ? "Gérez et auditez les habilitations d'accès des superviseurs adjoints délégués"
                         : activeSubTab === 'campay_webhook'
                           ? "Simulez, testez et synchronisez en temps réel les webhooks de paiements Campay"
-                          : "Consultez les rapports détaillés des permissions refusées et incidents de sécurité"}
+                          : activeSubTab === 'email_infrastructure'
+                            ? "Contrôlez les enregistrements DNS (DKIM, CNAME, DMARC) et testez l'expédition d'e-mails"
+                            : "Consultez les rapports détaillés des permissions refusées et incidents de sécurité"}
                   </p>
                 </div>
 
@@ -1461,6 +1508,10 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
               ) : activeSubTab === 'campay_webhook' ? (
                 <div className="p-6">
                   <PaymentWebhookHandler />
+                </div>
+              ) : activeSubTab === 'email_infrastructure' ? (
+                <div className="p-6">
+                  <EmailInfrastructure />
                 </div>
               ) : (
                 <div className="p-6">

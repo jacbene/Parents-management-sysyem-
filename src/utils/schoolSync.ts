@@ -1,4 +1,4 @@
-import { doc, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, deleteDoc, arrayUnion } from 'firebase/firestore';
 import { db, auth, loginAnonymously, queuePendingAction } from '../firebase';
 import { Establishment } from '../types';
 
@@ -52,8 +52,40 @@ export function sanitizeFirestoreId(id: string): string {
   return id.replace(/[^a-zA-Z0-9_-]/g, '_');
 }
 
+// In-memory set of deleted IDs for cross-module consistency within session
+const inMemoryDeletedIds = new Set<string>();
+
+/**
+ * Fetch deleted school IDs directly from Firestore (`system/deleted_schools`)
+ * and merge them into local storage so all devices/browsers respect deletions.
+ */
+export async function fetchAndSyncDeletedSchoolIds(): Promise<Set<string>> {
+  const merged = getDeletedSchoolIds();
+  try {
+    const docRef = doc(db, 'system', 'deleted_schools');
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      if (Array.isArray(data?.ids)) {
+        data.ids.forEach((id: string) => {
+          if (id) {
+            merged.add(id);
+            merged.add(sanitizeFirestoreId(id));
+            inMemoryDeletedIds.add(id);
+            inMemoryDeletedIds.add(sanitizeFirestoreId(id));
+          }
+        });
+        localStorage.setItem('pasma_deleted_schools', JSON.stringify(Array.from(merged)));
+      }
+    }
+  } catch (err) {
+    console.warn('[schoolSync] Could not fetch system/deleted_schools from Firestore:', err);
+  }
+  return merged;
+}
+
 export function getDeletedSchoolIds(): Set<string> {
-  const set = new Set<string>();
+  const set = new Set<string>(inMemoryDeletedIds);
   try {
     const deletedStr = localStorage.getItem('pasma_deleted_schools');
     if (deletedStr) {
@@ -83,8 +115,10 @@ export async function deleteAndPurgeSchool(schoolId: string): Promise<boolean> {
   if (!schoolId) return false;
   const id = sanitizeFirestoreId(schoolId);
 
-  // 1. Mark as deleted in localStorage
+  // 1. Mark as deleted in local memory & localStorage
   try {
+    inMemoryDeletedIds.add(schoolId);
+    inMemoryDeletedIds.add(id);
     const set = getDeletedSchoolIds();
     set.add(schoolId);
     set.add(id);
@@ -116,20 +150,44 @@ export async function deleteAndPurgeSchool(schoolId: string): Promise<boolean> {
     }
     localStorage.removeItem(`pasma_students_${schoolId}`);
     localStorage.removeItem(`pasma_students_${id}`);
+
+    // Explicitly clear portal_selected_school_id and reset selection keys from localStorage & sessionStorage
+    const currentSelected = localStorage.getItem('portal_selected_school_id') || sessionStorage.getItem('portal_selected_school_id');
+    if (!currentSelected || currentSelected === schoolId || currentSelected === id) {
+      localStorage.removeItem('portal_selected_school_id');
+      sessionStorage.removeItem('portal_selected_school_id');
+      localStorage.removeItem('portal_user_role');
+      localStorage.removeItem('portal_parent_details');
+      localStorage.removeItem('portal_teacher_details');
+      localStorage.removeItem('portal_manager_details');
+      localStorage.removeItem('portal_login_timestamp');
+      sessionStorage.removeItem('portal_user_role');
+    }
   } catch (e) {
     console.warn('[schoolSync] Error purging local school cache:', e);
   }
 
-  // 3. Delete from Firestore
+  // 3. Centralized deletion in Firestore (Register in system/deleted_schools document + set isDeleted flag + deleteDoc)
   try {
-    await deleteDoc(doc(db, 'establishments', id));
-    if (id !== schoolId) {
-      try {
+    // Record in global deleted schools registry
+    const sysDocRef = doc(db, 'system', 'deleted_schools');
+    await setDoc(sysDocRef, {
+      ids: arrayUnion(schoolId, id),
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+
+    // Mark as deleted on document itself as soft flag then delete document
+    try {
+      await setDoc(doc(db, 'establishments', id), { isDeleted: true, deletedAt: new Date().toISOString() }, { merge: true });
+      await deleteDoc(doc(db, 'establishments', id));
+      if (id !== schoolId) {
+        await setDoc(doc(db, 'establishments', schoolId), { isDeleted: true, deletedAt: new Date().toISOString() }, { merge: true });
         await deleteDoc(doc(db, 'establishments', schoolId));
-      } catch (e) {
-        // ignore
       }
+    } catch (docErr) {
+      console.warn('[schoolSync] Establishment document deletion note:', docErr);
     }
+
     try {
       await deleteDoc(doc(db, 'invoices', `${id}_settings`));
       await deleteDoc(doc(db, 'invoices', `${schoolId}_settings`));
@@ -173,7 +231,8 @@ export async function syncLocalSchoolsToFirestore(): Promise<{ syncedCount: numb
       }
     }
 
-    const deletedSet = getDeletedSchoolIds();
+    // Always fetch latest deleted school IDs from Firestore first
+    const deletedSet = await fetchAndSyncDeletedSchoolIds();
 
     // 1. Gather local establishments from localStorage and sessionStorage
     const localEstsMap = new Map<string, any>();
@@ -236,6 +295,12 @@ export async function syncLocalSchoolsToFirestore(): Promise<{ syncedCount: numb
     // 2. Write each cached school to Firestore `establishments` collection
     for (const [rawId, estData] of localEstsMap.entries()) {
       const id = sanitizeFirestoreId(rawId);
+
+      // Final check against deletedSet
+      if (deletedSet.has(rawId) || deletedSet.has(id)) {
+        continue;
+      }
+
       try {
         const docRef = doc(db, 'establishments', id);
         const cleanEstData = cleanPayload({
@@ -309,12 +374,14 @@ export async function syncLocalSchoolsToFirestore(): Promise<{ syncedCount: numb
       }
     }
 
-    // Update local cache with synced school items to maintain parity
+    // Update local cache with synced school items to maintain parity (and purge deleted)
     try {
-      const updatedList = Array.from(localEstsMap.values()).map(e => ({
-        ...e,
-        id: sanitizeFirestoreId(e.id)
-      }));
+      const updatedList = Array.from(localEstsMap.values())
+        .filter(e => !deletedSet.has(e.id) && !deletedSet.has(sanitizeFirestoreId(e.id)))
+        .map(e => ({
+          ...e,
+          id: sanitizeFirestoreId(e.id)
+        }));
       localStorage.setItem('pasma_local_establishments', JSON.stringify(updatedList));
       sessionStorage.setItem('pasma_local_establishments', JSON.stringify(updatedList));
     } catch (cacheErr) {
@@ -332,23 +399,26 @@ export async function syncLocalSchoolsToFirestore(): Promise<{ syncedCount: numb
 /**
  * Saves a single establishment to local cache and pushes it immediately to Firestore.
  */
-export async function saveAndSyncEstablishment(est: Establishment): Promise<boolean> {
+export async function saveAndSyncEstablishment(est: Establishment, isUserCreated = false): Promise<boolean> {
   if (!est || !est.id) return false;
 
   const id = sanitizeFirestoreId(est.id);
-  const updatedEst = { ...est, id, updatedAt: new Date().toISOString() };
 
-  // Remove from deleted list if present
-  try {
-    const deletedSet = getDeletedSchoolIds();
-    if (deletedSet.has(est.id) || deletedSet.has(id)) {
+  // If school is marked as deleted, refuse to save unless user explicitly created it
+  const deletedSet = getDeletedSchoolIds();
+  if (deletedSet.has(est.id) || deletedSet.has(id)) {
+    if (!isUserCreated) {
+      console.log(`[schoolSync] Skipping save for deleted school: ${est.id}`);
+      return false;
+    } else {
+      // User created a new school with same ID or un-deleted
       deletedSet.delete(est.id);
       deletedSet.delete(id);
       localStorage.setItem('pasma_deleted_schools', JSON.stringify(Array.from(deletedSet)));
     }
-  } catch (e) {
-    // ignore
   }
+
+  const updatedEst = { ...est, id, updatedAt: new Date().toISOString() };
 
   // 1. Save to localStorage cache for offline/instant resilience
   try {
@@ -360,8 +430,9 @@ export async function saveAndSyncEstablishment(est: Establishment): Promise<bool
     } else {
       existing.push(updatedEst);
     }
-    localStorage.setItem('pasma_local_establishments', JSON.stringify(existing));
-    sessionStorage.setItem('pasma_local_establishments', JSON.stringify(existing));
+    const filtered = existing.filter(e => !deletedSet.has(e.id) && !deletedSet.has(sanitizeFirestoreId(e.id)));
+    localStorage.setItem('pasma_local_establishments', JSON.stringify(filtered));
+    sessionStorage.setItem('pasma_local_establishments', JSON.stringify(filtered));
   } catch (e) {
     console.warn('[schoolSync] Storage fallback warning:', e);
   }
