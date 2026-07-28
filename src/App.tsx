@@ -2620,29 +2620,30 @@ export default function App() {
   const handleLogin = async () => {
     setAuthError(null);
     try {
-      await loginWithGoogle();
+      const gUser = await loginWithGoogle();
+      if (gUser && gUser.email) {
+        const email = gUser.email.toLowerCase().trim();
+        if (email === 'jacquesbene301@gmail.com') {
+          setShowSuperAdmin(true);
+        }
+      }
       setShowMainLogin(false);
     } catch (e: any) {
-      console.warn("Google authentication process rejected, auto-fallback to guest session for sandbox compatibility:", e);
-      let errorMsg = "La connexion a échoué. Les popups ou les cookies tiers peuvent être bloqués.";
+      console.warn("Google authentication warning:", e);
+      let errorMsg = "La connexion Google n'a pas pu aboutir. Les fenêtres surgissantes (popups) ou cookies tiers peuvent être bloqués par le navigateur.";
       if (e?.code === 'auth/popup-closed-by-user') {
-        errorMsg = "La fenêtre d'authentification Google a été fermée avant la fin de la connexion. Session Invité démarrée automatiquement.";
+        errorMsg = "La fenêtre d'authentification Google a été fermée avant la validation. Veuillez réessayer.";
       } else if (e?.code === 'auth/popup-blocked') {
-        errorMsg = "Le popup de connexion Google a été bloqué par votre navigateur. Connexion Invité de secours active.";
+        errorMsg = "Le popup de connexion Google a été bloqué par votre navigateur dans cet iframe. Autorisez les popups ou utilisez la connexion e-mail Super-Admin ci-dessous.";
+      } else if (e?.code === 'auth/unauthorized-domain') {
+        errorMsg = "Le domaine de prévisualisation actuel n'est pas encore enregistré dans la console Firebase Auth. Utilisez l'accès e-mail Super-Admin avec jacquesbene301@gmail.com !";
+      } else if (e?.code === 'auth/operation-not-allowed') {
+        errorMsg = "Le fournisseur Google Sign-In doit être activé dans la console Firebase Auth. Connectez-vous avec jacquesbene301@gmail.com ci-dessous.";
       } else if (e?.code === 'auth/network-request-failed' || e?.message?.includes('network-request-failed')) {
-        errorMsg = "Erreur réseau de Firebase Auth. Pour contourner ce problème, vous êtes connecté en mode Invité local.";
+        errorMsg = "Problème réseau lors de la connexion Firebase Auth. Réessayez ou utilisez l'accès e-mail.";
       }
       
-      // Auto-fallback
-      setUser({
-        uid: 'sandboxed_guest_user_ekali',
-        email: 'directeur.ekali@gmail.com',
-        displayName: "Directeur Académique (Mode Sécurisé Local)",
-        photoURL: '',
-        isAnonymous: true
-      } as any);
       setAuthError(errorMsg);
-      setShowMainLogin(false);
     }
   };
 
@@ -2854,6 +2855,15 @@ export default function App() {
                   
                   {/* Google Login Trigger */}
                   <div className="space-y-4">
+                    {authError && (
+                      <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs rounded-xl font-medium space-y-1">
+                        <div className="font-bold flex items-center gap-1.5">
+                          <span>⚠️</span> Information d'Authentification :
+                        </div>
+                        <p>{authError}</p>
+                      </div>
+                    )}
+
                     <button
                       onClick={handleLogin}
                       className="w-full py-3 bg-white border border-slate-200 text-slate-700 font-bold text-xs rounded-xl flex items-center justify-center gap-2.5 transition active:scale-98 shadow-sm cursor-pointer hover:bg-slate-50 hover:border-slate-350"

@@ -1,4 +1,4 @@
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
 import { db, auth, loginAnonymously, queuePendingAction } from '../firebase';
 import { Establishment } from '../types';
 
@@ -47,9 +47,101 @@ export const DEFAULT_FALLBACK_SCHOOLS: Establishment[] = [
   }
 ];
 
-function sanitizeFirestoreId(id: string): string {
+export function sanitizeFirestoreId(id: string): string {
   if (!id) return `sch_${Date.now()}`;
   return id.replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+export function getDeletedSchoolIds(): Set<string> {
+  const set = new Set<string>();
+  try {
+    const deletedStr = localStorage.getItem('pasma_deleted_schools');
+    if (deletedStr) {
+      const parsed = JSON.parse(deletedStr);
+      if (Array.isArray(parsed)) {
+        parsed.forEach((id: string) => {
+          if (id) {
+            set.add(id);
+            set.add(sanitizeFirestoreId(id));
+          }
+        });
+      }
+    }
+  } catch (e) {
+    console.warn('[schoolSync] Error reading pasma_deleted_schools:', e);
+  }
+  return set;
+}
+
+export function isSchoolDeleted(schoolId: string): boolean {
+  if (!schoolId) return false;
+  const set = getDeletedSchoolIds();
+  return set.has(schoolId) || set.has(sanitizeFirestoreId(schoolId));
+}
+
+export async function deleteAndPurgeSchool(schoolId: string): Promise<boolean> {
+  if (!schoolId) return false;
+  const id = sanitizeFirestoreId(schoolId);
+
+  // 1. Mark as deleted in localStorage
+  try {
+    const set = getDeletedSchoolIds();
+    set.add(schoolId);
+    set.add(id);
+    localStorage.setItem('pasma_deleted_schools', JSON.stringify(Array.from(set)));
+  } catch (e) {
+    console.warn('[schoolSync] Error updating pasma_deleted_schools:', e);
+  }
+
+  // 2. Remove from local establishment caches
+  try {
+    const keysToClean = ['pasma_local_establishments'];
+    for (const key of keysToClean) {
+      const localStr = localStorage.getItem(key);
+      if (localStr) {
+        const parsed = JSON.parse(localStr);
+        if (Array.isArray(parsed)) {
+          const filtered = parsed.filter((e: any) => e && e.id !== schoolId && e.id !== id);
+          localStorage.setItem(key, JSON.stringify(filtered));
+        }
+      }
+      const sessionStr = sessionStorage.getItem(key);
+      if (sessionStr) {
+        const parsed = JSON.parse(sessionStr);
+        if (Array.isArray(parsed)) {
+          const filtered = parsed.filter((e: any) => e && e.id !== schoolId && e.id !== id);
+          sessionStorage.setItem(key, JSON.stringify(filtered));
+        }
+      }
+    }
+    localStorage.removeItem(`pasma_students_${schoolId}`);
+    localStorage.removeItem(`pasma_students_${id}`);
+  } catch (e) {
+    console.warn('[schoolSync] Error purging local school cache:', e);
+  }
+
+  // 3. Delete from Firestore
+  try {
+    await deleteDoc(doc(db, 'establishments', id));
+    if (id !== schoolId) {
+      try {
+        await deleteDoc(doc(db, 'establishments', schoolId));
+      } catch (e) {
+        // ignore
+      }
+    }
+    try {
+      await deleteDoc(doc(db, 'invoices', `${id}_settings`));
+      await deleteDoc(doc(db, 'invoices', `${schoolId}_settings`));
+    } catch (err) {
+      console.warn("Could not delete settings invoice for school:", id, err);
+    }
+    return true;
+  } catch (err) {
+    console.warn('[schoolSync] Firestore deletion warning:', err);
+    queuePendingAction('DELETE', 'establishments', id, `Supprimer établissement ${id}`, {});
+    return false;
+  }
 }
 
 export function cleanPayload(data: Record<string, any>): Record<string, any> {
@@ -81,12 +173,17 @@ export async function syncLocalSchoolsToFirestore(): Promise<{ syncedCount: numb
       }
     }
 
+    const deletedSet = getDeletedSchoolIds();
+
     // 1. Gather local establishments from localStorage and sessionStorage
     const localEstsMap = new Map<string, any>();
 
-    // Seed default fallback schools first
+    // Seed default fallback schools first (only if NOT deleted)
     DEFAULT_FALLBACK_SCHOOLS.forEach((est) => {
-      localEstsMap.set(est.id, est);
+      const sanitizedId = sanitizeFirestoreId(est.id);
+      if (!deletedSet.has(est.id) && !deletedSet.has(sanitizedId)) {
+        localEstsMap.set(est.id, est);
+      }
     });
 
     const keysToTry = ['pasma_local_establishments'];
@@ -97,7 +194,12 @@ export async function syncLocalSchoolsToFirestore(): Promise<{ syncedCount: numb
           const parsed = JSON.parse(localStr);
           if (Array.isArray(parsed)) {
             parsed.forEach((est: any) => {
-              if (est && est.id) localEstsMap.set(est.id, est);
+              if (est && est.id) {
+                const sanitizedId = sanitizeFirestoreId(est.id);
+                if (!deletedSet.has(est.id) && !deletedSet.has(sanitizedId)) {
+                  localEstsMap.set(est.id, est);
+                }
+              }
             });
           }
         }
@@ -111,7 +213,12 @@ export async function syncLocalSchoolsToFirestore(): Promise<{ syncedCount: numb
           const parsed = JSON.parse(sessionStr);
           if (Array.isArray(parsed)) {
             parsed.forEach((est: any) => {
-              if (est && est.id) localEstsMap.set(est.id, est);
+              if (est && est.id) {
+                const sanitizedId = sanitizeFirestoreId(est.id);
+                if (!deletedSet.has(est.id) && !deletedSet.has(sanitizedId)) {
+                  localEstsMap.set(est.id, est);
+                }
+              }
             });
           }
         }
@@ -230,6 +337,18 @@ export async function saveAndSyncEstablishment(est: Establishment): Promise<bool
 
   const id = sanitizeFirestoreId(est.id);
   const updatedEst = { ...est, id, updatedAt: new Date().toISOString() };
+
+  // Remove from deleted list if present
+  try {
+    const deletedSet = getDeletedSchoolIds();
+    if (deletedSet.has(est.id) || deletedSet.has(id)) {
+      deletedSet.delete(est.id);
+      deletedSet.delete(id);
+      localStorage.setItem('pasma_deleted_schools', JSON.stringify(Array.from(deletedSet)));
+    }
+  } catch (e) {
+    // ignore
+  }
 
   // 1. Save to localStorage cache for offline/instant resilience
   try {

@@ -649,6 +649,88 @@ Ne mets aucune explication ni texte d'accompagnement en dehors du format JSON de
   }
 });
 
+// API: Send Confirmation / Verification Email
+app.post("/api/send-confirmation-email", async (req, res) => {
+  const { email, name, verificationUrl, type } = req.body;
+  if (!email || typeof email !== 'string' || !email.includes('@')) {
+    return res.status(400).json({ success: false, error: "Adresse email invalide." });
+  }
+
+  const recipientName = name || email.split('@')[0];
+  const confirmLink = verificationUrl || `${req.protocol}://${req.get('host')}/?verified=true&email=${encodeURIComponent(email)}`;
+  
+  const isReset = type === 'password_reset';
+  const subject = isReset 
+    ? "Réinitialisation de votre mot de passe - Pasma-sys"
+    : "Confirmation et vérification de votre compte - Pasma-sys";
+
+  const htmlContent = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
+      <div style="text-align: center; margin-bottom: 24px;">
+        <h2 style="color: #4f46e5; margin: 0; font-size: 22px; font-weight: 800;">PASMA-SYS</h2>
+        <p style="color: #64748b; font-size: 13px; margin-top: 4px; font-weight: 600;">Parents-Schools Management System</p>
+      </div>
+      <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 20px 0;" />
+      <p style="font-size: 15px; color: #1e293b;">Bonjour <strong>${recipientName}</strong>,</p>
+      <p style="font-size: 14px; color: #334155; line-height: 1.6;">
+        ${isReset
+          ? "Vous avez demandé la réinitialisation de votre mot de passe pour l'application Pasma-sys."
+          : "Merci de vous être inscrit sur la plateforme Pasma-sys. Veuillez confirmer votre adresse e-mail pour sécuriser et finaliser l'activation de votre compte."}
+      </p>
+      <div style="text-align: center; margin: 32px 0;">
+        <a href="${confirmLink}" style="background-color: #4f46e5; color: #ffffff; padding: 12px 28px; text-decoration: none; font-weight: bold; font-size: 14px; border-radius: 8px; display: inline-block;">
+          ${isReset ? 'Réinitialiser mon mot de passe' : 'Confirmer mon adresse e-mail'}
+        </a>
+      </div>
+      <p style="font-size: 12px; color: #94a3b8; line-height: 1.5;">
+        Si le bouton ci-dessus ne fonctionne pas, vous pouvez copier et coller le lien suivant dans votre navigateur :<br>
+        <a href="${confirmLink}" style="color: #4f46e5; word-break: break-all;">${confirmLink}</a>
+      </p>
+      <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 24px 0;" />
+      <p style="font-size: 11px; color: #94a3b8; text-align: center;">
+        © Pasma-sys • Système de Gestion Établissements & APEE. Message automatique, ne pas répondre.
+      </p>
+    </div>
+  `;
+
+  try {
+    const mailer = await getTransporter();
+    const fromAddress = process.env.SMTP_FROM || (etherealAccount ? `"Pasma-sys Support" <${etherealAccount.user}>` : '"Pasma-sys Support" <no-reply@pasma-sys.com>');
+    
+    if (mailer) {
+      const info = await mailer.sendMail({
+        from: fromAddress,
+        to: email,
+        subject: subject,
+        text: `Bonjour ${recipientName},\n\nVeuillez valider votre e-mail via ce lien : ${confirmLink}\n\nL'équipe Pasma-sys`,
+        html: htmlContent
+      });
+
+      const testUrl = nodemailer.getTestMessageUrl(info);
+      console.log(`[Confirmation Email] Transmitted to ${email}. MessageId: ${info.messageId}`);
+      return res.json({
+        success: true,
+        message: "E-mail de confirmation transmis avec succès.",
+        messageId: info.messageId,
+        testUrl: testUrl || undefined
+      });
+    } else {
+      console.log(`[Confirmation Email Simulated] Transmitted to ${email}.`);
+      return res.json({
+        success: true,
+        message: "Confirmation enregistrée et simulée avec succès.",
+        simulated: true
+      });
+    }
+  } catch (err: any) {
+    console.error("[Confirmation Email Error]:", err);
+    return res.status(500).json({
+      success: false,
+      error: `Échec de l'envoi de l'e-mail de confirmation: ${err.message || err}`
+    });
+  }
+});
+
 // API: Trigger bulk email reminders for parents
 app.post("/api/apee/send-bulk-reminders", async (req, res) => {
   const { parentIds, parents, emailSubject, emailTemplate, smsTemplate, settings, channel } = req.body;

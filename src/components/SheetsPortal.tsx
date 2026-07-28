@@ -89,7 +89,7 @@ export default function SheetsPortal({ parents, invoices, students, onSaveParent
     setIsLoading(true);
     setAuthError(null);
     try {
-      await loginWithGoogle();
+      await loginWithGoogle(true);
       setToken(googleAccessToken);
     } catch (err: any) {
       console.error('Failed to authenticate Google Sheets scopes:', err);

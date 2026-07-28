@@ -137,11 +137,12 @@ if (typeof window !== 'undefined' && (window as any).__firebase_auth_instance) {
 
 export const auth = authInstance;
 export const googleProvider = new GoogleAuthProvider();
-googleProvider.addScope('https://www.googleapis.com/auth/drive');
-googleProvider.addScope('https://www.googleapis.com/auth/drive.file');
-googleProvider.addScope('https://www.googleapis.com/auth/spreadsheets');
-googleProvider.addScope('https://www.googleapis.com/auth/firebase');
-googleProvider.addScope('https://www.googleapis.com/auth/cloud-platform');
+googleProvider.setCustomParameters({ prompt: 'select_account' });
+
+export const googleDriveProvider = new GoogleAuthProvider();
+googleDriveProvider.addScope('https://www.googleapis.com/auth/drive.file');
+googleDriveProvider.addScope('https://www.googleapis.com/auth/spreadsheets');
+googleDriveProvider.setCustomParameters({ prompt: 'select_account' });
 
 export let googleAccessToken: string | null = null;
 
@@ -208,16 +209,17 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   console.warn('Firestore Notice: ', JSON.stringify(errInfo));
 }
 
-export async function loginWithGoogle() {
+export async function loginWithGoogle(requireDriveScopes: boolean = false) {
+  const providerToUse = requireDriveScopes ? googleDriveProvider : googleProvider;
   try {
-    const result = await signInWithPopup(auth, googleProvider);
+    const result = await signInWithPopup(auth, providerToUse);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (credential?.accessToken) {
       googleAccessToken = credential.accessToken;
     }
     return result.user;
-  } catch (error) {
-    console.warn("Auth Error:", error);
+  } catch (error: any) {
+    console.warn("Google Auth Error during signInWithPopup:", error);
     throw error;
   }
 }
@@ -247,24 +249,43 @@ export async function loginAnonymously() {
   }
 }
 
+export async function dispatchBackendConfirmationEmail(email: string, name?: string, type?: string) {
+  try {
+    const response = await fetch('/api/send-confirmation-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, name, type })
+    });
+    const data = await response.json();
+    if (data?.testUrl) {
+      console.log(`[Ethereal Confirmation Email Preview]: ${data.testUrl}`);
+    }
+    return data;
+  } catch (err) {
+    console.warn("Backend confirmation email request failed:", err);
+    return null;
+  }
+}
+
 export async function sendUserEmailVerification(userToVerify?: any) {
   try {
     const targetUser = userToVerify || auth.currentUser;
+    const email = targetUser?.email;
+    const displayName = targetUser?.displayName;
+
     if (targetUser && !targetUser.isAnonymous && typeof targetUser.getIdToken === 'function') {
       try {
         await sendEmailVerification(targetUser);
-        return true;
       } catch (sdkError: any) {
         console.warn("Firebase Auth sendEmailVerification SDK notice:", sdkError);
-        // Fallback for sandboxed/simulated or rate-limited environments
-        return true;
       }
-    } else if (targetUser && (targetUser.email || targetUser.uid)) {
-      // Simulated or background sandbox user
-      console.log("Simulated email verification dispatched for:", targetUser.email || targetUser.uid);
-      return true;
     }
-    return false;
+
+    if (email) {
+      await dispatchBackendConfirmationEmail(email, displayName || email.split('@')[0], 'verification');
+    }
+
+    return true;
   } catch (error) {
     console.warn("Send Email Verification Error:", error);
     return true; // Graceful fallback
@@ -280,10 +301,12 @@ export async function signUpWithEmail(email: string, password: string) {
       } catch (verifErr) {
         console.warn("Automatic sendEmailVerification failed:", verifErr);
       }
+      await dispatchBackendConfirmationEmail(email, result.user.displayName || email.split('@')[0], 'verification');
     }
     return result.user;
   } catch (error) {
-    console.warn("SignUp Email Error:", error);
+    console.warn("SignUp Email Error, dispatching backend confirmation email fallback:", error);
+    await dispatchBackendConfirmationEmail(email, email.split('@')[0], 'verification');
     throw error;
   }
 }
@@ -301,10 +324,12 @@ export async function loginWithEmail(email: string, password: string) {
 export async function resetPassword(email: string) {
   try {
     await sendPasswordResetEmail(auth, email);
+    await dispatchBackendConfirmationEmail(email, email.split('@')[0], 'password_reset');
     return true;
   } catch (error: any) {
-    console.warn("Password Reset Error, using simulated confirmation:", error);
+    console.warn("Password Reset Error, sending via backend fallback:", error);
     if (email && email.includes('@')) {
+      await dispatchBackendConfirmationEmail(email, email.split('@')[0], 'password_reset');
       return true;
     }
     throw error;

@@ -5,7 +5,7 @@ import { logAuthError } from '../utils/authLogger';
 import { Landmark, Plus, CheckCircle, AlertOctagon, UserCheck, Phone, ShieldCheck, ArrowRight, X, Sparkles, User, HelpCircle, Mail, Smartphone, Key, RotateCw, Bell, Share2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ApeeSettings, ApeeParent, Student, Grade, Homework, Attendance, Invoice, Establishment } from '../types';
-import { syncLocalSchoolsToFirestore, saveAndSyncEstablishment } from '../utils/schoolSync';
+import { syncLocalSchoolsToFirestore, saveAndSyncEstablishment, getDeletedSchoolIds } from '../utils/schoolSync';
 
 
 interface PortalOnboardingProps {
@@ -83,11 +83,14 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
       // First sync any cached local schools into Firestore
       await syncLocalSchoolsToFirestore();
 
+      const deletedSet = getDeletedSchoolIds();
       const q = query(collection(db, 'establishments'));
       const snapshot = await getDocs(q);
       const list: Establishment[] = [];
       snapshot.forEach(docSnap => {
-        list.push({ id: docSnap.id, ...docSnap.data() } as Establishment);
+        if (!deletedSet.has(docSnap.id)) {
+          list.push({ id: docSnap.id, ...docSnap.data() } as Establishment);
+        }
       });
 
       // Merge local-only establishments created on this device (resilient fallback)
@@ -96,7 +99,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
         if (localEstsStr) {
           const localEsts = JSON.parse(localEstsStr);
           for (const le of localEsts) {
-            if (!list.some(m => m.id === le.id)) {
+            if (le && le.id && !deletedSet.has(le.id) && !list.some(m => m.id === le.id)) {
               list.push(le);
               // Save to Firestore so it's registered in DB
               saveAndSyncEstablishment(le).catch(err => console.warn('Sync fallback school failed:', err));
@@ -233,13 +236,14 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
         }
       ];
 
-      const merged = [...fallbackList];
+      const deletedSetFallback = getDeletedSchoolIds();
+      const merged = fallbackList.filter(fb => !deletedSetFallback.has(fb.id));
       try {
         const localEstsStr = localStorage.getItem('pasma_local_establishments');
         if (localEstsStr) {
           const localEsts = JSON.parse(localEstsStr);
           localEsts.forEach((le: any) => {
-            if (!merged.some(m => m.id === le.id)) {
+            if (le && le.id && !deletedSetFallback.has(le.id) && !merged.some(m => m.id === le.id)) {
               merged.push(le);
             }
           });

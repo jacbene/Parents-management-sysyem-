@@ -177,7 +177,7 @@ export default function DrivePortal({ parents, invoices, students }: DrivePortal
     setIsLoading(true);
     setAuthError(null);
     try {
-      await loginWithGoogle();
+      await loginWithGoogle(true);
       setToken(googleAccessToken);
     } catch (err: any) {
       console.error('Failed to authenticate Google Drive scope:', err);

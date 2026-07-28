@@ -5,7 +5,7 @@ import { logAuthError } from '../utils/authLogger';
 import AuthLogsViewer from './system/AuthLogsViewer';
 import PaymentWebhookHandler from './PaymentWebhookHandler';
 import { Establishment, Student, Invoice, SystemLog } from '../types';
-import { syncLocalSchoolsToFirestore, saveAndSyncEstablishment } from '../utils/schoolSync';
+import { syncLocalSchoolsToFirestore, saveAndSyncEstablishment, deleteAndPurgeSchool, getDeletedSchoolIds } from '../utils/schoolSync';
 import { syncAllApeeDataToFirestore } from '../utils/apeeDb';
 import { 
   Building2, 
@@ -174,15 +174,19 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
         // Sync local cached schools to Firestore
         await syncLocalSchoolsToFirestore();
 
+        const deletedSchoolSet = getDeletedSchoolIds();
+
         // 1. Fetch schools
         const schoolList: Establishment[] = [];
         const registeredDbIds = new Set<string>();
         try {
           const schoolsQuery = query(collection(db, 'establishments'));
           const schoolSnap = await getDocs(schoolsQuery);
-          schoolSnap.forEach((doc) => {
-            registeredDbIds.add(doc.id);
-            schoolList.push({ id: doc.id, ...doc.data() } as Establishment);
+          schoolSnap.forEach((docSnap) => {
+            if (!deletedSchoolSet.has(docSnap.id)) {
+              registeredDbIds.add(docSnap.id);
+              schoolList.push({ id: docSnap.id, ...docSnap.data() } as Establishment);
+            }
           });
         } catch (schoolErr) {
           console.warn("Could not fetch establishments from Firestore (falling back to cached/demo):", schoolErr);
@@ -195,7 +199,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
           if (localEstsStr) {
             const localEsts = JSON.parse(localEstsStr);
             for (const le of localEsts) {
-              if (!schoolList.some(m => m.id === le.id)) {
+              if (le && le.id && !deletedSchoolSet.has(le.id) && !schoolList.some(m => m.id === le.id)) {
                 schoolList.push(le);
                 // Save to Firestore so it's registered in DB
                 saveAndSyncEstablishment(le).catch(err => console.warn('Sync fallback school failed:', err));
@@ -210,7 +214,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
         const mergedSchools = [...schoolList];
         if (!isPreprod) {
           fallbackSchools.forEach(fb => {
-            if (!mergedSchools.some(m => m.id === fb.id)) {
+            if (!deletedSchoolSet.has(fb.id) && !mergedSchools.some(m => m.id === fb.id)) {
               mergedSchools.push(fb);
             }
           });
@@ -655,15 +659,8 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
     }
 
     try {
-      // 1. Delete from establishments
-      await deleteDoc(doc(db, 'establishments', schoolId));
-      
-      // Delete school settings if exists
-      try {
-        await deleteDoc(doc(db, 'invoices', `${schoolId}_settings`));
-      } catch (err) {
-        console.warn("Could not delete settings invoice for school:", schoolId, err);
-      }
+      // 1. Delete from establishments & purge local cache & store in pasma_deleted_schools
+      await deleteAndPurgeSchool(schoolId);
       
       // 2. Log deletion
       await handleWriteSystemLog(
@@ -679,7 +676,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
       setSuccessMessage(`L'établissement "${name}" a été supprimé du registre de surveillance Pasma-sys.`);
       setRefreshTrigger(p => p + 1);
     } catch (err: any) {
-      alert(`Erreur de suppression Firestore: ${err.message || err}`);
+      alert(`Erreur de suppression: ${err.message || err}`);
     }
   };
 
@@ -809,7 +806,8 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
   });
 
   // Dynamic user data resolving for super-admin
-  const currentUserEmail = auth.currentUser?.email || currentUserUid || 'jacquesbene301@gmail.com';
+  const currentUserEmail = auth.currentUser?.email 
+    || (currentUserUid === 'sys_admin_jacques' ? 'jacquesbene301@gmail.com' : (currentUserUid?.includes('@') ? currentUserUid : 'jacquesbene301@gmail.com'));
   const currentOperatorName = isPrimarySuperAdmin 
     ? 'JACQUES BENE MBAMA'
     : (secondaryAdmins.find(admin => admin.email?.toLowerCase().trim() === currentUserEmail.toLowerCase().trim())?.name?.toUpperCase() || 'SUPERVISEUR ADJOINT');
