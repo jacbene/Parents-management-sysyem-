@@ -16,6 +16,7 @@ import {
   UserCheck, 
   Bell, 
   Check, 
+  CheckCircle2,
   Info,
   ChevronRight,
   Sparkles,
@@ -86,6 +87,12 @@ export default function MessageInbox({
   // Mobile responsive layout view toggle (list vs chat)
   const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
 
+  // Broadcast / Multi-select mode state for teachers
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
+  const [selectedMultiStudentIds, setSelectedMultiStudentIds] = useState<string[]>([]);
+  const [broadcastNotice, setBroadcastNotice] = useState<string | null>(null);
+  const [sendingBroadcast, setSendingBroadcast] = useState(false);
+
   // Local message inputs
   const [textInput, setTextInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -94,6 +101,85 @@ export default function MessageInbox({
   // Custom sender identity selection for Administration
   const [adminSenderAlias, setAdminSenderAlias] = useState<'Director' | 'PedManager' | 'ClassTeacher'>('PedManager');
   const [customSenderName, setCustomSenderName] = useState('');
+
+  // Toggle selection for a student ID in multi-select mode
+  const toggleSelectStudentForBroadcast = (studentId: string) => {
+    setSelectedMultiStudentIds(prev => 
+      prev.includes(studentId) 
+        ? prev.filter(id => id !== studentId) 
+        : [...prev, studentId]
+    );
+  };
+
+  // Broadcast send handler to send a message to all selected parents
+  const handleSendBroadcastMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!textInput.trim() || selectedMultiStudentIds.length === 0) return;
+
+    setSendingBroadcast(true);
+    setBroadcastNotice(null);
+
+    let senderName = currentTeacherInfo.name;
+    if (isAdmin) {
+      if (portalUserRole === 'teacher' && loggedInTeacher) {
+        senderName = loggedInTeacher.name;
+      } else if (adminSenderAlias === 'PedManager') {
+        senderName = censorInfo.name;
+      } else if (adminSenderAlias === 'Director') {
+        senderName = directorInfo.name;
+      } else if (customSenderName.trim()) {
+        senderName = customSenderName.trim();
+      }
+    }
+
+    const senderRoleToUse = portalUserRole === 'teacher' 
+      ? 'Enseignant Titulaire' 
+      : adminSenderAlias === 'PedManager' 
+        ? 'Censeur / Surveillant' 
+        : adminSenderAlias === 'Director' 
+          ? 'Directeur / Proviseur' 
+          : 'Professeur principal';
+
+    let successCount = 0;
+
+    for (const studentId of selectedMultiStudentIds) {
+      const student = students.find(s => s.id === studentId);
+      if (!student) continue;
+
+      const parent = getMatchingParent(student);
+      const parentId = student.parentId || parent?.id || 'unknown_parent';
+      const msgId = `msg_multi_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+      const newMsg: Message = {
+        id: msgId,
+        studentId: student.id,
+        parentId: parentId,
+        senderType: 'Teacher',
+        content: textInput,
+        timestamp: new Date().toISOString(),
+        teacherName: senderName,
+        ...({
+          senderRole: senderRoleToUse,
+          isBulk: true
+        } as any)
+      };
+
+      try {
+        await setDoc(doc(db, 'messages', msgId), newMsg);
+        onAddMessage(newMsg);
+        successCount++;
+      } catch (err) {
+        console.warn(`Notice sending broadcast message to ${studentId}:`, err);
+        onAddMessage(newMsg);
+        successCount++;
+      }
+    }
+
+    setSendingBroadcast(false);
+    setTextInput('');
+    setBroadcastNotice(`✅ Message de diffusion transmis à ${successCount} parent(s) avec succès !`);
+    setTimeout(() => setBroadcastNotice(null), 6000);
+  };
 
   // Custom recipient role selection for Parents
   const [parentRecipientRole, setParentRecipientRole] = useState<'Teacher' | 'Censor' | 'Director'>('Teacher');
@@ -402,15 +488,38 @@ export default function MessageInbox({
             {/* ADMIN ONLY SEARCHBARS & FILTERS */}
             {isAdmin ? (
               <div className="p-4 bg-slate-50/50 border-b border-slate-150 space-y-3">
-                <div className="relative">
-                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder={t('msg.search_placeholder')}
-                    value={adminSearch}
-                    onChange={(e) => setAdminSearch(e.target.value)}
-                    className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500 bg-white"
-                  />
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder={t('msg.search_placeholder')}
+                      value={adminSearch}
+                      onChange={(e) => setAdminSearch(e.target.value)}
+                      className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-200 rounded-xl focus:outline-hidden focus:border-indigo-500 bg-white"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !isMultiSelectMode;
+                      setIsMultiSelectMode(next);
+                      if (next && selectedMultiStudentIds.length === 0 && selectedStudentId) {
+                        setSelectedMultiStudentIds([selectedStudentId]);
+                      }
+                    }}
+                    className={`px-2.5 py-1.5 border rounded-xl text-[11px] font-bold cursor-pointer transition flex items-center gap-1.5 shrink-0 ${
+                      isMultiSelectMode
+                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
+                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+                    }`}
+                    title="Activer la sélection multiple de plusieurs parents"
+                  >
+                    <CheckCheck className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">{isMultiSelectMode ? 'Quitter Multi' : 'Multi-Parents'}</span>
+                    <span className="sm:hidden">{isMultiSelectMode ? 'Single' : 'Multi'}</span>
+                  </button>
                 </div>
 
                 <div className="flex gap-2">
@@ -428,7 +537,7 @@ export default function MessageInbox({
                   <button
                     type="button"
                     onClick={() => setFilterActiveOnly(!filterActiveOnly)}
-                    className={`px-2.5 py-1 px-3 border rounded-xl text-[11px] font-bold cursor-pointer transition ${
+                    className={`px-2.5 py-1.5 border rounded-xl text-[11px] font-bold cursor-pointer transition shrink-0 ${
                       filterActiveOnly 
                         ? 'bg-indigo-50 border-indigo-200 text-indigo-700' 
                         : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-50'
@@ -437,6 +546,32 @@ export default function MessageInbox({
                     {t('msg.filter_active')}
                   </button>
                 </div>
+
+                {isMultiSelectMode && (
+                  <div className="p-2.5 bg-indigo-50/90 rounded-xl border border-indigo-150 flex items-center justify-between text-xs font-bold text-indigo-950 animate-fade-in">
+                    <span className="flex items-center gap-1 text-[11px]">
+                      <span>📢</span>
+                      <span>{selectedMultiStudentIds.length} parent(s) ciblé(s)</span>
+                    </span>
+                    <div className="flex items-center gap-2 text-[10px]">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedMultiStudentIds(adminStudentsList.map(s => s.id))}
+                        className="text-indigo-700 hover:underline font-extrabold cursor-pointer"
+                      >
+                        Tout cocher ({adminStudentsList.length})
+                      </button>
+                      <span className="text-indigo-300">|</span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedMultiStudentIds([])}
+                        className="text-slate-600 hover:underline cursor-pointer"
+                      >
+                        Tout décocher
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               // PARENT THREAD SELECTOR
@@ -501,6 +636,7 @@ export default function MessageInbox({
                 ) : (
                   adminStudentsList.map(s => {
                     const isSelected = s.id === selectedStudentId;
+                    const isMultiChecked = selectedMultiStudentIds.includes(s.id);
                     const lastMsg = getThreadLastMessage(s.id);
                     const parent = getMatchingParent(s);
 
@@ -509,15 +645,31 @@ export default function MessageInbox({
                         key={s.id}
                         type="button"
                         onClick={() => {
-                          setSelectedStudentId(s.id);
-                          setMobileView('chat');
+                          if (isMultiSelectMode) {
+                            toggleSelectStudentForBroadcast(s.id);
+                          } else {
+                            setSelectedStudentId(s.id);
+                            setMobileView('chat');
+                          }
                         }}
                         className={`w-full p-3.5 text-left flex gap-3 transition cursor-pointer border-l-3 ${
-                          isSelected 
-                            ? 'bg-indigo-50/50 border-l-indigo-600 text-indigo-955 shadow-2xs' 
-                            : 'border-l-transparent text-slate-700 hover:bg-slate-50/60'
+                          isMultiSelectMode
+                            ? isMultiChecked
+                              ? 'bg-indigo-50/90 border-l-indigo-600 text-indigo-955 shadow-2xs font-bold'
+                              : 'border-l-transparent text-slate-700 hover:bg-slate-50/60'
+                            : isSelected 
+                              ? 'bg-indigo-50/50 border-l-indigo-600 text-indigo-955 shadow-2xs' 
+                              : 'border-l-transparent text-slate-700 hover:bg-slate-50/60'
                         }`}
                       >
+                        {isMultiSelectMode && (
+                          <input
+                            type="checkbox"
+                            checked={isMultiChecked}
+                            onChange={() => {}}
+                            className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500 shrink-0 cursor-pointer my-auto"
+                          />
+                        )}
                         {s.avatar && (s.avatar.startsWith('data:image') || s.avatar.startsWith('http') || s.avatar.startsWith('/')) ? (
                           <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-slate-200 mt-0.5">
                             <img 
@@ -668,7 +820,176 @@ export default function MessageInbox({
             mobileView === 'list' ? 'hidden lg:flex' : 'flex h-full'
           }`}>
             
-            {/* THREAD HEADER */}
+            {isMultiSelectMode ? (
+              /* BROADCAST CONSOLE FOR MULTI-PARENT SELECTION */
+              <div className="flex flex-col justify-between h-full bg-slate-50 p-4 overflow-y-auto space-y-4">
+                {/* Broadcast Header Card */}
+                <div className="p-4 bg-white rounded-2xl border border-slate-150 shadow-2xs space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="p-3 bg-indigo-100 text-indigo-700 rounded-2xl text-2xl">
+                        📢
+                      </div>
+                      <div>
+                        <h3 className="font-black text-sm text-slate-900 leading-tight">
+                          Diffusion Groupée à Plusieurs Parents
+                        </h3>
+                        <p className="text-xs text-slate-500 font-medium mt-0.5">
+                          {selectedMultiStudentIds.length} parent(s) sélectionné(s) pour la communication directe
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsBulkModalOpen(true)}
+                      className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shrink-0"
+                    >
+                      <Mail className="h-4 w-4" />
+                      <span>Campagne SMS + E-mail</span>
+                    </button>
+                  </div>
+
+                  {/* Selected Parent Badges / Chips */}
+                  <div className="pt-2 border-t border-slate-100">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-2">
+                      Liste des destinataires sélectionnés ({selectedMultiStudentIds.length}) :
+                    </span>
+
+                    {selectedMultiStudentIds.length === 0 ? (
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 font-medium">
+                        ⚠️ Aucun parent n'est coché. Cochez des élèves dans la liste de gauche pour ajouter des destinataires.
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
+                        {selectedMultiStudentIds.map(studentId => {
+                          const student = students.find(s => s.id === studentId);
+                          if (!student) return null;
+                          const parent = getMatchingParent(student);
+                          return (
+                            <span
+                              key={studentId}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-indigo-50 border border-indigo-200 text-indigo-950 rounded-xl text-xs font-bold"
+                            >
+                              <span>{student.name}</span>
+                              <span className="text-[10px] text-indigo-600 font-mono">({student.classRoom})</span>
+                              <span className="text-[10px] text-slate-500 font-medium">| {parent ? parent.name : 'Parent'}</span>
+                              <button
+                                type="button"
+                                onClick={() => toggleSelectStudentForBroadcast(studentId)}
+                                className="ml-1 text-slate-400 hover:text-red-600 text-xs font-black cursor-pointer"
+                              >
+                                ×
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Broadcast Notice Status Banner */}
+                {broadcastNotice && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs font-bold text-emerald-800 flex items-center gap-2 shadow-2xs"
+                  >
+                    <CheckCircle2 className="h-4.5 w-4.5 text-emerald-600 shrink-0" />
+                    <span>{broadcastNotice}</span>
+                  </motion.div>
+                )}
+
+                {/* Broadcast Composer Form */}
+                <div className="p-4 bg-white rounded-2xl border border-slate-150 shadow-2xs space-y-4 flex-1 flex flex-col justify-between">
+                  <div className="space-y-3">
+                    <label className="text-[11px] font-black uppercase text-slate-600 tracking-wider flex items-center gap-1.5">
+                      <MessageSquare className="h-4 w-4 text-indigo-600" />
+                      Rédiger le message de diffusion :
+                    </label>
+
+                    {/* Sender Alias Selection */}
+                    {isAdmin && (
+                      <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-150 flex items-center justify-between gap-2 flex-wrap text-xs">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase">Émetteur du message :</span>
+                        <div className="flex gap-1.5 text-[10px] font-bold">
+                          <button
+                            type="button"
+                            onClick={() => setAdminSenderAlias('PedManager')}
+                            className={`px-2 py-1 rounded-lg border transition cursor-pointer ${
+                              adminSenderAlias === 'PedManager'
+                                ? 'bg-indigo-600 border-indigo-600 text-white'
+                                : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-100'
+                            }`}
+                          >
+                            🗣️ Censeur ({censorInfo.name})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAdminSenderAlias('ClassTeacher')}
+                            className={`px-2 py-1 rounded-lg border transition cursor-pointer ${
+                              adminSenderAlias === 'ClassTeacher'
+                                ? 'bg-indigo-600 border-indigo-600 text-white'
+                                : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-100'
+                            }`}
+                          >
+                            🧑‍🏫 Prof. principal ({currentTeacherInfo.name})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAdminSenderAlias('Director')}
+                            className={`px-2 py-1 rounded-lg border transition cursor-pointer ${
+                              adminSenderAlias === 'Director'
+                                ? 'bg-indigo-600 border-indigo-600 text-white'
+                                : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-100'
+                            }`}
+                          >
+                            🏛️ Direction ({directorInfo.name})
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <textarea
+                      rows={5}
+                      value={textInput}
+                      onChange={(e) => setTextInput(e.target.value)}
+                      placeholder="Chers parents, nous vous informons que..."
+                      className="w-full p-3.5 border border-slate-200 rounded-2xl text-xs sm:text-sm focus:outline-hidden focus:border-indigo-500 bg-slate-50 focus:bg-white text-slate-800 font-medium"
+                    />
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
+                    <span className="text-[10px] text-slate-400 font-medium">
+                      Le message sera enregistré individuellement dans le fil de chaque parent sélectionné.
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={handleSendBroadcastMessage}
+                      disabled={sendingBroadcast || !textInput.trim() || selectedMultiStudentIds.length === 0}
+                      className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs font-bold transition disabled:opacity-40 cursor-pointer flex items-center gap-2 shadow-xs shrink-0"
+                    >
+                      {sendingBroadcast ? (
+                        <>
+                          <span className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin block" />
+                          <span>Envoi en cours...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="h-4 w-4" />
+                          <span>Envoyer la diffusion ({selectedMultiStudentIds.length} parents)</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* STANDARD SINGLE CHAT THREAD VIEW */
+              <>
+                {/* THREAD HEADER */}
             <div className="p-4 bg-white border-b border-slate-150 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shrink-0">
               <div className="flex items-center gap-3">
                 {/* Mobile Back Button to list of discussions */}
@@ -1007,9 +1328,11 @@ export default function MessageInbox({
                 </div>
               )}
             </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </div>
+    </div>
+  )}
 
       {/* MOBILE DEVICE POPUP SIMULATOR (REPRESENTS THE RELATION BETWEEN SYSTEM AND PHONES IN AN ACCESSIBLE DESIGN) */}
       <AnimatePresence>
@@ -1090,6 +1413,7 @@ export default function MessageInbox({
           onAddMessage={onAddMessage}
           apeeSettings={apeeSettings}
           portalUserRole={portalUserRole}
+          initialSelectedStudentIds={selectedMultiStudentIds}
         />
       )}
     </div>

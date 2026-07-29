@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Student, ApeeParent, Grade, Attendance, Message, ApeeSettings } from '../types';
+import StudentCameraModal from './StudentCameraModal';
 import { 
   Users, 
   Search, 
@@ -23,7 +24,8 @@ import {
   Download,
   ShieldAlert,
   ArrowRight,
-  QrCode
+  QrCode,
+  Camera
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLanguage } from '../utils/TranslationContext';
@@ -57,6 +59,7 @@ export default function StudentsByClass({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClass, setSelectedClass] = useState<string>('all');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [cameraStudent, setCameraStudent] = useState<Student | null>(null);
   const [activeDetailTab, setActiveDetailTab] = useState<'profile' | 'grades' | 'attendance' | 'finance' | 'messages' | 'badge'>('profile');
 
   // Helper to extract unique classes
@@ -608,18 +611,41 @@ export default function StudentsByClass({
                 </button>
 
                 <div className="flex flex-col md:flex-row items-center gap-4.5 text-center md:text-left">
-                  {selectedStudent.avatar ? (
-                    <img 
-                      src={selectedStudent.avatar} 
-                      alt={selectedStudent.name} 
-                      referrerPolicy="no-referrer"
-                      className="h-16 w-16 md:h-20 md:w-20 rounded-full object-cover border-2 border-white/20 shadow-md"
-                    />
-                  ) : (
-                    <div className="h-16 w-16 md:h-20 md:w-20 rounded-full bg-white/10 flex items-center justify-center font-bold text-lg border border-white/10 shadow-md">
-                      {selectedStudent.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                    </div>
-                  )}
+                  <div className="relative group shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setCameraStudent(selectedStudent)}
+                      className="relative block rounded-full overflow-hidden focus:outline-none cursor-pointer transition transform hover:scale-105 active:scale-95"
+                      title="Changer ou prendre la photo de l'élève"
+                    >
+                      {selectedStudent.avatar && (selectedStudent.avatar.startsWith('data:image') || selectedStudent.avatar.startsWith('http') || selectedStudent.avatar.startsWith('/')) ? (
+                        <img 
+                          src={selectedStudent.avatar} 
+                          alt={selectedStudent.name} 
+                          referrerPolicy="no-referrer"
+                          className="h-16 w-16 md:h-20 md:w-20 rounded-full object-cover border-2 border-white/20 shadow-md"
+                        />
+                      ) : (
+                        <div className="h-16 w-16 md:h-20 md:w-20 rounded-full bg-indigo-800/80 text-white flex items-center justify-center font-bold text-xl border-2 border-white/20 shadow-md">
+                          {selectedStudent.avatar || selectedStudent.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                        </div>
+                      )}
+                      
+                      <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col items-center justify-center text-white rounded-full">
+                        <Camera className="h-5 w-5" />
+                        <span className="text-[8px] font-black uppercase tracking-wider mt-0.5">Photo</span>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setCameraStudent(selectedStudent)}
+                      className="absolute -bottom-1 -right-1 p-1.5 bg-indigo-600 hover:bg-indigo-500 text-white border-2 border-slate-900 rounded-full shadow-md transition transform hover:scale-110 cursor-pointer"
+                      title="Prendre une photo de l'élève"
+                    >
+                      <Camera className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
 
                   <div>
                     <div className="flex flex-col md:flex-row md:items-center gap-2">
@@ -1083,6 +1109,24 @@ export default function StudentsByClass({
           </div>
         )}
       </AnimatePresence>
+
+      {/* Student Camera & Avatar Photo Modal */}
+      {cameraStudent && (
+        <StudentCameraModal
+          student={cameraStudent}
+          isOpen={!!cameraStudent}
+          onClose={() => setCameraStudent(null)}
+          onUpdate={(updated) => {
+            if (selectedStudent && selectedStudent.id === updated.id) {
+              setSelectedStudent(updated);
+            }
+            if (onUpdateStudent) {
+              onUpdateStudent(updated);
+            }
+            setCameraStudent(null);
+          }}
+        />
+      )}
 
     </div>
   );

@@ -5,247 +5,256 @@
       "description": "A student profile registered under a parent account.",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "description": "Unique student identifier." },
-        "parentId": { "type": "string", "description": "UID of the managing parent" },
-        "name": { "type": "string", "description": "First and last name of the student" },
-        "grade": { "type": "string", "description": "Class grade of the student" },
-        "classRoom": { "type": "string", "description": "Assigned classroom name" },
-        "avatar": { "type": "string", "description": "Emoji or avatar representation" },
-        "teacherName": { "type": "string", "description": "Name of the main teacher" },
-        "teacherEmail": { "type": "string", "description": "Email address of the teacher" },
-        "dob": { "type": "string", "description": "Date of birth of the student" }
+        "id": { "type": "string", "maxLength": 128 },
+        "parentId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 200 },
+        "grade": { "type": "string", "maxLength": 100 },
+        "classRoom": { "type": "string", "maxLength": 100 },
+        "avatar": { "type": "string", "maxLength": 50 },
+        "teacherName": { "type": "string", "maxLength": 200 },
+        "teacherEmail": { "type": "string", "maxLength": 200 },
+        "dob": { "type": "string", "maxLength": 50 }
       },
-      "required": ["id", "parentId", "name", "grade", "classRoom", "avatar"]
+      "required": ["id", "parentId", "name"]
     },
     "grade": {
       "title": "Grade",
-      "description": "An academic performance grade record for a student in a specific exam.",
+      "description": "An academic performance grade record for a student.",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "studentId": { "type": "string" },
-        "parentId": { "type": "string" },
-        "subject": { "type": "string" },
-        "examName": { "type": "string" },
+        "id": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "parentId": { "type": "string", "maxLength": 128 },
+        "subject": { "type": "string", "maxLength": 100 },
+        "examName": { "type": "string", "maxLength": 100 },
         "score": { "type": "number" },
         "maxScore": { "type": "number" },
-        "teacherRemarks": { "type": "string" },
-        "date": { "type": "string" }
+        "teacherRemarks": { "type": "string", "maxLength": 1000 },
+        "date": { "type": "string", "maxLength": 50 }
       },
-      "required": ["id", "studentId", "parentId", "subject", "examName", "score", "maxScore", "date"]
+      "required": ["id", "studentId", "parentId"]
     },
     "attendance": {
       "title": "Attendance",
-      "description": "An attendance logging record for a student on a specific day.",
+      "description": "An attendance logging record for a student.",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "studentId": { "type": "string" },
-        "parentId": { "type": "string" },
-        "date": { "type": "string" },
+        "id": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "parentId": { "type": "string", "maxLength": 128 },
+        "date": { "type": "string", "maxLength": 50 },
         "status": { "type": "string", "enum": ["Present", "Absent", "Late", "Excused"] },
-        "remarks": { "type": "string" }
+        "remarks": { "type": "string", "maxLength": 500 }
       },
       "required": ["id", "studentId", "parentId", "date", "status"]
     },
     "homework": {
       "title": "Homework",
-      "description": "A homework assignment assigned to the student with status details.",
+      "description": "A homework assignment assigned to the student.",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "studentId": { "type": "string" },
-        "parentId": { "type": "string" },
-        "subject": { "type": "string" },
-        "title": { "type": "string" },
-        "description": { "type": "string" },
-        "dueDate": { "type": "string" },
+        "id": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "parentId": { "type": "string", "maxLength": 128 },
+        "subject": { "type": "string", "maxLength": 100 },
+        "title": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "dueDate": { "type": "string", "maxLength": 50 },
         "status": { "type": "string", "enum": ["Pending", "Completed", "Overdue"] },
-        "grade": { "type": "string" }
+        "grade": { "type": "string", "maxLength": 50 }
       },
-      "required": ["id", "studentId", "parentId", "subject", "title", "dueDate", "status"]
+      "required": ["id", "studentId", "parentId", "title"]
     },
     "announcement": {
       "title": "Announcement",
-      "description": "A general broadcast from administrators or teachers to all parents.",
+      "description": "A broadcast from administrators or teachers.",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "title": { "type": "string" },
-        "content": { "type": "string" },
-        "category": { "type": "string", "enum": ["General", "Academic", "Event", "Urgent"] },
-        "date": { "type": "string" },
-        "author": { "type": "string" },
+        "id": { "type": "string", "maxLength": 128 },
+        "parentId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 300 },
+        "content": { "type": "string", "maxLength": 5000 },
+        "category": { "type": "string", "maxLength": 50 },
+        "date": { "type": "string", "maxLength": 50 },
+        "author": { "type": "string", "maxLength": 200 },
         "pinned": { "type": "boolean" },
-        "imageUrl": { "type": "string" },
-        "pdfUrl": { "type": "string" },
-        "pdfFileName": { "type": "string" }
+        "imageUrl": { "type": "string", "maxLength": 1000 },
+        "pdfUrl": { "type": "string", "maxLength": 1000 },
+        "pdfFileName": { "type": "string", "maxLength": 300 }
       },
-      "required": ["id", "title", "content", "category", "date"]
+      "required": ["id", "title"]
     },
     "appointment": {
       "title": "Appointment",
       "description": "A scheduled Parent-Teacher Consultation meeting.",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "studentId": { "type": "string" },
-        "parentId": { "type": "string" },
-        "teacherName": { "type": "string" },
-        "subject": { "type": "string" },
-        "dateTime": { "type": "string" },
-        "status": { "type": "string", "enum": ["Scheduled", "Completed", "Cancelled"] },
-        "notes": { "type": "string" }
+        "id": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "parentId": { "type": "string", "maxLength": 128 },
+        "teacherName": { "type": "string", "maxLength": 200 },
+        "subject": { "type": "string", "maxLength": 100 },
+        "dateTime": { "type": "string", "maxLength": 50 },
+        "status": { "type": "string", "maxLength": 50 },
+        "notes": { "type": "string", "maxLength": 1000 }
       },
-      "required": ["id", "studentId", "parentId", "teacherName", "subject", "dateTime", "status"]
+      "required": ["id", "studentId", "parentId"]
     },
     "message": {
       "title": "Message",
       "description": "A communication message exchange on the platform.",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "studentId": { "type": "string" },
-        "parentId": { "type": "string" },
-        "senderType": { "type": "string", "enum": ["Parent", "Teacher"] },
-        "content": { "type": "string" },
-        "timestamp": { "type": "string" },
-        "teacherName": { "type": "string" }
+        "id": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "parentId": { "type": "string", "maxLength": 128 },
+        "senderType": { "type": "string", "maxLength": 50 },
+        "content": { "type": "string", "maxLength": 3000 },
+        "timestamp": { "type": "string", "maxLength": 50 },
+        "teacherName": { "type": "string", "maxLength": 200 }
       },
-      "required": ["id", "studentId", "parentId", "senderType", "content", "timestamp"]
+      "required": ["id", "parentId"]
     },
     "invoice": {
       "title": "Invoice",
-      "description": "A school fee billing invoice document.",
+      "description": "A school fee billing invoice document or settings ledger.",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "studentId": { "type": "string" },
-        "parentId": { "type": "string" },
-        "title": { "type": "string" },
+        "id": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "parentId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 300 },
         "amount": { "type": "number" },
-        "dueDate": { "type": "string" },
-        "status": { "type": "string", "enum": ["Paid", "Unpaid", "Overdue"] },
-        "paymentDate": { "type": "string" }
+        "dueDate": { "type": "string", "maxLength": 50 },
+        "status": { "type": "string", "maxLength": 50 },
+        "paymentDate": { "type": "string", "maxLength": 50 }
       },
-      "required": ["id", "studentId", "parentId", "title", "amount", "dueDate", "status"]
+      "required": ["id"]
+    },
+    "establishment": {
+      "title": "Establishment",
+      "description": "A registered school establishment document.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 300 },
+        "city": { "type": "string", "maxLength": 100 },
+        "code": { "type": "string", "maxLength": 50 },
+        "logo": { "type": "string", "maxLength": 1000 }
+      },
+      "required": ["id", "name"]
     },
     "super_admin": {
       "title": "Super Admin",
-      "description": "System administrator with global monitoring and management privileges.",
+      "description": "System administrator account.",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "email": { "type": "string" },
-        "createdAt": { "type": "string" },
-        "addedBy": { "type": "string" },
-        "role": { "type": "string" }
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 200 },
+        "email": { "type": "string", "maxLength": 200 },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "addedBy": { "type": "string", "maxLength": 200 },
+        "role": { "type": "string", "maxLength": 50 }
       },
-      "required": ["id", "name", "email", "createdAt", "addedBy", "role"]
+      "required": ["id", "email"]
     },
     "lesson": {
       "title": "Lesson",
       "description": "Classroom weekly lesson details.",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "parentId": { "type": "string" },
-        "classRoom": { "type": "string" },
-        "subject": { "type": "string" },
-        "title": { "type": "string" },
-        "content": { "type": "string" },
-        "date": { "type": "string" },
-        "teacherName": { "type": "string" }
+        "id": { "type": "string", "maxLength": 128 },
+        "parentId": { "type": "string", "maxLength": 128 },
+        "classRoom": { "type": "string", "maxLength": 100 },
+        "subject": { "type": "string", "maxLength": 100 },
+        "title": { "type": "string", "maxLength": 200 },
+        "content": { "type": "string", "maxLength": 5000 },
+        "date": { "type": "string", "maxLength": 50 },
+        "teacherName": { "type": "string", "maxLength": 200 }
       },
-      "required": ["id", "parentId", "classRoom", "subject", "title", "content", "date", "teacherName"]
+      "required": ["id"]
     },
     "auth_log": {
       "title": "Auth Log",
       "description": "Secure logging of authentication errors and attempts.",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "timestamp": { "type": "string" },
-        "userId": { "type": "string" },
-        "userEmail": { "type": "string" },
-        "errorCode": { "type": "string" },
-        "errorMessage": { "type": "string" },
-        "action": { "type": "string" },
-        "component": { "type": "string" },
-        "schoolName": { "type": "string" },
-        "schoolId": { "type": "string" },
-        "details": { "type": "string" },
-        "userAgent": { "type": "string" }
+        "id": { "type": "string", "maxLength": 128 },
+        "timestamp": { "type": "string", "maxLength": 50 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "userEmail": { "type": "string", "maxLength": 200 },
+        "errorCode": { "type": "string", "maxLength": 100 },
+        "errorMessage": { "type": "string", "maxLength": 1000 },
+        "action": { "type": "string", "maxLength": 100 },
+        "component": { "type": "string", "maxLength": 100 }
       },
-      "required": ["id", "timestamp", "userId", "errorCode", "errorMessage", "action", "component"]
+      "required": ["id", "timestamp"]
     },
     "help_request": {
       "title": "Help Request",
-      "description": "Help support request sent by school users.",
+      "description": "Help support request sent by users.",
       "type": "object",
       "properties": {
-        "senderName": { "type": "string" },
-        "senderPhone": { "type": "string" },
-        "senderEmail": { "type": "string" },
-        "subject": { "type": "string" },
-        "message": { "type": "string" },
-        "timestamp": { "type": "string" },
-        "status": { "type": "string", "enum": ["OPEN", "CLOSED", "PENDING"] },
-        "userRole": { "type": "string" },
-        "schoolName": { "type": "string" }
+        "id": { "type": "string", "maxLength": 128 },
+        "senderName": { "type": "string", "maxLength": 200 },
+        "message": { "type": "string", "maxLength": 3000 },
+        "timestamp": { "type": "string", "maxLength": 50 },
+        "status": { "type": "string", "maxLength": 50 }
       },
-      "required": ["senderName", "message", "timestamp", "status", "schoolName"]
+      "required": ["message"]
+    },
+    "roadmap_suggestion": {
+      "title": "Roadmap Suggestion",
+      "description": "Feature suggestions submitted by users.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 2000 }
+      },
+      "required": ["title"]
+    },
+    "reading_log": {
+      "title": "Reading Log",
+      "description": "Library reading logs.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "studentId": { "type": "string", "maxLength": 128 },
+        "bookTitle": { "type": "string", "maxLength": 200 }
+      },
+      "required": ["id"]
+    },
+    "user": {
+      "title": "User",
+      "description": "User profile document.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 200 },
+        "role": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id"]
     }
   },
   "firestore": {
-    "students": {
-      "schema": "student",
-      "description": "Collection of student profiles."
-    },
-    "grades": {
-      "schema": "grade",
-      "description": "Academic grade history entries."
-    },
-    "attendance": {
-      "schema": "attendance",
-      "description": "Attendance history logging."
-    },
-    "homeworks": {
-      "schema": "homework",
-      "description": "Assigned homework pieces tracker."
-    },
-    "announcements": {
-      "schema": "announcement",
-      "description": "School announcement broadcasts."
-    },
-    "appointments": {
-      "schema": "appointment",
-      "description": "Parent-Teacher meeting scheduling data."
-    },
-    "messages": {
-      "schema": "message",
-      "description": "Messages historical index."
-    },
-    "invoices": {
-      "schema": "invoice",
-      "description": "Tuition fees and billing ledger."
-    },
-    "super_admins": {
-      "schema": "super_admin",
-      "description": "Secondary system administrators details."
-    },
-    "lessons": {
-      "schema": "lesson",
-      "description": "Weekly classroom lessons."
-    },
-    "logs_auth": {
-      "schema": "auth_log",
-      "description": "Authentication audit trail."
-    },
-    "help_requests": {
-      "schema": "help_request",
-      "description": "Helpdesk support tickets."
-    }
+    "students": { "schema": "student", "description": "Collection of student profiles." },
+    "grades": { "schema": "grade", "description": "Academic grade history entries." },
+    "attendance": { "schema": "attendance", "description": "Attendance history logging." },
+    "homeworks": { "schema": "homework", "description": "Assigned homework pieces tracker." },
+    "announcements": { "schema": "announcement", "description": "School announcement broadcasts." },
+    "appointments": { "schema": "appointment", "description": "Parent-Teacher meeting scheduling data." },
+    "messages": { "schema": "message", "description": "Messages historical index." },
+    "invoices": { "schema": "invoice", "description": "Tuition fees and billing ledger." },
+    "establishments": { "schema": "establishment", "description": "Registered school establishments." },
+    "super_admins": { "schema": "super_admin", "description": "Super admin users list." },
+    "lessons": { "schema": "lesson", "description": "Weekly classroom lessons." },
+    "logs_auth": { "schema": "auth_log", "description": "Authentication audit trail." },
+    "help_requests": { "schema": "help_request", "description": "Helpdesk support tickets." },
+    "roadmap_suggestions": { "schema": "roadmap_suggestion", "description": "User feedback and roadmap suggestions." },
+    "reading_logs": { "schema": "reading_log", "description": "Library reading tracker." },
+    "users": { "schema": "user", "description": "User profile documents." },
+    "active_sessions": { "schema": "user", "description": "Active session tokens." },
+    "system": { "schema": "user", "description": "System state documents." }
   }
 }

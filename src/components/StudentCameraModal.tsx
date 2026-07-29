@@ -27,13 +27,23 @@ export default function StudentCameraModal({ student, isOpen, onClose, onUpdate 
 
   // Auto-initiate camera stream when modal opens in camera tab
   useEffect(() => {
-    if (isOpen && activeTab === 'camera') {
+    if (isOpen && activeTab === 'camera' && !photo) {
       startCamera();
-    } else {
+    } else if (!isOpen || activeTab !== 'camera') {
       stopCamera();
     }
     return () => stopCamera();
   }, [isOpen, activeTab, facingMode]);
+
+  // Ensure video element receives the stream as soon as both are present
+  useEffect(() => {
+    if (videoRef.current && stream) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.play().catch(e => {
+        console.warn("Autoplay camera stream was prevented or deferred:", e);
+      });
+    }
+  }, [stream, activeTab]);
 
   const startCamera = async () => {
     setIsActivating(true);
@@ -41,23 +51,53 @@ export default function StudentCameraModal({ student, isOpen, onClose, onUpdate 
     setPhoto(null);
     stopCamera();
 
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setCameraError("Votre navigateur ne supporte pas l'accès direct à l'appareil photo ou l'accès est restreint. Veuillez importer un fichier image ci-dessus.");
+      setIsActivating(false);
+      return;
+    }
+
     try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 400, height: 400, facingMode: facingMode },
-        audio: false
-      });
-      setStream(mediaStream);
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-        videoRef.current.play().catch(e => console.error("Error playing video:", e));
+      let mediaStream: MediaStream | null = null;
+
+      // Tier 1: Try ideal facing mode & resolution
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: facingMode, width: { ideal: 640 }, height: { ideal: 640 } },
+          audio: false
+        });
+      } catch (err1) {
+        console.warn("Tier 1 camera constraints failed, attempting Tier 2:", err1);
+        // Tier 2: Try facing mode without resolution constraints
+        try {
+          mediaStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: facingMode },
+            audio: false
+          });
+        } catch (err2) {
+          console.warn("Tier 2 camera constraints failed, falling back to default video track:", err2);
+          // Tier 3: General video track fallback
+          mediaStream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false
+          });
+        }
+      }
+
+      if (mediaStream) {
+        setStream(mediaStream);
+      } else {
+        throw new Error("No media stream obtained.");
       }
     } catch (err: any) {
       console.error("Camera access error:", err);
       let expl = "Impossible d'accéder à l'appareil photo.";
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        expl = "L'accès à la caméra a été refusé par l'utilisateur ou le navigateur. Veuillez autoriser la caméra dans l'URL/les paramètres de votre navigateur.";
+        expl = "L'accès à la caméra a été refusé par l'utilisateur ou le navigateur. Veuillez autoriser la caméra dans la barre d'adresse de votre navigateur.";
       } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        expl = "Aucun appareil photo n'a été trouvé sur ce périphérique.";
+        expl = "Aucun appareil photo n'a été détecté sur cet appareil.";
+      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+        expl = "L'appareil photo est actuellement utilisé par une autre application ou un autre onglet.";
       }
       setCameraError(expl);
     } finally {
@@ -67,7 +107,13 @@ export default function StudentCameraModal({ student, isOpen, onClose, onUpdate 
 
   const stopCamera = () => {
     if (stream) {
-      stream.getTracks().forEach(track => track.stop());
+      stream.getTracks().forEach(track => {
+        try {
+          track.stop();
+        } catch (e) {
+          console.warn("Error stopping camera track:", e);
+        }
+      });
       setStream(null);
     }
   };
@@ -77,25 +123,31 @@ export default function StudentCameraModal({ student, isOpen, onClose, onUpdate 
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    
+
+    const videoWidth = video.videoWidth || 640;
+    const videoHeight = video.videoHeight || 480;
+
     // We want a square crop for the avatar
-    const size = Math.min(video.videoWidth, video.videoHeight);
-    const startX = (video.videoWidth - size) / 2;
-    const startY = (video.videoHeight - size) / 2;
+    const size = Math.min(videoWidth, videoHeight);
+    const startX = (videoWidth - size) / 2;
+    const startY = (videoHeight - size) / 2;
 
     canvas.width = 300;
     canvas.height = 300;
     const ctx = canvas.getContext('2d');
 
     if (ctx) {
+      ctx.save();
       // Draw image cropped to a square center zone
       if (facingMode === 'user') {
-        // Horizontally mirror the image on canvas to match user preview
+        // Horizontally mirror the image on canvas to match user selfie preview
         ctx.translate(300, 0);
         ctx.scale(-1, 1);
       }
       ctx.drawImage(video, startX, startY, size, size, 0, 0, 300, 300);
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      ctx.restore();
+
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
       setPhoto(dataUrl);
       stopCamera();
     }
@@ -320,13 +372,22 @@ export default function StudentCameraModal({ student, isOpen, onClose, onUpdate 
                         <p className="text-xs text-slate-300 leading-relaxed font-semibold">
                           {cameraError}
                         </p>
-                        <button
-                          type="button"
-                          onClick={() => setActiveTab('upload')}
-                          className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl cursor-pointer shadow-xs transition"
-                        >
-                          <Upload className="h-4 w-4" /> Utiliser l'import de fichier
-                        </button>
+                        <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={startCamera}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl cursor-pointer transition border border-slate-700"
+                          >
+                            <RefreshCw className="h-3.5 w-3.5" /> Réessayer
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab('upload')}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl cursor-pointer shadow-xs transition"
+                          >
+                            <Upload className="h-3.5 w-3.5" /> Importer un fichier
+                          </button>
+                        </div>
                       </div>
                     )}
 

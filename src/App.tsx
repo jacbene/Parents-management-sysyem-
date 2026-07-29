@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, query, where, getDocs, doc, setDoc, deleteDoc, writeBatch, getDoc, onSnapshot } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
-import { auth, loginWithGoogle, logout, db, handleFirestoreError, OperationType, loginAnonymously, goOffline, goOnline, isOffline as isOfflineCheck, queuePendingAction, signUpWithEmail, loginWithEmail, resetPassword, sendUserEmailVerification, markEmailAsVerifiedLocally, isEmailVerifiedLocally, isUserEmailVerified } from './firebase';
+import { auth, loginWithGoogle, checkRedirectResult, logout, db, handleFirestoreError, OperationType, loginAnonymously, goOffline, goOnline, isOffline as isOfflineCheck, queuePendingAction, signUpWithEmail, loginWithEmail, resetPassword, sendUserEmailVerification, markEmailAsVerifiedLocally, isEmailVerifiedLocally, isUserEmailVerified } from './firebase';
 import { isDatabaseSeeded, seedUserData, getOfflineMockData, purgeUserData } from './seeder';
+import { DEFAULT_SCHOOL_LOGO } from './constants';
 import { Student, Grade, Attendance, Homework, Lesson, Appointment, Message, Invoice, ApeeParent, ApeeExpense, ApeeSettings, Announcement, AnnouncementCategory, ApeeActivityLog, ApeeOtherRevenue, PendingAction } from './types';
 
 // Notifications Push
@@ -109,7 +110,9 @@ import {
   Moon,
   Users,
   HelpCircle,
-  Mail
+  Mail,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 type TabType = 
@@ -595,6 +598,7 @@ export default function App() {
   // Email connection form state
   const [emailInput, setEmailInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
+  const [showPasswordInput, setShowPasswordInput] = useState(false);
   const [submittingEmailLogin, setSubmittingEmailLogin] = useState(false);
   const [emailLoginError, setEmailLoginError] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<'login' | 'signup' | 'forgot'>('login');
@@ -996,6 +1000,7 @@ export default function App() {
   } | null>(null);
 
   const [authPasswordInput, setAuthPasswordInput] = useState('');
+  const [showAuthDialogPassword, setShowAuthDialogPassword] = useState(false);
   const [authDialogError, setAuthDialogError] = useState('');
 
   const checkApeeAuthorization = (): Promise<boolean> => {
@@ -2787,21 +2792,21 @@ export default function App() {
         if (email === 'jacquesbene301@gmail.com') {
           setShowSuperAdmin(true);
         }
+        setShowMainLogin(false);
       }
-      setShowMainLogin(false);
     } catch (e: any) {
       console.warn("Google authentication warning:", e);
-      let errorMsg = "La connexion Google n'a pas pu aboutir. Les fenêtres surgissantes (popups) ou cookies tiers peuvent être bloqués par le navigateur.";
+      let errorMsg = "La connexion Google n'a pas pu aboutir. Si vous êtes dans l'iframe d'aperçu d'AI Studio, veuillez ouvrir l'application dans un nouvel onglet (bouton ↗️ en haut à droite) pour autoriser la fenêtre surgissante de Google.";
       if (e?.code === 'auth/popup-closed-by-user') {
-        errorMsg = "La fenêtre d'authentification Google a été fermée avant la validation. Veuillez réessayer.";
+        errorMsg = "La fenêtre d'authentification Google a été fermée avant la validation. Veuillez reessayer.";
       } else if (e?.code === 'auth/popup-blocked') {
-        errorMsg = "Le popup de connexion Google a été bloqué par votre navigateur dans cet iframe. Autorisez les popups ou utilisez la connexion e-mail Super-Admin ci-dessous.";
+        errorMsg = "Le popup Google est bloqué par votre navigateur dans cet iframe. Veuillez ouvrir l'application dans un nouvel onglet (icône ↗️ en haut à droite) pour autoriser la connexion Google.";
       } else if (e?.code === 'auth/unauthorized-domain') {
-        errorMsg = "Le domaine de prévisualisation actuel n'est pas encore enregistré dans la console Firebase Auth. Utilisez l'accès e-mail Super-Admin avec jacquesbene301@gmail.com !";
+        errorMsg = "Le domaine de prévisualisation actuel n'est pas encore enregistré dans la console Firebase Auth -> Domaines autorisés.";
       } else if (e?.code === 'auth/operation-not-allowed') {
-        errorMsg = "Le fournisseur Google Sign-In doit être activé dans la console Firebase Auth. Connectez-vous avec jacquesbene301@gmail.com ci-dessous.";
+        errorMsg = "⚠️ Le fournisseur Google Sign-In n'est pas encore activé dans votre Console Firebase ! Allez dans Firebase Console -> Authentification -> Sign-in method -> Activez Google.";
       } else if (e?.code === 'auth/network-request-failed' || e?.message?.includes('network-request-failed')) {
-        errorMsg = "Problème réseau lors de la connexion Firebase Auth. Réessayez ou utilisez l'accès e-mail.";
+        errorMsg = "Problème réseau lors de la connexion Firebase Auth. Réessayez ou utilisez l'accès e-mail ci-dessous.";
       }
       
       setAuthError(errorMsg);
@@ -2899,6 +2904,18 @@ export default function App() {
     }
   };
 
+  // Check Google redirect sign-in result on boot
+  useEffect(() => {
+    checkRedirectResult().then(redirectUser => {
+      if (redirectUser) {
+        if (redirectUser.email?.toLowerCase().trim() === 'jacquesbene301@gmail.com') {
+          setShowSuperAdmin(true);
+        }
+        setShowMainLogin(false);
+      }
+    });
+  }, []);
+
   // 1.5 Auto-login guest if they have a persistent school selection but are unauthenticated (restores DB access on boot)
   useEffect(() => {
     if (!loading && !user) {
@@ -2957,19 +2974,11 @@ export default function App() {
 
               <div className="p-8 space-y-6">
                 <div>
-                  <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider mb-3">Authentification Rapide</h3>
+                  <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider mb-3">Accès Démo Rapide</h3>
                   
-                  {/* Google Login Trigger */}
+                  {/* Google Login Trigger (Masqué provisoirement pour la pré-production) */}
                   <div className="space-y-4">
-                    {authError && (
-                      <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs rounded-xl font-medium space-y-1">
-                        <div className="font-bold flex items-center gap-1.5">
-                          <span>⚠️</span> Information d'Authentification :
-                        </div>
-                        <p>{authError}</p>
-                      </div>
-                    )}
-
+                    {/* 
                     <button
                       onClick={handleLogin}
                       className="w-full py-3 bg-white border border-slate-200 text-slate-700 font-bold text-xs rounded-xl flex items-center justify-center gap-2.5 transition active:scale-98 shadow-sm cursor-pointer hover:bg-slate-50 hover:border-slate-350"
@@ -2982,6 +2991,7 @@ export default function App() {
                       </svg>
                       Continuer avec Google
                     </button>
+                    */}
                     
                     <button
                       onClick={handleGuestLogin}
@@ -2994,17 +3004,13 @@ export default function App() {
                         Accéder au Mode Démo (Sans compte)
                       </span>
                     </button>
-
-                    <p className="text-[10px] text-gray-400 font-bold text-center leading-relaxed">
-                      La connexion Google est disponible pour le Super-Admin (Jacques Béné). <span className="text-amber-500 font-black">Bypass Sandbox :</span> Vous pouvez aussi utiliser l'onglet e-mail ci-dessous avec l'adresse <strong className="text-slate-600 dark:text-slate-350">jacquesbene301@gmail.com</strong> (et n'importe quel mot de passe) pour un accès direct instantané !
-                    </p>
                   </div>
                 </div>
 
                 {/* Separator */}
                 <div className="relative flex py-1 items-center">
                   <div className="flex-grow border-t border-gray-150"></div>
-                  <span className="flex-shrink mx-4 text-gray-400 text-[9px] font-black uppercase tracking-widest bg-white px-2">OU PAR E-MAIL</span>
+                  <span className="flex-shrink mx-4 text-gray-400 text-[9px] font-black uppercase tracking-widest bg-white px-2">AUTHENTIFICATION PAR E-MAIL</span>
                   <div className="flex-grow border-t border-gray-150"></div>
                 </div>
 
@@ -3079,14 +3085,24 @@ export default function App() {
                           </button>
                         )}
                       </div>
-                      <input
-                        required
-                        type="password"
-                        value={passwordInput}
-                        onChange={(e) => setPasswordInput(e.target.value)}
-                        placeholder={authMode === 'signup' ? "Minimum 6 caractères" : "Saisissez votre mot de passe"}
-                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs placeholder:text-slate-400 outline-none focus:border-indigo-600 focus:bg-white transition"
-                      />
+                      <div className="relative">
+                        <input
+                          required
+                          type={showPasswordInput ? "text" : "password"}
+                          value={passwordInput}
+                          onChange={(e) => setPasswordInput(e.target.value)}
+                          placeholder={authMode === 'signup' ? "Minimum 6 caractères" : "Saisissez votre mot de passe"}
+                          className="w-full pl-3.5 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs placeholder:text-slate-400 outline-none focus:border-indigo-600 focus:bg-white transition"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPasswordInput(!showPasswordInput)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer p-1"
+                          title={showPasswordInput ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+                        >
+                          {showPasswordInput ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
                     </div>
                   )}
 
@@ -3264,9 +3280,10 @@ export default function App() {
                   />
                 ) : (
                   <img
-                    src="/icon-512.png"
-                    alt="Logo"
-                    className="h-8 w-8 md:h-10 md:w-10 object-contain rounded-xl p-0.5 bg-indigo-50 dark:bg-slate-800 border border-indigo-100 dark:border-slate-700 shrink-0"
+                    src={DEFAULT_SCHOOL_LOGO}
+                    alt="Logo Établissement"
+                    className="h-8 w-8 md:h-10 md:w-10 object-contain rounded-xl p-0.5 bg-slate-50 dark:bg-slate-800 border border-slate-150 dark:border-slate-700 shrink-0"
+                    referrerPolicy="no-referrer"
                   />
                 )}
                 <div>
@@ -4757,18 +4774,28 @@ export default function App() {
 
             <form onSubmit={handleAuthDialogSubmit} className="space-y-4">
               <div className="space-y-1">
-                <input
-                  type="password"
-                  autoFocus
-                  required
-                  placeholder={authDialog.placeholder}
-                  value={authPasswordInput}
-                  onChange={(e) => {
-                    setAuthPasswordInput(e.target.value);
-                    if (authDialogError) setAuthDialogError('');
-                  }}
-                  className="w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-white placeholder-slate-600 font-mono tracking-widest text-center text-xl transition-all"
-                />
+                <div className="relative">
+                  <input
+                    type={showAuthDialogPassword ? "text" : "password"}
+                    autoFocus
+                    required
+                    placeholder={authDialog.placeholder}
+                    value={authPasswordInput}
+                    onChange={(e) => {
+                      setAuthPasswordInput(e.target.value);
+                      if (authDialogError) setAuthDialogError('');
+                    }}
+                    className="w-full pl-4 pr-11 py-3 bg-slate-950 border border-slate-800 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-white placeholder-slate-600 font-mono tracking-widest text-center text-xl transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAuthDialogPassword(!showAuthDialogPassword)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer p-1"
+                    title={showAuthDialogPassword ? "Masquer le code secret" : "Afficher le code secret"}
+                  >
+                    {showAuthDialogPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  </button>
+                </div>
                 
                 {authDialogError && (
                   <p className="text-[11px] text-rose-450 font-bold text-center mt-1">

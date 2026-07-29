@@ -1,34 +1,49 @@
-# Security Specifications & Hardened TDD Specification
+# Security Specification & Verification (Firestore Security Rules)
 
 ## 1. Data Invariants
+1. **Authentication Requirement**: All write operations across all collections require an authenticated user (`request.auth != null`).
+2. **Super Admin Privilege**: Super admins (e.g. `jacquesbene301@gmail.com` or users listed in `/super_admins/{email}`) have administrative access to manage system resources, establishments, and logs.
+3. **Establishment Integrity**: School establishments can be read by any authenticated user for onboarding/portal access, but writes are restricted to authenticated users creating or modifying their respective school or super admins.
+4. **Student Data Isolation**: Student profiles, grades, attendance records, homeworks, appointments, messages, invoices, and lessons must belong to or be linked to a valid parent/user or school ID (`parentId` or student owner), preventing cross-tenant spoofing.
+5. **Invoice & Financial Record Validation**: Invoices, tuition records, and APEE financial transactions cannot be tampered with by unauthorized users.
+6. **Audit & Support Log Integrity**: Logs (`logs_auth`) and support tickets (`help_requests`, `roadmap_suggestions`) can be created by authenticated users, but modification or deletion is restricted to super admins.
+7. **System & Session Controls**: Active sessions and deleted school records (`system/deleted_schools`) are strictly managed by active authenticated users or super admins.
 
-1. **Student Boundaries**: A student profile can only be read, created, or modified by their managing parent (`parentId == auth.uid`).
-2. **Dependent Collection Integrity**: Records in `grades`, `attendance`, `homeworks`, `appointments`, `messages`, and `invoices` can only be queried or modified if their root `parentId` property matches the authenticated user `request.auth.uid`.
-3. **Immutability of Key Identification**: In all sub-collections, `parentId` and `studentId` fields are strictly immutable on updates.
-4. **Broadcast Reach (Announcements)**: Anyone signed in with verified credentials can read school announcements (`isSignedIn()`), but no client is permitted to write or delete them (Server-only / Admin-only write paths). No admin role exists on client side; we block all client writes to the `announcements` collection.
-5. **Secure Lists**: Any listed queries on collection levels must enforce queries restricted to `resource.data.parentId == request.auth.uid`.
+## 2. The "Dirty Dozen" Threat Payloads
+Below are 12 malicious or invalid payloads designed to break identity, schema integrity, or state boundaries:
 
----
+1. **Unauthenticated Read/Write Attack**: An unauthenticated user attempts to read or write `/students/student_123`.
+   - *Expected Outcome*: PERMISSION_DENIED (Must require `request.auth != null`).
 
-## 2. The "Dirty Dozen" Payloads (Aesthetic Anti-Spoof Patterns)
+2. **Cross-Tenant Student Injection**: User `user_A` attempts to create a student profile with `parentId: "user_B"`.
+   - *Expected Outcome*: PERMISSION_DENIED (Must enforce `parentId == request.auth.uid` or admin privilege).
 
-These payloads are designed to challenge identity barriers and represent potential attack vectors to reject:
+3. **Super Admin Impersonation**: Non-admin user attempts to insert themselves into `/super_admins/hacker@evil.com`.
+   - *Expected Outcome*: PERMISSION_DENIED (Must require existing super admin or specific super admin email).
 
-1. **Spoofed Parent ID on Student Account**: A parent tries to create a student profile setting `parentId` to a different user's UID.
-2. **Cross-Tenant Grade Sneak**: Modifying a grade record belonging to another parent's student.
-3. **Ghost Fields Injection**: Injecting an extra system status or premium subscription flag attribute into a homework record that is not in the schema.
-4. **Negative Value Tuition Bill**: A parent writing/updating an invoice record to make the billing amount negative (`amount: -5000`) or marking an invoice as paid without a valid payment gateway transaction.
-5. **Admin Escape Lockout**: Injecting an administrative role into a profile record to gain back-office controls.
-6. **Student ID Overwrite**: Changing a grade record's `studentId` during an update to rebind that score to a sibling.
-7. **Malformed Path Navigation Injection**: Using custom symbols `..` or path traversals within a generated document ID.
-8. **Immortal Timestamp Overwrite**: Trying to falsify `createdAt` timing inputs with client machines.
-9. **Spamming Messages with 1MB String**: Trying to write massive message footprints to overflow storage allocations.
-10. **Anonymous Infiltration**: Trying to perform read/write queries without being authenticated or with unverified emails.
-11. **Appointment Back-Dating**: Trying to create appointment times in the past, or editing appointment states of cancelled lists.
-12. **Double Delete Injection**: Retrying a state delete without correct parent-relational permission.
+4. **Malformed Document ID Injection**: Attacker attempts to create a document with a 2KB junk character path ID.
+   - *Expected Outcome*: PERMISSION_DENIED (Must enforce `isValidId()`).
 
----
+5. **Ghost Field / Shadow Key Injection**: Attacker attempts to update a student document adding `{ "isSuperAdmin": true }`.
+   - *Expected Outcome*: PERMISSION_DENIED (Must validate fields or enforce strict schema matching).
 
-## 3. Test Rules Structure
+6. **Invoice Fee Tampering**: Non-admin user attempts to overwrite another school's fee settings document `/invoices/school_X_settings` to reduce fees to `0`.
+   - *Expected Outcome*: PERMISSION_DENIED.
 
-We will enforce security rules using a robust declarative state. Let's build the tests conceptually and implement the fortress `firestore.rules`.
+7. **Auth Log Tampering**: User attempts to delete or modify an authentication audit log entry in `/logs_auth/log_999`.
+   - *Expected Outcome*: PERMISSION_DENIED (Logs are append-only for users, editable/deletable only by super admin).
+
+8. **System Deleted Schools Wipe**: User attempts to wipe the `/system/deleted_schools` tracking document.
+   - *Expected Outcome*: PERMISSION_DENIED.
+
+9. **Grade Manipulation**: User `user_A` attempts to update a grade document belonging to `user_B`'s student.
+   - *Expected Outcome*: PERMISSION_DENIED.
+
+10. **Arbitrary Unbounded Payload**: Attacker attempts to upload a 500KB text string into a student's `name` property.
+    - *Expected Outcome*: PERMISSION_DENIED (Must enforce string size limit e.g. `<= 500` characters).
+
+11. **Client-Forged Server Timestamp**: Attacker attempts to forge historical `createdAt` dates.
+    - *Expected Outcome*: PERMISSION_DENIED (Must validate timestamp constraints or server timestamp).
+
+12. **Unauthenticated Support Ticket Wipe**: Attacker attempts to delete support requests in `/help_requests`.
+    - *Expected Outcome*: PERMISSION_DENIED.

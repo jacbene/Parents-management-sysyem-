@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Save, HelpCircle, Shield, Settings, Info, CheckCircle2, Plus, Trash2, Edit2, X, TrendingUp, Lock, Unlock, UserCheck, User, Phone, Mail, GraduationCap, AlertTriangle, CreditCard, Smartphone } from 'lucide-react';
 import { ApeeSettings, ApeeBudgetLine, ApeeParent } from '../../types';
+import { DEFAULT_SCHOOL_LOGO } from '../../constants';
 import { getApeeShortName } from '../../utils/apeeDb';
 import { useLanguage } from '../../utils/TranslationContext';
 import PaymentConfigurationForm from '../PaymentConfigurationForm';
@@ -284,6 +285,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
           campayToken: settings.paymentConfig?.campayToken,
           campayWebhookKey: settings.paymentConfig?.campayWebhookKey,
         },
+        smsConfig: settings.smsConfig,
         ...extra
       });
 
@@ -460,13 +462,16 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
                         type="button"
                         onClick={() => setLogoUrl('')}
                         className="absolute top-0 right-0 p-0.5 bg-red-150 hover:bg-red-250 text-red-700 rounded-bl-lg cursor-pointer transition shadow-4xs"
-                        title="Supprimer le logo"
+                        title="Supprimer le logo (Rétablir le logo par défaut)"
                       >
                         <X className="h-2.5 w-2.5 shrink-0" />
                       </button>
                     </>
                   ) : (
-                    <span className="text-[8px] font-extrabold uppercase text-slate-400">Aucun</span>
+                    <div className="h-full w-full relative flex flex-col items-center justify-center p-0.5 bg-slate-50">
+                      <img src={DEFAULT_SCHOOL_LOGO} alt="Logo par défaut" className="h-full w-full object-contain rounded-md" referrerPolicy="no-referrer" />
+                      <span className="absolute bottom-0 inset-x-0 text-[7px] font-black uppercase text-indigo-900 bg-white/90 backdrop-blur-xs py-0.5 text-center border-t border-slate-200">Par défaut</span>
+                    </div>
                   )}
                 </div>
                 <div className="flex-1 space-y-1.5">

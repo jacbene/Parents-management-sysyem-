@@ -362,8 +362,17 @@ export async function fetchApeeData(parentId: string) {
         } catch (e) {
           console.error("Failed to parse paymentConfigList from Firestore", e);
         }
+        let parsedSmsConfig = undefined;
+        try {
+          if (data.smsConfigList) {
+            parsedSmsConfig = JSON.parse(data.smsConfigList);
+          }
+        } catch (e) {
+          console.error("Failed to parse smsConfigList from Firestore", e);
+        }
         dbSettings = {
           associationName: data.title,
+          shortName: data.shortName || '',
           cotisationAmount: data.amount,
           schoolYear: data.dueDate,
           financialGoal: data.amountPaid || DEFAULT_SETTINGS.financialGoal,
@@ -383,15 +392,17 @@ export async function fetchApeeData(parentId: string) {
           censeurName: data.censeurName || '',
           censeurPhone: data.censeurPhone || '',
           classTeachers: teachers,
-          honoraryContributions: data.honoraryContributions || 0,
-          subventionsAndAids: data.subventionsAndAids || 0,
-          actualHonoraryContributions: data.actualHonoraryContributions || 0,
-          actualSubventionsAndAids: data.actualSubventionsAndAids || 0,
+          honoraryContributions: data.honoraryContributions ?? 0,
+          subventionsAndAids: data.subventionsAndAids ?? 0,
+          actualHonoraryContributions: data.actualHonoraryContributions ?? 0,
+          actualSubventionsAndAids: data.actualSubventionsAndAids ?? 0,
           expectedStudents: data.expectedStudents || 100,
           country: data.country || DEFAULT_SETTINGS.country,
           currency: data.currency || DEFAULT_SETTINGS.currency,
           financialObligations: obligations,
           paymentConfig: parsedPaymentConfig,
+          smsConfig: parsedSmsConfig,
+          syncIntervalSeconds: data.syncIntervalSeconds || 30,
         };
       }
     });
@@ -639,6 +650,9 @@ export async function saveApeeSettings(parentId: string, settings: ApeeSettings)
     currency: settings.currency || '',
     financialObligationsList: JSON.stringify(settings.financialObligations || []),
     paymentConfigList: JSON.stringify(settings.paymentConfig || {}),
+    shortName: settings.shortName || '',
+    smsConfigList: JSON.stringify(settings.smsConfig || {}),
+    syncIntervalSeconds: settings.syncIntervalSeconds || 30,
   };
 
   if (isOffline()) {
@@ -884,9 +898,27 @@ export async function importFullBackup(
       pedManagerName: finalSettings.pedManagerName || '',
       pedManagerPhone: finalSettings.pedManagerPhone || '',
       pedManagerPassword: finalSettings.pedManagerPassword || '',
+      logoUrl: finalSettings.logoUrl || '',
+      directorName: finalSettings.directorName || '',
+      directorPhone: finalSettings.directorPhone || '',
+      directorEmail: finalSettings.directorEmail || '',
+      surveillantName: finalSettings.surveillantName || '',
+      surveillantPhone: finalSettings.surveillantPhone || '',
+      censeurName: finalSettings.censeurName || '',
+      censeurPhone: finalSettings.censeurPhone || '',
+      classTeachersList: JSON.stringify(finalSettings.classTeachers || []),
       honoraryContributions: finalSettings.honoraryContributions || 0,
       subventionsAndAids: finalSettings.subventionsAndAids || 0,
+      actualHonoraryContributions: finalSettings.actualHonoraryContributions || 0,
+      actualSubventionsAndAids: finalSettings.actualSubventionsAndAids || 0,
+      expectedStudents: finalSettings.expectedStudents || 100,
+      country: finalSettings.country || '',
+      currency: finalSettings.currency || '',
+      financialObligationsList: JSON.stringify(finalSettings.financialObligations || []),
       paymentConfigList: JSON.stringify(finalSettings.paymentConfig || {}),
+      shortName: finalSettings.shortName || '',
+      smsConfigList: JSON.stringify(finalSettings.smsConfig || {}),
+      syncIntervalSeconds: finalSettings.syncIntervalSeconds || 30,
     });
 
     // Write parents
@@ -1150,8 +1182,17 @@ export function subscribeApeeData(
           } catch (e) {
             console.error("Failed to parse paymentConfigList from Firestore", e);
           }
+          let parsedSmsConfig = undefined;
+          try {
+            if (data.smsConfigList) {
+              parsedSmsConfig = JSON.parse(data.smsConfigList);
+            }
+          } catch (e) {
+            console.error("Failed to parse smsConfigList from Firestore", e);
+          }
           dbSettings = {
             associationName: data.title,
+            shortName: data.shortName || '',
             cotisationAmount: data.amount,
             schoolYear: data.dueDate,
             financialGoal: data.amountPaid || DEFAULT_SETTINGS.financialGoal,
@@ -1171,9 +1212,18 @@ export function subscribeApeeData(
             censeurName: data.censeurName || '',
             censeurPhone: data.censeurPhone || '',
             classTeachers: teachers,
+            honoraryContributions: data.honoraryContributions ?? 0,
+            subventionsAndAids: data.subventionsAndAids ?? 0,
+            actualHonoraryContributions: data.actualHonoraryContributions ?? 0,
+            actualSubventionsAndAids: data.actualSubventionsAndAids ?? 0,
+            expectedStudents: data.expectedStudents || 100,
+            country: data.country || DEFAULT_SETTINGS.country,
+            currency: data.currency || DEFAULT_SETTINGS.currency,
             financialObligations: obligations,
             paymentConfig: parsedPaymentConfig,
-          } as any;
+            smsConfig: parsedSmsConfig,
+            syncIntervalSeconds: data.syncIntervalSeconds || 30,
+          };
         }
       });
 

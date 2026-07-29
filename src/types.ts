@@ -156,6 +156,9 @@ export interface Invoice {
   currency?: string;
   financialObligationsList?: string;
   paymentConfigList?: string;
+  shortName?: string;
+  smsConfigList?: string;
+  syncIntervalSeconds?: number;
 }
 
 export interface ApeeStudentLink {

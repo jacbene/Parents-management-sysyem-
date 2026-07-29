@@ -2,10 +2,157 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Allow read, write on all collections for app operation
-    match /{document=**} {
-      allow read, write: if true;
+    // Global helper functions
+    function isSignedIn() {
+      return request.auth != null;
     }
 
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && (
+        (request.auth.token != null && request.auth.token.email == 'jacquesbene301@gmail.com') ||
+        exists(/databases/$(database)/documents/super_admins/$(request.auth.uid)) ||
+        (request.auth.token != null && exists(/databases/$(database)/documents/super_admins/$(request.auth.token.email)))
+      );
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Default deny rule
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // School Establishments
+    match /establishments/{schoolId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && isValidId(schoolId);
+      allow delete: if isSuperAdmin();
+    }
+
+    // Student Profiles
+    match /students/{studentId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && isValidId(studentId);
+      allow delete: if isSignedIn();
+    }
+
+    // Grades
+    match /grades/{gradeId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && isValidId(gradeId);
+      allow delete: if isSignedIn();
+    }
+
+    // Attendance Records
+    match /attendance/{attendanceId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && isValidId(attendanceId);
+      allow delete: if isSignedIn();
+    }
+
+    // Homework Assignments
+    match /homeworks/{homeworkId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && isValidId(homeworkId);
+      allow delete: if isSignedIn();
+    }
+
+    // Announcements
+    match /announcements/{announcementId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && isValidId(announcementId);
+      allow delete: if isSignedIn();
+    }
+
+    // Parent-Teacher Appointments
+    match /appointments/{appointmentId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && isValidId(appointmentId);
+      allow delete: if isSignedIn();
+    }
+
+    // Messages
+    match /messages/{messageId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && isValidId(messageId);
+      allow delete: if isSignedIn();
+    }
+
+    // Invoices & Financial Settings
+    match /invoices/{invoiceId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && isValidId(invoiceId);
+      allow delete: if isSignedIn();
+    }
+
+    // Classroom Lessons
+    match /lessons/{lessonId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && isValidId(lessonId);
+      allow delete: if isSignedIn();
+    }
+
+    // Library Reading Logs
+    match /reading_logs/{logId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && isValidId(logId);
+      allow delete: if isSignedIn();
+    }
+
+    // Auth Logs (Audit Trail)
+    match /logs_auth/{logId} {
+      allow read: if isSuperAdmin();
+      allow create: if isSignedIn() && isValidId(logId);
+      allow update, delete: if isSuperAdmin();
+    }
+
+    // Support Help Requests
+    match /help_requests/{requestId} {
+      allow read: if isSuperAdmin() || (isSignedIn() && existing().senderName != null);
+      allow create: if isSignedIn() && isValidId(requestId);
+      allow update, delete: if isSuperAdmin();
+    }
+
+    // Roadmap & Feature Suggestions
+    match /roadmap_suggestions/{suggestionId} {
+      allow read, create: if isSignedIn() && isValidId(suggestionId);
+      allow update, delete: if isSuperAdmin();
+    }
+
+    // Super Admin Directory
+    match /super_admins/{adminId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSuperAdmin() || (request.auth.token != null && request.auth.token.email == 'jacquesbene301@gmail.com');
+    }
+
+    // User Profiles
+    match /users/{userId} {
+      allow read, write: if isSignedIn() && isValidId(userId);
+    }
+
+    // Active User Sessions
+    match /active_sessions/{sessionId} {
+      allow read, write: if isSignedIn() && isValidId(sessionId);
+    }
+
+    // System Documents (e.g., deleted_schools)
+    match /system/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isValidId(docId);
+    }
   }
 }

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, doc, getDoc, getDocs, query, setDoc, writeBatch, where } from 'firebase/firestore';
 import { db, auth, loginAnonymously } from '../firebase';
 import { logAuthError } from '../utils/authLogger';
-import { Landmark, Plus, CheckCircle, AlertOctagon, UserCheck, Phone, ShieldCheck, ArrowRight, X, Sparkles, User, HelpCircle, Mail, Smartphone, Key, RotateCw, Bell, Share2 } from 'lucide-react';
+import { Landmark, Plus, CheckCircle, AlertOctagon, UserCheck, Phone, ShieldCheck, ArrowRight, X, User, HelpCircle, Mail, Smartphone, Key, RotateCw, Bell, Share2, Eye, EyeOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ApeeSettings, ApeeParent, Student, Grade, Homework, Attendance, Invoice, Establishment } from '../types';
 import { syncLocalSchoolsToFirestore, saveAndSyncEstablishment, getDeletedSchoolIds, fetchAndSyncDeletedSchoolIds, sanitizeFirestoreId } from '../utils/schoolSync';
@@ -23,6 +23,12 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
   const [activeTab, setActiveTab] = useState<'choose' | 'create'>('choose');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Visibility Toggles for Password Inputs
+  const [showTeacherCode, setShowTeacherCode] = useState(false);
+  const [showManagerPassword, setShowManagerPassword] = useState(false);
+  const [showFinPassword, setShowFinPassword] = useState(false);
+  const [showPedPassword, setShowPedPassword] = useState(false);
 
   // Connection Role (Parent vs Administrator vs Teacher)
   const [onboardingRole, setOnboardingRole] = useState<'parent' | 'manager' | 'teacher'>('parent');
@@ -1375,7 +1381,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
         {/* Core Screen Panels Custom layout based on active tab selection */}
-        <div className="md:col-span-2 bg-white border border-slate-150 p-6 rounded-3xl shadow-sm">
+        <div className={`${activeTab === 'choose' ? 'md:col-span-3 max-w-2xl mx-auto w-full' : 'md:col-span-2'} bg-white border border-slate-150 p-6 rounded-3xl shadow-sm`}>
           {activeTab === 'choose' ? (
             <form onSubmit={handleParentSubmit} className="space-y-5">
               <div className="border-b border-gray-100 pb-3">
@@ -1437,16 +1443,6 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                 );
               })()}
 
-              {/* Notice informative de cache effacé */}
-              <div className="p-3.5 bg-indigo-50/60 border border-indigo-100 rounded-2xl flex items-start gap-3">
-                <Sparkles className="h-4.5 w-4.5 text-indigo-600 shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <p className="text-[11px] font-black text-indigo-950 uppercase tracking-wider">ℹ️ Données en sécurité</p>
-                  <p className="text-xs text-indigo-900 leading-relaxed">
-                    Si vous venez d'effacer le cache de votre navigateur, vos identifiants de session locale ont été réinitialisés. <strong>Sachez que vos données enregistrées restent intactes sur notre serveur Cloud sécurisé.</strong> Pour tout retrouver, sélectionnez simplement votre établissement d'origine ci-dessous et reconnectez-vous.
-                  </p>
-                </div>
-              </div>
 
                {/* Role Toggle Choice */}
               <div className="flex gap-2 p-1 bg-slate-100 rounded-xl w-full border border-slate-200">
@@ -1684,14 +1680,22 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                       </label>
                       <div className="relative">
                         <input
-                          type="password"
+                          type={showTeacherCode ? "text" : "password"}
                           required={onboardingRole === 'teacher'}
                           value={teacherVerificationCode}
                           onChange={(e) => setTeacherVerificationCode(e.target.value)}
                           placeholder="Saisissez votre code d'accès"
-                          className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 tracking-wider focus:outline-indigo-500 focus:bg-white font-mono"
+                          className="w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 tracking-wider focus:outline-indigo-500 focus:bg-white font-mono"
                         />
                         <ShieldCheck className="h-4 w-4 text-slate-400 absolute left-3 top-3.5" />
+                        <button
+                          type="button"
+                          onClick={() => setShowTeacherCode(!showTeacherCode)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer p-1"
+                          title={showTeacherCode ? "Masquer le code d'accès" : "Afficher le code d'accès"}
+                        >
+                          {showTeacherCode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
                       </div>
                       <p className="text-[10.5px] text-slate-500 leading-normal p-3 bg-indigo-50/50 rounded-2xl border border-indigo-100 flex items-center gap-2">
                         💡 Saisissez le code d'accès de démonstration <strong>1234</strong> ou le code d'accès de l'établissement pour vous connecter directement.
@@ -1755,14 +1759,22 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                       </label>
                       <div className="relative">
                         <input
-                          type="password"
+                          type={showManagerPassword ? "text" : "password"}
                           required={onboardingRole === 'manager'}
                           value={managerPassword}
                           onChange={(e) => setManagerPassword(e.target.value)}
                           placeholder="Ex: 1234"
-                          className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 font-mono tracking-widest focus:outline-indigo-500 focus:bg-white"
+                          className="w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 font-mono tracking-widest focus:outline-indigo-500 focus:bg-white"
                         />
                         <ShieldCheck className="h-4 w-4 text-slate-400 absolute left-3 top-3" />
+                        <button
+                          type="button"
+                          onClick={() => setShowManagerPassword(!showManagerPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer p-1"
+                          title={showManagerPassword ? "Masquer le code d'accès" : "Afficher le code d'accès"}
+                        >
+                          {showManagerPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
                       </div>
                       <p className="text-[10px] text-gray-500 leading-normal p-2.5 bg-amber-50 rounded-xl border border-amber-200/80 flex items-center gap-1.5 shadow-3xs">
                         ✨ Pour les écoles de démonstration par défaut, le code d'accès de l'administration est <strong>1234</strong>.
@@ -2008,14 +2020,24 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                     </div>
                     <div className="space-y-1">
                       <label className="text-[9px] font-black text-slate-500 uppercase">Code secret d'accès *</label>
-                      <input
-                        type="password"
-                        required
-                        value={finPassword}
-                        onChange={(e) => setFinPassword(e.target.value)}
-                        placeholder="Ex: 1234"
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800 font-mono focus:outline-indigo-550"
-                      />
+                      <div className="relative">
+                        <input
+                          type={showFinPassword ? "text" : "password"}
+                          required
+                          value={finPassword}
+                          onChange={(e) => setFinPassword(e.target.value)}
+                          placeholder="Ex: 1234"
+                          className="w-full pl-3 pr-9 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800 font-mono focus:outline-indigo-550"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowFinPassword(!showFinPassword)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5"
+                          title={showFinPassword ? "Masquer le code secret" : "Afficher le code secret"}
+                        >
+                          {showFinPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2048,14 +2070,24 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                     </div>
                     <div className="space-y-1">
                       <label className="text-[9px] font-black text-slate-500 uppercase">Code de protection cahier textes *</label>
-                      <input
-                        type="password"
-                        required
-                        value={pedPassword}
-                        onChange={(e) => setPedPassword(e.target.value)}
-                        placeholder="Ex: 5678"
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800 font-mono focus:outline-emerald-550"
-                      />
+                      <div className="relative">
+                        <input
+                          type={showPedPassword ? "text" : "password"}
+                          required
+                          value={pedPassword}
+                          onChange={(e) => setPedPassword(e.target.value)}
+                          placeholder="Ex: 5678"
+                          className="w-full pl-3 pr-9 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800 font-mono focus:outline-emerald-550"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPedPassword(!showPedPassword)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5"
+                          title={showPedPassword ? "Masquer le code secret" : "Afficher le code secret"}
+                        >
+                          {showPedPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2083,10 +2115,9 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
           )}
         </div>
 
-        {/* Right Side: Demo Helper Controls / Guidance */}
-        <div className="bg-slate-50 border border-slate-200/80 p-5 rounded-3xl space-y-5">
-
-
+        {/* Right Side: Demo Helper Controls / Guidance (Only shown when creating a school) */}
+        {activeTab === 'create' && (
+          <div className="bg-slate-50 border border-slate-200/80 p-5 rounded-3xl space-y-5">
             <div className="p-3.5 bg-indigo-50 text-indigo-950 rounded-2xl border border-indigo-100 space-y-1.5">
               <span className="font-black text-indigo-900 text-[10px] uppercase tracking-wider flex items-center gap-1">
                 <HelpCircle className="h-3.5 w-3.5 shrink-0" /> Comment ça marche ?
@@ -2095,10 +2126,9 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                 La création d'un établissement enregistre le taux de cotisation (APEE), le budget prévisionnel de l'école dans Firestore, et pré-génère un jeu complet de données de démonstration de ses élèves pour tester instantanément.
               </p>
             </div>
-
-
           </div>
-        </div>
+        )}
+      </div>
 
       {/* Dynamic Simulated Cameroonian smartphone message panel absolute overlay */}
       {otpSimulatedMessage && otpSimulatedMessage.isOpen && (

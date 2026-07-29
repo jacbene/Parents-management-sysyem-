@@ -6,6 +6,8 @@ import {
   browserSessionPersistence,
   GoogleAuthProvider, 
   signInWithPopup, 
+  signInWithRedirect,
+  getRedirectResult,
   signOut, 
   signInAnonymously, 
   createUserWithEmailAndPassword, 
@@ -220,8 +222,29 @@ export async function loginWithGoogle(requireDriveScopes: boolean = false) {
     return result.user;
   } catch (error: any) {
     console.warn("Google Auth Error during signInWithPopup:", error);
+    if (error?.code === 'auth/popup-blocked' || error?.code === 'auth/cancelled-popup-request') {
+      console.info("Popup blocked, attempting signInWithRedirect fallback...");
+      await signInWithRedirect(auth, providerToUse);
+      return null;
+    }
     throw error;
   }
+}
+
+export async function checkRedirectResult() {
+  try {
+    const result = await getRedirectResult(auth);
+    if (result) {
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        googleAccessToken = credential.accessToken;
+      }
+      return result.user;
+    }
+  } catch (error) {
+    console.warn("Error checking redirect result:", error);
+  }
+  return null;
 }
 
 export async function loginAnonymously() {

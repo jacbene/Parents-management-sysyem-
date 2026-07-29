@@ -27,6 +27,7 @@ interface BulkAnnouncementModalProps {
   onAddMessage: (newMsg: Message) => void;
   apeeSettings?: ApeeSettings;
   portalUserRole?: 'manager' | 'parent' | 'teacher' | null;
+  initialSelectedStudentIds?: string[];
 }
 
 export default function BulkAnnouncementModal({
@@ -36,15 +37,30 @@ export default function BulkAnnouncementModal({
   apeeParents,
   onAddMessage,
   apeeSettings,
-  portalUserRole
+  portalUserRole,
+  initialSelectedStudentIds = []
 }: BulkAnnouncementModalProps) {
   // Config States
-  const [segment, setSegment] = useState<'all' | 'class' | 'debtors'>('all');
+  const [segment, setSegment] = useState<'all' | 'class' | 'debtors' | 'custom'>('all');
   const [selectedClass, setSelectedClass] = useState<string>('');
+  const [selectedCustomStudentIds, setSelectedCustomStudentIds] = useState<string[]>([]);
+  const [customSearchQuery, setCustomSearchQuery] = useState<string>('');
   const [channel, setChannel] = useState<'email' | 'system' | 'both'>('both');
   const [category, setCategory] = useState<'general' | 'warning' | 'reminder'>('general');
   const [subject, setSubject] = useState('');
   const [content, setContent] = useState('');
+
+  // Handle initialSelectedStudentIds sync when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      if (initialSelectedStudentIds && initialSelectedStudentIds.length > 0) {
+        setSelectedCustomStudentIds(initialSelectedStudentIds);
+        setSegment('custom');
+      } else if (selectedCustomStudentIds.length === 0) {
+        setSelectedCustomStudentIds(students.map(s => s.id));
+      }
+    }
+  }, [isOpen, initialSelectedStudentIds, students]);
   
   // Simulation/Processing state
   const [isSending, setIsSending] = useState(false);
@@ -104,6 +120,8 @@ export default function BulkAnnouncementModal({
         matches = student.classRoom === selectedClass;
       } else if (segment === 'debtors') {
         matches = parent.status === 'retard' || parent.status === 'partiel';
+      } else if (segment === 'custom') {
+        matches = selectedCustomStudentIds.includes(student.id);
       }
 
       if (matches) {
@@ -343,21 +361,21 @@ Le Surveillant Général / Censeur.`);
                       <Users className="h-3.5 w-3.5 text-indigo-600" />
                       1. Audience / Segment de Parents :
                     </label>
-                    <div className="grid grid-cols-3 gap-2.5 text-xs font-bold">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs font-bold">
                       <button
                         type="button"
                         onClick={() => setSegment('all')}
-                        className={`p-3 rounded-2xl border text-left flex flex-col justify-between h-20 transition cursor-pointer ${
+                        className={`p-2.5 rounded-2xl border text-left flex flex-col justify-between h-20 transition cursor-pointer ${
                           segment === 'all'
                             ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
                             : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50/80'
                         }`}
                       >
-                        <span className="text-lg">🌍</span>
+                        <span className="text-base">🌍</span>
                         <div>
-                          <p className="font-extrabold leading-none">Tous les Parents</p>
-                          <p className={`text-[9px] mt-1 font-mono ${segment === 'all' ? 'text-indigo-200' : 'text-slate-450'}`}>
-                            {students.length} Élève(s) ciblé(s)
+                          <p className="font-extrabold text-[11px] leading-tight">Tous Parents</p>
+                          <p className={`text-[9px] mt-0.5 font-mono ${segment === 'all' ? 'text-indigo-200' : 'text-slate-450'}`}>
+                            {students.length} élève(s)
                           </p>
                         </div>
                       </button>
@@ -365,17 +383,17 @@ Le Surveillant Général / Censeur.`);
                       <button
                         type="button"
                         onClick={() => setSegment('class')}
-                        className={`p-3 rounded-2xl border text-left flex flex-col justify-between h-20 transition cursor-pointer ${
+                        className={`p-2.5 rounded-2xl border text-left flex flex-col justify-between h-20 transition cursor-pointer ${
                           segment === 'class'
                             ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
                             : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50/80'
                         }`}
                       >
-                        <span className="text-lg">🏫</span>
+                        <span className="text-base">🏫</span>
                         <div>
-                          <p className="font-extrabold leading-none">Par Classe</p>
-                          <p className={`text-[9px] mt-1 font-mono ${segment === 'class' ? 'text-indigo-200' : 'text-slate-450'}`}>
-                            Filtre classe spécifique
+                          <p className="font-extrabold text-[11px] leading-tight">Par Classe</p>
+                          <p className={`text-[9px] mt-0.5 font-mono ${segment === 'class' ? 'text-indigo-200' : 'text-slate-450'}`}>
+                            Une classe
                           </p>
                         </div>
                       </button>
@@ -383,17 +401,40 @@ Le Surveillant Général / Censeur.`);
                       <button
                         type="button"
                         onClick={() => setSegment('debtors')}
-                        className={`p-3 rounded-2xl border text-left flex flex-col justify-between h-20 transition cursor-pointer ${
+                        className={`p-2.5 rounded-2xl border text-left flex flex-col justify-between h-20 transition cursor-pointer ${
                           segment === 'debtors'
                             ? 'bg-amber-600 border-amber-600 text-white shadow-xs'
                             : 'bg-white border-slate-200 text-slate-700 hover:bg-amber-50/40 hover:border-amber-200'
                         }`}
                       >
-                        <span className="text-lg">💸</span>
+                        <span className="text-base">💸</span>
                         <div>
-                          <p className="font-extrabold leading-none">Impayés / Solde</p>
-                          <p className={`text-[9px] mt-1 font-mono ${segment === 'debtors' ? 'text-amber-100' : 'text-amber-650'}`}>
-                            Rappel de cotisation
+                          <p className="font-extrabold text-[11px] leading-tight">Impayés</p>
+                          <p className={`text-[9px] mt-0.5 font-mono ${segment === 'debtors' ? 'text-amber-100' : 'text-amber-650'}`}>
+                            Rappels
+                          </p>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSegment('custom');
+                          if (selectedCustomStudentIds.length === 0) {
+                            setSelectedCustomStudentIds(students.map(s => s.id));
+                          }
+                        }}
+                        className={`p-2.5 rounded-2xl border text-left flex flex-col justify-between h-20 transition cursor-pointer ${
+                          segment === 'custom'
+                            ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50/80'
+                        }`}
+                      >
+                        <span className="text-base">🎯</span>
+                        <div>
+                          <p className="font-extrabold text-[11px] leading-tight">Choix Ciblés</p>
+                          <p className={`text-[9px] mt-0.5 font-mono ${segment === 'custom' ? 'text-indigo-200' : 'text-slate-450'}`}>
+                            {selectedCustomStudentIds.length} sélectionné(s)
                           </p>
                         </div>
                       </button>
@@ -415,6 +456,99 @@ Le Surveillant Général / Censeur.`);
                             <option key={c} value={c}>{c}</option>
                           ))}
                         </select>
+                      </motion.div>
+                    )}
+
+                    {segment === 'custom' && (
+                      <motion.div 
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        className="p-3 bg-indigo-50/50 rounded-2xl border border-indigo-150 mt-2 space-y-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="text-[10px] font-black text-indigo-950 uppercase tracking-wider">
+                            Cochez les parents / élèves destinataires ({selectedCustomStudentIds.length}/{students.length}) :
+                          </label>
+                          <div className="flex items-center gap-2 text-[10px] font-bold">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedCustomStudentIds(students.map(s => s.id))}
+                              className="text-indigo-700 hover:underline cursor-pointer"
+                            >
+                              Tout cocher
+                            </button>
+                            <span className="text-indigo-300">|</span>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedCustomStudentIds([])}
+                              className="text-slate-600 hover:underline cursor-pointer"
+                            >
+                              Tout décocher
+                            </button>
+                          </div>
+                        </div>
+
+                        <input
+                          type="text"
+                          placeholder="Rechercher par nom d'élève, classe ou parent..."
+                          value={customSearchQuery}
+                          onChange={(e) => setCustomSearchQuery(e.target.value)}
+                          className="w-full text-xs px-3 py-1.5 border border-slate-200 rounded-xl bg-white focus:outline-hidden focus:border-indigo-500"
+                        />
+
+                        <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1 divide-y divide-slate-100">
+                          {students
+                            .filter(s => {
+                              if (!customSearchQuery.trim()) return true;
+                              const q = customSearchQuery.toLowerCase();
+                              const p = getStudentParent(s);
+                              return (s.name || '').toLowerCase().includes(q) ||
+                                     (s.classRoom || '').toLowerCase().includes(q) ||
+                                     (p?.name || '').toLowerCase().includes(q);
+                            })
+                            .map(s => {
+                              const p = getStudentParent(s);
+                              const isChecked = selectedCustomStudentIds.includes(s.id);
+                              return (
+                                <label
+                                  key={s.id}
+                                  className={`p-2 rounded-xl border flex items-center justify-between cursor-pointer transition text-xs select-none pt-2 ${
+                                    isChecked
+                                      ? 'bg-white border-indigo-300 text-indigo-950 font-bold shadow-3xs'
+                                      : 'bg-white/60 border-slate-200 text-slate-600 hover:bg-white'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setSelectedCustomStudentIds(prev => [...prev, s.id]);
+                                        } else {
+                                          setSelectedCustomStudentIds(prev => prev.filter(id => id !== s.id));
+                                        }
+                                      }}
+                                      className="h-4 w-4 rounded text-indigo-600 focus:ring-indigo-500 shrink-0 cursor-pointer"
+                                    />
+                                    <div className="min-w-0">
+                                      <p className="truncate font-extrabold text-[11px] leading-tight">
+                                        {s.name} <span className="text-[9.5px] font-mono text-indigo-600 font-bold">({s.classRoom})</span>
+                                      </p>
+                                      <p className="text-[9.5px] text-slate-500 truncate font-medium">
+                                        Parent: {p ? p.name : 'Non répertorié'} {p?.phone ? `(${p.phone})` : ''}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  {isChecked && (
+                                    <span className="text-[9px] font-mono bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-md shrink-0">
+                                      Ciblé
+                                    </span>
+                                  )}
+                                </label>
+                              );
+                            })}
+                        </div>
                       </motion.div>
                     )}
                   </div>

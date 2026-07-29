@@ -6,6 +6,7 @@ import AuthLogsViewer from './system/AuthLogsViewer';
 import EmailInfrastructure from './system/EmailInfrastructure';
 import PaymentWebhookHandler from './PaymentWebhookHandler';
 import { Establishment, Student, Invoice, SystemLog } from '../types';
+import { DEFAULT_SCHOOL_LOGO } from '../constants';
 import { syncLocalSchoolsToFirestore, saveAndSyncEstablishment, deleteAndPurgeSchool, getDeletedSchoolIds, fetchAndSyncDeletedSchoolIds, sanitizeFirestoreId } from '../utils/schoolSync';
 import { syncAllApeeDataToFirestore } from '../utils/apeeDb';
 import { 
@@ -37,7 +38,9 @@ import {
   Ban,
   Play,
   Database,
-  CloudOff
+  CloudOff,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -115,9 +118,11 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
   const [finName, setFinName] = useState('');
   const [finPhone, setFinPhone] = useState('');
   const [finPassword, setFinPassword] = useState('');
+  const [showFinPassword, setShowFinPassword] = useState(false);
   const [pedName, setPedName] = useState('');
   const [pedPhone, setPedPhone] = useState('');
   const [pedPassword, setPedPassword] = useState('');
+  const [showPedPassword, setShowPedPassword] = useState(false);
   
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -1146,19 +1151,12 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                               <tr key={school.id} className={`hover:bg-slate-50/50 transition ${school.status === 'suspended' ? 'bg-red-50/20' : ''}`}>
                                 <td className="px-6 py-4.5">
                                   <div className="flex items-center gap-3">
-                                    {school.logoUrl ? (
-                                      <img 
-                                        src={school.logoUrl} 
-                                        alt="Logo" 
-                                        className="h-9 w-9 object-contain rounded-lg border border-slate-100 bg-slate-50 p-0.5 shrink-0" 
-                                      />
-                                    ) : (
-                                      <div className={`h-9 w-9 rounded-lg border flex items-center justify-center text-lg font-bold shrink-0 ${
-                                        school.status === 'suspended' ? 'bg-rose-50 border-rose-100 text-rose-700' : 'bg-indigo-50 border-indigo-100 text-indigo-700'
-                                      }`}>
-                                        🏫
-                                      </div>
-                                    )}
+                                    <img 
+                                      src={school.logoUrl || DEFAULT_SCHOOL_LOGO} 
+                                      alt="Logo Établissement" 
+                                      className="h-9 w-9 object-contain rounded-lg border border-slate-100 bg-slate-50 p-0.5 shrink-0" 
+                                      referrerPolicy="no-referrer"
+                                    />
                                     <div>
                                       <div className="flex items-center gap-1.5 flex-wrap">
                                         <span className="font-extrabold text-slate-900 text-[12.5px] leading-snug">{school.name}</span>
@@ -1830,14 +1828,24 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                     </div>
                     <div className="space-y-1">
                       <label className="text-[10.5px] font-bold text-slate-600 uppercase flex items-center gap-0.5"><Lock className="h-3 w-3" /> Mot de passe d'accès</label>
-                      <input
-                        type="password"
-                        required
-                        placeholder="Saisir code d'accès..."
-                        value={finPassword}
-                        onChange={(e) => setFinPassword(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500/15"
-                      />
+                      <div className="relative">
+                        <input
+                          type={showFinPassword ? "text" : "password"}
+                          required
+                          placeholder="Saisir code d'accès..."
+                          value={finPassword}
+                          onChange={(e) => setFinPassword(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-3 pr-8 py-2 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500/15"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowFinPassword(!showFinPassword)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5"
+                          title={showFinPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+                        >
+                          {showFinPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1869,13 +1877,23 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                       </div>
                       <div className="space-y-1">
                         <label className="text-[10.5px] font-bold text-slate-600 uppercase flex items-center gap-0.5"><Lock className="h-3 w-3" /> Code d'Accès</label>
-                        <input
-                          type="password"
-                          placeholder="Par défaut: 1234"
-                          value={pedPassword}
-                          onChange={(e) => setPedPassword(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500/15"
-                        />
+                        <div className="relative">
+                          <input
+                            type={showPedPassword ? "text" : "password"}
+                            placeholder="Par défaut: 1234"
+                            value={pedPassword}
+                            onChange={(e) => setPedPassword(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-2.5 pr-8 py-2 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500/15"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPedPassword(!showPedPassword)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5"
+                            title={showPedPassword ? "Masquer le code d'accès" : "Afficher le code d'accès"}
+                          >
+                            {showPedPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>

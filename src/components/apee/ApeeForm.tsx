@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Printer, CheckCircle, Smartphone, Tag, User, Hash, MapPin, Notebook, DollarSign, Calendar, Mail, X, Download } from 'lucide-react';
+import { Plus, Trash2, Printer, CheckCircle, Smartphone, Tag, User, Hash, MapPin, Notebook, DollarSign, Calendar, Mail, X, Download, AlertCircle } from 'lucide-react';
 import { ApeeParent, ApeeStudentLink, ApeePaymentItem, ApeeSettings, ApeeOtherRevenue } from '../../types';
 import { getApeeShortName, calculateParentDebtBreakdown } from '../../utils/apeeDb';
 import { jsPDF } from 'jspdf';
@@ -70,8 +70,10 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
   const [selectedObligationId, setSelectedObligationId] = useState<string>(() => draftData?.parent?.selectedObligationId || 'auto');
   const [paymentAllocationType, setPaymentAllocationType] = useState<'full' | 'partial'>(() => draftData?.parent?.paymentAllocationType || 'partial');
   
-  // Alert visual confirmations
+  // Alert visual confirmations & Validation errors
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [smsMockMsg, setSmsMockMsg] = useState<string | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [isSavedJustNow, setIsSavedJustNow] = useState(false);
@@ -104,6 +106,8 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
     setOtherTransactionId('');
     setOtherDate(new Date().toISOString().slice(0, 10));
     setOtherNotes('');
+    setFormError(null);
+    setFieldErrors({});
     try {
       localStorage.removeItem('pasma_apee_form_draft');
     } catch (e) {
@@ -338,14 +342,25 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
 
   const handleOtherFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
+    const newFieldErrors: Record<string, string> = {};
+
     if (!otherPayerName.trim()) {
-      alert("Le nom du payeur est obligatoire.");
+      newFieldErrors.otherPayerName = "Le nom du tiers ou organisme payeur est obligatoire.";
+    }
+    if (otherAmount < 0) {
+      newFieldErrors.otherAmount = "Le montant des revenus additionnels ne peut pas être négatif.";
+    } else if (otherAmount === 0) {
+      newFieldErrors.otherAmount = "Le montant déposé doit être supérieur à 0 FCFA.";
+    }
+
+    if (Object.keys(newFieldErrors).length > 0) {
+      setFieldErrors(newFieldErrors);
+      setFormError("Veuillez corriger les champs obligatoires surlignés en rouge ci-dessous.");
       return;
     }
-    if (otherAmount <= 0) {
-      alert("Le montant doit être supérieur à 0.");
-      return;
-    }
+
+    setFieldErrors({});
 
     const payload: ApeeOtherRevenue = {
       id: 'rev_' + Date.now().toString(36),
@@ -447,6 +462,8 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
     setSelectedObligationId('auto');
     setPaymentAllocationType('partial');
     setLoadedParentId(null);
+    setFormError(null);
+    setFieldErrors({});
     if (clearDraft) {
       try {
         localStorage.removeItem('pasma_apee_form_draft');
@@ -621,13 +638,27 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
   }, [selectedObligationId, paymentAllocationType, students, payments]);
 
   const handleAddPaymentNode = () => {
-    if (payAmount <= 0) return;
+    if (payAmount < 0) {
+      setFieldErrors(prev => ({ ...prev, payAmount: "Le montant de la cotisation ne peut pas être négatif." }));
+      return;
+    }
+    if (payAmount === 0) {
+      setFieldErrors(prev => ({ ...prev, payAmount: "Le montant du versement doit être supérieur à 0 FCFA." }));
+      return;
+    }
     
     const isDigitalMethod = ['Orange Money', 'MTN Mobile Money', 'Wave', 'Moov Money', 'Virement'].includes(payMethod);
     if (isDigitalMethod && !transactionId.trim()) {
-      alert("Veuillez renseigner le numéro de transaction pour les paiements numériques.");
+      setFieldErrors(prev => ({ ...prev, transactionId: "Le numéro de transaction est obligatoire pour les paiements numériques." }));
       return;
     }
+
+    setFieldErrors(prev => {
+      const copy = { ...prev };
+      delete copy.payAmount;
+      delete copy.transactionId;
+      return copy;
+    });
 
     const isSpecificObligation = selectedObligationId !== 'auto';
     const targetObligationName = isSpecificObligation
@@ -662,26 +693,43 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
+    const newFieldErrors: Record<string, string> = {};
+
     if (!parentName.trim()) {
-      alert("Le nom du parent est obligatoire.");
-      return;
+      newFieldErrors.parentName = "Le nom du parent est obligatoire.";
+    }
+
+    if (!parentPhone.trim()) {
+      newFieldErrors.parentPhone = "Le numéro de téléphone du parent est obligatoire.";
     }
 
     const filteredStudents = students.filter(s => s.name.trim() !== '');
     if (filteredStudents.length === 0) {
-      alert("Veuillez saisir au moins un élève avec un nom valide.");
-      return;
+      newFieldErrors.students = "Veuillez saisir au moins un élève avec un nom valide.";
     }
 
     // Incorporate current active payment input if entered but not clicked add
     const finalPayments = [...payments];
-    if (payAmount > 0) {
+    if (payAmount < 0) {
+      newFieldErrors.payAmount = "Le montant de la cotisation ne peut pas être négatif.";
+    } else if (payAmount > 0) {
       const isDigitalMethod = ['Orange Money', 'MTN Mobile Money', 'Wave', 'Moov Money', 'Virement'].includes(payMethod);
       if (isDigitalMethod && !transactionId.trim()) {
-        alert("Veuillez renseigner le numéro de transaction pour les paiements numériques.");
-        return;
+        newFieldErrors.transactionId = "Le numéro de transaction est obligatoire pour les paiements numériques.";
       }
+    }
 
+    if (Object.keys(newFieldErrors).length > 0) {
+      setFieldErrors(newFieldErrors);
+      setFormError("Veuillez corriger les champs obligatoires surlignés en rouge ci-dessous avant d'enregistrer la fiche parent.");
+      return;
+    }
+
+    setFieldErrors({});
+
+    if (payAmount > 0) {
+      const isDigitalMethod = ['Orange Money', 'MTN Mobile Money', 'Wave', 'Moov Money', 'Virement'].includes(payMethod);
       const isSpecificObligation = selectedObligationId !== 'auto';
       const targetObligationName = isSpecificObligation
         ? settings.financialObligations?.find(o => o.id === selectedObligationId)?.name || selectedObligationId
@@ -1113,6 +1161,22 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
         </div>
       )}
 
+      {formError && (
+        <div className="bg-red-50 border border-red-300 text-red-900 text-xs px-4 py-3 rounded-xl flex items-center justify-between gap-3 font-semibold shadow-xs animate-in fade-in slide-in-from-top-1">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 text-red-600 shrink-0" />
+            <span>{formError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFormError(null)}
+            className="text-red-700 hover:text-red-900 text-xs font-bold p-1 cursor-pointer"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
       {successMsg && (
         <div className="bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs px-4 py-3 rounded-xl flex items-center gap-2 font-semibold">
           <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0" />
@@ -1138,11 +1202,21 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
                       type="text"
                       required
                       value={otherPayerName}
-                      onChange={(e) => setOtherPayerName(e.target.value)}
+                      onChange={(e) => {
+                        setOtherPayerName(e.target.value);
+                        if (fieldErrors.otherPayerName) setFieldErrors(prev => ({ ...prev, otherPayerName: '' }));
+                      }}
                       placeholder="Ex: M. Jean Elanga ou Fondation Orange"
-                      className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 bg-white rounded-xl focus:outline-emerald-500 font-medium"
+                      className={`w-full pl-9 pr-3 py-2 text-xs border bg-white rounded-xl focus:outline-emerald-500 font-medium ${
+                        fieldErrors.otherPayerName ? 'border-red-500 bg-red-50/30' : 'border-slate-200'
+                      }`}
                     />
                   </div>
+                  {fieldErrors.otherPayerName && (
+                    <p className="text-[10.5px] font-bold text-red-600 flex items-center gap-1 mt-1">
+                      <AlertCircle className="h-3 w-3 text-red-500 shrink-0" /> {fieldErrors.otherPayerName}
+                    </p>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1231,14 +1305,39 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
                   <DollarSign className="absolute left-3 top-2.5 h-4 w-4 text-emerald-600" />
                   <input
                     type="number"
-                    min="100"
+                    min="0"
+                    step="any"
+                    pattern="^\d+(\.\d{1,2})?$"
+                    inputMode="decimal"
                     required
                     value={otherAmount || ''}
-                    onChange={(e) => setOtherAmount(Number(e.target.value))}
+                    onChange={(e) => {
+                      const rawVal = e.target.value;
+                      const nonNegativeDecimalRegex = /^\d*([.,]\d{0,2})?$/;
+                      if (rawVal.includes('-') || (rawVal !== '' && !nonNegativeDecimalRegex.test(rawVal))) {
+                        setFieldErrors(prev => ({ ...prev, otherAmount: 'Veuillez saisir un montant positif valide (ex: 50000 ou 12500.50).' }));
+                        return;
+                      }
+                      const val = Number(rawVal);
+                      if (isNaN(val) || val < 0) {
+                        setOtherAmount(0);
+                        setFieldErrors(prev => ({ ...prev, otherAmount: 'Les montants négatifs ne sont pas autorisés.' }));
+                      } else {
+                        setOtherAmount(val);
+                        if (fieldErrors.otherAmount) setFieldErrors(prev => ({ ...prev, otherAmount: '' }));
+                      }
+                    }}
                     placeholder="Ex: 500000"
-                    className="w-full pl-9 pr-3 py-2.5 text-sm font-black text-emerald-950 border border-emerald-300 bg-white rounded-xl focus:outline-emerald-500 font-mono"
+                    className={`w-full pl-9 pr-3 py-2.5 text-sm font-black text-emerald-950 border bg-white rounded-xl focus:outline-emerald-500 font-mono ${
+                      fieldErrors.otherAmount ? 'border-red-500 bg-red-50/30' : 'border-emerald-300'
+                    }`}
                   />
                 </div>
+                {fieldErrors.otherAmount && (
+                  <p className="text-[10.5px] font-bold text-red-600 flex items-center gap-1 mt-1">
+                    <AlertCircle className="h-3 w-3 text-red-500 shrink-0" /> {fieldErrors.otherAmount}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-1.5">
@@ -1371,10 +1470,20 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
                     required
                     placeholder="Ex: M. Jean-Baptiste TALLA"
                     value={parentName}
-                    onChange={(e) => setParentName(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-indigo-500"
+                    onChange={(e) => {
+                      setParentName(e.target.value);
+                      if (fieldErrors.parentName) setFieldErrors(prev => ({ ...prev, parentName: '' }));
+                    }}
+                    className={`w-full pl-9 pr-3 py-2 text-xs border rounded-xl focus:outline-indigo-500 ${
+                      fieldErrors.parentName ? 'border-red-500 bg-red-50/30' : 'border-slate-200'
+                    }`}
                   />
                 </div>
+                {fieldErrors.parentName && (
+                  <p className="text-[10.5px] font-bold text-red-600 flex items-center gap-1 mt-1">
+                    <AlertCircle className="h-3 w-3 text-red-500 shrink-0" /> {fieldErrors.parentName}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-1">
@@ -1386,10 +1495,20 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
                     required
                     placeholder="Ex: +237 6xx xxx xxx"
                     value={parentPhone}
-                    onChange={(e) => setParentPhone(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-indigo-500"
+                    onChange={(e) => {
+                      setParentPhone(e.target.value);
+                      if (fieldErrors.parentPhone) setFieldErrors(prev => ({ ...prev, parentPhone: '' }));
+                    }}
+                    className={`w-full pl-9 pr-3 py-2 text-xs border rounded-xl focus:outline-indigo-500 ${
+                      fieldErrors.parentPhone ? 'border-red-500 bg-red-50/30' : 'border-slate-200'
+                    }`}
                   />
                 </div>
+                {fieldErrors.parentPhone && (
+                  <p className="text-[10.5px] font-bold text-red-600 flex items-center gap-1 mt-1">
+                    <AlertCircle className="h-3 w-3 text-red-500 shrink-0" /> {fieldErrors.parentPhone}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -1498,18 +1617,29 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
               Chaque élève enregistré active les obligations financières de l'établissement (par élève ou par parent) définies dans les paramètres.
             </p>
 
+            {fieldErrors.students && (
+              <p className="text-[11px] font-bold text-red-600 bg-red-50 border border-red-200 p-2.5 rounded-xl flex items-center gap-1.5 mt-2">
+                <AlertCircle className="h-3.5 w-3.5 text-red-600 shrink-0" /> {fieldErrors.students}
+              </p>
+            )}
+
             <div className="space-y-3 pt-2">
               {students.map((student, idx) => (
                 <div key={idx} className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-end bg-white p-3.5 rounded-xl border border-slate-150 relative group">
                   <div className="flex-1 space-y-1">
-                    <label className="text-[9px] font-bold text-slate-500 uppercase">Nom de l'élève {idx + 1}</label>
+                    <label className="text-[9px] font-bold text-slate-500 uppercase">Nom de l'élève {idx + 1} <span className="text-red-500">*</span></label>
                     <input
                       type="text"
                       required={idx === 0}
                       placeholder="Nom et prénoms de l'élève"
                       value={student.name}
-                      onChange={(e) => handleStudentChange(idx, 'name', e.target.value)}
-                      className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-indigo-500"
+                      onChange={(e) => {
+                        handleStudentChange(idx, 'name', e.target.value);
+                        if (fieldErrors.students) setFieldErrors(prev => ({ ...prev, students: '' }));
+                      }}
+                      className={`w-full px-3 py-1.5 text-xs border rounded-lg focus:outline-indigo-500 ${
+                        fieldErrors.students && !student.name.trim() ? 'border-red-500 bg-red-50/30' : 'border-slate-200'
+                      }`}
                     />
                   </div>
                   <div className="sm:w-32 space-y-1">
@@ -1745,19 +1875,36 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
                           <span className="absolute left-2.5 text-xs top-2 font-mono font-bold text-slate-400">{currency}</span>
                           <input
                             type="number"
-                            min="1"
+                            min="0"
+                            step="any"
+                            pattern="^\d+(\.\d{1,2})?$"
+                            inputMode="decimal"
                             placeholder="Saisir le montant de l'obligation..."
                             value={payAmount || ''}
                             onChange={(e) => {
-                              const val = Number(e.target.value);
-                              setPayAmount(val);
-                              if (val >= rub.remainingDebt) {
-                                setPaymentAllocationType('full');
+                              const rawVal = e.target.value;
+                              const nonNegativeDecimalRegex = /^\d*([.,]\d{0,2})?$/;
+                              if (rawVal.includes('-') || (rawVal !== '' && !nonNegativeDecimalRegex.test(rawVal))) {
+                                setFieldErrors(prev => ({ ...prev, payAmount: 'Veuillez saisir un montant positif valide (ex: 10000 ou 10000.50).' }));
+                                return;
+                              }
+                              const val = Number(rawVal);
+                              if (isNaN(val) || val < 0) {
+                                setPayAmount(0);
+                                setFieldErrors(prev => ({ ...prev, payAmount: 'Les montants négatifs ne sont pas autorisés.' }));
                               } else {
-                                setPaymentAllocationType('partial');
+                                setPayAmount(val);
+                                if (fieldErrors.payAmount) setFieldErrors(prev => ({ ...prev, payAmount: '' }));
+                                if (val >= rub.remainingDebt) {
+                                  setPaymentAllocationType('full');
+                                } else {
+                                  setPaymentAllocationType('partial');
+                                }
                               }
                             }}
-                            className="w-full pl-14 pr-3 py-1.5 text-xs font-mono font-bold border border-indigo-200 focus:outline-indigo-500 rounded-lg text-slate-800"
+                            className={`w-full pl-14 pr-3 py-1.5 text-xs font-mono font-bold border rounded-lg text-slate-800 ${
+                              fieldErrors.payAmount ? 'border-red-500 bg-red-50/30' : 'border-indigo-200 focus:outline-indigo-500'
+                            }`}
                           />
                         </div>
                         <div className="flex gap-2 justify-end text-[9.5px]">
@@ -1800,12 +1947,37 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
                       <input
                         type="number"
                         min="0"
+                        step="any"
+                        pattern="^\d+(\.\d{1,2})?$"
+                        inputMode="decimal"
                         placeholder="0"
                         value={payAmount || ''}
-                        onChange={(e) => setPayAmount(Number(e.target.value))}
-                        className="w-full pl-12 pr-3 py-1.5 text-xs text-right font-mono border border-slate-200 rounded-lg focus:outline-indigo-500 text-slate-800"
+                        onChange={(e) => {
+                          const rawVal = e.target.value;
+                          const nonNegativeDecimalRegex = /^\d*([.,]\d{0,2})?$/;
+                          if (rawVal.includes('-') || (rawVal !== '' && !nonNegativeDecimalRegex.test(rawVal))) {
+                            setFieldErrors(prev => ({ ...prev, payAmount: 'Veuillez saisir un montant positif valide (ex: 10000 ou 10000.50).' }));
+                            return;
+                          }
+                          const val = Number(rawVal);
+                          if (isNaN(val) || val < 0) {
+                            setPayAmount(0);
+                            setFieldErrors(prev => ({ ...prev, payAmount: 'Les montants négatifs ne sont pas autorisés.' }));
+                          } else {
+                            setPayAmount(val);
+                            if (fieldErrors.payAmount) setFieldErrors(prev => ({ ...prev, payAmount: '' }));
+                          }
+                        }}
+                        className={`w-full pl-12 pr-3 py-1.5 text-xs text-right font-mono border rounded-lg focus:outline-indigo-500 text-slate-800 ${
+                          fieldErrors.payAmount ? 'border-red-500 bg-red-50/30' : 'border-slate-200'
+                        }`}
                       />
                     </div>
+                    {fieldErrors.payAmount && (
+                      <p className="text-[10px] font-bold text-red-600 flex items-center gap-1 mt-1">
+                        <AlertCircle className="h-3 w-3 text-red-500 shrink-0" /> {fieldErrors.payAmount}
+                      </p>
+                    )}
                   </div>
 
                   <div className="space-y-1">
@@ -1893,9 +2065,19 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
                     required={payAmount > 0}
                     placeholder="Référence de transaction"
                     value={transactionId}
-                    onChange={(e) => setTransactionId(e.target.value)}
-                    className="w-full px-3 py-1.5 text-xs border border-indigo-200 focus:border-indigo-500 rounded-lg text-slate-900"
+                    onChange={(e) => {
+                      setTransactionId(e.target.value);
+                      if (fieldErrors.transactionId) setFieldErrors(prev => ({ ...prev, transactionId: '' }));
+                    }}
+                    className={`w-full px-3 py-1.5 text-xs border rounded-lg text-slate-900 focus:outline-indigo-500 ${
+                      fieldErrors.transactionId ? 'border-red-500 bg-red-50/30' : 'border-indigo-200'
+                    }`}
                   />
+                  {fieldErrors.transactionId && (
+                    <p className="text-[10px] font-bold text-red-600 flex items-center gap-1 mt-1">
+                      <AlertCircle className="h-3 w-3 text-red-500 shrink-0" /> {fieldErrors.transactionId}
+                    </p>
+                  )}
                 </div>
               </div>
             )}
