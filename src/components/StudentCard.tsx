@@ -304,18 +304,20 @@ export default function StudentCard({
                   </button>
                 )}
 
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowIDCard(true);
-                  }}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[10px] px-3 py-1.5 rounded-xl border border-indigo-500 shadow-xs cursor-pointer flex items-center justify-center gap-1.5 transition-all flex-1 active:scale-97"
-                  title="Afficher la carte scolaire officielle avec QR code"
-                >
-                  <QrCode className="h-3.5 w-3.5 shrink-0" />
-                  <span>Carte ID (QR)</span>
-                </button>
+                {portalUserRole !== 'parent' && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowIDCard(true);
+                    }}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[10px] px-3 py-1.5 rounded-xl border border-indigo-500 shadow-xs cursor-pointer flex items-center justify-center gap-1.5 transition-all flex-1 active:scale-97"
+                    title="Afficher la carte scolaire officielle avec QR code"
+                  >
+                    <QrCode className="h-3.5 w-3.5 shrink-0" />
+                    <span>Carte ID (QR)</span>
+                  </button>
+                )}
 
                 {portalUserRole === 'parent' && onAddMessage && (
                   <button

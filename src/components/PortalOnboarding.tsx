@@ -123,20 +123,6 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
       // Default fallback schools so there's always an active list (if not deleted)
       const rawFallbackList: Establishment[] = [
         {
-          id: 'demo_school_ekali',
-          name: "CES d'Ekali 1 - MFOU",
-          cotisationAmount: 25000,
-          financialGoal: 5000000,
-          finManagerName: 'Marie Béné',
-          finManagerPhone: '677002233',
-          finManagerPassword: '1234',
-          pedManagerName: 'Marie Béné',
-          pedManagerPhone: '677002233',
-          pedManagerPassword: '1234',
-          schoolYear: '2025/2026',
-          ownerId: 'demo_admin'
-        },
-        {
           id: 'demo_school_vogt',
           name: "Collège Vogt - Yaoundé",
           cotisationAmount: 35000,

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Printer, CheckCircle, Smartphone, Tag, User, Hash, MapPin, Notebook, DollarSign, Calendar, Mail, X, Download, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, Printer, CheckCircle, Smartphone, Tag, User, Hash, MapPin, Notebook, DollarSign, Calendar, Mail, X, Download, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { ApeeParent, ApeeStudentLink, ApeePaymentItem, ApeeSettings, ApeeOtherRevenue } from '../../types';
 import { getApeeShortName, calculateParentDebtBreakdown } from '../../utils/apeeDb';
 import { jsPDF } from 'jspdf';
@@ -79,6 +79,7 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
   const [isSavedJustNow, setIsSavedJustNow] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [loadedParentId, setLoadedParentId] = useState<string | null>(null);
+  const [showAllMatchingParents, setShowAllMatchingParents] = useState(false);
 
   // Confirmation Modals State
   const [showConfirmParentModal, setShowConfirmParentModal] = useState(false);
@@ -1544,17 +1545,38 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
 
             {matchingParents.length > 0 && !loadedParentId && (
               <div className="mt-4 bg-indigo-50/70 border border-indigo-100 rounded-xl p-3.5 space-y-2.5 text-slate-800 animate-in fade-in slide-in-from-top-1 duration-200">
-                <div className="text-[10px] font-bold text-indigo-800 uppercase tracking-wider flex items-center gap-1.5">
-                  <span>💡 Parent(s) similaire(s) détecté(s)</span>
-                  <span className="bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase">
-                    {matchingParents.length} trouvé(s)
-                  </span>
+                <div className="flex items-center justify-between text-[10px] font-bold text-indigo-800 uppercase tracking-wider">
+                  <div className="flex items-center gap-1.5">
+                    <span>💡 Parent(s) similaire(s) détecté(s)</span>
+                    <span className="bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase">
+                      {matchingParents.length} trouvé(s)
+                    </span>
+                  </div>
+                  {matchingParents.length > 3 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllMatchingParents(!showAllMatchingParents)}
+                      className="text-indigo-700 hover:text-indigo-900 font-extrabold flex items-center gap-1 transition cursor-pointer normal-case text-[10.5px] hover:underline"
+                    >
+                      {showAllMatchingParents ? (
+                        <>
+                          <span>Réduire à 3</span>
+                          <ChevronUp className="h-3 w-3" />
+                        </>
+                      ) : (
+                        <>
+                          <span>Afficher tout ({matchingParents.length})</span>
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
                 <p className="text-[10.5px] text-indigo-950 font-normal leading-relaxed">
                   Un ou plusieurs parents enregistrés possèdent un nom ou un numéro similaire. Souhaitez-vous charger leur historique pour éviter les doublons et déduire leurs paiements partiels précédents ?
                 </p>
                 <div className="grid grid-cols-1 gap-2 mt-1">
-                  {matchingParents.slice(0, 3).map((p) => {
+                  {(showAllMatchingParents ? matchingParents : matchingParents.slice(0, 3)).map((p) => {
                     const bdown = calculateParentDebtBreakdown(p, settings);
                     return (
                       <button
@@ -1594,6 +1616,28 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
                     );
                   })}
                 </div>
+
+                {matchingParents.length > 3 && (
+                  <div className="pt-1 flex justify-center">
+                    <button
+                      type="button"
+                      onClick={() => setShowAllMatchingParents(!showAllMatchingParents)}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white hover:bg-indigo-100/70 border border-indigo-200 text-indigo-900 rounded-xl text-xs font-bold transition cursor-pointer shadow-3xs hover:border-indigo-300"
+                    >
+                      {showAllMatchingParents ? (
+                        <>
+                          <ChevronUp className="h-3.5 w-3.5 text-indigo-600" />
+                          <span>Réduire l'affichage (voir seulement les 3 premiers)</span>
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown className="h-3.5 w-3.5 text-indigo-600" />
+                          <span>Voir les {matchingParents.length} parents similaires ({matchingParents.length - 3} de plus)</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>

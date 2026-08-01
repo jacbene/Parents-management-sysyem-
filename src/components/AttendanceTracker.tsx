@@ -254,10 +254,18 @@ export default function AttendanceTracker({
                 }
                 setShowQRScanner(true);
               }}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs active:scale-97"
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-xs active:scale-97 group relative"
               title="Scanner de badge d'élève par QR code"
             >
-              <QrCode className="h-4 w-4" /> Scanner QR Badge
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 border border-white"></span>
+              </span>
+              <QrCode className="h-4 w-4" /> 
+              <span>Scanner QR Badge</span>
+              <span className="hidden sm:inline-block text-[10px] bg-emerald-500/20 text-emerald-200 font-extrabold px-1.5 py-0.5 rounded ml-0.5 border border-emerald-400/30">
+                ACTIF
+              </span>
             </button>
           )}
 

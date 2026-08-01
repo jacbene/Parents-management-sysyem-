@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Save, HelpCircle, Shield, Settings, Info, CheckCircle2, Plus, Trash2, Edit2, X, TrendingUp, Lock, Unlock, UserCheck, User, Phone, Mail, GraduationCap, AlertTriangle, CreditCard, Smartphone } from 'lucide-react';
+import { Save, HelpCircle, Shield, Settings, Info, CheckCircle2, Plus, Trash2, Edit2, X, TrendingUp, Lock, Unlock, UserCheck, User, Phone, Mail, GraduationCap, AlertTriangle, CreditCard, Smartphone, Calculator, Percent, TrendingDown, RefreshCw, DollarSign } from 'lucide-react';
 import { ApeeSettings, ApeeBudgetLine, ApeeParent } from '../../types';
 import { DEFAULT_SCHOOL_LOGO } from '../../constants';
 import { getApeeShortName } from '../../utils/apeeDb';
@@ -81,6 +81,22 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
   const parentCotisations = (expectedStudents * totalObligationsPerStudent) + (expectedStudents * totalObligationsPerParent);
 
   const calculatedFinancialGoal = parentCotisations + honoraryContributions + subventionsAndAids;
+
+  // Forecast calculator simulation states
+  const [simStudents, setSimStudents] = useState<number>(settings.expectedStudents || 100);
+  const [simCollectionRate, setSimCollectionRate] = useState<number>(85);
+  const [simRecurringExpenses, setSimRecurringExpenses] = useState<number>(() => {
+    const blTotal = (settings.budgetLines || []).reduce((sum, b) => sum + (b.allocatedAmount || 0), 0);
+    return blTotal > 0 ? blTotal : Math.round((calculatedFinancialGoal || 5000000) * 0.8);
+  });
+  const [simOtherIncome, setSimOtherIncome] = useState<number>(honoraryContributions + subventionsAndAids);
+
+  // Dynamic simulation calculations
+  const simGrossFee = (simStudents * totalObligationsPerStudent) + (simStudents * totalObligationsPerParent);
+  const simFeeCollected = Math.round(simGrossFee * (simCollectionRate / 100));
+  const simTotalRevenues = simFeeCollected + simOtherIncome;
+  const simFinalBalance = simTotalRevenues - simRecurringExpenses;
+  const simCoverageRatio = simRecurringExpenses > 0 ? Math.round((simTotalRevenues / simRecurringExpenses) * 100) : 100;
 
   // Financial Manager credentials states
   const [finManagerName, setFinManagerName] = useState(settings.finManagerName || '');
@@ -792,6 +808,185 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
               <p className="text-[8.5px] text-indigo-700/80 leading-normal font-medium">
                 * Note : Ce montant prévisionnel total sert de base de calcul pour les jauges de recouvrement, les statistiques et le découpage de vos lignes d'allocations de dépenses. Le budget est équilibré en recettes et en dépenses à {calculatedFinancialGoal.toLocaleString()} {currency}.
               </p>
+            </div>
+
+            {/* SECTION: Calculateur Prévisionnel du Solde Caisse */}
+            <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white border border-indigo-800/60 rounded-2xl p-4.5 space-y-4 shadow-md relative overflow-hidden">
+              {/* Header */}
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-indigo-800/60 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-indigo-600/30 border border-indigo-500/40 rounded-xl text-indigo-300 shrink-0">
+                    <Calculator className="h-4.5 w-4.5 text-indigo-300" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-white">
+                      Calculateur Prévisionnel du Solde Caisse
+                    </h4>
+                    <p className="text-[10px] text-indigo-200/80 font-medium">
+                      Simulateur financier de trésorerie (Élèves estimés × Taux de recouvrement vs. Dépenses récurrentes)
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSimStudents(expectedStudents || 100);
+                    setSimCollectionRate(85);
+                    const blTotal = (settings.budgetLines || []).reduce((sum, b) => sum + (b.allocatedAmount || 0), 0);
+                    setSimRecurringExpenses(blTotal > 0 ? blTotal : Math.round(calculatedFinancialGoal * 0.8));
+                    setSimOtherIncome(honoraryContributions + subventionsAndAids);
+                  }}
+                  className="px-2.5 py-1 bg-indigo-900/60 hover:bg-indigo-800/80 border border-indigo-700/50 rounded-lg text-[10px] font-bold text-indigo-200 transition cursor-pointer flex items-center gap-1 shadow-3xs"
+                  title="Réinitialiser avec les valeurs réelles configurées"
+                >
+                  <RefreshCw className="h-3 w-3 text-indigo-300" /> Réinitialiser
+                </button>
+              </div>
+
+              {/* Simulation Inputs */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {/* Input 1: Simulated Students */}
+                <div className="bg-indigo-950/60 border border-indigo-800/50 p-2.5 rounded-xl space-y-1">
+                  <label className="text-[9.5px] font-bold text-indigo-300 uppercase flex items-center gap-1">
+                    <GraduationCap className="h-3 w-3 text-indigo-400" /> Élèves Estimés
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={simStudents || ''}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setSimStudents(val < 0 ? 0 : val);
+                    }}
+                    className="w-full px-2.5 py-1 text-xs font-mono font-bold bg-slate-900/90 border border-indigo-700/60 rounded-lg text-white focus:outline-indigo-400 text-right"
+                  />
+                  <p className="text-[8.5px] text-indigo-300/70">Hypothèse d'effectif</p>
+                </div>
+
+                {/* Input 2: Collection Rate */}
+                <div className="bg-indigo-950/60 border border-indigo-800/50 p-2.5 rounded-xl space-y-1">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[9.5px] font-bold text-indigo-300 uppercase flex items-center gap-1">
+                      <Percent className="h-3 w-3 text-emerald-400" /> Recouvrement
+                    </label>
+                    <span className="font-mono text-xs font-black text-emerald-400">{simCollectionRate}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="10"
+                    max="100"
+                    step="5"
+                    value={simCollectionRate}
+                    onChange={(e) => setSimCollectionRate(Number(e.target.value))}
+                    className="w-full accent-emerald-500 cursor-pointer h-1.5 bg-indigo-900 rounded-lg my-1"
+                  />
+                  <p className="text-[8.5px] text-indigo-300/70">% des cotisations perçues</p>
+                </div>
+
+                {/* Input 3: Recurring Expenses */}
+                <div className="bg-indigo-950/60 border border-indigo-800/50 p-2.5 rounded-xl space-y-1">
+                  <label className="text-[9.5px] font-bold text-amber-300 uppercase flex items-center gap-1">
+                    <TrendingDown className="h-3 w-3 text-amber-400" /> Dépenses Récurrentes
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={simRecurringExpenses || ''}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setSimRecurringExpenses(val < 0 ? 0 : val);
+                    }}
+                    className="w-full px-2.5 py-1 text-xs font-mono font-bold bg-slate-900/90 border border-amber-700/60 rounded-lg text-amber-200 focus:outline-amber-400 text-right"
+                  />
+                  <p className="text-[8.5px] text-amber-300/70">Fonctionnement & charges ({currency})</p>
+                </div>
+
+                {/* Input 4: Other Revenue */}
+                <div className="bg-indigo-950/60 border border-indigo-800/50 p-2.5 rounded-xl space-y-1">
+                  <label className="text-[9.5px] font-bold text-sky-300 uppercase flex items-center gap-1">
+                    <DollarSign className="h-3 w-3 text-sky-400" /> Autre Revenus
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={simOtherIncome || ''}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setSimOtherIncome(val < 0 ? 0 : val);
+                    }}
+                    className="w-full px-2.5 py-1 text-xs font-mono font-bold bg-slate-900/90 border border-sky-700/60 rounded-lg text-sky-200 focus:outline-sky-400 text-right"
+                  />
+                  <p className="text-[8.5px] text-sky-300/70">Dons & subventions ({currency})</p>
+                </div>
+              </div>
+
+              {/* Simulation Outcome Panel */}
+              <div className="bg-slate-950/80 border border-indigo-700/40 p-3.5 rounded-xl grid grid-cols-1 md:grid-cols-3 gap-3 items-center">
+                {/* Recettes Simulées */}
+                <div className="border-b md:border-b-0 md:border-r border-indigo-800/50 pb-2.5 md:pb-0 md:pr-3 space-y-0.5">
+                  <span className="text-[9.5px] font-bold text-emerald-400 uppercase tracking-wider block">
+                    Recettes Simulées Encaissées
+                  </span>
+                  <div className="flex items-baseline gap-1">
+                    <span className="font-mono text-sm sm:text-base font-black text-white">
+                      {simTotalRevenues.toLocaleString()}
+                    </span>
+                    <span className="text-[10px] font-bold text-emerald-400">{currency}</span>
+                  </div>
+                  <p className="text-[8.5px] text-slate-400">
+                    Cotisations: {simFeeCollected.toLocaleString()} {currency}
+                  </p>
+                </div>
+
+                {/* Dépenses Simulées */}
+                <div className="border-b md:border-b-0 md:border-r border-indigo-800/50 pb-2.5 md:pb-0 md:pr-3 space-y-0.5">
+                  <span className="text-[9.5px] font-bold text-amber-400 uppercase tracking-wider block">
+                    Dépenses Récurrentes
+                  </span>
+                  <div className="flex items-baseline gap-1">
+                    <span className="font-mono text-sm sm:text-base font-black text-white">
+                      {simRecurringExpenses.toLocaleString()}
+                    </span>
+                    <span className="text-[10px] font-bold text-amber-400">{currency}</span>
+                  </div>
+                  <p className="text-[8.5px] text-slate-400">
+                    Couverture: <strong className={simCoverageRatio >= 100 ? "text-emerald-400 font-extrabold" : "text-amber-400 font-extrabold"}>{simCoverageRatio}%</strong>
+                  </p>
+                </div>
+
+                {/* Solde Final Prévisionnel Caisse */}
+                <div className="space-y-0.5">
+                  <span className="text-[9.5px] font-bold uppercase tracking-wider block text-indigo-300">
+                    Solde Final Prévisionnel Caisse
+                  </span>
+                  <div className="flex items-baseline gap-1">
+                    <span className={`font-mono text-base sm:text-lg font-black ${
+                      simFinalBalance > 0 ? 'text-emerald-400' : simFinalBalance === 0 ? 'text-sky-300' : 'text-rose-400'
+                    }`}>
+                      {simFinalBalance > 0 ? '+' : ''}{simFinalBalance.toLocaleString()}
+                    </span>
+                    <span className={`text-[10px] font-bold ${
+                      simFinalBalance >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                    }`}>{currency}</span>
+                  </div>
+                  <div className="pt-0.5">
+                    {simFinalBalance > 0 ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                        <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" /> Solde Positif (+ Réserve)
+                      </span>
+                    ) : simFinalBalance === 0 ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                        <Info className="h-3 w-3 text-sky-400 shrink-0" /> Caisse à l'Équilibre (0 FCFA)
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                        <AlertTriangle className="h-3 w-3 text-rose-400 shrink-0" /> Risque de Déficit
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Other Revenue streams */}

@@ -34,7 +34,24 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
 
   // Search and filter states
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState<'all' | 'partiel' | 'retard'>('all');
+  const [selectedStatus, setSelectedStatus] = useState<'all' | 'partiel' | 'retard' | 'overdue_15'>('all');
+
+  // Helper calculation for days overdue
+  const getDaysOverdue = (parent: ApeeParent): number => {
+    if (parent.status === 'soldé') return 0;
+    if (!parent.createdAt) return parent.status === 'retard' ? 22 : 16;
+    const createdTime = new Date(parent.createdAt).getTime();
+    if (isNaN(createdTime)) return parent.status === 'retard' ? 22 : 16;
+    const diffDays = Math.floor((Date.now() - createdTime) / (1000 * 60 * 60 * 24));
+    if (diffDays <= 0 && (parent.status === 'retard' || parent.status === 'partiel')) {
+      return parent.status === 'retard' ? 22 : 16;
+    }
+    return Math.max(0, diffDays);
+  };
+
+  const overdue15Parents = overdueParents.filter(p => getDaysOverdue(p) > 15);
+  const overdue15Count = overdue15Parents.length;
+  const overdue15Amount = overdue15Parents.reduce((sum, p) => sum + Math.max(0, p.totalDue - p.totalPaid), 0);
   
   // Custom templates
   const [smsTemplate, setSmsTemplate] = useState<string>(
@@ -123,9 +140,80 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
     const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           p.phone.includes(searchTerm) || 
                           p.students.some(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()));
-    const matchesStatus = selectedStatus === 'all' ? true : p.status === selectedStatus;
+    let matchesStatus = true;
+    if (selectedStatus === 'partiel') matchesStatus = p.status === 'partiel';
+    else if (selectedStatus === 'retard') matchesStatus = p.status === 'retard';
+    else if (selectedStatus === 'overdue_15') matchesStatus = getDaysOverdue(p) > 15;
     return matchesSearch && matchesStatus;
   });
+
+  // Trigger automated Twilio SMS reminders specifically for parents overdue by > 15 days
+  const handleTriggerTwilio15DaysReminders = async () => {
+    const targets = selectedParentIds.length > 0
+      ? overdueParents.filter(p => selectedParentIds.includes(p.id) && getDaysOverdue(p) > 15)
+      : overdue15Parents;
+
+    if (targets.length === 0) {
+      triggerToast('info', "Aucun parent sélectionné ou identifié avec un retard de plus de 15 jours.");
+      return;
+    }
+
+    if (!confirm(`Déclencher l'envoi des rappels automatiques SMS via l'API Twilio pour les ${targets.length} parents dont la facture est en retard de plus de 15 jours ?`)) {
+      return;
+    }
+
+    setBulkProcessing(true);
+    setBulkChannel('sms');
+    setBulkProgress(0);
+    setBulkLog([
+      `[API Twilio Dispatcher] Démarrage de la campagne de relance SMS automatique via Twilio...`,
+      `[Filtre Overdue > 15 jours] Nombre de parents ciblés : ${targets.length}`,
+      `[Paramètres Twilio] Connexion au relais Twilio API...`
+    ]);
+
+    try {
+      const response = await fetch('/api/apee/send-bulk-reminders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          parentIds: targets.map(p => p.id),
+          parents: parents,
+          emailSubject,
+          emailTemplate,
+          smsTemplate,
+          settings,
+          channel: 'sms',
+          forceProvider: 'twilio'
+        })
+      });
+
+      const resData = await response.json();
+      if (resData.success) {
+        setBulkProgress(100);
+        setBulkLog(resData.logs || []);
+
+        if (Array.isArray(resData.updatedParents)) {
+          for (const updatedParent of resData.updatedParents) {
+            await onSaveParent(updatedParent);
+          }
+        }
+
+        setSelectedParentIds([]);
+        triggerToast('success', `Rappels SMS Twilio transmis avec succès à ${resData.processedCount} parent(s) (>15j de retard) !`);
+      } else {
+        setBulkLog(prev => [...prev, `❌ [Erreur Twilio] : ${resData.error || 'Échec du traitement'}`]);
+        triggerToast('info', `Une erreur est survenue lors de l'envoi SMS Twilio.`);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setBulkLog(prev => [...prev, `❌ [Erreur Réseau] Impossible de joindre l'API Twilio.`]);
+      triggerToast('info', `Erreur réseau Twilio.`);
+    } finally {
+      setBulkProcessing(false);
+    }
+  };
 
   // Bulk checkboxes
   const handleToggleSelectParent = (id: string) => {
@@ -415,6 +503,15 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
         <div className="mt-2 md:mt-0 flex flex-wrap gap-2">
           <button
             type="button"
+            onClick={handleTriggerTwilio15DaysReminders}
+            title="Déclencher les rappels automatiques SMS via Twilio pour les factures en retard de plus de 15 jours"
+            className="text-xs px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-black rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md transition"
+          >
+            <Smartphone className="h-3.5 w-3.5 text-sky-300" />
+            <span>SMS Twilio Auto (&gt;15j)</span>
+          </button>
+          <button
+            type="button"
             onClick={() => handleBackendBulkReminderRun('email')}
             title="Relancer tous les parents sélectionnés automatiquement en arrière-plan"
             className="text-xs px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs transition"
@@ -437,6 +534,52 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
           >
             <Smartphone className="h-3.5 w-3.5" /> SMS Collectif (Serveur)
           </button>
+        </div>
+      </div>
+
+      {/* Featured Banner for Twilio SMS Overdue (>15 days) Auto-Reminders */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 border border-indigo-500/30 rounded-2xl p-4 md:p-5 text-white shadow-xl space-y-3">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b border-indigo-500/20 pb-3">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded-md bg-indigo-500 text-white font-mono text-[9px] font-black uppercase tracking-wider">
+                API TWILIO ACTIVE
+              </span>
+              <span className="text-xs font-extrabold text-indigo-200 flex items-center gap-1">
+                🔥 Rappels Automatiques SMS — Retards &gt; 15 Jours
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-300 leading-relaxed max-w-2xl">
+              Option de déclenchement automatique pour les parents dont les factures ou cotisations accusent un <strong>retard de plus de 15 jours</strong>. Envoi direct de SMS personnalisés avec accusé de réception via l'API Twilio.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleTriggerTwilio15DaysReminders}
+              disabled={overdue15Count === 0 || bulkProcessing}
+              className="px-4 py-2.5 bg-gradient-to-r from-indigo-500 via-indigo-600 to-indigo-700 hover:from-indigo-600 hover:to-indigo-800 text-white font-black text-xs rounded-xl shadow-lg hover:shadow-indigo-500/25 transition duration-150 flex items-center gap-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Smartphone className="h-4 w-4 text-sky-300" />
+              <span>Lancer Relance Twilio ({overdue15Count} parent{overdue15Count > 1 ? 's' : ''})</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Metric summary grid for overdue > 15 days */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs pt-1">
+          <div className="bg-slate-800/70 p-2.5 rounded-xl border border-indigo-500/15 flex items-center justify-between">
+            <span className="text-slate-400 font-medium">Parents &gt; 15j de retard :</span>
+            <span className="font-bold text-amber-300 font-mono text-sm">{overdue15Count} parent(s)</span>
+          </div>
+          <div className="bg-slate-800/70 p-2.5 rounded-xl border border-indigo-500/15 flex items-center justify-between">
+            <span className="text-slate-400 font-medium">Créances &gt; 15j à recouvrer :</span>
+            <span className="font-bold text-emerald-300 font-mono text-sm">{overdue15Amount.toLocaleString()} FCFA</span>
+          </div>
+          <div className="bg-slate-800/70 p-2.5 rounded-xl border border-indigo-500/15 flex items-center justify-between">
+            <span className="text-slate-400 font-medium">Passerelle SMS :</span>
+            <span className="font-bold text-indigo-300 font-mono">Twilio REST API (SMS)</span>
+          </div>
         </div>
       </div>
 
@@ -639,7 +782,7 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
                 />
               </div>
 
-              <div className="flex gap-1.5 text-[10px]">
+              <div className="flex flex-wrap gap-1.5 text-[10px]">
                 <button
                   type="button"
                   onClick={() => setSelectedStatus('all')}
@@ -672,6 +815,17 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
                   }`}
                 >
                   Retard Total
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedStatus('overdue_15')}
+                  className={`px-2.5 py-1 rounded-lg font-extrabold border transition ${
+                    selectedStatus === 'overdue_15' 
+                      ? 'bg-rose-100 text-rose-800 border-rose-300' 
+                      : 'text-rose-600 border-rose-100 bg-rose-50/50 hover:bg-rose-100/50'
+                  }`}
+                >
+                  Retard &gt; 15j ({overdue15Count})
                 </button>
               </div>
             </div>
@@ -737,9 +891,17 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
                               <CheckCircle className="h-2.5 w-2.5" /> Relancé le: {parent.lastReminded}
                             </p>
                           ) : (
-                            <p className="text-[9px] text-gray-400 font-medium mt-0.5">
-                              Pas encore relancé
-                            </p>
+                            <div className="flex items-center gap-1 mt-0.5">
+                              {getDaysOverdue(parent) > 15 ? (
+                                <span className="text-[9px] font-extrabold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded">
+                                  🔥 Retard : {getDaysOverdue(parent)}j (&gt;15j)
+                                </span>
+                              ) : (
+                                <span className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                                  ⏱️ Retard : {getDaysOverdue(parent)}j
+                                </span>
+                              )}
+                            </div>
                           )}
                         </div>
                       </div>

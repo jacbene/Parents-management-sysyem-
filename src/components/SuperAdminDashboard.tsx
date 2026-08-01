@@ -137,20 +137,6 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
 
   const fallbackSchools: Establishment[] = [
     {
-      id: 'demo_school_ekali',
-      name: "CES d'Ekali 1 - MFOU",
-      cotisationAmount: 25000,
-      financialGoal: 5000000,
-      finManagerName: 'Marie Béné',
-      finManagerPhone: '677002233',
-      finManagerPassword: '1234',
-      pedManagerName: 'Marie Béné',
-      pedManagerPhone: '677002233',
-      pedManagerPassword: '1234',
-      schoolYear: '2025/2026',
-      ownerId: 'demo_admin'
-    },
-    {
       id: 'demo_school_vogt',
       name: "Collège Vogt - Yaoundé",
       cotisationAmount: 35000,
@@ -810,30 +796,200 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
     document.body.removeChild(link);
   };
 
-  // Computations
+  // Computations & Real Data Resolution Helpers for Establishments
+  const getSchoolRealParents = (schoolId: string): any[] => {
+    const parentsMap = new Map<string, any>();
+
+    // 1. From allInvoices state (Firestore + local invoices)
+    const schoolInvoices = allInvoices.filter(
+      inv => inv.parentId === schoolId && 
+      !['apee_expense', 'apee_log', 'apee_other_revenue', 'apee_settings', 'system_log'].includes(inv.studentId)
+    );
+    schoolInvoices.forEach(inv => {
+      parentsMap.set(inv.id, {
+        id: inv.id,
+        name: inv.title,
+        phone: inv.phone || '',
+        email: inv.email || '',
+        amountPaid: Number(inv.amountPaid) || 0,
+        totalDue: Number(inv.amount) || 0,
+        studentsList: inv.studentsList
+      });
+    });
+
+    // 2. From localStorage apee_parents_cache_<schoolId> or apee_parents_<schoolId>
+    try {
+      const cachedStr = localStorage.getItem(`apee_parents_cache_${schoolId}`) || localStorage.getItem(`apee_parents_${schoolId}`);
+      if (cachedStr) {
+        const cached = JSON.parse(cachedStr);
+        if (Array.isArray(cached)) {
+          cached.forEach((p: any) => {
+            if (p && p.id) {
+              parentsMap.set(p.id, {
+                id: p.id,
+                name: p.name || p.title,
+                phone: p.phone || '',
+                email: p.email || '',
+                amountPaid: p.totalPaid !== undefined ? Number(p.totalPaid) : (Number(p.amountPaid) || 0),
+                totalDue: p.totalDue !== undefined ? Number(p.totalDue) : (Number(p.amount) || 0),
+                studentsList: p.students ? JSON.stringify(p.students) : p.studentsList
+              });
+            }
+          });
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    return Array.from(parentsMap.values());
+  };
+
+  const getSchoolRealPupilsCount = (schoolId: string, parents: any[]): number => {
+    const pupilSet = new Set<string>();
+
+    // 1. Standalone students from allStudents (Firestore / local)
+    allStudents
+      .filter(s => s.parentId === schoolId)
+      .forEach(s => {
+        if (s.id || s.name) pupilSet.add(s.id || s.name);
+      });
+
+    // 2. Students attached inside parent profiles
+    parents.forEach(p => {
+      try {
+        if (p.studentsList) {
+          const parsed = JSON.parse(p.studentsList);
+          if (Array.isArray(parsed)) {
+            parsed.forEach((std: any) => {
+              const key = std.id || `${std.name}_${std.classRoom || ''}`;
+              if (key) pupilSet.add(key);
+            });
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    });
+
+    return pupilSet.size;
+  };
+
+  const getSchoolRealFinancialGoal = (school: Establishment): number => {
+    // 1. Settings stored in Firestore (primary source when updated in establishment settings)
+    const settingsInv = allInvoices.find(inv => 
+      (inv.parentId === school.id || inv.id === `${school.id}_settings` || inv.id === 'apee_settings') && 
+      (inv.studentId === 'apee_settings' || inv.id.endsWith('_settings'))
+    );
+    if (settingsInv && settingsInv.amountPaid && Number(settingsInv.amountPaid) > 0) {
+      return Number(settingsInv.amountPaid);
+    }
+
+    // 2. Settings stored in local cache
+    try {
+      const cachedSettingsStr = localStorage.getItem(`apee_settings_cache_${school.id}`) || localStorage.getItem(`apee_settings_${school.id}`);
+      if (cachedSettingsStr) {
+        const settings = JSON.parse(cachedSettingsStr);
+        if (settings && Number(settings.financialGoal) > 0) {
+          return Number(settings.financialGoal);
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // 3. Fallback: Explicit financialGoal on establishment object
+    if (school.financialGoal && Number(school.financialGoal) > 0) {
+      return Number(school.financialGoal);
+    }
+
+    return 0;
+  };
+
+  const getSchoolRealCotisationAmount = (school: Establishment): number => {
+    // 1. Settings stored in Firestore (primary source when updated in establishment settings)
+    const settingsInv = allInvoices.find(inv => 
+      (inv.parentId === school.id || inv.id === `${school.id}_settings` || inv.id === 'apee_settings') && 
+      (inv.studentId === 'apee_settings' || inv.id.endsWith('_settings'))
+    );
+    if (settingsInv && settingsInv.amount && Number(settingsInv.amount) > 0) {
+      return Number(settingsInv.amount);
+    }
+
+    // 2. Settings stored in local cache
+    try {
+      const cachedSettingsStr = localStorage.getItem(`apee_settings_cache_${school.id}`) || localStorage.getItem(`apee_settings_${school.id}`);
+      if (cachedSettingsStr) {
+        const settings = JSON.parse(cachedSettingsStr);
+        if (settings && Number(settings.cotisationAmount) > 0) {
+          return Number(settings.cotisationAmount);
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // 3. Fallback: Explicit cotisationAmount on establishment object
+    if (school.cotisationAmount && Number(school.cotisationAmount) > 0) {
+      return Number(school.cotisationAmount);
+    }
+
+    return 25000;
+  };
+
+  const getSchoolRealCollectedFunds = (schoolId: string, parents: any[]): number => {
+    let sum = 0;
+
+    // 1. Sum payments from real parents
+    parents.forEach(p => {
+      sum += Number(p.amountPaid) || 0;
+    });
+
+    // 2. Other revenues from Firestore
+    const otherRevenues = allInvoices.filter(inv => inv.parentId === schoolId && inv.studentId === 'apee_other_revenue');
+    otherRevenues.forEach(inv => {
+      sum += Number(inv.amountPaid || inv.amount) || 0;
+    });
+
+    // 3. Other revenues from local cache
+    try {
+      const cachedRevenuesStr = localStorage.getItem(`apee_other_revenues_cache_${schoolId}`);
+      if (cachedRevenuesStr) {
+        const revenues = JSON.parse(cachedRevenuesStr);
+        if (Array.isArray(revenues)) {
+          revenues.forEach((r: any) => {
+            if (r && r.amount && !otherRevenues.some(inv => inv.id === r.id)) {
+              sum += Number(r.amount) || 0;
+            }
+          });
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    return sum;
+  };
+
   const totalSchools = schools.length;
   
-  // Real or robustly simulated statistical summaries
+  // Real statistical summaries calculated across all establishments
   const totalStudents = schools.reduce((acc, sch) => {
-    const fromDb = allStudents.filter(s => s.parentId === sch.id).length;
-    // Base fallback if no students registered yet in Firestore
-    return acc + (fromDb > 0 ? fromDb : (isPreprod ? 0 : 3));
+    const parents = getSchoolRealParents(sch.id);
+    return acc + getSchoolRealPupilsCount(sch.id, parents);
   }, 0);
 
   const totalParents = schools.reduce((acc, sch) => {
-    const parentInvoices = allInvoices.filter(inv => inv.parentId === sch.id && inv.studentId === 'apee_ces_ekali_1');
-    return acc + (parentInvoices.length > 0 ? parentInvoices.length : (isPreprod ? 0 : 2)); // default demo seeds
+    const parents = getSchoolRealParents(sch.id);
+    return acc + parents.length;
   }, 0);
 
   const totalFundsCollected = schools.reduce((acc, sch) => {
-    const parentInvoices = allInvoices.filter(inv => inv.parentId === sch.id && inv.studentId === 'apee_ces_ekali_1');
-    const totalPaid = parentInvoices.reduce((sum, parent) => sum + (parent.amountPaid || 0), 0);
-    // Add seed payments for fallback schools to show beautiful non-empty metrics on first load
-    const fallbackPaymentSum = isPreprod ? 0 : (sch.id === 'demo_school_ekali' ? 1250000 : (sch.id === 'demo_school_vogt' ? 4200000 : 0));
-    return acc + (totalPaid > 0 ? totalPaid : fallbackPaymentSum);
+    const parents = getSchoolRealParents(sch.id);
+    return acc + getSchoolRealCollectedFunds(sch.id, parents);
   }, 0);
 
-  const totalFundsRequired = schools.reduce((acc, sch) => acc + (sch.financialGoal || 5000000), 0);
+  const totalFundsRequired = schools.reduce((acc, sch) => acc + getSchoolRealFinancialGoal(sch), 0);
   const globalRate = totalFundsRequired > 0 ? Math.round((totalFundsCollected / totalFundsRequired) * 100) : 0;
 
   // Filtered Schools
@@ -1126,25 +1282,20 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                         </thead>
                         <tbody className="divide-y divide-slate-100 font-medium">
                           {filteredSchools.map((school) => {
-                            // Calculate metrics for school
-                            const parentsCount = allInvoices.filter(
-                              inv => inv.parentId === school.id && inv.studentId === 'apee_ces_ekali_1'
-                            ).length || (isPreprod ? 0 : 2); // Demodb fallback
-                            
-                            const pupilsCount = allStudents.filter(s => s.parentId === school.id).length || (isPreprod ? 0 : 3);
-                            
-                            const collected = allInvoices
-                              .filter(inv => inv.parentId === school.id && inv.studentId === 'apee_ces_ekali_1')
-                              .reduce((sum, inv) => sum + (inv.amountPaid || 0), 0) || (isPreprod ? 0 : (school.id === 'demo_school_ekali' ? 1250000 : (school.id === 'demo_school_vogt' ? 4200000 : 0)));
-                            
-                            const progressPercent = Math.round((collected / (school.financialGoal || 5000000)) * 100);
+                            // Calculate real metrics for school
+                            const realParents = getSchoolRealParents(school.id);
+                            const parentsCount = realParents.length;
+                            const pupilsCount = getSchoolRealPupilsCount(school.id, realParents);
+                            const collected = getSchoolRealCollectedFunds(school.id, realParents);
+                            const goal = getSchoolRealFinancialGoal(school);
+                            const cotisation = getSchoolRealCotisationAmount(school);
+                            const progressPercent = goal > 0 ? Math.round((collected / goal) * 100) : 0;
 
                             const expectedFee = Math.round(collected * 0.01);
                             const paidFee = Math.round(school.portalFeesPaid || 0);
                             const remainingFee = Math.max(0, expectedFee - paidFee);
 
                             // Detect 3 months cycle alert
-                            // Use mock or real last payment date. If remainingFee is high, alert user of periodic settling.
                             const hasDebtAlert = remainingFee > 5000;
 
                             return (
@@ -1201,14 +1352,14 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                                 </td>
                                 <td className="px-4 py-4.5">
                                   <div className="space-y-1">
-                                    <div className="font-black text-slate-900">{collected.toLocaleString()} / {(school.financialGoal || 0).toLocaleString()} FCFA</div>
+                                    <div className="font-black text-slate-900">{collected.toLocaleString()} / {goal > 0 ? `${goal.toLocaleString()} FCFA` : 'Non défini'}</div>
                                     <div className="flex items-center gap-2">
                                       <div className="w-16 bg-slate-100 h-1.5 rounded-full overflow-hidden">
                                         <div className="bg-indigo-600 h-1.5 rounded-full" style={{ width: `${Math.min(progressPercent, 100)}%` }} />
                                       </div>
                                       <span className="font-mono text-[9.5px] font-bold text-indigo-600">{progressPercent}%</span>
                                     </div>
-                                    <div className="text-[9px] text-slate-400 font-bold">{(school.cotisationAmount || 0).toLocaleString()} FCFA / Adhérent</div>
+                                    <div className="text-[9px] text-slate-400 font-bold">{cotisation.toLocaleString()} FCFA / Adhérent</div>
                                   </div>
                                 </td>
                                 <td className="px-4 py-4.5">
@@ -1958,7 +2109,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
               </p>
 
               <div className="space-y-2 max-h-[45vh] overflow-y-auto pr-1">
-                {allInvoices.filter(inv => inv.parentId === selectedSchoolForParentImpersonation.id && inv.studentId === 'apee_ces_ekali_1').length === 0 ? (
+                {getSchoolRealParents(selectedSchoolForParentImpersonation.id).length === 0 ? (
                   <div className="p-6 border border-dashed border-slate-200 rounded-2xl text-center text-slate-400 text-xs font-semibold space-y-3">
                     <p>Aucun dossier de parent enregistré dans cet établissement.</p>
                     <button
@@ -1977,7 +2128,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                     </button>
                   </div>
                 ) : (
-                  allInvoices.filter(inv => inv.parentId === selectedSchoolForParentImpersonation.id && inv.studentId === 'apee_ces_ekali_1').map((parentDoc) => {
+                  getSchoolRealParents(selectedSchoolForParentImpersonation.id).map((parentDoc) => {
                     let kids: string[] = [];
                     try {
                       if (parentDoc.studentsList) {
@@ -1992,7 +2143,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                         className="p-3.5 border border-slate-100 hover:border-emerald-100 bg-slate-50/50 hover:bg-emerald-50/20 rounded-2xl flex items-center justify-between gap-3 transition"
                       >
                         <div className="space-y-0.5 min-w-0 flex-1">
-                          <h4 className="font-black text-slate-900 text-xs truncate">{parentDoc.title}</h4>
+                          <h4 className="font-black text-slate-900 text-xs truncate">{parentDoc.name}</h4>
                           <p className="text-[10px] text-slate-500 font-mono">📞 {parentDoc.phone || "Non renseigné"}</p>
                           {kids.length > 0 && (
                             <p className="text-[9.5px] text-indigo-600 font-extrabold truncate">👦 Pupilles : {kids.join(', ')}</p>
@@ -2001,7 +2152,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                         <button
                           onClick={() => {
                             onSelectSchool(selectedSchoolForParentImpersonation.id, 'parent', {
-                              name: parentDoc.title,
+                              name: parentDoc.name,
                               phone: parentDoc.phone || '',
                               invoiceId: parentDoc.id,
                               studentSubsetNames: kids

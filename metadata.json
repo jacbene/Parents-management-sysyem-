@@ -1,6 +1,6 @@
 {
   "name": "Parents-Schools Management System (Pasma-sys)",
-  "description": "A comprehensive, modern portal bridging parents and schools (Pasma-sys) to track student grades, school attendance, homework tasks, billing statements, schedules, and real-time communications powered by Firebase.",
+  "description": "Portail ENT complet et système de gestion APEE : suivi académique, rappels automatiques SMS via Twilio (>15j), paiements Campay Mobile Money, bilans financiers PDF et synchronisation Firebase temps réel.",
   "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

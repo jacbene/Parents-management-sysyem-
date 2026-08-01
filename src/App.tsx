@@ -682,6 +682,13 @@ export default function App() {
     const role = localStorage.getItem('portal_user_role');
     return role === 'parent' ? 'announcements' : role === 'teacher' ? 'grades' : 'apee_dashboard';
   });
+
+  // Access protection guard: ensure parents cannot stay on students_by_class
+  useEffect(() => {
+    if (portalUserRole === 'parent' && activeTab === 'students_by_class') {
+      setActiveTab('announcements');
+    }
+  }, [portalUserRole, activeTab]);
   
   const [showCookieBanner, setShowCookieBanner] = useState(false);
   const [isOffline, setIsOffline] = useState(() => {
@@ -1064,6 +1071,10 @@ export default function App() {
     if (portalUserRole === 'parent') {
       alert("Accès refusé: Votre profil Parent ne vous autorise pas à modifier les données administratives et académiques.");
       return Promise.resolve(false);
+    }
+    // Authenticated teachers or managers are automatically authorized
+    if (portalUserRole === 'teacher' || portalUserRole === 'manager') {
+      return Promise.resolve(true);
     }
     if (!apeeSettings.pedManagerPassword) {
       return Promise.resolve(true); // No password configured, actions are free
@@ -3878,7 +3889,7 @@ export default function App() {
                       <span className="flex items-center gap-2"><Newspaper className="h-4 w-4" /> {t('tab.announcements')}</span>
                     </button>
 
-                    {filteredStudents.length > 0 && (
+                    {filteredStudents.length > 0 && portalUserRole !== 'parent' && (
                       <button
                         onClick={() => setActiveTab('students_by_class')}
                         className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
@@ -3992,21 +4003,25 @@ export default function App() {
                     </button>
                   </div>
                   
-                  {/* Compact Profile & Share Buttons */}
+                  {/* Settings, Profile & Share Buttons */}
                   <div className="space-y-2 pt-2">
-                    {portalUserRole === 'parent' && portalParentDetails && (
-                      <button
-                        type="button"
-                        onClick={() => setShowProfileModal(true)}
-                        className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/60 text-xs font-bold transition shadow-3xs cursor-pointer select-none"
-                      >
-                        <span className="flex items-center gap-2">
-                          <UserIcon className="h-4 w-4 text-indigo-650 dark:text-indigo-400" />
-                          {language === 'en' ? "My Profile" : "Mon Profil"}
-                        </span>
-                        <Settings className="h-3.5 w-3.5 text-slate-400" />
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowProfileModal(true)}
+                      className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/60 text-xs font-bold transition shadow-3xs cursor-pointer select-none"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Settings className="h-4 w-4 text-indigo-650 dark:text-indigo-400" />
+                        {language === 'en' ? "Settings & Preferences" : "Paramètres & Profil"}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        {isDarkMode ? (
+                          <Moon className="h-3.5 w-3.5 text-amber-400" />
+                        ) : (
+                          <Sun className="h-3.5 w-3.5 text-amber-500" />
+                        )}
+                      </span>
+                    </button>
 
                     <button
                       type="button"
@@ -4200,7 +4215,7 @@ export default function App() {
                       </motion.div>
                     )}
 
-                    {activeTab === 'students_by_class' && (
+                    {activeTab === 'students_by_class' && portalUserRole !== 'parent' && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="students_by_class">
                         <StudentsByClass
                           students={students}
@@ -4209,6 +4224,7 @@ export default function App() {
                           attendanceLogs={attendanceLogs}
                           messages={messages}
                           settings={apeeSettings}
+                          portalUserRole={portalUserRole}
                           onSelectStudent={(studentId) => {
                             setSelectedStudentId(studentId);
                           }}
@@ -4247,6 +4263,7 @@ export default function App() {
                           activeStudent={activeStudent}
                           onUpdateStudent={handleUpdateStudent}
                           onPrintReport={() => setPrintingStudent(activeStudent)}
+                          settings={apeeSettings}
                         />
                       </motion.div>
                     )}
@@ -4585,9 +4602,9 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Parent Profile & Notification Preferences Modal */}
+      {/* User Settings, Profile & Preferences Modal */}
       <AnimatePresence>
-        {showProfileModal && portalUserRole === 'parent' && portalParentDetails && (
+        {showProfileModal && (
           <>
             {/* Backdrop */}
             <motion.div
@@ -4610,14 +4627,18 @@ export default function App() {
               <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800/80">
                 <div className="flex items-center gap-3">
                   <div className="p-2.5 bg-indigo-50 dark:bg-indigo-950/40 rounded-xl text-indigo-650 dark:text-indigo-400">
-                    <UserIcon className="h-5 w-5" />
+                    <Settings className="h-5 w-5" />
                   </div>
                   <div>
                     <h3 className="text-sm font-black text-slate-850 dark:text-indigo-200">
-                      {language === 'en' ? "My Parent Profile" : "Mon Profil Parent"}
+                      {language === 'en' ? "Settings & Preferences" : "Paramètres & Préférences Utilisation"}
                     </h3>
                     <p className="text-xs text-slate-450 dark:text-slate-500 font-medium">
-                      {portalParentDetails.name} • {portalParentDetails.phone || "No Phone"}
+                      {portalUserRole === 'parent' && portalParentDetails ? (
+                        `${portalParentDetails.name} • ${portalParentDetails.phone || "Parent"}`
+                      ) : (
+                        `Rôle : ${portalUserRole === 'superadmin' ? 'Super Administrateur' : portalUserRole === 'teacher' ? 'Enseignant / Censeur' : 'Membre Staff'}`
+                      )}
                     </p>
                   </div>
                 </div>
@@ -4632,60 +4653,104 @@ export default function App() {
 
               {/* Preferences list */}
               <div className="space-y-4 py-1">
-                <h4 className="text-[10px] font-black text-indigo-650 dark:text-indigo-400 uppercase tracking-wider">
-                  {language === 'en' ? "Notification Preferences" : "Préférences Notifications"}
-                </h4>
-
-                {/* IMPORTANT GRADES PREFERENCE */}
-                <div className="p-3.5 bg-slate-50 dark:bg-slate-950/20 border border-slate-150 dark:border-slate-800 rounded-2xl">
-                  <label className="flex items-start gap-3 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={prefOnlyImportantGrades}
-                      onChange={(e) => handleUpdatePreferences(e.target.checked, prefOnlyUrgentFinancials)}
-                      className="mt-0.5 rounded border-slate-300 dark:border-slate-700 text-indigo-650 focus:ring-indigo-500 h-4.5 w-4.5 cursor-pointer transition-colors"
-                    />
-                    <div className="space-y-0.5">
-                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight block">
-                        {language === 'en' ? "Important grades only" : "Notes importantes uniquement"}
-                      </span>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed block">
-                        {language === 'en' 
-                          ? "Receive push alerts only for grades 15/20 or higher."
-                          : "Recevoir des alertes de notes uniquement si la note est ≥ 15/20."}
-                      </span>
+                {/* THEME TOGGLE SELECTION SECTION */}
+                <div>
+                  <h4 className="text-[10px] font-black text-indigo-650 dark:text-indigo-400 uppercase tracking-wider mb-2">
+                    {language === 'en' ? "Display Theme / Mode Visuel" : "Thème d'affichage / Mode Visuel"}
+                  </h4>
+                  <div className="p-3.5 bg-slate-50 dark:bg-slate-950/40 border border-slate-150 dark:border-slate-800 rounded-2xl flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2 rounded-xl border ${isDarkMode ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' : 'bg-indigo-50 border-indigo-100 text-indigo-650'}`}>
+                        {isDarkMode ? <Moon className="h-4.5 w-4.5" /> : <Sun className="h-4.5 w-4.5" />}
+                      </div>
+                      <div className="space-y-0.5">
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight block">
+                          {isDarkMode ? (language === 'en' ? "Dark Mode Active" : "Mode Sombre Actif") : (language === 'en' ? "Light Mode Active" : "Mode Clair Actif")}
+                        </span>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed block">
+                          {language === 'en' 
+                            ? "Switch between light and dark contrast theme for comfort."
+                            : "Basculez instantanément le thème Tailwind CSS de toute l'application."}
+                        </span>
+                      </div>
                     </div>
-                  </label>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsDarkMode(!isDarkMode)}
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        isDarkMode ? 'bg-indigo-600' : 'bg-slate-300'
+                      }`}
+                      role="switch"
+                      aria-checked={isDarkMode}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                          isDarkMode ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
                 </div>
 
-                {/* URGENT FINANCIALS PREFERENCE */}
-                <div className="p-3.5 bg-slate-50 dark:bg-slate-950/20 border border-slate-150 dark:border-slate-800 rounded-2xl">
-                  <label className="flex items-start gap-3 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={prefOnlyUrgentFinancials}
-                      onChange={(e) => handleUpdatePreferences(prefOnlyImportantGrades, e.target.checked)}
-                      className="mt-0.5 rounded border-slate-300 dark:border-slate-700 text-indigo-650 focus:ring-indigo-500 h-4.5 w-4.5 cursor-pointer transition-colors"
-                    />
-                    <div className="space-y-0.5">
-                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight block">
-                        {language === 'en' ? "Urgent billing alerts only" : "Alertes financières urgentes"}
-                      </span>
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed block">
-                        {language === 'en' 
-                          ? "Receive alerts only for critical financial deadlines or late notices."
-                          : "Recevoir des rappels uniquement pour les échéances ou retards critiques."}
-                      </span>
+                {portalUserRole === 'parent' && portalParentDetails && (
+                  <>
+                    <h4 className="text-[10px] font-black text-indigo-650 dark:text-indigo-400 uppercase tracking-wider pt-1">
+                      {language === 'en' ? "Notification Preferences" : "Préférences Notifications Parent"}
+                    </h4>
+
+                    {/* IMPORTANT GRADES PREFERENCE */}
+                    <div className="p-3.5 bg-slate-50 dark:bg-slate-950/20 border border-slate-150 dark:border-slate-800 rounded-2xl">
+                      <label className="flex items-start gap-3 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={prefOnlyImportantGrades}
+                          onChange={(e) => handleUpdatePreferences(e.target.checked, prefOnlyUrgentFinancials)}
+                          className="mt-0.5 rounded border-slate-300 dark:border-slate-700 text-indigo-650 focus:ring-indigo-500 h-4.5 w-4.5 cursor-pointer transition-colors"
+                        />
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight block">
+                            {language === 'en' ? "Important grades only" : "Notes importantes uniquement"}
+                          </span>
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed block">
+                            {language === 'en' 
+                              ? "Receive push alerts only for grades 15/20 or higher."
+                              : "Recevoir des alertes de notes uniquement si la note est ≥ 15/20."}
+                          </span>
+                        </div>
+                      </label>
                     </div>
-                  </label>
-                </div>
+
+                    {/* URGENT FINANCIALS PREFERENCE */}
+                    <div className="p-3.5 bg-slate-50 dark:bg-slate-950/20 border border-slate-150 dark:border-slate-800 rounded-2xl">
+                      <label className="flex items-start gap-3 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={prefOnlyUrgentFinancials}
+                          onChange={(e) => handleUpdatePreferences(prefOnlyImportantGrades, e.target.checked)}
+                          className="mt-0.5 rounded border-slate-300 dark:border-slate-700 text-indigo-650 focus:ring-indigo-500 h-4.5 w-4.5 cursor-pointer transition-colors"
+                        />
+                        <div className="space-y-0.5">
+                          <span className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight block">
+                            {language === 'en' ? "Urgent billing alerts only" : "Alertes financières urgentes"}
+                          </span>
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed block">
+                            {language === 'en' 
+                              ? "Receive alerts only for critical financial deadlines or late notices."
+                              : "Recevoir des rappels uniquement pour les échéances ou retards critiques."}
+                          </span>
+                        </div>
+                      </label>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Sync status footer */}
               <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
                 <span className="flex items-center gap-1.5">
                   <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                  {language === 'en' ? "Preferences saved" : "Préférences enregistrées"}
+                  {language === 'en' ? "Preferences synchronized" : "Paramètres enregistrés"}
                 </span>
                 <span className="text-slate-400 dark:text-slate-500 font-mono">Pasma-sys</span>
               </div>

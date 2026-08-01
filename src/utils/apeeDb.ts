@@ -1,6 +1,7 @@
-import { collection, doc, setDoc, deleteDoc, getDocs, query, where, writeBatch, onSnapshot } from 'firebase/firestore';
+import { collection, doc, setDoc, updateDoc, deleteDoc, getDocs, query, where, writeBatch, onSnapshot } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType, isOffline, queuePendingAction } from '../firebase';
 import { ApeeParent, ApeeExpense, ApeeSettings, Invoice, ApeeActivityLog, ApeeOtherRevenue } from '../types';
+import { sanitizeFirestoreId } from './schoolSync';
 
 // Base cache keys
 const CACHE_SETTINGS = 'apee_settings_cache';
@@ -662,6 +663,18 @@ export async function saveApeeSettings(parentId: string, settings: ApeeSettings)
 
   try {
     await setDoc(doc(db, 'invoices', `${parentId}_settings`), settingsInvoice);
+
+    // Sync establishment document if present
+    try {
+      const estDocRef = doc(db, 'establishments', sanitizeFirestoreId(parentId));
+      await updateDoc(estDocRef, {
+        cotisationAmount: Number(settings.cotisationAmount),
+        financialGoal: Number(settings.financialGoal),
+      });
+    } catch (e) {
+      // ignore non-existent establishment or permission restriction
+    }
+
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('pasma_save_success', { detail: { title: `Ajuster les paramètres APEE : ${settings.associationName}` } }));
     }

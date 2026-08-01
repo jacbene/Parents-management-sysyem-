@@ -39,6 +39,7 @@ interface StudentsByClassProps {
   attendanceLogs?: Attendance[];
   messages?: Message[];
   settings?: ApeeSettings;
+  portalUserRole?: string;
   onSelectStudent?: (studentId: string) => void;
   onUpdateStudent?: (updated: Student) => Promise<boolean>;
 }
@@ -50,11 +51,32 @@ export default function StudentsByClass({
   attendanceLogs = [],
   messages = [],
   settings,
+  portalUserRole,
   onSelectStudent,
   onUpdateStudent,
 }: StudentsByClassProps) {
   const { t, language } = useLanguage();
   const isFr = language === 'fr';
+
+  if (portalUserRole === 'parent') {
+    return (
+      <div className="bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900/50 rounded-3xl p-8 max-w-2xl mx-auto my-8 text-center space-y-4 shadow-sm">
+        <div className="w-14 h-14 bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 rounded-2xl flex items-center justify-center mx-auto border border-amber-200/60 dark:border-amber-800/40">
+          <ShieldAlert className="h-7 w-7" />
+        </div>
+        <div className="space-y-1.5">
+          <h3 className="text-base font-black text-slate-900 dark:text-slate-100">
+            {isFr ? "Accès Réservé au Corps Enseignant & Administratif" : "Restricted to Teaching & Administrative Staff"}
+          </h3>
+          <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed max-w-lg mx-auto font-medium">
+            {isFr 
+              ? "La consultation des listes nominatives par classe et la génération des badges d'émargement sont strictement réservées aux enseignants et aux responsables de l'établissement. En tant que parent, vous avez un accès direct et confidentiel uniquement aux informations relatives à vos enfants."
+              : "Viewing nominal class lists and generating check-in badges are strictly reserved for teachers and school administrators. As a parent, you have confidential access exclusively to your own children's records."}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClass, setSelectedClass] = useState<string>('all');
@@ -730,16 +752,18 @@ export default function StudentsByClass({
                 >
                   💬 {isFr ? "Messages" : "Message Logs"}
                 </button>
-                <button
-                  onClick={() => setActiveDetailTab('badge')}
-                  className={`px-5 py-3 text-xs font-bold border-b-2 cursor-pointer whitespace-nowrap transition-colors ${
-                    activeDetailTab === 'badge'
-                      ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
-                      : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-800'
-                  }`}
-                >
-                  🎫 {isFr ? "Badge QR Code" : "QR Badge"}
-                </button>
+                {portalUserRole !== 'parent' && (
+                  <button
+                    onClick={() => setActiveDetailTab('badge')}
+                    className={`px-5 py-3 text-xs font-bold border-b-2 cursor-pointer whitespace-nowrap transition-colors ${
+                      activeDetailTab === 'badge'
+                        ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                        : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-800'
+                    }`}
+                  >
+                    🎫 {isFr ? "Badge QR Code" : "QR Badge"}
+                  </button>
+                )}
               </div>
 
               {/* Modal scrollable body */}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, CheckCircle2, DollarSign, Wallet2, FileText, ArrowDownLeft, ArrowUpRight, Check, AlertCircle, TrendingUp, Download, AlertTriangle, ClipboardList, Sparkles, Coins, Loader2, CreditCard, Smartphone } from 'lucide-react';
+import { Plus, Trash2, CheckCircle2, DollarSign, Wallet2, FileText, ArrowDownLeft, ArrowUpRight, Check, AlertCircle, TrendingUp, Download, AlertTriangle, ClipboardList, Sparkles, Coins, Loader2, CreditCard, Smartphone, Edit2, Save, X } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { ApeeExpense, ApeeSettings, ApeeParent, ApeeOtherRevenue } from '../../types';
 import { getApeeShortName } from '../../utils/apeeDb';
@@ -68,6 +68,7 @@ export default function ApeeFinancial({
   const [description, setDescription] = useState('');
   const [budgetLineId, setBudgetLineId] = useState<string>('');
   const [expenseToDeleteId, setExpenseToDeleteId] = useState<string | null>(null);
+  const [editingExpense, setEditingExpense] = useState<ApeeExpense | null>(null);
 
   // Active filter tab
   const [activeFilter, setActiveFilter] = useState<string>('all'); // 'all' | 'command' | 'payment-order' | 'refund'
@@ -266,6 +267,25 @@ export default function ApeeFinancial({
 
   const handleDelete = (id: string) => {
     setExpenseToDeleteId(id);
+  };
+
+  const handleStartEdit = (exp: ApeeExpense) => {
+    setEditingExpense({ ...exp });
+  };
+
+  const handleSaveEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingExpense) return;
+    if (!editingExpense.title.trim() || editingExpense.amount <= 0) {
+      alert("Veuillez remplir correctement les champs obligatoires (libellé et montant).");
+      return;
+    }
+    onSaveExpense({
+      ...editingExpense,
+      title: editingExpense.title.trim(),
+      description: (editingExpense.description || '').trim(),
+    });
+    setEditingExpense(null);
   };
 
   // Filter expenses list
@@ -1941,6 +1961,13 @@ export default function ApeeFinancial({
                         </button>
                       )}
                       <button
+                        onClick={() => handleStartEdit(exp)}
+                        className="p-1 bg-amber-50 text-amber-700 border border-amber-100 hover:bg-amber-100 rounded cursor-pointer transition"
+                        title="Modifier l'opération"
+                      >
+                        <Edit2 className="h-3 w-3" />
+                      </button>
+                      <button
                         onClick={() => handleDelete(exp.id)}
                         className="p-1 bg-red-50 text-red-600 border border-red-100 hover:bg-red-100 rounded cursor-pointer"
                         title="Supprimer"
@@ -2052,6 +2079,162 @@ export default function ApeeFinancial({
           </div>
         );
       })()}
+
+      {/* Custom Modal for Editing an Expense Operation */}
+      {editingExpense && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-[9999] no-print animate-fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-150 w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden text-slate-800 animate-in fade-in zoom-in duration-200">
+            {/* Modal Header */}
+            <div className="bg-slate-900 text-white p-5 flex items-center justify-between border-b border-slate-800 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 rounded-2xl">
+                  <Edit2 className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-white">
+                    Modifier l'Opération de Caisse
+                  </h3>
+                  <p className="text-[11px] text-slate-400 font-medium">
+                    Mise à jour de la pièce comptable #{editingExpense.id}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingExpense(null)}
+                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition cursor-pointer"
+                title="Fermer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Body / Form */}
+            <form onSubmit={handleSaveEdit} className="p-5 overflow-y-auto flex-1 space-y-4 text-xs">
+              <div className="space-y-1">
+                <label className="text-[10.5px] font-bold text-slate-600 uppercase flex items-center gap-1">
+                  Libellé principal <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editingExpense.title}
+                  onChange={(e) => setEditingExpense({ ...editingExpense, title: e.target.value })}
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:bg-white focus:outline-indigo-500 font-medium"
+                  placeholder="Ex: Achat de matériel de bureau"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div className="space-y-1">
+                  <label className="text-[10.5px] font-bold text-slate-600 uppercase">
+                    Type d'opération <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={editingExpense.type}
+                    onChange={(e) => setEditingExpense({ ...editingExpense, type: e.target.value as any })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:bg-white focus:outline-indigo-500 cursor-pointer font-medium"
+                  >
+                    <option value="command">🧾 Bon de commande</option>
+                    <option value="payment-order">💸 Ordre de paiement</option>
+                    <option value="refund">↩️ Remboursement parent d'élève</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10.5px] font-bold text-slate-600 uppercase">
+                    Montant (FCFA) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={editingExpense.amount || ''}
+                    onChange={(e) => setEditingExpense({ ...editingExpense, amount: Number(e.target.value) })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:bg-white font-mono font-bold focus:outline-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div className="space-y-1">
+                  <label className="text-[10.5px] font-bold text-slate-600 uppercase">
+                    Date d'opération <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={editingExpense.date}
+                    onChange={(e) => setEditingExpense({ ...editingExpense, date: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:bg-white font-mono focus:outline-indigo-500"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10.5px] font-bold text-slate-600 uppercase">
+                    État de validation <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={editingExpense.status}
+                    onChange={(e) => setEditingExpense({ ...editingExpense, status: e.target.value as any })}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:bg-white focus:outline-indigo-500 cursor-pointer font-medium"
+                  >
+                    <option value="Pending">En attente / Brouillon</option>
+                    <option value="Approved">Accompagnement autorisé (Signé COGE / Chef d'étab)</option>
+                    <option value="Executed">Décaissement exécuté (Trésorier)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10.5px] font-bold text-slate-600 uppercase">
+                  Rubrique Budgétaire Associée
+                </label>
+                <select
+                  value={editingExpense.budgetLineId || ''}
+                  onChange={(e) => setEditingExpense({ ...editingExpense, budgetLineId: e.target.value || undefined })}
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:bg-white focus:outline-indigo-500 cursor-pointer font-medium"
+                >
+                  <option value="">-- Non spécifiée / Fonctionnement --</option>
+                  {budgetLines.map(line => (
+                    <option key={line.id} value={line.id}>📁 {line.name} ({line.allocatedAmount.toLocaleString()} FCFA)</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10.5px] font-bold text-slate-600 uppercase">
+                  Détail / Référence des pièces jointes
+                </label>
+                <textarea
+                  rows={2}
+                  value={editingExpense.description || ''}
+                  onChange={(e) => setEditingExpense({ ...editingExpense, description: e.target.value })}
+                  placeholder="Ex: N° de Facture, fournisseur, remarques..."
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:bg-white focus:outline-indigo-500 resize-none font-medium"
+                />
+              </div>
+
+              {/* Modal Footer */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setEditingExpense(null)}
+                  className="px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 font-bold rounded-xl text-xs transition cursor-pointer"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+                >
+                  <Save className="h-4 w-4" /> Enregistrer les modifications
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );
