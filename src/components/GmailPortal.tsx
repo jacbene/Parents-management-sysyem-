@@ -33,7 +33,8 @@ import {
   Eye,
   X,
   Layers,
-  Bookmark
+  Bookmark,
+  Reply
 } from 'lucide-react';
 import { ApeeParent, Invoice, Student } from '../types';
 
@@ -125,6 +126,99 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
   const [newLabelInput, setNewLabelInput] = useState<string>('');
   const [isCreatingLabel, setIsCreatingLabel] = useState(false);
   const [labelStatusMsg, setLabelStatusMsg] = useState<string | null>(null);
+
+  // Reply states for message details
+  const [isReplying, setIsReplying] = useState(false);
+  const [replyBody, setReplyBody] = useState('');
+  const [isSendingReply, setIsSendingReply] = useState(false);
+  const [replySuccessMsg, setReplySuccessMsg] = useState<string | null>(null);
+
+  // Helper to reset message selection & reply state
+  const handleSelectMessage = (msg: GmailMessageItem | null) => {
+    setSelectedMessage(msg);
+    setIsReplying(false);
+    setReplyBody('');
+    setReplySuccessMsg(null);
+  };
+
+  // Helper to extract email address from "Sender Name <email@domain.com>" or "email@domain.com"
+  const extractEmail = (fromStr: string) => {
+    if (!fromStr) return '';
+    const match = fromStr.match(/<([^>]+)>/);
+    return match ? match[1] : fromStr.trim();
+  };
+
+  // Open full composer pre-filled with reply info
+  const handleOpenComposerWithReply = (msg: GmailMessageItem) => {
+    const recipientEmail = extractEmail(msg.from);
+    const replySubject = msg.subject.startsWith('Re:') ? msg.subject : `Re: ${msg.subject}`;
+    
+    setRecipientTarget('single');
+    setCustomRecipientEmail(recipientEmail);
+    setEmailSubject(replySubject);
+    setEmailBody(
+      `\n\n-------------------\nMessage d'origine de : ${msg.from}\nDate : ${msg.date}\nObjet : ${msg.subject}\n\n${msg.body || msg.snippet}`
+    );
+    handleSelectMessage(null);
+    setActiveSubTab('composer');
+  };
+
+  // Quick reply inline handler
+  const handleSendReply = async () => {
+    if (!selectedMessage || !replyBody.trim()) return;
+    setIsSendingReply(true);
+    setReplySuccessMsg(null);
+
+    const recipientEmail = extractEmail(selectedMessage.from);
+    const replySubject = selectedMessage.subject.startsWith('Re:') 
+      ? selectedMessage.subject 
+      : `Re: ${selectedMessage.subject}`;
+    
+    const fullReplyBody = `${replyBody.trim()}\n\n-------------------\nMessage d'origine de ${selectedMessage.from} le ${selectedMessage.date}:\n${selectedMessage.body || selectedMessage.snippet}`;
+
+    try {
+      const activeToken = googleAccessToken || token;
+      if (!activeToken || activeToken.startsWith('demo-')) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } else {
+        const rawMime = createMimeMessage(recipientEmail, replySubject, fullReplyBody);
+        const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${activeToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ raw: rawMime, threadId: selectedMessage.threadId })
+        });
+
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          throw new Error(errJson.error?.message || 'Erreur lors de l\'envoi de la réponse.');
+        }
+      }
+
+      const newLog: SentMessageLog = {
+        id: `log-reply-${Date.now()}`,
+        to: `${recipientEmail}`,
+        subject: replySubject,
+        date: new Date().toLocaleString('fr-FR'),
+        status: activeToken?.startsWith('demo-') ? 'simulated' : 'sent',
+        recipientCount: 1
+      };
+
+      const updatedLogs = [newLog, ...sentLogs];
+      setSentLogs(updatedLogs);
+      localStorage.setItem('pasma_gmail_sent_logs', JSON.stringify(updatedLogs));
+
+      setReplySuccessMsg(`Réponse envoyée avec succès à ${recipientEmail} !`);
+      setReplyBody('');
+      setIsReplying(false);
+    } catch (err: any) {
+      alert("Erreur lors de l'envoi de la réponse: " + (err.message || 'Erreur inconnue'));
+    } finally {
+      setIsSendingReply(false);
+    }
+  };
 
   // Sent message log history (persisted in localStorage)
   const [sentLogs, setSentLogs] = useState<SentMessageLog[]>(() => {
@@ -1245,7 +1339,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
 
                         <button
                           type="button"
-                          onClick={() => setSelectedMessage(msg)}
+                          onClick={() => handleSelectMessage(msg)}
                           className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-300 rounded-xl text-[11px] font-bold text-slate-800 transition cursor-pointer flex items-center gap-1 ml-2"
                         >
                           <Eye className="h-3 w-3 text-red-600" />
@@ -1359,19 +1453,26 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
       {/* READ EMAIL MODAL */}
       {selectedMessage && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[2000]">
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-xl w-full p-6 space-y-5 animate-in fade-in zoom-in duration-150">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-xl w-full p-6 space-y-5 animate-in fade-in zoom-in duration-150 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
               <div className="space-y-0.5">
                 <span className="text-[10px] font-bold uppercase text-red-600 tracking-wider">Courriel Gmail</span>
                 <h3 className="text-sm font-black text-slate-900">{selectedMessage.subject}</h3>
               </div>
               <button 
-                onClick={() => setSelectedMessage(null)}
+                onClick={() => handleSelectMessage(null)}
                 className="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-500 transition cursor-pointer"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
+
+            {replySuccessMsg && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-2xl text-xs flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                <span>{replySuccessMsg}</span>
+              </div>
+            )}
 
             <div className="space-y-3 text-xs bg-slate-50 p-4 rounded-2xl border border-slate-200">
               <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
@@ -1388,20 +1489,76 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
                 ))}
               </div>
 
-              <div className="pt-2 border-t border-slate-200 font-mono text-slate-800 whitespace-pre-wrap leading-relaxed">
+              <div className="pt-2 border-t border-slate-200 font-mono text-slate-800 whitespace-pre-wrap leading-relaxed max-h-56 overflow-y-auto pr-1">
                 {selectedMessage.body || selectedMessage.snippet}
               </div>
             </div>
 
-            <div className="flex justify-end pt-2">
-              <button
-                type="button"
-                onClick={() => setSelectedMessage(null)}
-                className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition cursor-pointer"
-              >
-                Fermer
-              </button>
-            </div>
+            {/* Inline Reply Form */}
+            {isReplying ? (
+              <div className="p-4 bg-red-50/40 border border-red-200/80 rounded-2xl space-y-3 animate-in fade-in duration-150">
+                <div className="flex items-center justify-between text-xs font-bold text-red-900">
+                  <span className="flex items-center gap-1.5">
+                    <Reply className="h-4 w-4 text-red-600" />
+                    Répondre à : <code className="text-red-700 font-mono">{extractEmail(selectedMessage.from)}</code>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenComposerWithReply(selectedMessage)}
+                    className="text-[11px] text-red-600 hover:underline font-normal"
+                  >
+                    Ouvrir l'éditeur complet →
+                  </button>
+                </div>
+
+                <textarea
+                  rows={4}
+                  value={replyBody}
+                  onChange={(e) => setReplyBody(e.target.value)}
+                  placeholder="Rédigez votre réponse ici (ex: Bien reçu, merci pour cette information)..."
+                  className="w-full p-3 bg-white border border-slate-300 rounded-xl text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500/20"
+                />
+
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsReplying(false)}
+                    className="px-3.5 py-1.5 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 text-xs font-semibold rounded-xl transition cursor-pointer"
+                  >
+                    Annuler
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isSendingReply || !replyBody.trim()}
+                    onClick={handleSendReply}
+                    className="px-4 py-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-sm"
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                    <span>{isSendingReply ? 'Envoi...' : 'Envoyer la réponse'}</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsReplying(true)}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-2 shadow-xs"
+                >
+                  <Reply className="h-4 w-4" />
+                  <span>Répondre à cet e-mail</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSelectMessage(null)}
+                  className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition cursor-pointer"
+                >
+                  Fermer
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
