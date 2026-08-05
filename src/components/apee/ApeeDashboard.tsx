@@ -158,7 +158,8 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate,
     };
   });
 
-  const fallbackGoal = settings.financialGoal || 5000000;
+  const budgetLinesSum = (settings.budgetLines || []).reduce((sum, b) => sum + (b.allocatedAmount || 0), 0);
+  const fallbackGoal = settings.financialGoal || budgetLinesSum || ((settings.cotisationAmount || 12500) * (settings.expectedStudents || 100)) || 2750000;
   const displayProgressionData = progressionData.length > 0 ? progressionData : [
     { name: 'Sept 2025', "Collecte Mensuelle": 0, "Cumul Recouvré": 0, "Objectif Financier": fallbackGoal },
     { name: 'Oct 2025', "Collecte Mensuelle": 0, "Cumul Recouvré": 0, "Objectif Financier": fallbackGoal },

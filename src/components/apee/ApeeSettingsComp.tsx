@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Save, HelpCircle, Shield, Settings, Info, CheckCircle2, Plus, Trash2, Edit2, X, TrendingUp, Lock, Unlock, UserCheck, User, Phone, Mail, GraduationCap, AlertTriangle, CreditCard, Smartphone, Calculator, Percent, TrendingDown, RefreshCw, DollarSign } from 'lucide-react';
-import { ApeeSettings, ApeeBudgetLine, ApeeParent } from '../../types';
+import { Save, HelpCircle, Shield, Settings, Info, CheckCircle2, Plus, Trash2, Edit2, X, TrendingUp, Lock, Unlock, UserCheck, User, Phone, Mail, GraduationCap, AlertTriangle, CreditCard, Smartphone, Calculator, Percent, TrendingDown, RefreshCw, DollarSign, BookOpen, BookMarked, Layers, Filter } from 'lucide-react';
+import { ApeeSettings, ApeeBudgetLine, ApeeParent, ClassSubject } from '../../types';
 import { DEFAULT_SCHOOL_LOGO } from '../../constants';
-import { getApeeShortName } from '../../utils/apeeDb';
+import { getApeeShortName, DEFAULT_SETTINGS } from '../../utils/apeeDb';
 import { useLanguage } from '../../utils/TranslationContext';
+import LanguageSelector from '../LanguageSelector';
 import PaymentConfigurationForm from '../PaymentConfigurationForm';
 import SmsConfigurationForm from './SmsConfigurationForm';
 
@@ -87,7 +88,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
   const [simCollectionRate, setSimCollectionRate] = useState<number>(85);
   const [simRecurringExpenses, setSimRecurringExpenses] = useState<number>(() => {
     const blTotal = (settings.budgetLines || []).reduce((sum, b) => sum + (b.allocatedAmount || 0), 0);
-    return blTotal > 0 ? blTotal : Math.round((calculatedFinancialGoal || 5000000) * 0.8);
+    return blTotal > 0 ? blTotal : Math.round((calculatedFinancialGoal || 2750000) * 0.8);
   });
   const [simOtherIncome, setSimOtherIncome] = useState<number>(honoraryContributions + subventionsAndAids);
 
@@ -148,6 +149,18 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
     return [...savedMapped, ...missingPredefined];
   });
 
+  // Class Subjects state
+  const [classSubjects, setClassSubjects] = useState<ClassSubject[]>(() => {
+    return settings.classSubjects || DEFAULT_SETTINGS.classSubjects || [];
+  });
+  const [newSubjName, setNewSubjName] = useState('');
+  const [newSubjClass, setNewSubjClass] = useState('Toutes les classes');
+  const [newSubjCoef, setNewSubjCoef] = useState<number>(2);
+  const [newSubjCategory, setNewSubjCategory] = useState<string>('Scientifique');
+  const [newSubjTeacher, setNewSubjTeacher] = useState('');
+  const [editingSubjId, setEditingSubjId] = useState<string | null>(null);
+  const [subjClassFilter, setSubjClassFilter] = useState<string>('all');
+
   // Synchronize local states with settings props when they load/change
   React.useEffect(() => {
     if (settings) {
@@ -199,6 +212,9 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
         }));
         const missingPredefined = defaultClassrooms.filter(d => !settings.classTeachers!.some(s => s.classRoom === d.classRoom));
         setClassTeachers([...savedMapped, ...missingPredefined]);
+      }
+      if (settings.classSubjects && settings.classSubjects.length > 0) {
+        setClassSubjects(settings.classSubjects);
       }
       
       const pCfg = settings.paymentConfig;
@@ -265,6 +281,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
         censeurName: (censeurName || '').trim(),
         censeurPhone: (censeurPhone || '').trim(),
         classTeachers: classTeachers || [],
+        classSubjects: extra.classSubjects !== undefined ? extra.classSubjects : (classSubjects || []),
         honoraryContributions: honoraryContributions || 0,
         subventionsAndAids: subventionsAndAids || 0,
         actualHonoraryContributions: actualHonoraryContributions || 0,
@@ -1059,6 +1076,27 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
               </div>
             </div>
 
+            {/* Language Selector in Settings */}
+            <div className="border-t border-slate-100 pt-4 mt-4 space-y-3">
+              <div className="flex items-center gap-2 select-none">
+                <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wider block">3. Langue d'Affichage / Display Language</span>
+                <span className="h-px bg-slate-100 flex-1" />
+              </div>
+              
+              <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl p-3">
+                <div className="space-y-0.5">
+                  <div className="text-xs font-black text-slate-800">
+                    {t('header.select_lang')} / Multilingual Mode
+                  </div>
+                  <div className="text-[10px] text-slate-500">
+                    Sélecteur instantané : Français, English, Español, Deutsch
+                  </div>
+                </div>
+
+                <LanguageSelector />
+              </div>
+            </div>
+
           </div>
 
           <button
@@ -1598,6 +1636,311 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
             </button>
           </div>
         </div>
+      </div>
+
+      {/* SECTION: Custom Subjects & Curricula by Class */}
+      <div className="bg-white border border-slate-150 rounded-2xl p-4 md:p-6 space-y-5 shadow-3xs">
+        <div className="border-b border-slate-150 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 select-none">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <BookOpen className="h-4.5 w-4.5 text-indigo-600" /> Configuration des Matières & Disciplines par Classe
+            </h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Introduisez et adaptez le programme de matières selon chaque niveau de classe (6ème, 5ème, 4ème, 3ème, 2nde, 1ère, Tle, etc.).
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm("Voulez-vous charger la liste standard des matières officielles (Maths, Français, SVT, Physique, Anglais, Histo-Géo, Info, ECM, LV2, Philo) ?")) {
+                  const defaultList: ClassSubject[] = [
+                    { id: 'subj_' + Date.now() + '_1', name: 'Mathématiques', classRoom: 'Toutes les classes', coef: 4, category: 'Scientifique' },
+                    { id: 'subj_' + Date.now() + '_2', name: 'Français', classRoom: 'Toutes les classes', coef: 4, category: 'Littéraire' },
+                    { id: 'subj_' + Date.now() + '_3', name: 'Anglais', classRoom: 'Toutes les classes', coef: 3, category: 'Langues' },
+                    { id: 'subj_' + Date.now() + '_4', name: 'Sciences de la Vie et de la Terre (SVT)', classRoom: 'Toutes les classes', coef: 3, category: 'Scientifique' },
+                    { id: 'subj_' + Date.now() + '_5', name: 'Physique-Chimie', classRoom: '4ème, 3ème, 2nde, 1ère, Tle', coef: 3, category: 'Scientifique' },
+                    { id: 'subj_' + Date.now() + '_6', name: 'Histoire-Géographie', classRoom: 'Toutes les classes', coef: 2, category: 'Sciences Humaines' },
+                    { id: 'subj_' + Date.now() + '_7', name: 'Informatique', classRoom: 'Toutes les classes', coef: 2, category: 'Technique & Arts' },
+                    { id: 'subj_' + Date.now() + '_8', name: 'Éducation à la Citoyenneté et à la Morale (ECM)', classRoom: 'Toutes les classes', coef: 2, category: 'Sciences Humaines' },
+                    { id: 'subj_' + Date.now() + '_9', name: 'Allemand / Espagnol (LV2)', classRoom: '4ème, 3ème, 2nde, 1ère, Tle', coef: 2, category: 'Langues' },
+                    { id: 'subj_' + Date.now() + '_10', name: 'Philosophie', classRoom: '1ère, Tle', coef: 4, category: 'Littéraire' },
+                  ];
+                  setClassSubjects(defaultList);
+                  handleSaveWithExtra({ classSubjects: defaultList }, "Matières par défaut rechargées !");
+                }
+              }}
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <RefreshCw className="h-3.5 w-3.5 text-slate-500" /> Programme Officiel Standard
+            </button>
+            <span className="text-xs bg-indigo-50 border border-indigo-150 px-2.5 py-1 rounded-full font-bold text-indigo-700">
+              {classSubjects.length} Matière(s)
+            </span>
+          </div>
+        </div>
+
+        {/* Filter Pills by Class */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mr-1 flex items-center gap-1">
+            <Filter className="h-3 w-3" /> Filtrer:
+          </span>
+          {['all', 'Toutes les classes', '6ème', '5ème', '4ème', '3ème', '2nde', '1ère', 'Tle'].map((cls) => {
+            const label = cls === 'all' ? 'Toutes les matières' : cls;
+            const isSelected = subjClassFilter === cls;
+            return (
+              <button
+                key={cls}
+                type="button"
+                onClick={() => setSubjClassFilter(cls)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition cursor-pointer ${
+                  isSelected
+                    ? 'bg-indigo-600 text-white shadow-2xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Add / Edit Form Card */}
+        <div className="p-4 bg-indigo-50/60 border border-indigo-150 rounded-xl space-y-3">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-bold text-indigo-950 uppercase tracking-wide flex items-center gap-1.5">
+              {editingSubjId ? <Edit2 className="h-3.5 w-3.5 text-indigo-600" /> : <Plus className="h-3.5 w-3.5 text-indigo-600" />}
+              {editingSubjId ? 'Modifier la matière' : 'Ajouter une nouvelle matière selon la classe'}
+            </h4>
+            {editingSubjId && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingSubjId(null);
+                  setNewSubjName('');
+                  setNewSubjClass('Toutes les classes');
+                  setNewSubjCoef(2);
+                  setNewSubjCategory('Scientifique');
+                  setNewSubjTeacher('');
+                }}
+                className="text-[10px] text-slate-500 hover:text-slate-800 font-bold underline cursor-pointer"
+              >
+                Annuler la modification
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-3 text-xs">
+            <div className="md:col-span-4 space-y-1">
+              <label className="text-[10px] font-bold text-slate-600 uppercase">
+                Intitulé de la Matière <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                placeholder="Ex: Informatique, ECM, Droit, Philosophie..."
+                value={newSubjName}
+                onChange={(e) => setNewSubjName(e.target.value)}
+                className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-indigo-500 bg-white font-medium"
+              />
+            </div>
+
+            <div className="md:col-span-3 space-y-1">
+              <label className="text-[10px] font-bold text-slate-600 uppercase">
+                Classe / Niveau Concerné <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={newSubjClass}
+                onChange={(e) => setNewSubjClass(e.target.value)}
+                className="w-full px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-indigo-500 bg-white font-medium"
+              >
+                <option value="Toutes les classes">Toutes les classes</option>
+                <option value="6ème">6ème</option>
+                <option value="5ème">5ème</option>
+                <option value="4ème">4ème</option>
+                <option value="3ème">3ème</option>
+                <option value="2nde">2nde</option>
+                <option value="2nde A">2nde A (Littéraire)</option>
+                <option value="2nde C">2nde C (Scientifique)</option>
+                <option value="1ère">1ère</option>
+                <option value="1ère A">1ère A</option>
+                <option value="1ère C">1ère C</option>
+                <option value="1ère D">1ère D</option>
+                <option value="Tle">Terminale (Tle)</option>
+                <option value="Tle A">Tle A</option>
+                <option value="Tle C">Tle C</option>
+                <option value="Tle D">Tle D</option>
+                <option value="CM2">CM2 / Primaire</option>
+              </select>
+            </div>
+
+            <div className="md:col-span-2 space-y-1">
+              <label className="text-[10px] font-bold text-slate-600 uppercase">
+                Coefficient
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={10}
+                value={newSubjCoef}
+                onChange={(e) => setNewSubjCoef(Number(e.target.value) || 1)}
+                className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-indigo-500 bg-white font-bold text-center"
+              />
+            </div>
+
+            <div className="md:col-span-3 space-y-1">
+              <label className="text-[10px] font-bold text-slate-600 uppercase">
+                Domaine / Groupe
+              </label>
+              <select
+                value={newSubjCategory}
+                onChange={(e) => setNewSubjCategory(e.target.value)}
+                className="w-full px-2 py-1.5 border border-slate-200 rounded-lg focus:outline-indigo-500 bg-white font-medium"
+              >
+                <option value="Scientifique">Sciences & Maths</option>
+                <option value="Littéraire">Lettres & Philosophie</option>
+                <option value="Langues">Langues Vivantes</option>
+                <option value="Sciences Humaines">Histoire-Géo & ECM</option>
+                <option value="Technique & Arts">Informatique & Arts</option>
+                <option value="Général">Général / Autre</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                if (!newSubjName.trim()) {
+                  alert("Veuillez saisir l'intitulé de la matière.");
+                  return;
+                }
+                if (editingSubjId) {
+                  const updated = classSubjects.map(s => s.id === editingSubjId ? {
+                    ...s,
+                    name: newSubjName.trim(),
+                    classRoom: newSubjClass,
+                    coef: newSubjCoef,
+                    category: newSubjCategory,
+                    teacherName: newSubjTeacher.trim() || undefined,
+                  } : s);
+                  setClassSubjects(updated);
+                  setEditingSubjId(null);
+                } else {
+                  const newObj: ClassSubject = {
+                    id: 'subj_' + Date.now(),
+                    name: newSubjName.trim(),
+                    classRoom: newSubjClass,
+                    coef: newSubjCoef,
+                    category: newSubjCategory,
+                    teacherName: newSubjTeacher.trim() || undefined,
+                  };
+                  setClassSubjects([...classSubjects, newObj]);
+                }
+                setNewSubjName('');
+                setNewSubjClass('Toutes les classes');
+                setNewSubjCoef(2);
+                setNewSubjCategory('Scientifique');
+                setNewSubjTeacher('');
+              }}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+            >
+              {editingSubjId ? <Save className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+              {editingSubjId ? 'Enregistrer les modifications' : 'Ajouter cette matière'}
+            </button>
+          </div>
+        </div>
+
+        {/* List of Configured Subjects */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {classSubjects
+            .filter(s => {
+              if (subjClassFilter === 'all') return true;
+              return s.classRoom === subjClassFilter || s.classRoom === 'Toutes les classes';
+            })
+            .map((subj) => {
+              let catBg = 'bg-blue-50 text-blue-700 border-blue-200';
+              if (subj.category === 'Littéraire') catBg = 'bg-purple-50 text-purple-700 border-purple-200';
+              if (subj.category === 'Langues') catBg = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+              if (subj.category === 'Sciences Humaines') catBg = 'bg-amber-50 text-amber-700 border-amber-200';
+              if (subj.category === 'Technique & Arts') catBg = 'bg-cyan-50 text-cyan-700 border-cyan-200';
+
+              return (
+                <div
+                  key={subj.id}
+                  className="p-3 bg-white border border-slate-200 rounded-xl hover:border-indigo-300 transition shadow-3xs flex flex-col justify-between space-y-2"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className={`px-2 py-0.5 text-[9px] font-extrabold rounded-full border ${catBg}`}>
+                          {subj.category || 'Général'}
+                        </span>
+                        <span className="text-[10px] font-bold bg-slate-100 border border-slate-200 text-slate-700 px-2 py-0.5 rounded-md">
+                          Coef. {subj.coef || 1}
+                        </span>
+                      </div>
+                      <h4 className="text-xs font-bold text-slate-900 leading-snug">
+                        {subj.name}
+                      </h4>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingSubjId(subj.id);
+                          setNewSubjName(subj.name);
+                          setNewSubjClass(subj.classRoom || 'Toutes les classes');
+                          setNewSubjCoef(subj.coef || 2);
+                          setNewSubjCategory(subj.category || 'Scientifique');
+                          setNewSubjTeacher(subj.teacherName || '');
+                        }}
+                        className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition cursor-pointer"
+                        title="Modifier"
+                      >
+                        <Edit2 className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm(`Supprimer la matière ${subj.name} ?`)) {
+                            const filtered = classSubjects.filter(s => s.id !== subj.id);
+                            setClassSubjects(filtered);
+                          }
+                        }}
+                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
+                        title="Supprimer"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-[10px] font-medium text-slate-500">
+                    <span className="flex items-center gap-1">
+                      <Layers className="h-3 w-3 text-slate-400" />
+                      Niveau : <strong className="text-slate-800 font-bold">{subj.classRoom}</strong>
+                    </span>
+                    {subj.teacherName && (
+                      <span className="truncate max-w-[110px] text-indigo-600 font-semibold">
+                        👤 {subj.teacherName}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            handleSaveWithExtra({ classSubjects }, "Liste des matières et disciplines mise à jour avec succès !");
+          }}
+          className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-1.5 cursor-pointer transition shadow-2xs"
+        >
+          <Save className="h-4 w-4" /> Enregistrer la Liste des Matières Pédagogiques
+        </button>
       </div>
 
       {/* NEW SECTION: Annual Budget Lines Allocation */}

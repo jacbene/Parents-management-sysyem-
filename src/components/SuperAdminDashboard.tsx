@@ -114,7 +114,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
   const [schoolName, setSchoolName] = useState('');
   const [schoolYear, setSchoolYear] = useState('2025/2026');
   const [cotisationAmount, setCotisationAmount] = useState(25000);
-  const [financialGoal, setFinancialGoal] = useState(5000000);
+  const [financialGoal, setFinancialGoal] = useState(2500000);
   const [finName, setFinName] = useState('');
   const [finPhone, setFinPhone] = useState('');
   const [finPassword, setFinPassword] = useState('');
@@ -876,47 +876,79 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
   };
 
   const getSchoolRealFinancialGoal = (school: Establishment): number => {
-    // 1. Settings stored in Firestore (primary source when updated in establishment settings)
-    const settingsInv = allInvoices.find(inv => 
-      (inv.parentId === school.id || inv.id === `${school.id}_settings` || inv.id === 'apee_settings') && 
-      (inv.studentId === 'apee_settings' || inv.id.endsWith('_settings'))
-    );
-    if (settingsInv && settingsInv.amountPaid && Number(settingsInv.amountPaid) > 0) {
-      return Number(settingsInv.amountPaid);
+    // 1. Explicit financialGoal on establishment object
+    if (school.financialGoal && Number(school.financialGoal) > 0) {
+      return Number(school.financialGoal);
     }
 
-    // 2. Settings stored in local cache
+    // 2. Settings stored in Firestore strictly matching THIS school ID
+    const settingsInv = allInvoices.find(inv => 
+      (inv.parentId === school.id || inv.id === `${school.id}_settings` || (inv.id === 'apee_settings' && inv.parentId === school.id)) && 
+      (inv.studentId === 'apee_settings' || inv.id.endsWith('_settings'))
+    );
+    if (settingsInv) {
+      if (settingsInv.budgetLinesList) {
+        try {
+          const lines = JSON.parse(settingsInv.budgetLinesList);
+          if (Array.isArray(lines) && lines.length > 0) {
+            const sumLines = lines.reduce((acc: number, l: any) => acc + (Number(l.allocatedAmount) || 0), 0);
+            if (sumLines > 0) return sumLines;
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+      if (settingsInv.amountPaid && Number(settingsInv.amountPaid) > 0 && Number(settingsInv.amountPaid) !== 5000000) {
+        return Number(settingsInv.amountPaid);
+      }
+    }
+
+    // 3. Settings stored in local cache strictly for this school
     try {
       const cachedSettingsStr = localStorage.getItem(`apee_settings_cache_${school.id}`) || localStorage.getItem(`apee_settings_${school.id}`);
       if (cachedSettingsStr) {
         const settings = JSON.parse(cachedSettingsStr);
-        if (settings && Number(settings.financialGoal) > 0) {
-          return Number(settings.financialGoal);
+        if (settings) {
+          if (Array.isArray(settings.budgetLines) && settings.budgetLines.length > 0) {
+            const sumLines = settings.budgetLines.reduce((acc: number, l: any) => acc + (Number(l.allocatedAmount) || 0), 0);
+            if (sumLines > 0) return sumLines;
+          }
+          if (Number(settings.financialGoal) > 0 && Number(settings.financialGoal) !== 5000000) {
+            return Number(settings.financialGoal);
+          }
         }
       }
     } catch (e) {
       // ignore
     }
 
-    // 3. Fallback: Explicit financialGoal on establishment object
-    if (school.financialGoal && Number(school.financialGoal) > 0) {
-      return Number(school.financialGoal);
+    // 4. Calculate dynamically based on cotisation & student count
+    const cotisation = getSchoolRealCotisationAmount(school);
+    const parents = getSchoolRealParents(school.id);
+    const students = getSchoolRealPupilsCount(school.id, parents);
+    if (cotisation > 0 && students > 0) {
+      return cotisation * students;
     }
 
     return 0;
   };
 
   const getSchoolRealCotisationAmount = (school: Establishment): number => {
-    // 1. Settings stored in Firestore (primary source when updated in establishment settings)
+    // 1. Explicit cotisationAmount on establishment object
+    if (school.cotisationAmount && Number(school.cotisationAmount) > 0) {
+      return Number(school.cotisationAmount);
+    }
+
+    // 2. Settings stored in Firestore strictly matching THIS school ID
     const settingsInv = allInvoices.find(inv => 
-      (inv.parentId === school.id || inv.id === `${school.id}_settings` || inv.id === 'apee_settings') && 
+      (inv.parentId === school.id || inv.id === `${school.id}_settings` || (inv.id === 'apee_settings' && inv.parentId === school.id)) && 
       (inv.studentId === 'apee_settings' || inv.id.endsWith('_settings'))
     );
     if (settingsInv && settingsInv.amount && Number(settingsInv.amount) > 0) {
       return Number(settingsInv.amount);
     }
 
-    // 2. Settings stored in local cache
+    // 3. Settings stored in local cache strictly for this school
     try {
       const cachedSettingsStr = localStorage.getItem(`apee_settings_cache_${school.id}`) || localStorage.getItem(`apee_settings_${school.id}`);
       if (cachedSettingsStr) {
@@ -929,12 +961,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
       // ignore
     }
 
-    // 3. Fallback: Explicit cotisationAmount on establishment object
-    if (school.cotisationAmount && Number(school.cotisationAmount) > 0) {
-      return Number(school.cotisationAmount);
-    }
-
-    return 25000;
+    return 0;
   };
 
   const getSchoolRealCollectedFunds = (schoolId: string, parents: any[]): number => {

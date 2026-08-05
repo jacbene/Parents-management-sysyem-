@@ -305,12 +305,16 @@ export async function syncLocalSchoolsToFirestore(): Promise<{ syncedCount: numb
           const settingsRef = doc(db, 'invoices', `${id}_settings`);
           const settingsSnap = await getDoc(settingsRef);
           if (!settingsSnap.exists()) {
+            const realGoal = Number(estData.financialGoal) > 0 
+              ? Number(estData.financialGoal) 
+              : (Number(estData.cotisationAmount || 25000) * Number(estData.expectedStudents || 100));
+
             const budgetLines = [
-              { id: 'bl_1', name: 'Soutien Pédagogique et Matériel Didactique', allocatedAmount: Math.round((estData.financialGoal || 5000000) * 0.3), description: 'Frais de craie, vacataires, etc.' },
-              { id: 'bl_2', name: 'Aménagement & Réparations', allocatedAmount: Math.round((estData.financialGoal || 5000000) * 0.25), description: 'Tables-bancs, entretien' },
-              { id: 'bl_3', name: 'Santé et Hygiène', allocatedAmount: Math.round((estData.financialGoal || 5000000) * 0.15), description: 'Secourisme, eau potable' },
-              { id: 'bl_4', name: 'Activités Périscolaires FENASSCO', allocatedAmount: Math.round((estData.financialGoal || 5000000) * 0.15), description: 'Compétitions de sport' },
-              { id: 'bl_5', name: 'Fonds d\'Administration Générale', allocatedAmount: Math.round((estData.financialGoal || 5000000) * 0.15), description: 'Frais divers de bureau' }
+              { id: 'bl_1', name: 'Soutien Pédagogique et Matériel Didactique', allocatedAmount: Math.round(realGoal * 0.3), description: 'Frais de craie, vacataires, etc.' },
+              { id: 'bl_2', name: 'Aménagement & Réparations', allocatedAmount: Math.round(realGoal * 0.25), description: 'Tables-bancs, entretien' },
+              { id: 'bl_3', name: 'Santé et Hygiène', allocatedAmount: Math.round(realGoal * 0.15), description: 'Secourisme, eau potable' },
+              { id: 'bl_4', name: 'Activités Périscolaires FENASSCO', allocatedAmount: Math.round(realGoal * 0.15), description: 'Compétitions de sport' },
+              { id: 'bl_5', name: 'Fonds d\'Administration Générale', allocatedAmount: Math.round(realGoal * 0.15), description: 'Frais divers de bureau' }
             ];
 
             await setDoc(settingsRef, cleanPayload({
@@ -321,7 +325,7 @@ export async function syncLocalSchoolsToFirestore(): Promise<{ syncedCount: numb
               amount: Number(estData.cotisationAmount || 25000),
               dueDate: estData.schoolYear || '2025/2026',
               status: 'Paid',
-              amountPaid: Number(estData.financialGoal || 5000000),
+              amountPaid: realGoal,
               budgetLinesList: JSON.stringify(budgetLines),
               finManagerName: estData.finManagerName || '',
               finManagerPhone: estData.finManagerPhone || '',

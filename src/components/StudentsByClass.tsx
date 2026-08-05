@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Student, ApeeParent, Grade, Attendance, Message, ApeeSettings } from '../types';
 import StudentCameraModal from './StudentCameraModal';
+import QRScannerModal from './QRScannerModal';
 import { 
   Users, 
   Search, 
@@ -25,7 +26,8 @@ import {
   ShieldAlert,
   ArrowRight,
   QrCode,
-  Camera
+  Camera,
+  Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLanguage } from '../utils/TranslationContext';
@@ -42,6 +44,8 @@ interface StudentsByClassProps {
   portalUserRole?: string;
   onSelectStudent?: (studentId: string) => void;
   onUpdateStudent?: (updated: Student) => Promise<boolean>;
+  onDeleteStudent?: (studentId: string) => Promise<boolean>;
+  onAddAttendance?: (log: Attendance) => Promise<boolean>;
 }
 
 export default function StudentsByClass({
@@ -54,6 +58,8 @@ export default function StudentsByClass({
   portalUserRole,
   onSelectStudent,
   onUpdateStudent,
+  onDeleteStudent,
+  onAddAttendance,
 }: StudentsByClassProps) {
   const { t, language } = useLanguage();
   const isFr = language === 'fr';
@@ -70,7 +76,7 @@ export default function StudentsByClass({
           </h3>
           <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed max-w-lg mx-auto font-medium">
             {isFr 
-              ? "La consultation des listes nominatives par classe et la génération des badges d'émargement sont strictement réservées aux enseignants et aux responsables de l'établissement. En tant que parent, vous avez un accès direct et confidentiel uniquement aux informations relatives à vos enfants."
+              ? "La consultation des listes nominatives par classe et la génération des badges d'émargement sont strictly réservées aux enseignants et aux responsables de l'établissement. En tant que parent, vous avez un accès direct et confidentiel uniquement aux informations relatives à vos enfants."
               : "Viewing nominal class lists and generating check-in badges are strictly reserved for teachers and school administrators. As a parent, you have confidential access exclusively to your own children's records."}
           </p>
         </div>
@@ -82,6 +88,10 @@ export default function StudentsByClass({
   const [selectedClass, setSelectedClass] = useState<string>('all');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [cameraStudent, setCameraStudent] = useState<Student | null>(null);
+  const [deletingStudent, setDeletingStudent] = useState<Student | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isQRScannerOpen, setIsQRScannerOpen] = useState(false);
+  const [lastScannedStudent, setLastScannedStudent] = useState<Student | null>(null);
   const [activeDetailTab, setActiveDetailTab] = useState<'profile' | 'grades' | 'attendance' | 'finance' | 'messages' | 'badge'>('profile');
 
   // Helper to extract unique classes
@@ -466,25 +476,66 @@ export default function StudentsByClass({
         {/* Right Column: Nominal List Grid */}
         <div className="xl:col-span-3 space-y-4">
           
-          {/* Live search input bar */}
-          <div className="relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 dark:text-slate-550" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={isFr ? "Rechercher rapidement un élève par nom ou classe..." : "Search pupil by name or class..."}
-              className="w-full pl-10 pr-10 py-2.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-1.5 focus:ring-indigo-500 focus:border-indigo-500 shadow-2xs font-medium"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm font-bold p-1 rounded"
-              >
-                ×
-              </button>
-            )}
+          {/* Live search input bar & QR Scanner button */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 dark:text-slate-550" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={isFr ? "Rechercher rapidement un élève par nom ou classe..." : "Search pupil by name or class..."}
+                className="w-full pl-10 pr-10 py-2.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-1.5 focus:ring-indigo-500 focus:border-indigo-500 shadow-2xs font-medium"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm font-bold p-1 rounded"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsQRScannerOpen(true)}
+              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-97 text-white font-bold text-xs rounded-2xl transition cursor-pointer shadow-sm flex items-center justify-center gap-2 shrink-0 border border-indigo-500/30"
+            >
+              <QrCode className="h-4 w-4" />
+              <span>{isFr ? "Scanner Badge Élève (QR)" : "Scan Student QR Badge"}</span>
+            </button>
           </div>
+
+          {/* Last scanned student notification banner */}
+          {lastScannedStudent && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-2xl p-3.5 flex items-center justify-between text-xs text-emerald-800 dark:text-emerald-300"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="p-1.5 bg-emerald-500 text-white rounded-xl shadow-xs">
+                  <CheckCircle className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="font-bold">
+                    {isFr ? "Élève identifié via Badge QR Code :" : "Student identified via QR Badge:"}{' '}
+                    <span className="font-black text-slate-900 dark:text-white">{lastScannedStudent.name}</span> ({lastScannedStudent.classRoom || 'N/A'})
+                  </p>
+                  <p className="text-[10.5px] opacity-80 font-medium">
+                    {isFr ? "La fiche nominative est actuellement sélectionnée pour consultation." : "Student profile selected for review."}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setLastScannedStudent(null)}
+                className="text-emerald-700 dark:text-emerald-400 hover:text-emerald-900 p-1 rounded-lg cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </motion.div>
+          )}
 
           {/* Table / Grid list of pupil names */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-2xs">
@@ -579,18 +630,33 @@ export default function StudentsByClass({
                             )}
                           </td>
 
-                          {/* Quick details trigger button */}
+                          {/* Quick details trigger button & delete action */}
                           <td className="p-3.5 pr-5 text-right" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              onClick={() => {
-                                setSelectedStudent(stu);
-                                setActiveDetailTab('profile');
-                              }}
-                              className="inline-flex items-center gap-1 text-[10px] bg-slate-100 hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-indigo-950 text-slate-700 hover:text-indigo-600 dark:text-slate-300 dark:hover:text-indigo-400 font-black px-2.5 py-1 rounded-xl transition cursor-pointer"
-                            >
-                              <span>{isFr ? "Consulter" : "View profile"}</span>
-                              <ChevronRight className="h-3 w-3" />
-                            </button>
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => {
+                                  setSelectedStudent(stu);
+                                  setActiveDetailTab('profile');
+                                }}
+                                className="inline-flex items-center gap-1 text-[10px] bg-slate-100 hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-indigo-950 text-slate-700 hover:text-indigo-600 dark:text-slate-300 dark:hover:text-indigo-400 font-black px-2.5 py-1 rounded-xl transition cursor-pointer"
+                              >
+                                <span>{isFr ? "Consulter" : "View profile"}</span>
+                                <ChevronRight className="h-3 w-3" />
+                              </button>
+                              {onDeleteStudent && portalUserRole !== 'parent' && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setDeletingStudent(stu);
+                                  }}
+                                  className="inline-flex items-center justify-center p-1.5 text-rose-600 hover:text-white bg-rose-50 hover:bg-rose-600 dark:bg-rose-950/30 dark:hover:bg-rose-600 rounded-xl transition cursor-pointer border border-rose-200/60 dark:border-rose-800/40"
+                                  title={isFr ? "Supprimer cet élève de la liste" : "Delete student from list"}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -687,8 +753,8 @@ export default function StudentsByClass({
                   </div>
                 </div>
 
-                {/* Print individual report card PDF trigger */}
-                <div className="shrink-0 pt-3 md:pt-0">
+                {/* Print individual report card PDF trigger & Delete button */}
+                <div className="shrink-0 pt-3 md:pt-0 flex items-center gap-2">
                   <button
                     onClick={() => exportPDFCard(selectedStudent)}
                     className="flex items-center gap-1.5 text-[10.5px] bg-white/10 hover:bg-white/20 border border-white/15 text-white font-extrabold px-3.5 py-1.5 rounded-xl transition cursor-pointer"
@@ -696,6 +762,17 @@ export default function StudentsByClass({
                     <Printer className="h-3.5 w-3.5" />
                     <span>{isFr ? "Exporter Fiche PDF" : "Export PDF Sheet"}</span>
                   </button>
+                  {onDeleteStudent && portalUserRole !== 'parent' && (
+                    <button
+                      type="button"
+                      onClick={() => setDeletingStudent(selectedStudent)}
+                      className="flex items-center gap-1.5 text-[10.5px] bg-rose-600/30 hover:bg-rose-600 border border-rose-500/40 text-rose-200 hover:text-white font-extrabold px-3 py-1.5 rounded-xl transition cursor-pointer"
+                      title={isFr ? "Supprimer cet élève" : "Delete student"}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span>{isFr ? "Supprimer l'élève" : "Delete student"}</span>
+                    </button>
+                  )}
                 </div>
 
               </div>
@@ -1148,6 +1225,95 @@ export default function StudentsByClass({
               onUpdateStudent(updated);
             }
             setCameraStudent(null);
+          }}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {deletingStudent && (
+          <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4"
+            >
+              <div className="flex items-start gap-3.5">
+                <div className="p-3 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-xl border border-rose-200/60 dark:border-rose-800/40 shrink-0">
+                  <Trash2 className="h-6 w-6" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-sm font-black text-slate-900 dark:text-slate-100">
+                    {isFr ? "Confirmer la suppression de l'élève" : "Confirm Student Deletion"}
+                  </h3>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-medium">
+                    {isFr 
+                      ? `Êtes-vous sûr de vouloir supprimer définitivement ${deletingStudent.name} (${deletingStudent.classRoom || 'Sans classe'}) de la liste officielle de l'établissement ?`
+                      : `Are you sure you want to permanently delete ${deletingStudent.name} (${deletingStudent.classRoom || 'No class'}) from the official school list?`}
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/50 p-3 rounded-xl text-[11px] text-amber-800 dark:text-amber-300 font-medium leading-relaxed flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                <span>
+                  {isFr 
+                    ? "Attention : Cette action retirera le dossier de l'élève. Cette opération ne peut pas être annulée."
+                    : "Warning: This action will remove the student record. This operation cannot be undone."}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={() => setDeletingStudent(null)}
+                  className="px-4 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
+                >
+                  {isFr ? "Annuler" : "Cancel"}
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={async () => {
+                    if (!onDeleteStudent || !deletingStudent) return;
+                    setIsDeleting(true);
+                    try {
+                      await onDeleteStudent(deletingStudent.id);
+                      if (selectedStudent?.id === deletingStudent.id) {
+                        setSelectedStudent(null);
+                      }
+                      setDeletingStudent(null);
+                    } catch (err) {
+                      console.error("Failed to delete student:", err);
+                    } finally {
+                      setIsDeleting(false);
+                    }
+                  }}
+                  className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 active:scale-97 rounded-xl transition cursor-pointer shadow-sm flex items-center gap-1.5"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>{isDeleting ? (isFr ? "Suppression..." : "Deleting...") : (isFr ? "Oui, Supprimer" : "Yes, Delete")}</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* QR Code Scanner Modal for Staff Identification & Check-in */}
+      {isQRScannerOpen && (
+        <QRScannerModal
+          isOpen={isQRScannerOpen}
+          onClose={() => setIsQRScannerOpen(false)}
+          allStudents={students}
+          onAddAttendance={onAddAttendance}
+          onSelectStudent={(student) => {
+            setSelectedStudent(student);
+            setActiveDetailTab('profile');
+            setLastScannedStudent(student);
+            setIsQRScannerOpen(false);
           }}
         />
       )}

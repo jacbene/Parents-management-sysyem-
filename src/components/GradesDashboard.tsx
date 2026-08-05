@@ -59,14 +59,44 @@ export default function GradesDashboard({
   // Add Grade states
   const [showAddForm, setShowAddForm] = useState(false);
   const [subject, setSubject] = useState('Mathématiques');
+  const [customSubject, setCustomSubject] = useState('');
   const [examName, setExamName] = useState('');
   const [score, setScore] = useState<number>(10);
   const [maxScore, setMaxScore] = useState<number>(20);
   const [remarks, setRemarks] = useState('');
   const [gradeDate, setGradeDate] = useState('');
 
+  // Dynamically compute configured subjects from settings or defaults
+  const configuredSubjectsList = React.useMemo(() => {
+    if (settings?.classSubjects && Array.isArray(settings.classSubjects) && settings.classSubjects.length > 0) {
+      const studentClass = activeStudent?.classRoom || activeStudent?.grade || '';
+      if (studentClass) {
+        const filtered = settings.classSubjects.filter(
+          (s: any) => !s.classRoom || s.classRoom === 'Toutes les classes' || s.classRoom.toLowerCase().includes(studentClass.toLowerCase()) || studentClass.toLowerCase().includes(s.classRoom.toLowerCase())
+        );
+        if (filtered.length > 0) {
+          return Array.from(new Set(filtered.map((s: any) => s.name as string)));
+        }
+      }
+      return Array.from(new Set(settings.classSubjects.map((s: any) => s.name as string)));
+    }
+    return [
+      'Mathématiques',
+      'Physique-Chimie',
+      'Sciences de la Vie et de la Terre (SVT)',
+      'Français',
+      'Anglais',
+      'Histoire-Géographie',
+      'Informatique',
+      'Éducation à la Citoyenneté et à la Morale (ECM)',
+      'Allemand / Espagnol',
+      'Philosophie',
+      'Arts / Musique / EPS'
+    ];
+  }, [settings?.classSubjects, activeStudent?.classRoom, activeStudent?.grade]);
+
   // Compute unique subjects
-  const subjects = ['all', ...Array.from(new Set(grades.map(g => g.subject)))];
+  const subjects = ['all', ...Array.from(new Set([...grades.map(g => g.subject), ...configuredSubjectsList]))];
 
   // Filter grades
   const filteredGrades = selectedSubject === 'all'
@@ -348,11 +378,12 @@ export default function GradesDashboard({
     }
 
     if (onAddGrade) {
+      const targetSubj = (subject === 'Autre' || subject === '__custom__') ? (customSubject.trim() || 'Autre') : subject;
       const newGrade: Grade = {
         id: 'gr_' + Date.now(),
         studentId: activeStudent.id,
         parentId: activeStudent.parentId,
-        subject,
+        subject: targetSubj,
         examName: examName.trim(),
         score: Number(score),
         maxScore: Number(maxScore),
@@ -1558,16 +1589,20 @@ export default function GradesDashboard({
                           onChange={(e) => setSubject(e.target.value)}
                           className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-indigo-500 font-medium text-slate-850"
                         >
-                          <option value="Mathématiques">Mathématiques</option>
-                          <option value="Physique-Chimie">Physique-Chimie</option>
-                          <option value="Sciences de la Vie">Sciences de la Vie (SVT)</option>
-                          <option value="Français / Littérature">Français</option>
-                          <option value="Anglais">Anglais</option>
-                          <option value="Histoire-Géographie">Histoire-Géographie</option>
-                          <option value="Informatique">Informatique</option>
-                          <option value="Allemand / Espagnol">Langue Vivante II</option>
-                          <option value="Arts / Musique">Arts / Musique</option>
+                          {configuredSubjectsList.map((s) => (
+                            <option key={s} value={s}>{s}</option>
+                          ))}
+                          <option value="__custom__">✏️ Autre matière sur-mesure...</option>
                         </select>
+                        {(subject === '__custom__' || subject === 'Autre') && (
+                          <input
+                            type="text"
+                            placeholder="Saisir la matière..."
+                            value={customSubject}
+                            onChange={(e) => setCustomSubject(e.target.value)}
+                            className="w-full mt-1.5 px-2.5 py-1 text-xs border border-indigo-200 rounded-md focus:outline-indigo-500 bg-white"
+                          />
+                        )}
                       </div>
 
                       <div className="md:col-span-2 space-y-1">

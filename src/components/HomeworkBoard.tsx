@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Homework, Student, HomeworkStatus } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Homework, Student, HomeworkStatus, ApeeSettings } from '../types';
 import { BookOpen, CheckCircle, Circle, Clock, CheckCircle2, AlertCircle, Plus, Trash2, Lock, Unlock, CheckSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -15,6 +15,7 @@ interface HomeworkBoardProps {
   pedManagerName?: string;
   hasPedPassword?: boolean;
   activeStudent?: Student | null;
+  settings?: ApeeSettings;
 }
 
 export default function HomeworkBoard({
@@ -27,6 +28,7 @@ export default function HomeworkBoard({
   pedManagerName = '',
   hasPedPassword = false,
   activeStudent,
+  settings,
 }: HomeworkBoardProps) {
   const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'completed'>('all');
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -44,10 +46,38 @@ export default function HomeworkBoard({
     return () => window.removeEventListener('pasma_trigger_quick_action', handleQuickAction);
   }, []);
   const [subject, setSubject] = useState('Mathématiques');
+  const [customSubject, setCustomSubject] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [hwGradeValue, setHwGradeValue] = useState('');
+
+  const configuredSubjectsList = useMemo(() => {
+    if (settings?.classSubjects && Array.isArray(settings.classSubjects) && settings.classSubjects.length > 0) {
+      const studentClass = activeStudent?.classRoom || activeStudent?.grade || '';
+      if (studentClass) {
+        const filtered = settings.classSubjects.filter(
+          (s: any) => !s.classRoom || s.classRoom === 'Toutes les classes' || s.classRoom.toLowerCase().includes(studentClass.toLowerCase()) || studentClass.toLowerCase().includes(s.classRoom.toLowerCase())
+        );
+        if (filtered.length > 0) {
+          return Array.from(new Set(filtered.map((s: any) => s.name as string)));
+        }
+      }
+      return Array.from(new Set(settings.classSubjects.map((s: any) => s.name as string)));
+    }
+    return [
+      'Mathématiques',
+      'Physique-Chimie',
+      'Sciences de la Vie et de la Terre (SVT)',
+      'Français',
+      'Anglais',
+      'Histoire-Géographie',
+      'Informatique',
+      'Éducation à la Citoyenneté et à la Morale (ECM)',
+      'Allemand / Espagnol',
+      'Philosophie'
+    ];
+  }, [settings?.classSubjects, activeStudent?.classRoom, activeStudent?.grade]);
 
   // Filter homeworks
   const filteredHomeworks = homeworks.filter(hw => {
@@ -98,11 +128,12 @@ export default function HomeworkBoard({
     }
 
     if (onAddHomework) {
+      const targetSubj = (subject === 'Autre' || subject === '__custom__') ? (customSubject.trim() || 'Autre') : subject;
       const newHw: Homework = {
         id: 'hw_' + Date.now(),
         studentId: activeStudent.id,
         parentId: activeStudent.parentId,
-        subject,
+        subject: targetSubj,
         title: title.trim(),
         description: description.trim() || undefined,
         dueDate,
@@ -219,16 +250,20 @@ export default function HomeworkBoard({
                     onChange={(e) => setSubject(e.target.value)}
                     className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-indigo-500 font-medium text-slate-850"
                   >
-                    <option value="Mathématiques">Mathématiques</option>
-                    <option value="Physique-Chimie">Physique-Chimie</option>
-                    <option value="Sciences de la Vie">Sciences de la Vie</option>
-                    <option value="Français / Littérature">Français</option>
-                    <option value="Anglais">Anglais</option>
-                    <option value="Histoire-Géographie">Histoire-Géographie</option>
-                    <option value="Informatique">Informatique</option>
-                    <option value="Allemand / Espagnol">Langue Vivante II</option>
-                    <option value="Arts / Musique">Arts / Musique</option>
+                    {configuredSubjectsList.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                    <option value="__custom__">✏️ Autre matière sur-mesure...</option>
                   </select>
+                  {(subject === '__custom__' || subject === 'Autre') && (
+                    <input
+                      type="text"
+                      placeholder="Saisir la matière..."
+                      value={customSubject}
+                      onChange={(e) => setCustomSubject(e.target.value)}
+                      className="w-full mt-1.5 px-2.5 py-1 text-xs border border-indigo-200 rounded-md focus:outline-indigo-500 bg-white"
+                    />
+                  )}
                 </div>
 
                 <div className="md:col-span-2 space-y-1">

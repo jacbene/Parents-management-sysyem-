@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import RoleUserGuide from './RoleUserGuide';
 import { 
   Search, 
   X, 
@@ -148,6 +149,7 @@ export default function SchoolHelpCenter({
   onNavigateToTab,
   userEmail = ''
 }: SchoolHelpCenterProps) {
+  const [activeHelpView, setActiveHelpView] = useState<'guide' | 'faq' | 'roadmap'>('guide');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<'all' | 'finance' | 'pedagogy' | 'security' | 'badges'>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -587,10 +589,63 @@ export default function SchoolHelpCenter({
               </button>
             )}
           </div>
+
+          {/* Help Center Sub-Navigation Tabs */}
+          <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-800">
+            <button
+              type="button"
+              onClick={() => setActiveHelpView('guide')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-2 ${
+                activeHelpView === 'guide'
+                  ? 'bg-indigo-600 text-white shadow-md'
+                  : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300'
+              }`}
+            >
+              <BookOpen className="h-4 w-4" />
+              <span>📖 Mode d'Emploi par Rôle</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveHelpView('faq')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-2 ${
+                activeHelpView === 'faq'
+                  ? 'bg-indigo-600 text-white shadow-md'
+                  : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300'
+              }`}
+            >
+              <HelpCircle className="h-4 w-4" />
+              <span>🙋 Questions & Contacts Administratifs</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveHelpView('roadmap')}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-2 ${
+                activeHelpView === 'roadmap'
+                  ? 'bg-indigo-600 text-white shadow-md'
+                  : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300'
+              }`}
+            >
+              <Sparkles className="h-4 w-4 text-amber-400" />
+              <span>🚀 Feuille de Route & Suggestions</span>
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* 2. Key Administration Contacts Widget */}
+      {/* Main View Switcher */}
+      {activeHelpView === 'guide' && (
+        <RoleUserGuide 
+          currentRole={portalUserRole}
+          apeeSettings={apeeSettings}
+          onNavigateToTab={onNavigateToTab}
+        />
+      )}
+
+      {activeHelpView === 'faq' && (
+        <>
+          {/* 2. Key Administration Contacts Widget */}
       <div className="space-y-3">
         <h2 className="text-xs font-black uppercase tracking-wider text-slate-550 flex items-center gap-1.5 pl-1">
           🏫 Personnel de Direction & Contacts Administratifs
@@ -765,8 +820,11 @@ export default function SchoolHelpCenter({
           )}
         </div>
       </div>
+        </>
+      )}
 
       {/* 4. Interactive Visual Roadmap (Upcoming Portal Updates & Features) */}
+      {(activeHelpView === 'roadmap' || activeHelpView === 'faq') && (
       <div className="space-y-6 bg-white border border-slate-150 rounded-3xl p-6 sm:p-8 shadow-xs" id="school_portal_roadmap_section">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-100 pb-5">
           <div className="space-y-1.5">
@@ -1243,6 +1301,7 @@ export default function SchoolHelpCenter({
           )}
         </div>
       </div>
+      )}
 
       {/* 5. Write Direct Help Ticket Form (Durable Cloud Persistence) */}
       <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 sm:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 shadow-xs">

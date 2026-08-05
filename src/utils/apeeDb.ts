@@ -38,6 +38,18 @@ export const DEFAULT_SETTINGS: ApeeSettings = {
     { id: 'bl_4', name: 'Santé, Hygiène et Eau potable', allocatedAmount: 350000, description: 'Boîte à pharmacie d\'urgence, eau potable, entretien des sanitaires' },
     { id: 'bl_5', name: 'Activités Post et Périscolaires (FENASSCO)', allocatedAmount: 400000, description: 'Fêtes scolaires, compétitions sportives et récompenses de fin d\'année' }
   ],
+  classSubjects: [
+    { id: 'subj_1', name: 'Mathématiques', classRoom: 'Toutes les classes', coef: 4, category: 'Scientifique' },
+    { id: 'subj_2', name: 'Français', classRoom: 'Toutes les classes', coef: 4, category: 'Littéraire' },
+    { id: 'subj_3', name: 'Anglais', classRoom: 'Toutes les classes', coef: 3, category: 'Langues' },
+    { id: 'subj_4', name: 'Sciences de la Vie et de la Terre (SVT)', classRoom: 'Toutes les classes', coef: 3, category: 'Scientifique' },
+    { id: 'subj_5', name: 'Physique-Chimie', classRoom: '4ème, 3ème, 2nde, 1ère, Tle', coef: 3, category: 'Scientifique' },
+    { id: 'subj_6', name: 'Histoire-Géographie', classRoom: 'Toutes les classes', coef: 2, category: 'Sciences Humaines' },
+    { id: 'subj_7', name: 'Informatique', classRoom: 'Toutes les classes', coef: 2, category: 'Technique & Arts' },
+    { id: 'subj_8', name: 'Éducation à la Citoyenneté et à la Morale (ECM)', classRoom: 'Toutes les classes', coef: 2, category: 'Sciences Humaines' },
+    { id: 'subj_9', name: 'Allemand / Espagnol (LV2)', classRoom: '4ème, 3ème, 2nde, 1ère, Tle', coef: 2, category: 'Langues' },
+    { id: 'subj_10', name: 'Philosophie', classRoom: '1ère, Tle', coef: 4, category: 'Littéraire' }
+  ],
   finManagerName: '',
   finManagerPhone: '',
   finManagerPassword: '',
@@ -347,6 +359,14 @@ export async function fetchApeeData(parentId: string) {
         } catch (e) {
           console.error("Failed to parse classTeachersList from Firestore", e);
         }
+        let subjects = DEFAULT_SETTINGS.classSubjects || [];
+        try {
+          if (data.classSubjectsList) {
+            subjects = JSON.parse(data.classSubjectsList);
+          }
+        } catch (e) {
+          console.error("Failed to parse classSubjectsList from Firestore", e);
+        }
         let obligations = DEFAULT_SETTINGS.financialObligations;
         try {
           if (data.financialObligationsList) {
@@ -393,6 +413,7 @@ export async function fetchApeeData(parentId: string) {
           censeurName: data.censeurName || '',
           censeurPhone: data.censeurPhone || '',
           classTeachers: teachers,
+          classSubjects: subjects,
           honoraryContributions: data.honoraryContributions ?? 0,
           subventionsAndAids: data.subventionsAndAids ?? 0,
           actualHonoraryContributions: data.actualHonoraryContributions ?? 0,
@@ -642,6 +663,7 @@ export async function saveApeeSettings(parentId: string, settings: ApeeSettings)
     censeurName: settings.censeurName || '',
     censeurPhone: settings.censeurPhone || '',
     classTeachersList: JSON.stringify(settings.classTeachers || []),
+    classSubjectsList: JSON.stringify(settings.classSubjects || []),
     honoraryContributions: settings.honoraryContributions || 0,
     subventionsAndAids: settings.subventionsAndAids || 0,
     actualHonoraryContributions: settings.actualHonoraryContributions || 0,
@@ -920,6 +942,7 @@ export async function importFullBackup(
       censeurName: finalSettings.censeurName || '',
       censeurPhone: finalSettings.censeurPhone || '',
       classTeachersList: JSON.stringify(finalSettings.classTeachers || []),
+      classSubjectsList: JSON.stringify(finalSettings.classSubjects || []),
       honoraryContributions: finalSettings.honoraryContributions || 0,
       subventionsAndAids: finalSettings.subventionsAndAids || 0,
       actualHonoraryContributions: finalSettings.actualHonoraryContributions || 0,
@@ -1179,6 +1202,14 @@ export function subscribeApeeData(
           } catch (e) {
             console.error("Failed to parse classTeachersList from Firestore", e);
           }
+          let subjects = DEFAULT_SETTINGS.classSubjects || [];
+          try {
+            if (data.classSubjectsList) {
+              subjects = JSON.parse(data.classSubjectsList);
+            }
+          } catch (e) {
+            console.error("Failed to parse classSubjectsList from Firestore", e);
+          }
           let obligations = DEFAULT_SETTINGS.financialObligations;
           try {
             if (data.financialObligationsList) {
@@ -1225,6 +1256,7 @@ export function subscribeApeeData(
             censeurName: data.censeurName || '',
             censeurPhone: data.censeurPhone || '',
             classTeachers: teachers,
+            classSubjects: subjects,
             honoraryContributions: data.honoraryContributions ?? 0,
             subventionsAndAids: data.subventionsAndAids ?? 0,
             actualHonoraryContributions: data.actualHonoraryContributions ?? 0,

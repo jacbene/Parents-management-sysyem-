@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Student, Lesson, Homework, HomeworkStatus } from '../types';
+import { Student, Lesson, Homework, HomeworkStatus, ApeeSettings } from '../types';
 import { 
   BookOpen, Plus, Trash2, Sparkles, Download, Calendar, 
   ChevronDown, ChevronUp, GraduationCap, CheckCircle2, 
@@ -20,6 +20,7 @@ interface LessonsBoardProps {
   activeStudent?: Student | null;
   onAddHomework?: (homework: Homework) => Promise<boolean>;
   language?: 'fr' | 'en';
+  settings?: ApeeSettings;
 }
 
 interface GeneratedHomework {
@@ -42,7 +43,8 @@ export default function LessonsBoard({
   portalTeacherDetails,
   activeStudent,
   onAddHomework,
-  language = 'fr'
+  language = 'fr',
+  settings,
 }: LessonsBoardProps) {
   const isTeacher = portalUserRole === 'teacher';
   const isParent = portalUserRole === 'parent';
@@ -75,15 +77,31 @@ export default function LessonsBoard({
     return lessonClass === targetClass || lessonClass.includes(targetClass) || targetClass.includes(lessonClass);
   });
 
-  const subjects = [
-    'Mathématiques',
-    'Français',
-    'Sciences & Technologie',
-    'Histoire & Géographie',
-    'Éducation Civique & Morale',
-    'Anglais',
-    'Arts Plastiques'
-  ];
+  const subjects = React.useMemo(() => {
+    if (settings?.classSubjects && Array.isArray(settings.classSubjects) && settings.classSubjects.length > 0) {
+      if (activeClassRoom) {
+        const filtered = settings.classSubjects.filter(
+          (s: any) => !s.classRoom || s.classRoom === 'Toutes les classes' || s.classRoom.toLowerCase().includes(activeClassRoom.toLowerCase()) || activeClassRoom.toLowerCase().includes(s.classRoom.toLowerCase())
+        );
+        if (filtered.length > 0) {
+          return Array.from(new Set(filtered.map((s: any) => s.name as string)));
+        }
+      }
+      return Array.from(new Set(settings.classSubjects.map((s: any) => s.name as string)));
+    }
+    return [
+      'Mathématiques',
+      'Français',
+      'Sciences de la Vie et de la Terre (SVT)',
+      'Physique-Chimie',
+      'Histoire & Géographie',
+      'Éducation Civique & Morale (ECM)',
+      'Anglais',
+      'Informatique',
+      'Allemand / Espagnol',
+      'Philosophie'
+    ];
+  }, [settings?.classSubjects, activeClassRoom]);
 
   const handlePublishLesson = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -8,10 +8,11 @@ interface QRScannerModalProps {
   isOpen: boolean;
   onClose: () => void;
   allStudents: Student[];
-  onAddAttendance: (log: Attendance) => Promise<boolean>;
+  onAddAttendance?: (log: Attendance) => Promise<boolean>;
+  onSelectStudent?: (student: Student) => void;
 }
 
-export default function QRScannerModal({ isOpen, onClose, allStudents, onAddAttendance }: QRScannerModalProps) {
+export default function QRScannerModal({ isOpen, onClose, allStudents, onAddAttendance, onSelectStudent }: QRScannerModalProps) {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isActivating, setIsActivating] = useState(false);
@@ -237,7 +238,7 @@ export default function QRScannerModal({ isOpen, onClose, allStudents, onAddAtte
       };
 
       try {
-        const success = await onAddAttendance(newLog);
+        const success = onAddAttendance ? await onAddAttendance(newLog) : true;
         if (success) {
           playSuccessChime();
           // Keep a temporary local log of session's successes
@@ -286,7 +287,7 @@ export default function QRScannerModal({ isOpen, onClose, allStudents, onAddAtte
     };
 
     try {
-      const success = await onAddAttendance(newLog);
+      const success = onAddAttendance ? await onAddAttendance(newLog) : true;
       if (success) {
         // Keep in success history log
         const newSuccessLog = {
@@ -463,6 +464,22 @@ export default function QRScannerModal({ isOpen, onClose, allStudents, onAddAtte
                       <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-emerald-400 text-[10.5px] uppercase font-black border border-emerald-500/20 rounded-full tracking-wide">
                         <CheckCircle className="h-4 w-4" /> STATUT : PRÉSENT EN CLASSE
                       </div>
+
+                      {onSelectStudent && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (scannedStudent) {
+                              onSelectStudent(scannedStudent);
+                              onClose();
+                            }
+                          }}
+                          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-sm mt-1"
+                        >
+                          <User className="h-4 w-4" />
+                          <span>Ouvrir la fiche de l'élève</span>
+                        </button>
+                      )}
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -626,18 +643,33 @@ export default function QRScannerModal({ isOpen, onClose, allStudents, onAddAtte
                         </div>
                       </div>
 
-                      <div className="flex gap-2.5 pt-3 border-t border-slate-750">
+                      <div className="flex flex-wrap gap-2 pt-3 border-t border-slate-750">
                         <button
                           type="button"
                           onClick={handleCancelScanned}
-                          className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-xl transition cursor-pointer text-slate-300"
+                          className="flex-1 min-w-[100px] py-2 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-xl transition cursor-pointer text-slate-300"
                         >
                           Annuler / Rescan
                         </button>
+                        {onSelectStudent && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (scannedStudent) {
+                                onSelectStudent(scannedStudent);
+                                onClose();
+                              }
+                            }}
+                            className="py-2 px-3 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 border border-indigo-500/30 text-xs font-bold rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
+                          >
+                            <User className="h-3.5 w-3.5" />
+                            <span>Fiche Élève</span>
+                          </button>
+                        )}
                         <button
                           type="submit"
                           disabled={submitting}
-                          className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-xs font-bold rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 text-white active:scale-97 disabled:opacity-50"
+                          className="flex-1 min-w-[100px] py-2 bg-emerald-600 hover:bg-emerald-700 text-xs font-bold rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 text-white active:scale-97 disabled:opacity-50"
                         >
                           {submitting ? (
                             <span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />

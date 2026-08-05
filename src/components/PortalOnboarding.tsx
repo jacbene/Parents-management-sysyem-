@@ -68,7 +68,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
   // Create School Form State
   const [schoolName, setSchoolName] = useState('');
   const [cotisationAmount, setCotisationAmount] = useState<number>(25000);
-  const [financialGoal, setFinancialGoal] = useState<number>(5000000);
+  const [financialGoal, setFinancialGoal] = useState<number>(2500000);
   const [schoolYear, setSchoolYear] = useState('2025/2026');
   
   // Financier & Pedagogique Manager info

@@ -104,6 +104,17 @@ export interface Message {
   content: string;
   timestamp: string;
   teacherName?: string;
+  senderRole?: string;
+  recipientName?: string;
+  recipientRole?: string;
+  isRead?: boolean;
+  isBulk?: boolean;
+  attachmentUrl?: string;
+  attachmentName?: string;
+  attachmentType?: 'pdf' | 'image' | 'doc';
+  voiceUrl?: string;
+  voiceDuration?: number;
+  category?: 'General' | 'Absence' | 'Grade' | 'Discipline' | 'Appointment' | 'Urgent';
 }
 
 export type InvoiceStatus = 'Paid' | 'Unpaid' | 'Overdue';
@@ -147,6 +158,7 @@ export interface Invoice {
   censeurName?: string;
   censeurPhone?: string;
   classTeachersList?: string;
+  classSubjectsList?: string;
   honoraryContributions?: number;
   subventionsAndAids?: number;
   actualHonoraryContributions?: number;
@@ -289,6 +301,15 @@ export interface ApeeSmsConfig {
   smsEnabled?: boolean;
 }
 
+export interface ClassSubject {
+  id: string;
+  name: string;
+  classRoom: string; // e.g. "Toutes les classes", "6ème", "5ème", "4ème", "3ème", "2nde", "1ère", "Tle", etc.
+  coef?: number;
+  category?: string; // e.g. "Scientifique", "Littéraire", "Langues", "Sciences Humaines", "Technique & Arts", "Général"
+  teacherName?: string;
+}
+
 export interface ApeeSettings {
   associationName: string;
   shortName?: string;
@@ -319,6 +340,7 @@ export interface ApeeSettings {
   censeurName?: string;
   censeurPhone?: string;
   classTeachers?: Array<{ classRoom: string; teacherName: string; teacherPhone: string; teacherEmail: string }>;
+  classSubjects?: ClassSubject[];
   paymentConfig?: ApeePaymentConfig;
   smsConfig?: ApeeSmsConfig;
   syncIntervalSeconds?: number;

@@ -1,6 +1,20 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
-export type LanguageType = 'fr' | 'en';
+export type LanguageType = 'fr' | 'en' | 'es' | 'de';
+
+export interface LanguageOption {
+  code: LanguageType;
+  label: string;
+  flag: string;
+  nativeName: string;
+}
+
+export const SUPPORTED_LANGUAGES: LanguageOption[] = [
+  { code: 'fr', label: 'Français', flag: '🇫🇷', nativeName: 'Français' },
+  { code: 'en', label: 'English', flag: '🇬🇧', nativeName: 'English' },
+  { code: 'es', label: 'Español', flag: '🇪🇸', nativeName: 'Español' },
+  { code: 'de', label: 'Deutsch', flag: '🇩🇪', nativeName: 'Deutsch' },
+];
 
 interface TranslationContextType {
   language: LanguageType;
@@ -28,7 +42,7 @@ const translations: Record<LanguageType, Record<string, string>> = {
     'tab.google_drive': 'Drive & Sauvegardes',
     'tab.google_sheets': 'Google Sheets Direct',
     'tab.firebase_console': 'Console Firebase',
-    'drive.integration': 'Intégration Offizielle Cloud',
+    'drive.integration': 'Intégration Cloud Officielle',
     'drive.security': 'Sécurité SSL',
     'drive.title': 'Espace Documentaire & Sauvegardes Google Drive™',
     'drive.subtitle': "Exportez, sécurisez et partagez en temps réel les données de l'établissement (APEE, Régies Financières, Bulletins scolaires) directement du Parents-Schools Management System (Pasma-sys) vers votre espace cloud chiffré Google Drive.",
@@ -312,6 +326,7 @@ const translations: Record<LanguageType, Record<string, string>> = {
     'notif.enable_prompt': "Recevoir des alertes push instantanées en temps réel pour vos enfants !",
     'notif.unsupported': "Le navigateur ne supporte pas les notifications système.",
   },
+
   en: {
     'app.name': 'Parents-Schools Management System (Pasma-sys)',
     // Nav Tabs & General labels
@@ -614,6 +629,612 @@ const translations: Record<LanguageType, Record<string, string>> = {
     'notif.enable_prompt': "Receive instant push notification alerts for your kids on this device!",
     'notif.unsupported': "Your device browser does not support native notification alerts.",
   },
+
+  es: {
+    'app.name': 'Sistema de Gestión de Padres y Escuelas (Pasma-sys)',
+    // Nav Tabs & General labels
+    'tab.apee_dashboard': 'Panel de Control',
+    'tab.apee_recording': 'Registro de Cuota',
+    'form.parents_payments': 'Pagos de Padres',
+    'form.other_revenues_long': 'Otros Ingresos (Miembros de honor, Donaciones...)',
+    'form.total_obligations_pupils': 'Total de obligaciones para estudiantes ingresados',
+    'tab.apee_search': 'Búsqueda y Recibos',
+    'tab.apee_reporting': 'Informes y Análisis',
+    'tab.apee_finance': 'Gastos e Ingresos',
+    'tab.apee_archives': 'Historial y Registros',
+    'tab.apee_settings': 'Configuración APEE',
+    'tab.apee_reminders': 'Recordatorios SMS y Correo',
+    'tab.apee_legal': 'Aviso Legal',
+    'tab.google_drive': 'Drive y Respaldos',
+    'tab.google_sheets': 'Google Sheets Directo',
+    'tab.firebase_console': 'Consola Firebase',
+    'drive.integration': 'Integración Nube Oficial',
+    'drive.security': 'Seguridad SSL',
+    'drive.title': 'Espacio Documental y Respaldos en Google Drive™',
+    'drive.subtitle': 'Exporte, asegure y comparta en tiempo real los datos del colegio directamente en su espacio seguro en Google Drive.',
+    'drive.connected': 'Google Drive Conectado',
+    'drive.disconnect': 'Desconectar',
+    'drive.activate': 'Activar Google Drive',
+    'drive.auth_notice_title': 'Aviso de autenticación de Google',
+    'drive.auth_notice_desc': 'Por motivos de seguridad, la aplicación requiere un token OAuth seguro de Google.',
+    'drive.popup_blocked_title': 'Ventana emergente bloqueada',
+    'drive.popup_blocked_desc': 'Permita las ventanas emergentes para completar la conexión con Google Drive.',
+    'drive.popup_solve_title': 'Para resolver este problema:',
+    'drive.popup_solve_step1': 'Abra la aplicación en una nueva pestaña.',
+    'drive.popup_solve_step2': 'Autorice las ventanas emergentes en su navegador.',
+    'drive.popup_solve_step3': 'Haga clic de nuevo para asociar su cuenta.',
+    'drive.connect_secure': 'Conectar mi Google Drive seguro',
+    'drive.connecting': 'Conectando...',
+    'drive.auth_google': 'Autenticación cifrada por Google',
+    'drive.exclusive_prop': 'Propiedad exclusiva de sus datos',
+    'drive.recipient_folder': 'Carpeta de destino',
+    'drive.cloud_version': 'APEE Nube v1.0',
+    'drive.active_connected': 'Activo y conectado',
+    'drive.folder_desc': 'Todos los informes y respaldos se archivarán en esta carpeta dedicada.',
+    'drive.no_folder_warning': 'Sin carpeta de respaldo',
+    'drive.no_folder_desc': 'Le recomendamos crear una carpeta dedicada "Pasma-sys School Backups".',
+    'drive.create_folder_btn': 'Crear carpeta Pasma-sys',
+    'drive.auto_backup': 'Respaldo automático (Asociación)',
+    'drive.weekly': 'Semanal',
+    'drive.auto_backup_desc': 'Cargar automáticamente una copia completa cada 7 días.',
+    'drive.status': 'Estado:',
+    'drive.status_active': 'Activo (Cada 7 días)',
+    'drive.last_export': 'Última exportación:',
+    'drive.never_executed': 'Nunca ejecutado',
+    'drive.next_due': 'Próxima fecha:',
+    'drive.at_loading': 'Al cargar',
+    'drive.force_auto_backup': 'Iniciar respaldo automático ahora',
+    'drive.pasma_backups': 'Respaldos Pasma-sys',
+    'drive.backups_desc': 'Cifre y exporte instantáneamente las bases de datos en su nube.',
+    'drive.file_apee': 'Archivo de la Asociación',
+    'drive.parents_count': '{count} Carpetas de padres',
+    'drive.file_billing': 'Facturas y Registro Financiero',
+    'drive.invoices_count': '{count} Recibos de pago',
+    'drive.file_academic': 'Directorio Académico',
+    'drive.students_count': '{count} Estudiantes inscritos',
+    'drive.backup_btn': 'Respaldar ahora',
+    'drive.drag_prompt': 'Arrastre y suelte un archivo aquí',
+    'drive.drag_active': '¡Suelte su archivo ahora!',
+    'drive.drag_desc': 'Ideal para subir boletines PDF o justificantes directamente.',
+    'drive.uploading': 'Subiendo a Google Drive...',
+    'drive.browse_files': 'Examinar archivos locales',
+    'drive.folder_explorer': 'Explorador de archivos escolares',
+    'drive.files_synchronized': '{count} archivos sincronizados en tiempo real',
+    'drive.search_placeholder': 'Buscar por nombre...',
+    'drive.loading': 'Cargando su Drive...',
+    'drive.no_files': 'No se encontraron archivos',
+    'drive.no_files_desc': 'Los respaldos aparecerán aquí una vez realizados.',
+    'drive.no_files_search': 'Modifique sus criterios de búsqueda.',
+    'drive.file_date': 'Fecha desconocida',
+    'drive.file_size_unknown': 'Tamaño desconocido',
+    'drive.view_online': 'Ver en línea o descargar',
+    'drive.delete_perm': 'Eliminar permanentemente',
+    'tab.announcements': 'Anuncios',
+    'tab.students_by_class': 'Lista por Clase',
+    'tab.homework': 'Agenda de Deberes',
+    'tab.lessons': 'Cursos y Lecciones',
+    'tab.grades': 'Notas y Boletines',
+    'tab.attendance': 'Asistencia',
+    'tab.billing': 'Facturación',
+    'tab.appointments': 'Citas',
+    'tab.messages': 'Mensajería',
+    'tab.help_center': 'Centro de Ayuda',
+
+    // Global UI Header / Controls
+    'header.school_portal': 'Portal del Colegio',
+    'header.logout': 'Cerrar sesión',
+    'header.offline': 'Modo sin conexión activo',
+    'header.online': 'En línea',
+    'header.welcome': 'Bienvenido',
+    'header.select_lang': 'Idioma',
+    'header.role.manager': 'Administrador',
+    'header.role.parent': 'Área de Padres',
+    'header.exit': 'Salir del portal',
+    'header.change_school': 'Cambiar de escuela',
+
+    // Dashboard Screen
+    'dash.title': 'Análisis Financiero y Panel de Control',
+    'dash.subtitle': 'Vista global en tiempo real de los cobros de cuotas del colegio.',
+    'dash.stats.expected_recette': 'Presupuesto Previsto',
+    'dash.stats.collected_recette': 'Cuotas Cobradas',
+    'dash.stats.unpaid_recette': 'Pendiente de Cobro',
+    'dash.stats.rate_recette': 'Tasa de Recaudación',
+    'dash.stats.expected_students': 'Estudiantes Esperados',
+    'dash.stats.registered_parents': 'Familias Registradas',
+    'dash.stats.actual_students': 'Alumnos Inscritos',
+    'dash.stats.other_revenues': 'Otros Ingresos (Donaciones)',
+    'dash.panels.recent_payments': 'Últimos Pagos de Padres',
+    'dash.panels.recent_expenses': 'Flujos Financieros Recientes',
+    'dash.alerts.unpaid_parents': 'Alertas de Solvencia',
+    'dash.alerts.unpaid_desc': 'Lista de familias con saldos pendientes',
+    'dash.empty': 'Aún no se han registrado pagos para este año lectivo.',
+    'dash.expense.spent': 'Gastos Totales',
+    'dash.expense.balance': 'Saldo en Caja',
+    'dash.quick_actions': 'Acciones Rápidas',
+    'dash.action.add_parent': 'Registrar Padre',
+    'dash.action.add_expense': 'Registrar Gasto',
+
+    // Form / Saisie Page
+    'form.title': 'Registro de Familias y Cobro Directo',
+    'form.subtitle': 'Formulario para inscribir padres, gestionar alumnos y cobrar en tiempo real.',
+    'form.parent_info': '👤 Información de la Familia (Responsable)',
+    'form.parent_name_label': 'Nombre completo del Padre / Tutor',
+    'form.parent_name_placeholder': 'Ej: MBARGA Jean-Pierre',
+    'form.parent_phone_label': 'Teléfono de contacto directo',
+    'form.parent_phone_placeholder': 'Ej: 6XXXXXXXX',
+    'form.parent_address_label': 'Barrio / Dirección de residencia',
+    'form.parent_address_placeholder': 'Ej: Bastos, Yaundé',
+    'form.parent_email_label': 'Correo electrónico (Opcional)',
+    'form.parent_email_placeholder': 'Ej: juan.perez@gmail.com',
+    'form.pupils_section': '👧 Estudiantes Asociados a la Familia',
+    'form.pupils_desc': 'Registre a continuación todos los hijos a cargo de este padre.',
+    'form.pupil_name': 'Nombre completo del alumno',
+    'form.pupil_class': 'Clase asignada',
+    'form.pupil_dob': 'Fecha de Nacimiento',
+    'form.add_pupil_btn': 'Agregar estudiante / alumno',
+    'form.remove_chk': 'Quitar',
+    'form.payment_section': '💵 Formulario de Pago y Cobro',
+    'form.payment_desc': 'Registrar un pago o anticipo inmediato para este expediente.',
+    'form.deposit_amount': 'Monto Depositado',
+    'form.payment_method': 'Método de Pago',
+    'form.payment_method.cash': 'Efectivo / Manual',
+    'form.payment_method.mobile': 'Mobile Money (MTN / Orange)',
+    'form.payment_method.wave': 'Wave / Otra billetera',
+    'form.payment_method.bank': 'Transferencia / Depósito Bancario',
+    'form.transaction_id': 'ID de Transacción / Referencia',
+    'form.transaction_placeholder': 'Número de recibo o referencia...',
+    'form.payment_note': 'Notas de caja',
+    'form.payment_note_placeholder': 'Ej: Primer pago parcial',
+    'form.sms_notify': '🔔 Generar confirmación por SMS automático',
+    'form.save_btn': 'Registrar y Guardar Expediente',
+    'form.edit_btn': 'Actualizar Expediente',
+    'form.success_save': '¡Familia registrada con éxito!',
+    'form.success_update': '¡Familia actualizada con éxito!',
+
+    // Search / Receipts Page
+    'search.title': 'Directorio de Padres y Recibos',
+    'search.subtitle': 'Buscar familias, imprimir recibos certificados e historial de pagos.',
+    'search.placeholder': 'Buscar por nombre de padre, alumno o teléfono...',
+    'search.filter_status': 'Estado de Cuota',
+    'search.filter_all': 'Todos los estados',
+    'search.filter_paid': 'Pagado (Total)',
+    'search.filter_partial': 'Parcial (Anticipo)',
+    'search.filter_late': 'Con Retraso (Sin pagos)',
+    'search.parent_details': '📁 Ficha de la Familia',
+    'search.print_receipt': 'Imprimir Recibo de Caja (PDF)',
+    'search.print_desc': 'Generación de documento PDF oficial del colegio.',
+    'search.last_reminder': 'Último recordatorio enviado el:',
+    'search.never_reminded': 'Sin recordatorios enviados',
+    'search.parent_record': 'Registro Financiero Familiar',
+    'search.payment_history': 'Historial Cronológico de Pagos',
+    'search.delete_parent': 'Eliminar esta Familia',
+    'search.delete_confirm': '¿Está seguro de que desea eliminar este padre? Esta acción borrará a sus alumnos y sus pagos.',
+
+    // Financial / Expense Page
+    'fin.title': 'Grilla de Tesorería (Flujos Presupuestarios)',
+    'fin.subtitle': 'Registro de gastos operativos, donaciones y subvenciones externas.',
+    'fin.stats.receipts': 'Ingresos Directos',
+    'fin.stats.expenses': 'Gastos Aprobados',
+    'fin.stats.cash_in_hand': 'Saldo Real en Caja',
+    'fin.add_expense': 'Registrar Gasto / Desembolso',
+    'fin.expense_title': 'Concepto del gasto',
+    'fin.expense_title_placeholder': 'Ej: Compra de tiza y borradores',
+    'fin.expense_amount': 'Monto del gasto operativo',
+    'fin.expense_type': 'Tipo de Comprobante',
+    'fin.expense_type.command': 'Orden de compra / Factura',
+    'fin.expense_type.payment': 'Orden de pago directo',
+    'fin.expense_type.refund': 'Reembolso de gastos',
+    'fin.expense_budget_line': 'Partida presupuestaria',
+    'fin.expense_desc': 'Descripción detallada / Proveedor',
+    'fin.expense_save': 'Guardar gasto',
+    'fin.expense_success': '¡Gasto registrado con éxito!',
+    'fin.list_expenses': 'Registro de gastos operativos',
+    'fin.list_other_revenues': 'Registro de Otros Ingresos',
+    'fin.add_revenue': 'Registrar Ingreso Adicional',
+    'fin.revenue.name': 'Nombre de Institución / Donante',
+    'fin.revenue.type': 'Categoría de Donante',
+    'fin.revenue.type.honor': 'Miembro de Honor / Benefactor',
+    'fin.revenue.type.inst': 'Institución socia',
+    'fin.revenue.type.other': 'Otra fuente de ingreso',
+
+    // Reporting Page
+    'rep.title': 'Estado Financiero y Auditoría',
+    'rep.subtitle': 'Informes consolidados para Asambleas Generales y auditorías.',
+    'rep.bud_gauge': 'Indicador Global de Recaudación',
+    'rep.bud_evolution': 'Evolución Mensual de Cobros',
+    'rep.bud_allocation': 'Comparativa: Gastos vs Presupuesto',
+    'rep.bud_desc': 'Distribución de fondos por partida. La línea roja marca el límite presupuestado.',
+    'rep.export_excel': 'Exportar Balance a CSV',
+
+    // Reminders Page
+    'rem.title': 'Campañas de Recordatorio Multicanal',
+    'rem.subtitle': 'Notificar a tutores con cuotas pendientes por SMS y correo electrónico.',
+    'rem.stats.unsold': 'Familias objetivo (Deuda > 0)',
+    'rem.stats.sms_sent': 'SMS enviados',
+    'rem.stats.email_sent': 'Correos enviados',
+    'rem.campaign': '🚀 Configurar y Enviar Recordatorios',
+    'rem.subject': 'Asunto del Mensaje',
+    'rem.body': 'Plantilla del Mensaje (Use {parent} y {amount})',
+    'rem.send_sms': 'Enviar Recordatorios por SMS',
+    'rem.send_email': 'Enviar Campaña de Correos',
+    'rem.notify.success': '¡Campaña de recordatorios enviada con éxito!',
+
+    // Settings Page
+    'set.title': 'Configuración del Colegio y Cuentas',
+    'set.subtitle': 'Personalizar la entidad, claves de acceso y presupuestos.',
+    'set.info_general': '🏢 Información General del Colegio',
+    'set.name': 'Nombre de la Organización / Asociación',
+    'set.short': 'Sigla (ej: APEE, PTA, AMPA)',
+    'set.year': 'Año Lectivo Actual',
+    'set.country': 'País de la Escuela',
+    'set.currency': 'Moneda de Gestión',
+    'set.expected_students': 'Total de alumnos previstos',
+    'set.honor_expected': 'Presupuesto previsto (Miembros de honor)',
+    'set.aid_expected': 'Subvenciones esperadas',
+    'set.save_settings': 'Guardar toda la configuración',
+    'set.budget_lines': '📊 Distribución del Presupuesto de Gastos',
+    'set.obligations': '💳 Definir Cuotas Obligatorias',
+    'set.obligation_add': 'Agregar Cuota Obligatoria',
+    'set.passwords': '🔒 Claves de Seguridad y Accesos',
+    'set.passwords_desc': 'Establecer contraseñas para proteger operaciones sensibles.',
+    'set.fin_manager': 'Responsable Administrativo / Financiero',
+    'set.ped_manager': 'Director Académico / Jefe de Estudios',
+    'set.notify.success': '¡Configuración guardada!',
+
+    // Database & Backup section in settings
+    'set.db_management': '💾 Respaldos, Exportación y Limpieza',
+    'set.db_desc': 'Todos los datos se almacenan localmente y se sincronizan en la nube Firebase.',
+    'set.export': 'Exportar Base Completa (JSON)',
+    'set.import': 'Restaurar desde Archivo JSON',
+    'set.reset': 'Vaciar Base Activa (PELIGRO)',
+    'set.reset_warn': '🚨 ¡Atención! Esta acción borrará permanentemente todos los registros.',
+    
+    // Messages / Inbox Module translations
+    'msg.console_admin': "Canal de comunicación de la administración y profesores con las familias.",
+    'msg.console_parent': "Comuníquese directamente con los profesores y la dirección.",
+    'msg.active_session': "Sesión activa:",
+    'msg.role_admin': "🏫 Administración / Profesores",
+    'msg.role_parent': "👤 Área de Padres",
+    'msg.search_placeholder': "Estudiante, padre o teléfono...",
+    'msg.all_classes': "Todas las clases ({count})",
+    'msg.filter_active': "Miembros activos",
+    'msg.search_parent': "Buscar un tutor...",
+    'msg.referents': "Contactos Oficiales",
+    'msg.contact_direct': "Contacto Directo:",
+    'msg.no_messages': "Sin mensajes intercambiados.",
+    'msg.send_as': "Enviar como:",
+    'msg.contact_official': "Contactar oficial:",
+    'msg.back': "Volver",
+    'msg.teacher': "Tutor / Profesor Principal",
+    'msg.censor': "Jefe de Estudios / Inspector",
+    'msg.director': "Director del Centro",
+    'msg.call': "Llamar",
+    'msg.write_to_parent': "Escribir al padre de {name}...",
+    'msg.write_to_teacher': "Escribir al profesor de {name} ({teacher})...",
+    'msg.write_to_censor': "Escribir al Jefe de Estudios ({censor})...",
+    'msg.write_to_director': "Escribir al Director ({director})...",
+    
+    // Push Notifications
+    'notif.title': "Notificaciones Push Locales",
+    'notif.permission_authorized': "Notificaciones autorizadas ✔",
+    'notif.permission_denied': "Notificaciones bloqueadas ❌",
+    'notif.authorize_btn': "Activar alertas del sistema",
+    'notif.recent_alerts': "Alertas Recientes",
+    'notif.grade_added_title': "¡Nueva Nota Publicada! 📝",
+    'notif.grade_added_body': "{student} obtuvo {score}/{maxScore} en {subject}. Haga clic para ver detalles.",
+    'notif.homework_added_title': "¡Nueva Tarea Asignada! 📚",
+    'notif.homework_added_body': "Nueva tarea ({subject}) para {student}: {title}. Entrega: {dueDate}.",
+    'notif.invoice_overdue_title': "⚠️ ¡Cuota en retraso!",
+    'notif.invoice_overdue_body': "Su pago de cuota para {title} (Vencimiento: {dueDate}) está pendiente.",
+    'notif.clear_all': "Borrar todo",
+    'notif.mark_read': "Marcar todo como leído",
+    'notif.no_alerts': "Sin alertas recibidas.",
+    'notif.enable_prompt': "¡Reciba alertas instantáneas de sus hijos en este dispositivo!",
+    'notif.unsupported': "Su navegador no admite notificaciones del sistema.",
+  },
+
+  de: {
+    'app.name': 'Eltern-Schul-Managementsystem (Pasma-sys)',
+    // Nav Tabs & General labels
+    'tab.apee_dashboard': 'Dashboard',
+    'tab.apee_recording': 'Beitrag erfassen',
+    'form.parents_payments': 'Zahlungen der Eltern',
+    'form.other_revenues_long': 'Sonstige Einnahmen (Ehrenmitglieder, Spenden...)',
+    'form.total_obligations_pupils': 'Gesamtverpflichtungen für erfasste Schüler',
+    'tab.apee_search': 'Suche & Quittungen',
+    'tab.apee_reporting': 'Berichte & Analysen',
+    'tab.apee_finance': 'Ausgaben & Einnahmen',
+    'tab.apee_archives': 'Verlauf & Protokolle',
+    'tab.apee_settings': 'Einstellungen',
+    'tab.apee_reminders': 'SMS & E-Mail Erinnerungen',
+    'tab.apee_legal': 'Impressum & Rechtliches',
+    'tab.google_drive': 'Drive & Sichern',
+    'tab.google_sheets': 'Google Sheets Direkt',
+    'tab.firebase_console': 'Firebase Konsole',
+    'drive.integration': 'Offizielle Cloud-Integration',
+    'drive.security': 'SSL-Sicherheit',
+    'drive.title': 'Dokumente & Sicherungen in Google Drive™',
+    'drive.subtitle': 'Exportieren und sichern Sie Schuldaten in Echtzeit direkt in Ihrem Google Drive Speicher.',
+    'drive.connected': 'Google Drive Verbunden',
+    'drive.disconnect': 'Trennen',
+    'drive.activate': 'Google Drive aktivieren',
+    'drive.auth_notice_title': 'Google-Authentifizierungshinweis',
+    'drive.auth_notice_desc': 'Aus Sicherheitsgründen benötigt die Anwendung ein sicheres OAuth-Token von Google.',
+    'drive.popup_blocked_title': 'Pop-up-Fenster blockiert',
+    'drive.popup_blocked_desc': 'Bitte erlauben Sie Pop-up-Fenster, um die Verbindung mit Google Drive herzustellen.',
+    'drive.popup_solve_title': 'So beheben Sie dieses Problem:',
+    'drive.popup_solve_step1': 'Öffnen Sie die App in einem neuen Tab.',
+    'drive.popup_solve_step2': 'Erlauben Sie Pop-ups in Ihren Browsereinstellungen.',
+    'drive.popup_solve_step3': 'Klicken Sie erneut unten, um die Verbindung herzustellen.',
+    'drive.connect_secure': 'Sicheres Google Drive verbinden',
+    'drive.connecting': 'Verbindung wird hergestellt...',
+    'drive.auth_google': 'Verschlüsselte Authentifizierung durch Google',
+    'drive.exclusive_prop': 'Exklusive Eigentümerschaft Ihrer Daten',
+    'drive.recipient_folder': 'Zielordner',
+    'drive.cloud_version': 'APEE Cloud v1.0',
+    'drive.active_connected': 'Aktiv und verbunden',
+    'drive.folder_desc': 'Alle Berichte und Sicherungen werden in diesem Ordner archiviert.',
+    'drive.no_folder_warning': 'Kein Sicherungsordner',
+    'drive.no_folder_desc': 'Wir empfehlen die Erstellung eines Ordners "Pasma-sys School Backups".',
+    'drive.create_folder_btn': 'Pasma-sys Ordner erstellen',
+    'drive.auto_backup': 'Automatische Sicherung (Verein)',
+    'drive.weekly': 'Wöchentlich',
+    'drive.auto_backup_desc': 'Alle 7 Tage automatisch eine vollständige Sicherung erstellen.',
+    'drive.status': 'Status:',
+    'drive.status_active': 'Aktiv (Alle 7 Tage)',
+    'drive.last_export': 'Letzter Export:',
+    'drive.never_executed': 'Niemals ausgeführt',
+    'drive.next_due': 'Nächste Fälligkeit:',
+    'drive.at_loading': 'Beim Laden',
+    'drive.force_auto_backup': 'Automatische Sicherung jetzt starten',
+    'drive.pasma_backups': 'Pasma-sys Sicherungen',
+    'drive.backups_desc': 'Verschlüsseln und exportieren Sie Datenbanken direkt in Ihre Cloud.',
+    'drive.file_apee': 'Vereinsakte',
+    'drive.parents_count': '{count} Elternordner',
+    'drive.file_billing': 'Rechnungen & Finanzregister',
+    'drive.invoices_count': '{count} Zahlungsbelege',
+    'drive.file_academic': 'Akademisches Verzeichnis',
+    'drive.students_count': '{count} Registrierte Schüler',
+    'drive.backup_btn': 'Jetzt sichern',
+    'drive.drag_prompt': 'Ziehen Sie eine Datei hierher',
+    'drive.drag_active': 'Datei jetzt ablegen!',
+    'drive.drag_desc': 'Ideal zum Hochladen von PDF-Zeugnissen oder Dokumenten.',
+    'drive.uploading': 'Wird auf Google Drive hochgeladen...',
+    'drive.browse_files': 'Lokale Dateien durchsuchen',
+    'drive.folder_explorer': 'Schulordner-Explorer',
+    'drive.files_synchronized': '{count} Dateien in Echtzeit synchronisiert',
+    'drive.search_placeholder': 'Nach Name suchen...',
+    'drive.loading': 'Ihr Drive wird geladen...',
+    'drive.no_files': 'Keine Dateien gefunden',
+    'drive.no_files_desc': 'Sicherungen erscheinen hier nach der Durchführung.',
+    'drive.no_files_search': 'Ändern Sie Ihre Suchkriterien.',
+    'drive.file_date': 'Unbekanntes Datum',
+    'drive.file_size_unknown': 'Unbekannte Größe',
+    'drive.view_online': 'Online ansehen oder herunterladen',
+    'drive.delete_perm': 'Dauerhaft löschen',
+    'tab.announcements': 'Ankündigungen',
+    'tab.students_by_class': 'Liste nach Klasse',
+    'tab.homework': 'Hausaufgabenheft',
+    'tab.lessons': 'Lektionen & Kurse',
+    'tab.grades': 'Noten & Zeugnisse',
+    'tab.attendance': 'Anwesenheit',
+    'tab.billing': 'Abrechnung',
+    'tab.appointments': 'Termine',
+    'tab.messages': 'Nachrichten',
+    'tab.help_center': 'Hilfe-Center',
+
+    // Global UI Header / Controls
+    'header.school_portal': 'Schulportal',
+    'header.logout': 'Abmelden',
+    'header.offline': 'Offline-Modus aktiv',
+    'header.online': 'Online',
+    'header.welcome': 'Willkommen',
+    'header.select_lang': 'Sprache',
+    'header.role.manager': 'Administrator',
+    'header.role.parent': 'Elternbereich',
+    'header.exit': 'Portal verlassen',
+    'header.change_school': 'Schule wechseln',
+
+    // Dashboard Screen
+    'dash.title': 'Finanzanalyse & Dashboard',
+    'dash.subtitle': 'Echtzeit-Überblick über die Beiträge und Finanzströme Ihrer Schule.',
+    'dash.stats.expected_recette': 'Geplantes Budget',
+    'dash.stats.collected_recette': 'Eingenommene Gebühren',
+    'dash.stats.unpaid_recette': 'Offene Beträge',
+    'dash.stats.rate_recette': 'Einholungsquote',
+    'dash.stats.expected_students': 'Zielschülerzahl',
+    'dash.stats.registered_parents': 'Registrierte Eltern',
+    'dash.stats.actual_students': 'Eingeschriebene Schüler',
+    'dash.stats.other_revenues': 'Sonstige Einnahmen (Spenden)',
+    'dash.panels.recent_payments': 'Neueste Elternzahlungen',
+    'dash.panels.recent_expenses': 'Neueste Ausgaben',
+    'dash.alerts.unpaid_parents': 'Zahlungserinnerungs-Warnungen',
+    'dash.alerts.unpaid_desc': 'Liste der Elternkonten mit offenen Beträgen',
+    'dash.empty': 'Für dieses Schuljahr wurden noch keine Zahlungen erfasst.',
+    'dash.expense.spent': 'Gesamtausgaben',
+    'dash.expense.balance': 'Kassenbestand',
+    'dash.quick_actions': 'Schnellaktionen',
+    'dash.action.add_parent': 'Elternteil registrieren',
+    'dash.action.add_expense': 'Ausgabe erben',
+
+    // Form / Saisie Page
+    'form.title': 'Elternregistrierung & Direkteinzahlung',
+    'form.subtitle': 'Elternkonten anmelden, Schüler verwalten und Beiträge in Echtzeit erfassen.',
+    'form.parent_info': '👤 Elternprofil (Hauptkontakt)',
+    'form.parent_name_label': 'Vollständiger Name des Elternteils',
+    'form.parent_name_placeholder': 'Z. B. MBARGA Jean-Pierre',
+    'form.parent_phone_label': 'Direkte Telefonnummer',
+    'form.parent_phone_placeholder': 'Z. B. 6XXXXXXXX',
+    'form.parent_address_label': 'Wohnort / Adresse',
+    'form.parent_address_placeholder': 'Z. B. Bastos, Jaunde',
+    'form.parent_email_label': 'E-Mail-Adresse (Optional)',
+    'form.parent_email_placeholder': 'Z. B. max.mustermann@gmail.com',
+    'form.pupils_section': '👧 Zugeordnete Schüler',
+    'form.pupils_desc': 'Tragen Sie unten alle Kinder dieses Elternteils ein.',
+    'form.pupil_name': 'Vollständiger Name des Schülers',
+    'form.pupil_class': 'Zugewiesene Klasse',
+    'form.pupil_dob': 'Geburtsdatum',
+    'form.add_pupil_btn': 'Neuen Schüler hinzufügen',
+    'form.remove_chk': 'Entfernen',
+    'form.payment_section': '💵 Einzahlungsformular',
+    'form.payment_desc': 'Sofort eine Zahlung oder Anzahlung erfassen.',
+    'form.deposit_amount': 'Eingezahlter Betrag',
+    'form.payment_method': 'Zahlungsmethode',
+    'form.payment_method.cash': 'Bar / Manuell',
+    'form.payment_method.mobile': 'Mobile Money (MTN / Orange)',
+    'form.payment_method.wave': 'Wave / Andere Wallet',
+    'form.payment_method.bank': 'Banküberweisung',
+    'form.transaction_id': 'Transaktions-ID / Referenz',
+    'form.transaction_placeholder': 'Quittungsnummer oder Referenz-ID...',
+    'form.payment_note': 'Kassennotiz',
+    'form.payment_note_placeholder': 'Z. B. Erste Teilzahlung',
+    'form.sms_notify': '🔔 Automatische SMS-Bestätigung generieren',
+    'form.save_btn': 'Elternprofil speichern & bestätigen',
+    'form.edit_btn': 'Elternprofil aktualisieren',
+    'form.success_save': 'Elternprofil erfolgreich erfasst!',
+    'form.success_update': 'Elternprofil erfolgreich aktualisiert!',
+
+    // Search / Receipts Page
+    'search.title': 'Elternverzeichnis & Quittungsservice',
+    'search.subtitle': 'Eltern suchen, Quittungen drucken und Zahlungsverlauf einsehen.',
+    'search.placeholder': 'Suche nach Name, Schüler oder Telefonnummer...',
+    'search.filter_status': 'Beitragsstatus',
+    'search.filter_all': 'Alle Konten',
+    'search.filter_paid': 'Vollständig bezahlt',
+    'search.filter_partial': 'Teilzahlung',
+    'search.filter_late': 'Rückständig (Keine Zahlung)',
+    'search.parent_details': '📁 Spezifische Elternakte',
+    'search.print_receipt': 'Quittung drucken (PDF)',
+    'search.print_desc': 'Erstellt eine offizielle Quittung der Schule.',
+    'search.last_reminder': 'Letzte Erinnerung gesendet am:',
+    'search.never_reminded': 'Noch nie kontaktiert',
+    'search.parent_record': 'Finanzregister des Haushalts',
+    'search.payment_history': 'Chronologisches Zahlungsjournal',
+    'search.delete_parent': 'Elternprofil löschen',
+    'search.delete_confirm': 'Möchten Sie dieses Elternteil wirklich löschen?',
+
+    // Financial / Expense Page
+    'fin.title': 'Kassenbuch & Budgetübersicht',
+    'fin.subtitle': 'Erfassen Sie Betriebsausgaben, Spenden und Fördermittel.',
+    'fin.stats.receipts': 'Einnahmen des Vereins',
+    'fin.stats.expenses': 'Geprüfte Ausgaben',
+    'fin.stats.cash_in_hand': 'Tatsächlicher Kassenbestand',
+    'fin.add_expense': 'Ausgabe erfassen',
+    'fin.expense_title': 'Ausgabenzweck',
+    'fin.expense_title_placeholder': 'Z. B. Kauf von Kreide',
+    'fin.expense_amount': 'Ausgabenbetrag',
+    'fin.expense_type': 'Belegart',
+    'fin.expense_type.command': 'Bestellschein / Rechnung',
+    'fin.expense_type.payment': 'Direktzahlungsanweisung',
+    'fin.expense_type.refund': 'Kostenerstattung',
+    'fin.expense_budget_line': 'Budgetposten',
+    'fin.expense_desc': 'Detaillierte Beschreibung / Lieferant',
+    'fin.expense_save': 'Ausgabe speichern',
+    'fin.expense_success': 'Ausgabe erfolgreich verbucht!',
+    'fin.list_expenses': 'Ausgabenjournal',
+    'fin.list_other_revenues': 'Journal sonstiger Einnahmen',
+    'fin.add_revenue': 'Zusätzliche Einnahme erfassen',
+    'fin.revenue.name': 'Sponsor / Organisation',
+    'fin.revenue.type': 'Sponsorkategorie',
+    'fin.revenue.type.honor': 'Ehrenmitglied / Förderer',
+    'fin.revenue.type.inst': 'Institutioneller Partner',
+    'fin.revenue.type.other': 'Sonstige Einnahmequelle',
+
+    // Reporting Page
+    'rep.title': 'Finanzberichte & Audits',
+    'rep.subtitle': 'Konsolidierte Berichte für Hauptversammlungen und Prüfungen.',
+    'rep.bud_gauge': 'Gesamteinholungsanzeige',
+    'rep.bud_evolution': 'Monatlicher Einnahmenverlauf',
+    'rep.bud_allocation': 'Vergleich: Ausgaben vs. Budget',
+    'rep.bud_desc': 'Verteilung der Mittel nach Budgetlinien.',
+    'rep.export_excel': 'Bilanz als CSV exportieren',
+
+    // Reminders Page
+    'rem.title': 'Mehrkanal-Erinnerungen (SMS & E-Mail)',
+    'rem.subtitle': 'Erreichen Sie Erziehungsberechtigte mit säumigen Beträgen.',
+    'rem.stats.unsold': 'Zielgruppen-Eltern (Offene Beträge > 0)',
+    'rem.stats.sms_sent': 'Versendete SMS',
+    'rem.stats.email_sent': 'Versendete E-Mails',
+    'rem.campaign': '🚀 Sammelbenachrichtigung einrichten',
+    'rem.subject': 'Nachrichtentitel / E-Mail-Betreff',
+    'rem.body': 'Nachrichtenvorlage (Verwenden Sie {parent} und {amount})',
+    'rem.send_sms': 'SMS-Kampagne senden',
+    'rem.send_email': 'E-Mail-Kampagne senden',
+    'rem.notify.success': 'Erinnerungskampagne erfolgreich gestartet!',
+
+    // Settings Page
+    'set.title': 'Schuleinstellungen & Konten',
+    'set.subtitle': 'Einrichtung der Schule, Passwörter und Budgetgrenzen.',
+    'set.info_general': '🏢 Allgemeine Vereinsdaten',
+    'set.name': 'Name des Vereins / der Schule',
+    'set.short': 'Kürzel (z. B. APEE, PTA, EV)',
+    'set.year': 'Aktuelles Schuljahr',
+    'set.country': 'Land der Schule',
+    'set.currency': 'Währungscode',
+    'set.expected_students': 'Erwartete Gesamtschülerzahl',
+    'set.honor_expected': 'Geplantes Budget (Ehrenmitglieder)',
+    'set.aid_expected': 'Erwartete Zuschüsse',
+    'set.save_settings': 'Alle Einstellungen speichern',
+    'set.budget_lines': '📊 Aufteilung des Ausgabenbudgets',
+    'set.obligations': '💳 Pflichtbeiträge festlegen',
+    'set.obligation_add': 'Neuen Beitrags-Posten hinzufügen',
+    'set.passwords': '🔒 Sicherheits-Passwörter',
+    'set.passwords_desc': 'Festlegen getrennter Passwörter für Finanz- und Schulaktionen.',
+    'set.fin_manager': 'Finanzverantwortlicher',
+    'set.ped_manager': 'Schulleitung / Pädagogischer Leiter',
+    'set.notify.success': 'Konfiguration erfolgreich aktualisiert!',
+
+    // Database & Backup section in settings
+    'set.db_management': '💾 Sicherungen & Datenbankverwaltung',
+    'set.db_desc': 'Alle Daten werden lokal gespeichert und mit der Firebase Cloud synchronisiert.',
+    'set.export': 'Gesamte Datenbank exportieren (JSON)',
+    'set.import': 'Datenbank aus JSON wiederherstellen',
+    'set.reset': 'Datenbank leeren (GEFAHR)',
+    'set.reset_warn': '🚨 Achtung! Diese Aktion löscht dauerhaft alle gespeicherten Daten.',
+    
+    // Messages / Inbox Module translations
+    'msg.console_admin': "Kommunikationsportal von Schulleitung und Lehrern mit den Familien.",
+    'msg.console_parent': "Direkter Austausch mit Klassenlehrern und Schulleitung.",
+    'msg.active_session': "Aktive Sitzung:",
+    'msg.role_admin': "🏫 Verwaltung / Lehrkräfte",
+    'msg.role_parent': "👤 Elternbereich",
+    'msg.search_placeholder': "Schüler, Elternteil oder Telefon...",
+    'msg.all_classes': "Alle Klassen ({count})",
+    'msg.filter_active': "Aktive Mitglieder",
+    'msg.search_parent': "Elternteil suchen...",
+    'msg.referents': "Ansprechpartner",
+    'msg.contact_direct': "Direktkontakt:",
+    'msg.no_messages': "Bisher keine Nachrichten ausgetauscht.",
+    'msg.send_as': "Senden als:",
+    'msg.contact_official': "Offizielle Stelle kontaktieren:",
+    'msg.back': "Zurück",
+    'msg.teacher': "Klassenlehrer",
+    'msg.censor': "Pädagogischer Leiter",
+    'msg.director': "Schulleiter / Direktor",
+    'msg.call': "Anrufen",
+    'msg.write_to_parent': "Nachricht an Elternteil von {name}...",
+    'msg.write_to_teacher': "Nachricht an Klassenlehrer von {name} ({teacher})...",
+    'msg.write_to_censor': "Nachricht an Pädagogischen Leiter ({censor})...",
+    'msg.write_to_director': "Nachricht an Schulleiter ({director})...",
+    
+    // Push Notifications
+    'notif.title': "Lokale Push-Benachrichtigungen",
+    'notif.permission_authorized': "Benachrichtigungen erlaubt ✔",
+    'notif.permission_denied': "Benachrichtigungen blockiert ❌",
+    'notif.authorize_btn': "Systemwarnungen aktivieren",
+    'notif.recent_alerts': "Neueste Benachrichtigungen",
+    'notif.grade_added_title': "Neue Note eingetragen! 📝",
+    'notif.grade_added_body': "{student} hat {score}/{maxScore} in {subject} erhalten. Klicken zum Ansehen.",
+    'notif.homework_added_title': "Neue Hausaufgabe! 📚",
+    'notif.homework_added_body': "Neue Hausaufgabe ({subject}) für {student}: {title}. Fällig: {dueDate}.",
+    'notif.invoice_overdue_title': "⚠️ Beitragszahlung überfällig!",
+    'notif.invoice_overdue_body': "Ihre Beitragszahlung für {title} (Fällig: {dueDate}) ist überfällig.",
+    'notif.clear_all': "Alle löschen",
+    'notif.mark_read': "Alle als gelesen markieren",
+    'notif.no_alerts': "Bisher keine Benachrichtigungen empfangen.",
+    'notif.enable_prompt': "Erhalten Sie Sofort-Benachrichtigungen für Ihre Kinder auf diesem Gerät!",
+    'notif.unsupported': "Ihr Browser unterstützt keine Systembenachrichtigungen.",
+  },
 };
 
 const LanguageContext = createContext<TranslationContextType | undefined>(undefined);
@@ -625,38 +1246,48 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // 1. Check persistence
     const savedLang = localStorage.getItem('app_language') as LanguageType | null;
-    if (savedLang === 'fr' || savedLang === 'en') {
+    if (savedLang && ['fr', 'en', 'es', 'de'].includes(savedLang)) {
       setLanguageState(savedLang);
       return;
     }
 
     // 2. Automated default language detection based on browser and geographical context
     try {
-      let detectedLang: LanguageType = 'fr'; // default fallback for francophone Africa regions
+      let detectedLang: LanguageType = 'fr'; // default fallback for francophone regions
 
       // Check navigator language strings
       const browserLang = (navigator.language || '').toLowerCase();
       const firstPref = (navigator.languages && navigator.languages[0] || '').toLowerCase();
       
-      const isEnglishBrowser = browserLang.startsWith('en') || firstPref.startsWith('en');
-      
-      // Check timezone geo cues
-      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
-      const tzLower = timeZone.toLowerCase();
-      
-      // Known major English-speaking timezones
-      const englishTzIndicators = [
-        'london', 'dublin', 'belfast', 'new_york', 'chicago', 'los_angeles', 
-        'denver', 'phoenix', 'anchorage', 'honolulu', 'toronto', 'vancouver', 
-        'sydney', 'melbourne', 'brisbane', 'perth', 'adelaide', 'auckland',
-        'lagos', 'nairobi', 'johannesburg', 'accra', 'kampala', 'harare',
-        'lusaka', 'kigali', 'dar_es_salaam'
-      ];
-      
-      const isEnglishTimezone = englishTzIndicators.some(indicator => tzLower.includes(indicator));
-
-      if (isEnglishBrowser || isEnglishTimezone) {
+      if (browserLang.startsWith('es') || firstPref.startsWith('es')) {
+        detectedLang = 'es';
+      } else if (browserLang.startsWith('de') || firstPref.startsWith('de')) {
+        detectedLang = 'de';
+      } else if (browserLang.startsWith('en') || firstPref.startsWith('en')) {
         detectedLang = 'en';
+      } else {
+        // Check timezone geo cues
+        const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+        const tzLower = timeZone.toLowerCase();
+        
+        const englishTzIndicators = [
+          'london', 'dublin', 'belfast', 'new_york', 'chicago', 'los_angeles', 
+          'denver', 'phoenix', 'anchorage', 'honolulu', 'toronto', 'vancouver', 
+          'sydney', 'melbourne', 'brisbane', 'perth', 'adelaide', 'auckland',
+          'lagos', 'nairobi', 'johannesburg', 'accra', 'kampala', 'harare',
+          'lusaka', 'kigali', 'dar_es_salaam'
+        ];
+        
+        const spanishTzIndicators = ['madrid', 'mexico', 'bogota', 'buenos_aires', 'santiago', 'lima', 'caracas'];
+        const germanTzIndicators = ['berlin', 'vienna', 'zurich'];
+
+        if (spanishTzIndicators.some(indicator => tzLower.includes(indicator))) {
+          detectedLang = 'es';
+        } else if (germanTzIndicators.some(indicator => tzLower.includes(indicator))) {
+          detectedLang = 'de';
+        } else if (englishTzIndicators.some(indicator => tzLower.includes(indicator))) {
+          detectedLang = 'en';
+        }
       }
 
       setLanguageState(detectedLang);
@@ -674,7 +1305,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
 
   const t = (key: string, variables?: Record<string, string | number>): string => {
     const dictionary = translations[language];
-    let resolved = dictionary[key] || translations['fr'][key] || key;
+    let resolved = dictionary?.[key] || translations['fr']?.[key] || translations['en']?.[key] || key;
 
     if (variables) {
       Object.entries(variables).forEach(([vKey, vValue]) => {

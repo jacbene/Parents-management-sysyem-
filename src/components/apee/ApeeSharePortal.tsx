@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Share2, Copy, Check, ExternalLink, ShieldCheck, QrCode, MessageSquare, Mail, AlertCircle } from 'lucide-react';
+import { Share2, Copy, Check, ExternalLink, ShieldCheck, QrCode, MessageSquare, Mail, AlertCircle, MessageCircle, RotateCcw } from 'lucide-react';
 import { useLanguage } from '../../utils/TranslationContext';
 
 interface ApeeSharePortalProps {
@@ -16,6 +16,10 @@ export default function ApeeSharePortal({ associationName, portalUserRole }: Ape
   
   // Clean, canonical sharing URL
   const [shareUrl, setShareUrl] = useState('');
+
+  // Editable personalized invitation message
+  const [customMessage, setCustomMessage] = useState('');
+  const [isEdited, setIsEdited] = useState(false);
 
   useEffect(() => {
     // Generate clean canonical URL for sharing
@@ -34,6 +38,29 @@ export default function ApeeSharePortal({ associationName, portalUserRole }: Ape
     setShareUrl(finalUrl);
   }, [customRoleParam]);
 
+  const getDefaultMessage = () => {
+    const isEn = language === 'en';
+    const school = associationName || "notre établissement";
+    if (isEn) {
+      if (customRoleParam === 'parent') {
+        return `Hello Dear Parent,\n\nHere is your official secure link to access the Parent Space on the APEE Portal for ${school}:\n${shareUrl}\n\nYou can easily check your child's grades, homework, school fees, and official announcements online.\n\nWelcome to our school community!`;
+      }
+      return `Hello,\n\nHere is the secure access link to the APEE management & school portal for ${school}:\n${shareUrl}\n\nPlease log in securely.`;
+    } else {
+      if (customRoleParam === 'parent') {
+        return `Bonjour Cher Parent,\n\nVoici votre lien d'accès officiel et sécurisé à l'Espace Parent du Portail APEE de ${school} :\n${shareUrl}\n\nVous pourrez y consulter les résultats scolaires de vos enfants, le suivi des cotisations, les devoirs et les annonces officielles de l'école.\n\nSoyez les bienvenus !`;
+      }
+      return `Bonjour,\n\nVoici le lien d'accès sécurisé du portail APEE de ${school} :\n${shareUrl}\n\nL'accès est protégé conformément aux normes de sécurité de l'établissement.`;
+    }
+  };
+
+  // Sync default message when parameters change unless modified manually by user
+  useEffect(() => {
+    if (!isEdited) {
+      setCustomMessage(getDefaultMessage());
+    }
+  }, [shareUrl, customRoleParam, language, associationName, isEdited]);
+
   const handleCopyLink = async () => {
     try {
       await navigator.clipboard.writeText(shareUrl);
@@ -44,25 +71,9 @@ export default function ApeeSharePortal({ associationName, portalUserRole }: Ape
     }
   };
 
-  const getInviteMessage = () => {
-    const isEn = language === 'en';
-    const school = associationName || "notre établissement";
-    if (isEn) {
-      if (customRoleParam === 'parent') {
-        return `Hello, here is the secure link to access the Parent space on the APEE Portal of ${school}: ${shareUrl}. Secure registration required.`;
-      }
-      return `Hello, here is the secure login link of the APEE management and school portal for ${school}: ${shareUrl}`;
-    } else {
-      if (customRoleParam === 'parent') {
-        return `Bonjour, voici le lien direct et hautement sécurisé pour accéder à votre Espace Parent en ligne (APEE & ENT) pour ${school} : ${shareUrl}. Vos données financières et les résultats scolaires de vos enfants y sont consultables après connexion sécurisée.`;
-      }
-      return `Bonjour, voici le lien d'accès sécurisé du portail APEE et de suivi scolaire de ${school} : ${shareUrl}. L'accès y est strictement contrôlé conformément à la charte de confidentialité de l'école.`;
-    }
-  };
-
   const handleCopyMessage = async () => {
     try {
-      await navigator.clipboard.writeText(getInviteMessage());
+      await navigator.clipboard.writeText(customMessage || getDefaultMessage());
       setCopiedMsg(true);
       setTimeout(() => setCopiedMsg(false), 2000);
     } catch (err) {
@@ -165,6 +176,71 @@ export default function ApeeSharePortal({ associationName, portalUserRole }: Ape
         </div>
       </div>
 
+      {/* Editable Text Input / Textarea for Invitation Message */}
+      <div className="space-y-1 pt-1">
+        <div className="flex items-center justify-between text-[9px]">
+          <label className="font-bold text-slate-600 uppercase tracking-wide flex items-center gap-1">
+            <MessageSquare className="h-3 w-3 text-indigo-600" />
+            {isEn ? "Personalized Invitation Message:" : "Message d'invitation personnalisé :"}
+          </label>
+          {isEdited && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsEdited(false);
+                setCustomMessage(getDefaultMessage());
+              }}
+              className="text-[8.5px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-0.5 cursor-pointer hover:underline"
+              title={isEn ? "Reset to standard invitation" : "Réinitialiser au message standard"}
+            >
+              <RotateCcw className="h-2.5 w-2.5" />
+              {isEn ? "Reset" : "Réinitialiser"}
+            </button>
+          )}
+        </div>
+        <textarea
+          rows={3}
+          value={customMessage}
+          onChange={(e) => {
+            setCustomMessage(e.target.value);
+            setIsEdited(true);
+          }}
+          placeholder={isEn ? "Type your custom invitation message..." : "Personnalisez votre message d'invitation..."}
+          className="w-full p-2 border border-slate-200 rounded-xl text-[9.5px] font-sans text-slate-800 bg-slate-50/70 focus:bg-white focus:outline-indigo-500 leading-relaxed resize-y transition"
+        />
+      </div>
+
+      {/* Live Preview of Generated WhatsApp Message (Readonly) */}
+      <div className="space-y-1 pt-0.5">
+        <div className="flex items-center justify-between text-[9px]">
+          <span className="font-bold text-emerald-800 uppercase tracking-wide flex items-center gap-1">
+            <MessageCircle className="h-3 w-3 text-emerald-600" />
+            {isEn ? "Live WhatsApp Preview (Read-Only):" : "Aperçu WhatsApp en direct (lecture seule) :"}
+          </span>
+          <span className="text-[8px] font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+            WhatsApp Web / Mobile
+          </span>
+        </div>
+        <textarea
+          readOnly
+          rows={3}
+          value={customMessage || getDefaultMessage()}
+          className="w-full p-2 border border-emerald-200 bg-emerald-50/60 rounded-xl text-[9.5px] font-sans text-slate-800 leading-relaxed cursor-default select-all focus:outline-none resize-none"
+        />
+      </div>
+
+      {/* Prominent WhatsApp Share Button with Pre-filled Invitation & Portal Link */}
+      <a
+        href={`https://wa.me/?text=${encodeURIComponent(customMessage || getDefaultMessage())}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow-2xs no-underline"
+      >
+        <MessageCircle className="h-4 w-4 shrink-0 text-white" />
+        <span>{isEn ? "Share via WhatsApp" : "Partager sur WhatsApp"}</span>
+        <ExternalLink className="h-3 w-3 opacity-80 shrink-0" />
+      </a>
+
       {/* Tab 1: Direct link copying */}
       {shareTab === 'link' && (
         <div className="space-y-2 pt-1 transition-all">
@@ -198,8 +274,8 @@ export default function ApeeSharePortal({ associationName, portalUserRole }: Ape
       {/* Tab 2: Custom Text message invite */}
       {shareTab === 'message' && (
         <div className="space-y-2 pt-1 transition-all">
-          <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 max-h-24 overflow-y-auto font-sans text-[9px] text-slate-650 leading-relaxed select-all">
-            {getInviteMessage()}
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 max-h-28 overflow-y-auto font-sans text-[9px] text-slate-750 leading-relaxed select-all">
+            {customMessage}
           </div>
           
           <button
@@ -251,3 +327,4 @@ export default function ApeeSharePortal({ associationName, portalUserRole }: Ape
     </div>
   );
 }
+

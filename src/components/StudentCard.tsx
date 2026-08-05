@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Student, ApeeSettings, ApeeParent, Grade, Attendance, Message } from '../types';
-import { Mail, GraduationCap, Calendar, User, UserCheck, Camera, Printer, Phone, TrendingUp, TrendingDown, Clock, MessageSquare, Send, X, Check, AlertCircle, QrCode } from 'lucide-react';
+import { Mail, GraduationCap, Calendar, User, UserCheck, Camera, Printer, Phone, TrendingUp, TrendingDown, Clock, MessageSquare, Send, X, Check, AlertCircle, QrCode, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import StudentCameraModal from './StudentCameraModal';
 import StudentIDCardModal from './StudentIDCardModal';
@@ -14,6 +14,7 @@ interface StudentCardProps {
   isSelected: boolean;
   onSelect: () => void;
   onUpdateStudent?: (updated: Student) => void;
+  onDeleteStudent?: (studentId: string) => Promise<boolean>;
   onPrint?: () => void;
   settings?: ApeeSettings;
   apeeParents?: ApeeParent[];
@@ -32,6 +33,7 @@ export default function StudentCard({
   isSelected, 
   onSelect, 
   onUpdateStudent, 
+  onDeleteStudent,
   onPrint, 
   settings, 
   apeeParents, 
@@ -43,6 +45,8 @@ export default function StudentCard({
   const [showCamera, setShowCamera] = useState(false);
   const [showIDCard, setShowIDCard] = useState(false);
   const [showQuickContact, setShowQuickContact] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState('absence');
   const [messageText, setMessageText] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
@@ -319,6 +323,21 @@ export default function StudentCard({
                   </button>
                 )}
 
+                {portalUserRole !== 'parent' && onDeleteStudent && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowDeleteConfirm(true);
+                    }}
+                    className="bg-rose-500/20 hover:bg-rose-600 text-rose-100 hover:text-white font-extrabold text-[10px] px-2.5 py-1.5 rounded-xl border border-rose-400/30 shadow-xs cursor-pointer flex items-center justify-center gap-1 transition-all active:scale-97"
+                    title="Supprimer cet élève"
+                  >
+                    <Trash2 className="h-3.5 w-3.5 shrink-0" />
+                    <span>Supprimer</span>
+                  </button>
+                )}
+
                 {portalUserRole === 'parent' && onAddMessage && (
                   <button
                     type="button"
@@ -542,6 +561,81 @@ export default function StudentCard({
                     </div>
                   </>
                 )}
+              </div>
+            </motion.div>
+          </div>
+        </AnimatePresence>
+      )}
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <AnimatePresence>
+          <div 
+            className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-50 p-4"
+            onClick={(e) => {
+              e.stopPropagation();
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4"
+            >
+              <div className="flex items-start gap-3.5">
+                <div className="p-3 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-xl border border-rose-200/60 dark:border-rose-800/40 shrink-0">
+                  <Trash2 className="h-6 w-6" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-sm font-black text-slate-900 dark:text-slate-100">
+                    {isFr ? "Supprimer l'élève" : "Delete Student"}
+                  </h3>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-medium">
+                    {isFr 
+                      ? `Êtes-vous sûr de vouloir supprimer définitivement ${student.name} (${student.classRoom || 'Sans classe'}) ?`
+                      : `Are you sure you want to permanently delete ${student.name} (${student.classRoom || 'No class'})?`}
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/50 p-3 rounded-xl text-[11px] text-amber-800 dark:text-amber-300 font-medium leading-relaxed flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                <span>
+                  {isFr 
+                    ? "Cette action supprimera l'élève de la base de données de l'établissement."
+                    : "This action will remove the student from the school database."}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
+                >
+                  {isFr ? "Annuler" : "Cancel"}
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={async () => {
+                    if (!onDeleteStudent) return;
+                    setIsDeleting(true);
+                    try {
+                      await onDeleteStudent(student.id);
+                      setShowDeleteConfirm(false);
+                    } catch (err) {
+                      console.error("Failed deleting student:", err);
+                    } finally {
+                      setIsDeleting(false);
+                    }
+                  }}
+                  className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 active:scale-97 rounded-xl transition cursor-pointer shadow-sm flex items-center gap-1.5"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>{isDeleting ? (isFr ? "Suppression..." : "Deleting...") : (isFr ? "Oui, Supprimer" : "Yes, Delete")}</span>
+                </button>
               </div>
             </motion.div>
           </div>
