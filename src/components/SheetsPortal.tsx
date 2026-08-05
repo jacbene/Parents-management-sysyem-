@@ -72,12 +72,48 @@ export default function SheetsPortal({ parents, invoices, students, onSaveParent
     setToken(googleAccessToken);
   }, [googleAccessToken]);
 
-  // Load sheets on token change
+  // Load sheets on token change & sync token events
   useEffect(() => {
-    if (token) {
+    setToken(googleAccessToken);
+    const handleTokenEvent = () => {
+      setToken(googleAccessToken);
+    };
+    window.addEventListener('pasma_google_token_changed', handleTokenEvent);
+    return () => {
+      window.removeEventListener('pasma_google_token_changed', handleTokenEvent);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (token && !token.startsWith('demo-')) {
       loadUserSpreadsheets();
     }
   }, [token]);
+
+  const handleActivateDemoSheets = () => {
+    const demoToken = `demo-pasma-sheets-${Date.now()}`;
+    setGoogleAccessToken(demoToken);
+    setToken(demoToken);
+    setAuthError(null);
+    const demoSpreadsheets: GoogleSpreadsheetItem[] = [
+      {
+        id: 'demo_sheet_1',
+        name: 'APEE_Master_Register_2026',
+        webViewLink: '#',
+        createdTime: new Date().toISOString()
+      },
+      {
+        id: 'demo_sheet_2',
+        name: 'Registre_Eleves_CES_EKALI',
+        webViewLink: '#',
+        createdTime: new Date(Date.now() - 86400000).toISOString()
+      }
+    ];
+    setSpreadsheets(demoSpreadsheets);
+    setSelectedSpreadsheetId('demo_sheet_1');
+    setSheetTabs(['APEE Parents & Finance', 'Students Register', 'Invoices & Billing']);
+    setSelectedTab('APEE Parents & Finance');
+  };
 
   // Get selected ID (prioritize dropdown over custom input unless custom is filled)
   const getSpreadsheetId = () => {
@@ -94,17 +130,17 @@ export default function SheetsPortal({ parents, invoices, students, onSaveParent
     } catch (err: any) {
       console.error('Failed to authenticate Google Sheets scopes:', err);
       const errMsg = err?.message || String(err);
-      if (errMsg.includes('popup-closed-by-user') || errMsg.includes('popup-blocked')) {
+      if (errMsg.includes('popup-closed-by-user') || errMsg.includes('popup-blocked') || errMsg.includes('argument-error') || errMsg.includes('auth/')) {
         setAuthError(
           language === 'en'
-            ? "A pop-up block was detected. Since Pasma-sys runs inside an AI Studio preview iframe, your browser automatically blocks Google authentication pop-ups."
-            : "Un blocage de fenêtre pop-up a été détecté. Comme Pasma-sys s'exécute à l'intérieur d'un iframe d'aperçu, votre navigateur bloque automatiquement les pop-ups d'authentification Google."
+            ? "Pop-up or authentication restriction detected in the preview frame. Click 'Open in New Tab' above or activate 'Google Sheets Sandbox Mode' below to proceed seamlessly."
+            : "Restriction d'authentification ou pop-up bloqué dans l'aperçu. Cliquez sur 'Ouvrir dans un nouvel onglet' ci-dessus ou activez le 'Mode Sandbox Google Sheets' ci-dessous."
         );
       } else {
         setAuthError(
           language === 'en'
-            ? `Authentication failed: ${errMsg}`
-            : `Échec de l'authentification : ${errMsg}`
+            ? `Authentication notice: ${errMsg}. You can click 'Activate Google Sheets Sandbox Mode' below to test immediately.`
+            : `Information d'authentification : ${errMsg}. Vous pouvez cliquer sur 'Activer le Mode Démo / Sandbox Google Sheets' ci-dessous pour tester immédiatement.`
         );
       }
     } finally {
@@ -252,9 +288,36 @@ export default function SheetsPortal({ parents, invoices, students, onSaveParent
     }
   };
 
+  // Demo / Sandbox helper dataset
+  const getDemoTabRows = (tabName: string): any[][] => {
+    const tabLower = (tabName || '').toLowerCase();
+    if (tabLower.includes('student') || tabLower.includes('élève') || tabLower.includes('register')) {
+      return [
+        ['ID Élève', 'Nom Complet', 'Classe', 'Salle', 'Téléphone Parent', 'Statut'],
+        ['eleve_demo_1', 'Mbama Marie', '3ème B', 'Salle 12', '656454053', 'Inscrit'],
+        ['eleve_demo_2', 'Bella Jean', '6ème A', 'Salle 04', '699112233', 'Inscrit']
+      ];
+    } else if (tabLower.includes('invoice') || tabLower.includes('billing') || tabLower.includes('facture')) {
+      return [
+        ['ID Facture', 'ID Élève', 'Intitulé', 'Montant (FCFA)', 'Statut', 'Échéance'],
+        ['INV-2026-001', 'eleve_demo_1', 'Acompte Cotisation APEE 2026', '15000', 'Payé', '2026-02-15'],
+        ['INV-2026-002', 'eleve_demo_2', 'Frais examen blanc', '5000', 'En attente', '2026-03-30']
+      ];
+    } else {
+      return [
+        ['ID Parent', 'Nom Complet', 'Téléphone', 'E-mail', 'Statut Cotisation', 'Cotisation Annuelle Exigible (FCFA)', 'Total Versé (FCFA)', 'Reste à Payer (FCFA)', 'Élèves Associés'],
+        ['parent_demo_1', 'Mme Bella Christine', '699112233', 'christine.bella@gmail.com', 'Solfé', '25000', '25000', '0', 'Bella Jean (6ème A)'],
+        ['parent_demo_2', 'M. Mbama Jacques', '656454053', 'jacquesbene301@gmail.com', 'Partiel', '25000', '15000', '10000', 'Mbama Marie (3ème B)']
+      ];
+    }
+  };
+
   // Push values into Google Sheets (Export helper)
   const writeValuesToSheet = async (spreadsheetId: string, range: string, values: any[][]) => {
     const activeToken = googleAccessToken || token;
+    if (activeToken?.startsWith('demo-')) {
+      return;
+    }
     const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`;
     
     // Clear old contents first to avoid leaving residue of longer old sheets
@@ -411,24 +474,32 @@ export default function SheetsPortal({ parents, invoices, students, onSaveParent
     setActionSuccessMsg(null);
 
     try {
-      // Read a generous block of cells (A1:K1000)
-      const range = `${selectedTab}!A1:K1000`;
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`;
-      
-      const res = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${googleAccessToken || token}`
-        }
-      });
+      const activeToken = googleAccessToken || token;
+      let rawRows: any[][] = [];
 
-      if (!res.ok) {
-        throw new Error(language === 'en' ? "Failed to read cell values. Make sure the tab name exists." : "Impossible de lire l'onglet choisi.");
+      if (activeToken?.startsWith('demo-')) {
+        rawRows = getDemoTabRows(selectedTab);
+      } else {
+        // Read a generous block of cells (A1:K1000)
+        const range = `${selectedTab}!A1:K1000`;
+        const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`;
+        
+        const res = await fetch(url, {
+          headers: {
+            'Authorization': `Bearer ${activeToken}`
+          }
+        });
+
+        if (!res.ok) {
+          throw new Error(language === 'en' ? "Failed to read cell values. Make sure the tab name exists." : "Impossible de lire l'onglet choisi.");
+        }
+
+        const data = await res.json();
+        rawRows = data.values || [];
       }
 
-      const data = await res.json();
-      const rawRows: any[][] = data.values || [];
       if (rawRows.length === 0) {
-        throw new Error(language === 'en' ? "The selected sheet tab is empty." : "L'onglet sélectionné est vide.");
+        throw new Error(language === 'en' ? "The selected sheet tab is empty. Please add headers or data rows to this tab." : "L'onglet sélectionné dans la feuille est vide. Veuillez y ajouter des en-têtes ou des lignes de données.");
       }
 
       // First row contains the column header names
@@ -486,23 +557,31 @@ export default function SheetsPortal({ parents, invoices, students, onSaveParent
     setActionSuccessMsg(null);
 
     try {
-      const range = `${selectedTab}!A1:K1000`;
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`;
-      
-      const res = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${googleAccessToken || token}`
-        }
-      });
+      const activeToken = googleAccessToken || token;
+      let rawRows: any[][] = [];
 
-      if (!res.ok) {
-        throw new Error(language === 'en' ? "Failed to read cell values. Make sure the tab name exists." : "Impossible de lire l'onglet choisi.");
+      if (activeToken?.startsWith('demo-')) {
+        rawRows = getDemoTabRows(selectedTab);
+      } else {
+        const range = `${selectedTab}!A1:K1000`;
+        const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`;
+        
+        const res = await fetch(url, {
+          headers: {
+            'Authorization': `Bearer ${activeToken}`
+          }
+        });
+
+        if (!res.ok) {
+          throw new Error(language === 'en' ? "Failed to read cell values. Make sure the tab name exists." : "Impossible de lire l'onglet choisi.");
+        }
+
+        const data = await res.json();
+        rawRows = data.values || [];
       }
 
-      const data = await res.json();
-      const rawRows: any[][] = data.values || [];
       if (rawRows.length === 0) {
-        throw new Error(language === 'en' ? "The selected sheet tab is empty." : "L'onglet sélectionné est vide.");
+        throw new Error(language === 'en' ? "The selected sheet tab is empty. Please add headers or data rows to this tab." : "L'onglet sélectionné dans la feuille est vide. Veuillez y ajouter des en-têtes ou des lignes de données.");
       }
 
       const headers = rawRows[0];
@@ -819,14 +898,41 @@ export default function SheetsPortal({ parents, invoices, students, onSaveParent
                 </div>
               )}
 
-              <button
-                onClick={handleConnect}
-                disabled={isLoading}
-                className="py-3 px-6 bg-teal-650 hover:bg-teal-700 text-white font-extrabold text-xs rounded-2xl shadow-md transition transform hover:scale-101 cursor-pointer inline-flex items-center gap-2"
-              >
-                <FileSpreadsheet className="h-4 w-4" />
-                <span>{isLoading ? "Connecting..." : (language === 'en' ? "Secure Google Sign-In" : "Connexion Sécurisée Google")}</span>
-              </button>
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+                <button
+                  onClick={handleConnect}
+                  disabled={isLoading}
+                  className="w-full sm:w-auto py-3 px-6 bg-teal-650 hover:bg-teal-700 text-white font-extrabold text-xs rounded-2xl shadow-md transition transform hover:scale-101 cursor-pointer inline-flex items-center justify-center gap-2"
+                >
+                  <FileSpreadsheet className="h-4 w-4" />
+                  <span>{isLoading ? "Connecting..." : (language === 'en' ? "Secure Google Sign-In" : "Connexion Sécurisée Google")}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => window.open(window.location.href, '_blank')}
+                  className="w-full sm:w-auto py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs rounded-2xl transition cursor-pointer inline-flex items-center justify-center gap-2 border border-slate-200"
+                >
+                  <ExternalLink className="h-4 w-4 text-teal-600" />
+                  <span>{language === 'en' ? "Open in New Tab" : "Ouvrir dans un nouvel onglet"}</span>
+                </button>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 space-y-2">
+                <p className="text-[10px] text-slate-400 font-medium">
+                  {language === 'en' 
+                    ? "Pop-ups blocked by preview iframe? Activate instant Sandbox mode:" 
+                    : "Pop-ups bloqués par l'iframe d'aperçu ? Activez le Mode Sandbox immédiatement :"}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleActivateDemoSheets}
+                  className="py-2.5 px-5 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 font-extrabold text-xs rounded-2xl transition cursor-pointer inline-flex items-center justify-center gap-2 shadow-3xs"
+                >
+                  <CheckCircle className="h-4 w-4 text-teal-600" />
+                  <span>{language === 'en' ? "Activate Google Sheets Sandbox Mode" : "Activer le Mode Démo / Sandbox Google Sheets"}</span>
+                </button>
+              </div>
             </div>
           </div>
         ) : (

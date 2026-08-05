@@ -121,23 +121,7 @@ export function queuePendingAction(
   }
 }
 
-let authInstance;
-if (typeof window !== 'undefined' && (window as any).__firebase_auth_instance) {
-  authInstance = (window as any).__firebase_auth_instance;
-} else {
-  try {
-    authInstance = initializeAuth(app, {
-      persistence: [browserLocalPersistence, browserSessionPersistence]
-    });
-  } catch (err) {
-    authInstance = getAuth(app);
-  }
-  if (typeof window !== 'undefined') {
-    (window as any).__firebase_auth_instance = authInstance;
-  }
-}
-
-export const auth = authInstance;
+export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
@@ -146,10 +130,20 @@ googleDriveProvider.addScope('https://www.googleapis.com/auth/drive.file');
 googleDriveProvider.addScope('https://www.googleapis.com/auth/spreadsheets');
 googleDriveProvider.setCustomParameters({ prompt: 'select_account' });
 
-export let googleAccessToken: string | null = null;
+export let googleAccessToken: string | null = typeof localStorage !== 'undefined' ? localStorage.getItem('pasma_google_access_token') : null;
 
 export function setGoogleAccessToken(token: string | null) {
   googleAccessToken = token;
+  if (typeof localStorage !== 'undefined') {
+    if (token) {
+      localStorage.setItem('pasma_google_access_token', token);
+    } else {
+      localStorage.removeItem('pasma_google_access_token');
+    }
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('pasma_google_token_changed'));
+  }
 }
 
 export enum OperationType {
@@ -215,15 +209,25 @@ export async function loginWithGoogle(requireDriveScopes: boolean = false) {
   const providerToUse = requireDriveScopes ? googleDriveProvider : googleProvider;
   try {
     const result = await signInWithPopup(auth, providerToUse);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (credential?.accessToken) {
-      googleAccessToken = credential.accessToken;
+    if (result) {
+      try {
+        const credential = GoogleAuthProvider.credentialFromResult(result);
+        if (credential?.accessToken) {
+          setGoogleAccessToken(credential.accessToken);
+        }
+      } catch (e) {
+        console.warn("Could not extract credential from result:", e);
+      }
+      return result.user;
     }
-    return result.user;
+    return null;
   } catch (error: any) {
     console.warn("Google Auth Error during signInWithPopup:", error);
-    if (error?.code === 'auth/popup-blocked' || error?.code === 'auth/cancelled-popup-request') {
-      console.info("Popup blocked, attempting signInWithRedirect fallback...");
+    const isInIframe = typeof window !== 'undefined' && window.self !== window.top;
+    
+    // Only attempt redirect fallback if NOT in a sandboxed iframe (redirecting inside an iframe gets blocked by X-Frame-Options)
+    if (!isInIframe && (error?.code === 'auth/popup-blocked' || error?.code === 'auth/cancelled-popup-request')) {
+      console.info("Popup blocked outside iframe, attempting signInWithRedirect fallback...");
       await signInWithRedirect(auth, providerToUse);
       return null;
     }
@@ -237,7 +241,7 @@ export async function checkRedirectResult() {
     if (result) {
       const credential = GoogleAuthProvider.credentialFromResult(result);
       if (credential?.accessToken) {
-        googleAccessToken = credential.accessToken;
+        setGoogleAccessToken(credential.accessToken);
       }
       return result.user;
     }

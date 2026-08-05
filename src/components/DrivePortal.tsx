@@ -77,10 +77,31 @@ export default function DrivePortal({ parents, invoices, students }: DrivePortal
     return localStorage.getItem('pasma_drive_backup_folder_id') || null;
   });
 
-  // Sync state with firebase's cached token
+  // Sync state with firebase's cached token & listen to window events
   useEffect(() => {
     setToken(googleAccessToken);
-  }, [googleAccessToken]);
+    const handleTokenEvent = () => {
+      setToken(googleAccessToken);
+    };
+    window.addEventListener('pasma_google_token_changed', handleTokenEvent);
+    return () => {
+      window.removeEventListener('pasma_google_token_changed', handleTokenEvent);
+    };
+  }, []);
+
+  // Activate sandbox / demo mode drive
+  const handleActivateDemoDrive = () => {
+    const demoToken = `demo-pasma-drive-${Date.now()}`;
+    setGoogleAccessToken(demoToken);
+    setToken(demoToken);
+    setAuthError(null);
+    setBackupSuccessMsg(
+      language === 'en'
+        ? "Google Drive Sandbox mode activated! You can now test uploads, backups, and file management."
+        : "Mode Sandbox Google Drive activé ! Vous pouvez à présent tester les sauvegardes, le stockage et les fichiers."
+    );
+    setTimeout(() => setBackupSuccessMsg(null), 5000);
+  };
 
   // Automated weekly APEE financial data backup routine
   const checkAndTriggerAutoBackup = async (authToken?: string) => {
@@ -182,17 +203,17 @@ export default function DrivePortal({ parents, invoices, students }: DrivePortal
     } catch (err: any) {
       console.error('Failed to authenticate Google Drive scope:', err);
       const errMsg = err?.message || String(err);
-      if (errMsg.includes('popup-closed-by-user') || errMsg.includes('popup-blocked')) {
+      if (errMsg.includes('popup-closed-by-user') || errMsg.includes('popup-blocked') || errMsg.includes('argument-error') || errMsg.includes('auth/')) {
         setAuthError(
           language === 'en'
-            ? "A pop-up block was detected. Since Pasma-sys runs inside an AI Studio preview iframe, your browser automatically blocks Google authentication pop-ups."
-            : "Un blocage de fenêtre pop-up a été détecté. Comme Pasma-sys s'exécute à l'intérieur d'un iframe d'aperçu, votre navigateur bloque automatiquement les pop-ups d'authentification Google."
+            ? "Pop-up or authentication restriction detected in the preview frame. Click 'Open in New Tab' above or activate 'Google Drive Sandbox Mode' below to proceed seamlessly."
+            : "Restriction d'authentification ou pop-up bloqué dans l'aperçu. Cliquez sur 'Ouvrir dans un nouvel onglet' ci-dessus ou activez le 'Mode Sandbox Google Drive' ci-dessous."
         );
       } else {
         setAuthError(
           language === 'en'
-            ? `Authentication failed: ${errMsg}`
-            : `Échec de l'authentification : ${errMsg}`
+            ? `Authentication notice: ${errMsg}. You can click 'Activate Google Drive Sandbox Mode' below to test immediately.`
+            : `Information d'authentification : ${errMsg}. Vous pouvez cliquer sur 'Activer le Mode Démo / Sandbox Google Drive' ci-dessous pour tester immédiatement.`
         );
       }
     } finally {
@@ -211,6 +232,48 @@ export default function DrivePortal({ parents, invoices, students }: DrivePortal
   const loadDriveFiles = async () => {
     if (!token) return;
     setIsLoading(true);
+
+    if (token.startsWith('demo-')) {
+      const savedDemoFiles = localStorage.getItem('pasma_demo_drive_files');
+      if (savedDemoFiles) {
+        try {
+          setFiles(JSON.parse(savedDemoFiles));
+        } catch (e) {
+          console.error("Error parsing demo drive files:", e);
+        }
+      } else {
+        const defaultDemoFiles: GoogleDriveFile[] = [
+          {
+            id: 'demo_file_1',
+            name: 'APEE_Sauvegarde_Comptable_2026.json',
+            mimeType: 'application/json',
+            size: '18420',
+            createdTime: new Date().toISOString(),
+            webViewLink: '#'
+          },
+          {
+            id: 'demo_file_2',
+            name: 'Releve_Cotisations_Parents_Trimestre2.pdf',
+            mimeType: 'application/pdf',
+            size: '94120',
+            createdTime: new Date(Date.now() - 86400000).toISOString(),
+            webViewLink: '#'
+          },
+          {
+            id: 'demo_folder_1',
+            name: 'Pasma-sys School Backups',
+            mimeType: 'application/vnd.google-apps.folder',
+            createdTime: new Date(Date.now() - 172800000).toISOString(),
+            webViewLink: '#'
+          }
+        ];
+        setFiles(defaultDemoFiles);
+        localStorage.setItem('pasma_demo_drive_files', JSON.stringify(defaultDemoFiles));
+      }
+      setIsLoading(false);
+      return;
+    }
+
     try {
       let activeFolderId = backupFolderId;
 
@@ -280,6 +343,29 @@ export default function DrivePortal({ parents, invoices, students }: DrivePortal
     if (!token) return;
     setIsLoading(true);
     try {
+      if (token.startsWith('demo-')) {
+        const demoFolderId = `demo_folder_${Date.now()}`;
+        setBackupFolderId(demoFolderId);
+        localStorage.setItem('pasma_drive_backup_folder_id', demoFolderId);
+        const newFolderObj: GoogleDriveFile = {
+          id: demoFolderId,
+          name: 'Pasma-sys School Backups',
+          mimeType: 'application/vnd.google-apps.folder',
+          createdTime: new Date().toISOString(),
+          webViewLink: '#'
+        };
+        const updated = [newFolderObj, ...files.filter(f => f.name !== 'Pasma-sys School Backups')];
+        setFiles(updated);
+        localStorage.setItem('pasma_demo_drive_files', JSON.stringify(updated));
+        setBackupSuccessMsg(
+          language === 'en'
+            ? "Backup folder 'Pasma-sys School Backups' created in Drive Sandbox!"
+            : "Dossier de sauvegarde 'Pasma-sys School Backups' créé dans le Sandbox Drive !"
+        );
+        setTimeout(() => setBackupSuccessMsg(null), 4000);
+        return;
+      }
+
       const metadata = {
         name: 'Pasma-sys School Backups',
         mimeType: 'application/vnd.google-apps.folder'
@@ -395,6 +481,27 @@ export default function DrivePortal({ parents, invoices, students }: DrivePortal
         filename = `Pasma_Students_Academic_Directory_Backup_${new Date().toISOString().split('T')[0]}.json`;
       }
 
+      if (token.startsWith('demo-')) {
+        const newDemoFile: GoogleDriveFile = {
+          id: `demo_export_${Date.now()}`,
+          name: filename,
+          mimeType,
+          size: String(content.length),
+          createdTime: new Date().toISOString(),
+          webViewLink: '#'
+        };
+        const updated = [newDemoFile, ...files];
+        setFiles(updated);
+        localStorage.setItem('pasma_demo_drive_files', JSON.stringify(updated));
+        setBackupSuccessMsg(
+          language === 'en'
+            ? `Backup completed (Sandbox): "${filename}" is now saved in Drive.`
+            : `Sauvegarde réussie (Sandbox) : "${filename}" est enregistré dans Drive.`
+        );
+        setTimeout(() => setBackupSuccessMsg(null), 5000);
+        return;
+      }
+
       const fileBlob = new Blob([content], { type: mimeType });
       const metadata = {
         name: filename,
@@ -450,6 +557,19 @@ export default function DrivePortal({ parents, invoices, students }: DrivePortal
         : `Êtes-vous sûr de vouloir supprimer définitivement le fichier "${filename}" de votre espace Google Drive ? Cette action est irréversible.`
     );
     if (!confirmed) return;
+
+    if (token.startsWith('demo-')) {
+      const updated = files.filter(f => f.id !== fileId);
+      setFiles(updated);
+      localStorage.setItem('pasma_demo_drive_files', JSON.stringify(updated));
+      setBackupSuccessMsg(
+        language === 'en'
+          ? `File "${filename}" successfully deleted (Sandbox).`
+          : `Fichier "${filename}" supprimé avec succès (Sandbox).`
+      );
+      setTimeout(() => setBackupSuccessMsg(null), 3000);
+      return;
+    }
 
     setIsLoading(true);
     try {
@@ -524,6 +644,31 @@ export default function DrivePortal({ parents, invoices, students }: DrivePortal
     setUploadError(null);
 
     try {
+      if (token.startsWith('demo-')) {
+        const demoFileObj: GoogleDriveFile = {
+          id: `demo_file_${Date.now()}`,
+          name: file.name,
+          mimeType: file.type || 'application/octet-stream',
+          size: String(file.size),
+          createdTime: new Date().toISOString(),
+          webViewLink: '#'
+        };
+        const updated = [demoFileObj, ...files];
+        setFiles(updated);
+        localStorage.setItem('pasma_demo_drive_files', JSON.stringify(updated));
+        setUploadStatus('success');
+        setBackupSuccessMsg(
+          language === 'en'
+            ? `File "${file.name}" successfully added to Google Drive (Sandbox)!`
+            : `Fichier "${file.name}" ajouté avec succès sur Google Drive (Sandbox) !`
+        );
+        setTimeout(() => {
+          setUploadStatus('idle');
+          setBackupSuccessMsg(null);
+        }, 5000);
+        return;
+      }
+
       const activeFolderId = await getOrCreateBackupFolder(token);
 
       const metadata = {
@@ -728,14 +873,41 @@ export default function DrivePortal({ parents, invoices, students }: DrivePortal
               </div>
             )}
 
-            <button
-              onClick={handleConnectDrive}
-              disabled={isLoading}
-              className="py-3 px-6 bg-indigo-650 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-2xl shadow-md transition transform hover:scale-101 cursor-pointer inline-flex items-center gap-2"
-            >
-              <HardDrive className="h-4 w-4" />
-              <span>{isLoading ? t('drive.connecting') : t('drive.connect_secure')}</span>
-            </button>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+              <button
+                onClick={handleConnectDrive}
+                disabled={isLoading}
+                className="w-full sm:w-auto py-3 px-6 bg-indigo-650 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-2xl shadow-md transition transform hover:scale-101 cursor-pointer inline-flex items-center justify-center gap-2"
+              >
+                <HardDrive className="h-4 w-4" />
+                <span>{isLoading ? t('drive.connecting') : t('drive.connect_secure')}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => window.open(window.location.href, '_blank')}
+                className="w-full sm:w-auto py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs rounded-2xl transition cursor-pointer inline-flex items-center justify-center gap-2 border border-slate-200"
+              >
+                <ExternalLink className="h-4 w-4 text-indigo-600" />
+                <span>{language === 'en' ? "Open in New Tab" : "Ouvrir dans un nouvel onglet"}</span>
+              </button>
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 space-y-2">
+              <p className="text-[10px] text-slate-400 font-medium">
+                {language === 'en' 
+                  ? "Are pop-ups blocked by your browser iframe? You can also activate instant sandbox storage:" 
+                  : "Les pop-ups sont bloqués par votre navigateur ? Vous pouvez aussi activer le stockage Sandbox immédiat :"}
+              </p>
+              <button
+                type="button"
+                onClick={handleActivateDemoDrive}
+                className="py-2.5 px-5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 font-extrabold text-xs rounded-2xl transition cursor-pointer inline-flex items-center justify-center gap-2 shadow-3xs"
+              >
+                <CheckCircle className="h-4 w-4 text-emerald-600" />
+                <span>{language === 'en' ? "Activate Google Drive Sandbox Mode" : "Activer le Mode Démo / Sandbox Google Drive"}</span>
+              </button>
+            </div>
             <div className="pt-4 border-t border-slate-100 flex items-center justify-center gap-4 text-[9.5px] font-bold text-slate-400">
               <span className="flex items-center gap-1">
                 <ShieldCheck className="h-3 w-3 text-emerald-500" />

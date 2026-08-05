@@ -45,6 +45,7 @@ import { useLanguage } from './utils/TranslationContext';
 import LanguageSelector from './components/LanguageSelector';
 import DrivePortal from './components/DrivePortal';
 import SheetsPortal from './components/SheetsPortal';
+import GmailPortal from './components/GmailPortal';
 import FirebaseConsole from './components/FirebaseConsole';
 import SyncToastContainer from './components/SyncToastContainer';
 import ForgotPasswordModal from './components/ForgotPasswordModal';
@@ -128,6 +129,7 @@ type TabType =
   | 'apee_legal'
   | 'google_drive'
   | 'google_sheets'
+  | 'gmail_portal'
   | 'firebase_console'
   | 'announcements' 
   | 'students_by_class'
@@ -691,7 +693,6 @@ export default function App() {
     }
   }, [portalUserRole, activeTab]);
   
-  const [showCookieBanner, setShowCookieBanner] = useState(false);
   const [isOffline, setIsOffline] = useState(() => {
     return isOfflineCheck();
   });
@@ -844,13 +845,6 @@ export default function App() {
   };
 
   const [showPendingDrawer, setShowPendingDrawer] = useState(false);
-
-  useEffect(() => {
-    const decision = localStorage.getItem('cookie_consent_decision');
-    if (!decision) {
-      setShowCookieBanner(true);
-    }
-  }, []);
 
   useEffect(() => {
     const updateOfflineState = () => {
@@ -3853,6 +3847,18 @@ export default function App() {
                         </button>
 
                         <button
+                          onClick={() => setActiveTab('gmail_portal')}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
+                            activeTab === 'gmail_portal' ? 'bg-indigo-600 text-white shadow-xs' : 'text-gray-650 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <Mail className="h-4 w-4" /> 
+                            {t('tab.gmail_portal')}
+                          </span>
+                        </button>
+
+                        <button
                           onClick={() => setActiveTab('firebase_console')}
                           className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
                             activeTab === 'firebase_console' ? 'bg-indigo-600 text-white shadow-xs' : 'text-gray-650 hover:bg-slate-50'
@@ -4195,6 +4201,16 @@ export default function App() {
                       </motion.div>
                     )}
 
+                    {activeTab === 'gmail_portal' && (
+                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="gmail_portal">
+                        <GmailPortal 
+                          parents={apeeParents}
+                          invoices={invoices}
+                          students={students}
+                        />
+                      </motion.div>
+                    )}
+
                     {activeTab === 'firebase_console' && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="firebase_console">
                         <FirebaseConsole />
@@ -4397,62 +4413,6 @@ export default function App() {
 
               </div>
             )}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Cookie Consent Banner */}
-      <AnimatePresence>
-        {showCookieBanner && (
-          <motion.div
-            initial={{ y: 100, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 100, opacity: 0 }}
-            className="fixed bottom-4 left-4 right-4 md:left-auto md:max-w-xl bg-slate-900 border border-slate-800 text-white p-5 rounded-2xl shadow-2xl z-[999] font-sans space-y-3"
-          >
-            <div className="flex gap-3">
-              <span className="text-2xl mt-0.5">🍪</span>
-              <div className="space-y-1">
-                <h4 className="text-xs font-extrabold text-white tracking-tight">Gestion des Cookies & Conformité RGPD</h4>
-                <p className="text-[11px] text-slate-300 leading-normal">
-                  Nous utilisons des cookies de confort et jetons logiques pour sécuriser les cotisations APEE et l'E.N.T. Le délégué unique au traitement des données est <strong>Jacques Bene Mbama (+237 656 454 053)</strong>.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-slate-800">
-              <button
-                onClick={() => {
-                  setActiveTab('apee_legal');
-                  setShowCookieBanner(false);
-                }}
-                className="px-3 py-1.5 text-[10.5px] font-bold text-indigo-300 hover:text-indigo-200 transition cursor-pointer"
-              >
-                En savoir plus & Gérer
-              </button>
-
-              <button
-                onClick={() => {
-                  localStorage.setItem('cookie_consent_decision', 'restricted');
-                  localStorage.setItem('cookie_preferences', JSON.stringify({ essential: true, preferences: false, analytics: false }));
-                  setShowCookieBanner(false);
-                }}
-                className="px-3 py-1.5 text-[10.5px] font-bold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700/80 rounded-lg transition cursor-pointer"
-              >
-                Refuser
-              </button>
-
-              <button
-                onClick={() => {
-                  localStorage.setItem('cookie_consent_decision', 'accepted');
-                  localStorage.setItem('cookie_preferences', JSON.stringify({ essential: true, preferences: true, analytics: true }));
-                  setShowCookieBanner(false);
-                }}
-                className="px-4 py-1.5 text-[10.5px] font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition cursor-pointer shadow-xs"
-              >
-                Tout Accepter
-              </button>
-            </div>
           </motion.div>
         )}
       </AnimatePresence>

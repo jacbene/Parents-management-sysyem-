@@ -41,6 +41,7 @@ const translations: Record<LanguageType, Record<string, string>> = {
     'tab.apee_legal': 'Mentions Légales',
     'tab.google_drive': 'Drive & Sauvegardes',
     'tab.google_sheets': 'Google Sheets Direct',
+    'tab.gmail_portal': 'Gmail Envoi Direct',
     'tab.firebase_console': 'Console Firebase',
     'drive.integration': 'Intégration Cloud Officielle',
     'drive.security': 'Sécurité SSL',

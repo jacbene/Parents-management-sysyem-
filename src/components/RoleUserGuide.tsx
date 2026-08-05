@@ -511,10 +511,81 @@ export default function RoleUserGuide({
   }, [activeGuide, searchQuery]);
 
   return (
-    <div className={`space-y-6 max-w-5xl mx-auto text-slate-800 ${className}`} id="role_user_guide_view">
-      
-      {/* Top Banner Header */}
-      <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white border border-slate-800 shadow-xl relative overflow-hidden">
+    <div className={`space-y-6 max-w-5xl mx-auto text-slate-800 ${className}`} id="role_user_guide_printable">
+      <style>{`
+        @media print {
+          /* Hide all page content outside the guide */
+          body * {
+            visibility: hidden !important;
+          }
+          
+          #role_user_guide_printable, #role_user_guide_printable * {
+            visibility: visible !important;
+          }
+          
+          #role_user_guide_printable {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 10mm !important;
+            background: #ffffff !important;
+            color: #0f172a !important;
+            box-shadow: none !important;
+            border: none !important;
+          }
+
+          .no-print, .no-print-interface {
+            display: none !important;
+          }
+
+          .print-show-all {
+            display: block !important;
+            height: auto !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+          }
+
+          .print-card {
+            background-color: #ffffff !important;
+            color: #0f172a !important;
+            border: 1px solid #cbd5e1 !important;
+            box-shadow: none !important;
+            page-break-inside: avoid;
+          }
+
+          @page {
+            size: A4 portrait;
+            margin: 10mm;
+          }
+        }
+      `}</style>
+
+      {/* Clean Printable Document Header (Visible only when printing) */}
+      <div className="hidden print:block mb-6 pb-4 border-b-2 border-indigo-600 font-sans">
+        <div className="flex justify-between items-start">
+          <div>
+            <div className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 uppercase tracking-wider mb-1">
+              <BookOpen className="h-4 w-4" />
+              <span>Guide d'Utilisation Officiel - Pasma-sys & APEE</span>
+            </div>
+            <h1 className="text-2xl font-black text-slate-900">
+              Mode d'Emploi : {activeGuide.roleName}
+            </h1>
+            <p className="text-xs text-slate-600 mt-1">
+              Établissement : <strong>{apeeSettings.associationName || 'CES Ekali'}</strong> | Année Scolaire : <strong>{apeeSettings.schoolYear || '2026/2027'}</strong>
+            </p>
+          </div>
+          <div className="text-right text-[10px] text-slate-500">
+            Document d'utilisation officiel<br />
+            Imprimé le : {new Date().toLocaleDateString('fr-FR')}
+          </div>
+        </div>
+      </div>
+
+      {/* Top Banner Header (On-screen interface) */}
+      <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 text-white border border-slate-800 shadow-xl relative overflow-hidden no-print-interface">
         <div className="absolute -top-12 -right-12 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute -bottom-12 -left-12 w-48 h-48 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
 
@@ -528,10 +599,10 @@ export default function RoleUserGuide({
             <button
               type="button"
               onClick={() => window.print()}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl border border-indigo-500 transition cursor-pointer flex items-center gap-2 shadow-md active:scale-97"
             >
-              <Printer className="h-3.5 w-3.5" />
-              <span>Imprimer le Guide</span>
+              <Printer className="h-4 w-4" />
+              <span>Imprimer le Guide ({activeGuide.roleName.split('&')[0]})</span>
             </button>
           </div>
 
@@ -545,7 +616,7 @@ export default function RoleUserGuide({
           </div>
 
           {/* Role Switcher Tabs */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-2">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-2 no-print-interface">
             {(Object.keys(guides) as UserRoleType[]).map((roleKey) => {
               const guide = guides[roleKey];
               const RoleIcon = guide.icon;
@@ -584,11 +655,11 @@ export default function RoleUserGuide({
       </div>
 
       {/* Active Role Content Header & Search */}
-      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 space-y-6 shadow-2xs">
+      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 space-y-6 shadow-2xs print-card">
         
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-150 dark:border-slate-800">
           <div className="flex items-start gap-3.5">
-            <div className={`p-3 rounded-2xl text-white ${activeGuide.color.bg} shadow-sm shrink-0`}>
+            <div className={`p-3 rounded-2xl text-white ${activeGuide.color.bg} shadow-sm shrink-0 no-print-interface`}>
               <activeGuide.icon className="h-6 w-6" />
             </div>
             <div>
@@ -596,7 +667,7 @@ export default function RoleUserGuide({
                 <h2 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">
                   {activeGuide.roleName}
                 </h2>
-                <span className={`text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full border ${activeGuide.color.badge}`}>
+                <span className={`text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full border ${activeGuide.color.badge} no-print-interface`}>
                   {activeGuide.roleId}
                 </span>
               </div>
@@ -607,7 +678,7 @@ export default function RoleUserGuide({
           </div>
 
           {/* Quick Search */}
-          <div className="relative w-full md:w-72">
+          <div className="relative w-full md:w-72 no-print-interface">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
             <input
               type="text"
@@ -620,7 +691,7 @@ export default function RoleUserGuide({
         </div>
 
         {/* Overview & Key Responsibilities */}
-        <div className={`p-4 rounded-2xl border ${activeGuide.color.border} ${activeGuide.color.lightBg} space-y-3`}>
+        <div className={`p-4 rounded-2xl border ${activeGuide.color.border} ${activeGuide.color.lightBg} space-y-3 print-card`}>
           <p className="text-xs text-slate-700 dark:text-slate-300 font-medium leading-relaxed">
             {activeGuide.overview}
           </p>
@@ -643,7 +714,7 @@ export default function RoleUserGuide({
         <div className="space-y-3">
           <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center justify-between">
             <span>📋 Guide Pas-à-Pas des Fonctionnalités</span>
-            <span className="text-[11px] font-normal text-slate-400">
+            <span className="text-[11px] font-normal text-slate-400 no-print-interface">
               {filteredSteps.length} {filteredSteps.length > 1 ? 'étapes' : 'étape'}
             </span>
           </h3>
@@ -656,11 +727,11 @@ export default function RoleUserGuide({
               return (
                 <div 
                   key={step.id} 
-                  className="bg-slate-50/70 dark:bg-slate-850 border border-slate-200/80 dark:border-slate-800 rounded-2xl overflow-hidden transition-all duration-200 hover:border-slate-300 dark:hover:border-slate-700 shadow-2xs"
+                  className="bg-slate-50/70 dark:bg-slate-850 border border-slate-200/80 dark:border-slate-800 rounded-2xl overflow-hidden transition-all duration-200 hover:border-slate-300 dark:hover:border-slate-700 shadow-2xs print-card"
                 >
                   <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex items-start gap-3 flex-1">
-                      <div className="p-2 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-indigo-600 dark:text-indigo-400 shadow-2xs shrink-0 mt-0.5 sm:mt-0">
+                      <div className="p-2 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-indigo-600 dark:text-indigo-400 shadow-2xs shrink-0 mt-0.5 sm:mt-0 no-print-interface">
                         <StepIcon className="h-4 w-4" />
                       </div>
                       <div className="space-y-1">
@@ -678,7 +749,7 @@ export default function RoleUserGuide({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                    <div className="flex items-center gap-2 self-end sm:self-center shrink-0 no-print-interface">
                       {step.targetTab && onNavigateToTab && (
                         <button
                           type="button"
@@ -700,47 +771,39 @@ export default function RoleUserGuide({
                     </div>
                   </div>
 
-                  {/* Expanded Instructions Detail */}
-                  <AnimatePresence>
-                    {isExpanded && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.18 }}
-                        className="px-5 pb-5 pt-2 border-t border-slate-200/60 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 space-y-3"
-                      >
-                        <div className="space-y-2">
-                          <span className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">
-                            Instructions détaillées :
-                          </span>
-                          <ol className="space-y-1.5 pl-1">
-                            {step.instructions.map((inst, i) => (
-                              <li key={i} className="text-xs text-slate-700 dark:text-slate-300 flex items-start gap-2 leading-relaxed">
-                                <span className="h-4 w-4 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 text-[10px] font-black flex items-center justify-center shrink-0 mt-0.5">
-                                  {i + 1}
-                                </span>
-                                <span>{inst}</span>
-                              </li>
-                            ))}
-                          </ol>
-                        </div>
-
-                        {step.tips && step.tips.length > 0 && (
-                          <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl space-y-1 text-xs text-amber-900 dark:text-amber-200">
-                            <span className="font-bold flex items-center gap-1">
-                              <Sparkles className="h-3.5 w-3.5 text-amber-600" /> Astuce Pratique :
+                  {/* Instructions Detail (Expanded on screen or automatically visible on print) */}
+                  <div className={`px-5 pb-5 pt-2 border-t border-slate-200/60 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 space-y-3 print-card ${
+                    isExpanded ? 'block' : 'hidden print:block print-show-all'
+                  }`}>
+                    <div className="space-y-2">
+                      <span className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">
+                        Instructions détaillées :
+                      </span>
+                      <ol className="space-y-1.5 pl-1">
+                        {step.instructions.map((inst, i) => (
+                          <li key={i} className="text-xs text-slate-700 dark:text-slate-300 flex items-start gap-2 leading-relaxed">
+                            <span className="h-4 w-4 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 text-[10px] font-black flex items-center justify-center shrink-0 mt-0.5">
+                              {i + 1}
                             </span>
-                            {step.tips.map((tip, tIdx) => (
-                              <p key={tIdx} className="text-[11.5px] leading-snug pl-4">
-                                • {tip}
-                              </p>
-                            ))}
-                          </div>
-                        )}
-                      </motion.div>
+                            <span>{inst}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+
+                    {step.tips && step.tips.length > 0 && (
+                      <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl space-y-1 text-xs text-amber-900 dark:text-amber-200 print-card">
+                        <span className="font-bold flex items-center gap-1">
+                          <Sparkles className="h-3.5 w-3.5 text-amber-600 no-print-interface" /> Astuce Pratique :
+                        </span>
+                        {step.tips.map((tip, tIdx) => (
+                          <p key={tIdx} className="text-[11.5px] leading-snug pl-4">
+                            • {tip}
+                          </p>
+                        ))}
+                      </div>
                     )}
-                  </AnimatePresence>
+                  </div>
                 </div>
               );
             })}
@@ -751,13 +814,13 @@ export default function RoleUserGuide({
         {activeGuide.faq && activeGuide.faq.length > 0 && (
           <div className="pt-2 border-t border-slate-150 dark:border-slate-800 space-y-3">
             <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-              <HelpCircle className="h-4 w-4 text-indigo-500" />
+              <HelpCircle className="h-4 w-4 text-indigo-500 no-print-interface" />
               <span>Questions Fréquentes pour ce Rôle</span>
             </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {activeGuide.faq.map((faqItem, fIdx) => (
-                <div key={fIdx} className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 rounded-2xl p-4 space-y-1.5">
+                <div key={fIdx} className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 rounded-2xl p-4 space-y-1.5 print-card">
                   <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-start gap-1.5">
                     <span className="text-indigo-500 font-black">Q:</span> {faqItem.question}
                   </h4>
