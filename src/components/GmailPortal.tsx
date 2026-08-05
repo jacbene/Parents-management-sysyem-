@@ -6,6 +6,7 @@ import {
   logout as firebaseLogout, 
   setGoogleAccessToken 
 } from '../firebase';
+import { jsPDF } from 'jspdf';
 import { 
   Mail, 
   Send, 
@@ -34,7 +35,8 @@ import {
   X,
   Layers,
   Bookmark,
-  Reply
+  Reply,
+  Download
 } from 'lucide-react';
 import { ApeeParent, Invoice, Student } from '../types';
 
@@ -217,6 +219,99 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
       alert("Erreur lors de l'envoi de la réponse: " + (err.message || 'Erreur inconnue'));
     } finally {
       setIsSendingReply(false);
+    }
+  };
+
+  // Download Email Content as formatted PDF for archiving
+  const handleDownloadPdf = (msg: GmailMessageItem) => {
+    try {
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      // Header Banner
+      doc.setFillColor(30, 27, 75); // Deep Indigo Navy (#1e1b4b)
+      doc.rect(0, 0, 210, 28, 'F');
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.text('ÉTABLISSEMENT SCOLAIRE & APEE', 15, 12);
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Archive Officielle de Communication Scolaire (Portail Gmail)', 15, 19);
+
+      // Metadata Card Container
+      doc.setDrawColor(226, 232, 240);
+      doc.setFillColor(248, 250, 252);
+      doc.roundedRect(15, 34, 180, 44, 3, 3, 'FD');
+
+      doc.setTextColor(15, 23, 42);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10.5);
+      
+      const cleanSubject = msg.subject || '(Sans objet)';
+      const subjectLines = doc.splitTextToSize(`Objet : ${cleanSubject}`, 170);
+      doc.text(subjectLines, 20, 42);
+
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(71, 85, 105);
+      
+      const startY = 42 + (subjectLines.length * 5);
+      doc.text(`Expéditeur : ${msg.from}`, 20, startY);
+      doc.text(`Date de réception : ${msg.date}`, 20, startY + 6);
+      doc.text(`Libellés : ${msg.labelIds.join(', ')}`, 20, startY + 12);
+
+      // Divider line
+      doc.setDrawColor(203, 213, 225);
+      doc.line(15, 84, 195, 84);
+
+      // Body Section
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(30, 41, 59);
+      doc.text('Contenu du Courriel :', 15, 93);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9.5);
+      doc.setTextColor(15, 23, 42);
+
+      const bodyText = msg.body || msg.snippet || 'Aucun contenu disponible.';
+      const bodyLines = doc.splitTextToSize(bodyText, 180);
+      
+      let currentY = 100;
+      const pageHeight = doc.internal.pageSize.getHeight();
+
+      for (let i = 0; i < bodyLines.length; i++) {
+        if (currentY > pageHeight - 25) {
+          doc.addPage();
+          currentY = 20;
+        }
+        doc.text(bodyLines[i], 15, currentY);
+        currentY += 5;
+      }
+
+      // Footer
+      const finalPageHeight = doc.internal.pageSize.getHeight();
+      doc.setDrawColor(226, 232, 240);
+      doc.line(15, finalPageHeight - 18, 195, finalPageHeight - 18);
+
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text(
+        `Document archivé et généré via le Système Pasma-sys - Le ${new Date().toLocaleString('fr-FR')}`,
+        15,
+        finalPageHeight - 11
+      );
+
+      const safeFileName = cleanSubject.replace(/[^a-zA-Z0-9_\-]/g, '_').substring(0, 25);
+      doc.save(`Email_${safeFileName || 'Scolaire'}.pdf`);
+    } catch (err: any) {
+      alert("Erreur lors de la génération du PDF : " + (err.message || 'Erreur inconnue'));
     }
   };
 
@@ -565,7 +660,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
   const handleGoogleLogin = async () => {
     setAuthError(null);
     try {
-      const user = await loginWithGoogle();
+      const user = await loginWithGoogle(true);
       if (user && googleAccessToken) {
         setToken(googleAccessToken);
       }
@@ -764,14 +859,14 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
     <div className="space-y-6 max-w-6xl mx-auto text-slate-800 font-sans" id="gmail_portal_view">
 
       {/* Top Banner Header */}
-      <div className="bg-gradient-to-r from-red-900 via-slate-900 to-red-950 rounded-3xl p-6 sm:p-8 text-white border border-red-900/40 shadow-xl relative overflow-hidden">
-        <div className="absolute -top-12 -right-12 w-56 h-56 bg-red-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-12 -left-12 w-56 h-56 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-6 sm:p-8 text-white border border-indigo-900/40 shadow-xl relative overflow-hidden">
+        <div className="absolute -top-12 -right-12 w-56 h-56 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-12 -left-12 w-56 h-56 bg-slate-500/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
           <div className="space-y-2 max-w-2xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-500/20 border border-red-400/30 text-red-200 text-xs font-bold uppercase tracking-wider">
-              <Mail className="h-3.5 w-3.5 text-red-400" />
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-400/30 text-indigo-200 text-xs font-bold uppercase tracking-wider">
+              <Mail className="h-3.5 w-3.5 text-indigo-400" />
               <span>Services Google Workspace™ - Messagerie Officielle</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
@@ -797,7 +892,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
                 <button
                   type="button"
                   onClick={handleDisconnect}
-                  className="w-full px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-300 text-xs font-bold rounded-xl border border-red-500/30 transition cursor-pointer flex items-center justify-center gap-1.5"
+                  className="w-full px-3 py-1.5 bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 text-xs font-bold rounded-xl border border-indigo-500/30 transition cursor-pointer flex items-center justify-center gap-1.5"
                 >
                   <LogOut className="h-3.5 w-3.5" />
                   <span>Se déconnecter</span>
@@ -808,7 +903,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
                 <button
                   type="button"
                   onClick={handleGoogleLogin}
-                  className="w-full px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center justify-center gap-2 shadow-md active:scale-97"
+                  className="w-full px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center justify-center gap-2 shadow-md active:scale-97"
                 >
                   <Mail className="h-4 w-4" />
                   <span>Connexion avec Google</span>
@@ -827,8 +922,8 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
       </div>
 
       {authError && (
-        <div className="bg-red-50 border border-red-200 text-red-900 rounded-2xl p-4 flex items-center gap-3 text-xs">
-          <AlertTriangle className="h-5 w-5 text-red-600 shrink-0" />
+        <div className="bg-rose-50 border border-rose-200 text-rose-900 rounded-2xl p-4 flex items-center gap-3 text-xs">
+          <AlertTriangle className="h-5 w-5 text-rose-600 shrink-0" />
           <p>{authError}</p>
         </div>
       )}
@@ -840,7 +935,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
           onClick={() => setActiveSubTab('composer')}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
             activeSubTab === 'composer'
-              ? 'bg-red-600 text-white shadow-xs'
+              ? 'bg-indigo-600 text-white shadow-xs'
               : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
           }`}
         >
@@ -853,7 +948,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
           onClick={() => setActiveSubTab('labels')}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
             activeSubTab === 'labels'
-              ? 'bg-red-600 text-white shadow-xs'
+              ? 'bg-indigo-600 text-white shadow-xs'
               : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
           }`}
         >
@@ -866,7 +961,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
           onClick={() => setActiveSubTab('logs')}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
             activeSubTab === 'logs'
-              ? 'bg-red-600 text-white shadow-xs'
+              ? 'bg-indigo-600 text-white shadow-xs'
               : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
           }`}
         >
@@ -879,7 +974,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
           onClick={() => setActiveSubTab('benefits')}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
             activeSubTab === 'benefits'
-              ? 'bg-red-600 text-white shadow-xs'
+              ? 'bg-indigo-600 text-white shadow-xs'
               : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
           }`}
         >
@@ -899,7 +994,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
             <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-2xs space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                  <FileText className="h-4 w-4 text-red-500" /> Modèles de Courriels Scolaires Prédéfinis
+                  <FileText className="h-4 w-4 text-indigo-600" /> Modèles de Courriels Scolaires Prédéfinis
                 </span>
                 <span className="text-[10.5px] text-slate-400">Cliquez pour appliquer</span>
               </div>
@@ -908,37 +1003,37 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
                 <button
                   type="button"
                   onClick={() => applyTemplate('apee_reminder')}
-                  className="p-2.5 bg-slate-50 hover:bg-red-50/60 border border-slate-200 hover:border-red-200 rounded-2xl text-left transition text-xs font-semibold text-slate-800 flex items-center justify-between group cursor-pointer"
+                  className="p-2.5 bg-slate-50 hover:bg-indigo-50/60 border border-slate-200 hover:border-indigo-200 rounded-2xl text-left transition text-xs font-semibold text-slate-800 flex items-center justify-between group cursor-pointer"
                 >
                   <span>📢 Relance Cotisation APEE</span>
-                  <span className="text-[10px] text-red-600 group-hover:underline">Charger →</span>
+                  <span className="text-[10px] text-indigo-600 group-hover:underline">Charger →</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => applyTemplate('general_assembly')}
-                  className="p-2.5 bg-slate-50 hover:bg-red-50/60 border border-slate-200 hover:border-red-200 rounded-2xl text-left transition text-xs font-semibold text-slate-800 flex items-center justify-between group cursor-pointer"
+                  className="p-2.5 bg-slate-50 hover:bg-indigo-50/60 border border-slate-200 hover:border-indigo-200 rounded-2xl text-left transition text-xs font-semibold text-slate-800 flex items-center justify-between group cursor-pointer"
                 >
                   <span>🏛️ Convocation Assemblée Générale</span>
-                  <span className="text-[10px] text-red-600 group-hover:underline">Charger →</span>
+                  <span className="text-[10px] text-indigo-600 group-hover:underline">Charger →</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => applyTemplate('invoice_receipt')}
-                  className="p-2.5 bg-slate-50 hover:bg-red-50/60 border border-slate-200 hover:border-red-200 rounded-2xl text-left transition text-xs font-semibold text-slate-800 flex items-center justify-between group cursor-pointer"
+                  className="p-2.5 bg-slate-50 hover:bg-indigo-50/60 border border-slate-200 hover:border-indigo-200 rounded-2xl text-left transition text-xs font-semibold text-slate-800 flex items-center justify-between group cursor-pointer"
                 >
                   <span>🧾 Reçu & Attestation APEE</span>
-                  <span className="text-[10px] text-red-600 group-hover:underline">Charger →</span>
+                  <span className="text-[10px] text-indigo-600 group-hover:underline">Charger →</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => applyTemplate('absence_notice')}
-                  className="p-2.5 bg-slate-50 hover:bg-red-50/60 border border-slate-200 hover:border-red-200 rounded-2xl text-left transition text-xs font-semibold text-slate-800 flex items-center justify-between group cursor-pointer"
+                  className="p-2.5 bg-slate-50 hover:bg-indigo-50/60 border border-slate-200 hover:border-indigo-200 rounded-2xl text-left transition text-xs font-semibold text-slate-800 flex items-center justify-between group cursor-pointer"
                 >
                   <span>⚠️ Avis d'Absence / Retard</span>
-                  <span className="text-[10px] text-red-600 group-hover:underline">Charger →</span>
+                  <span className="text-[10px] text-indigo-600 group-hover:underline">Charger →</span>
                 </button>
               </div>
             </div>
@@ -946,7 +1041,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
             {/* Form Fields */}
             <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-2xs space-y-5">
               <h2 className="text-sm font-black uppercase tracking-wider text-slate-700 flex items-center gap-2">
-                <Send className="h-4 w-4 text-red-600" /> Rédiger le Message Gmail
+                <Send className="h-4 w-4 text-indigo-600" /> Rédiger le Message Gmail
               </h2>
 
               {/* Target Selection */}
@@ -958,7 +1053,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
                     onClick={() => setRecipientTarget('all')}
                     className={`p-3 rounded-2xl border text-left transition cursor-pointer ${
                       recipientTarget === 'all'
-                        ? 'bg-red-50 border-red-300 text-red-900 font-bold'
+                        ? 'bg-indigo-50 border-indigo-300 text-indigo-900 font-bold'
                         : 'bg-slate-50 border-slate-200 text-slate-700'
                     }`}
                   >
@@ -973,7 +1068,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
                     onClick={() => setRecipientTarget('class')}
                     className={`p-3 rounded-2xl border text-left transition cursor-pointer ${
                       recipientTarget === 'class'
-                        ? 'bg-red-50 border-red-300 text-red-900 font-bold'
+                        ? 'bg-indigo-50 border-indigo-300 text-indigo-900 font-bold'
                         : 'bg-slate-50 border-slate-200 text-slate-700'
                     }`}
                   >
@@ -988,7 +1083,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
                     onClick={() => setRecipientTarget('single')}
                     className={`p-3 rounded-2xl border text-left transition cursor-pointer ${
                       recipientTarget === 'single'
-                        ? 'bg-red-50 border-red-300 text-red-900 font-bold'
+                        ? 'bg-indigo-50 border-indigo-300 text-indigo-900 font-bold'
                         : 'bg-slate-50 border-slate-200 text-slate-700'
                     }`}
                   >
@@ -1056,7 +1151,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
                   type="text"
                   value={emailSubject}
                   onChange={(e) => setEmailSubject(e.target.value)}
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-2xl text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-red-500/20"
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-2xl text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500/20"
                 />
               </div>
 
@@ -1067,7 +1162,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
                   rows={8}
                   value={emailBody}
                   onChange={(e) => setEmailBody(e.target.value)}
-                  className="w-full p-4 bg-slate-50 border border-slate-300 rounded-2xl text-xs font-mono text-slate-800 leading-relaxed focus:bg-white focus:ring-2 focus:ring-red-500/20"
+                  className="w-full p-4 bg-slate-50 border border-slate-300 rounded-2xl text-xs font-mono text-slate-800 leading-relaxed focus:bg-white focus:ring-2 focus:ring-indigo-500/20"
                 />
               </div>
 
@@ -1081,7 +1176,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
                   type="button"
                   disabled={isSending || targetRecipients.length === 0}
                   onClick={() => setShowConfirmModal(true)}
-                  className="px-6 py-3 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-bold rounded-2xl shadow-lg transition cursor-pointer flex items-center gap-2 active:scale-97"
+                  className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold rounded-2xl shadow-lg transition cursor-pointer flex items-center gap-2 active:scale-97"
                 >
                   <Send className="h-4 w-4" />
                   <span>{isSending ? 'Envoi en cours...' : `Envoyer par Gmail (${targetRecipients.length})`}</span>
@@ -1104,7 +1199,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
             {/* Account Profile Card */}
             <div className="bg-white rounded-3xl border border-slate-200 p-5 shadow-2xs space-y-4">
               <h3 className="text-xs font-black uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
-                <UserCheck className="h-4 w-4 text-red-500" /> Compte d'Envoi Gmail
+                <UserCheck className="h-4 w-4 text-indigo-600" /> Compte d'Envoi Gmail
               </h3>
 
               <div className="bg-slate-50 rounded-2xl p-3 border border-slate-200 space-y-2 text-xs">
@@ -1167,7 +1262,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <h2 className="text-sm font-black uppercase tracking-wider text-slate-800 flex items-center gap-2">
-                  <Tag className="h-4 w-4 text-red-600" /> Filtrer les Courriels par Libellé Gmail
+                  <Tag className="h-4 w-4 text-indigo-600" /> Filtrer les Courriels par Libellé Gmail
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Visualisez et organisez les messages classés sous des libellés comme <code>School</code> ou <code>Pasma-sys</code>.
@@ -1181,13 +1276,13 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
                   value={newLabelInput}
                   onChange={(e) => setNewLabelInput(e.target.value)}
                   placeholder="Nouveau libellé (Ex: School)..."
-                  className="px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-red-500 w-44"
+                  className="px-3 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 w-44"
                 />
                 <button
                   type="button"
                   disabled={isCreatingLabel || !newLabelInput.trim()}
                   onClick={handleCreateCustomLabel}
-                  className="px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1 shrink-0"
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1 shrink-0"
                 >
                   <FolderPlus className="h-3.5 w-3.5" />
                   <span>Créer Libellé</span>
@@ -1229,9 +1324,9 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
                         }}
                         className={`px-3.5 py-2 rounded-2xl text-xs font-bold transition flex items-center gap-2 cursor-pointer border ${
                           isSelected
-                            ? 'bg-red-600 text-white border-red-600 shadow-xs'
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
                             : isSpecialSchool
-                            ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
+                            ? 'bg-indigo-50 text-indigo-900 border-indigo-200 hover:bg-indigo-100'
                             : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                         }`}
                       >
@@ -1260,7 +1355,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Rechercher par mot-clé dans les e-mails (ex: bulletin, cotisation, 3ème B)..."
-                  className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:bg-white focus:ring-2 focus:ring-red-500/20"
+                  className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-2xl text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500/20"
                 />
               </div>
 
@@ -1287,15 +1382,15 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
           <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-2xs space-y-4">
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
               <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-2">
-                <Inbox className="h-4 w-4 text-red-600" />
-                E-mails sous le libellé <span className="text-red-700 underline font-mono">{selectedLabelId}</span>
+                <Inbox className="h-4 w-4 text-indigo-600" />
+                E-mails sous le libellé <span className="text-indigo-700 underline font-mono">{selectedLabelId}</span>
               </h3>
               <span className="text-xs text-slate-500">{messages.length} message(s) trouvé(s)</span>
             </div>
 
             {isLoadingMessages ? (
               <div className="p-12 text-center text-slate-400 text-xs flex flex-col items-center justify-center gap-2">
-                <RefreshCcw className="h-6 w-6 animate-spin text-red-600" />
+                <RefreshCcw className="h-6 w-6 animate-spin text-indigo-600" />
                 <span>Chargement des messages Gmail...</span>
               </div>
             ) : messages.length === 0 ? (
@@ -1313,11 +1408,11 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
                 {messages.map(msg => (
                   <div 
                     key={msg.id}
-                    className="p-4 bg-slate-50 hover:bg-red-50/30 border border-slate-200 hover:border-red-200 rounded-2xl transition space-y-2 group"
+                    className="p-4 bg-slate-50 hover:bg-indigo-50/30 border border-slate-200 hover:border-indigo-200 rounded-2xl transition space-y-2 group"
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/60 pb-2">
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-xs text-slate-900 group-hover:text-red-700 transition">
+                        <span className="font-bold text-xs text-slate-900 group-hover:text-indigo-700 transition">
                           {msg.subject}
                         </span>
                       </div>
@@ -1342,8 +1437,21 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
                           onClick={() => handleSelectMessage(msg)}
                           className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-300 rounded-xl text-[11px] font-bold text-slate-800 transition cursor-pointer flex items-center gap-1 ml-2"
                         >
-                          <Eye className="h-3 w-3 text-red-600" />
+                          <Eye className="h-3 w-3 text-indigo-600" />
                           <span>Lire</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDownloadPdf(msg);
+                          }}
+                          title="Télécharger l'e-mail en PDF"
+                          className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-xl text-[11px] font-bold text-slate-700 transition cursor-pointer flex items-center gap-1"
+                        >
+                          <Download className="h-3 w-3 text-slate-600" />
+                          <span>PDF</span>
                         </button>
                       </div>
                     </div>
@@ -1365,7 +1473,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
         <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-2xs space-y-4">
           <div className="flex items-center justify-between border-b border-slate-200 pb-3">
             <h2 className="text-sm font-black uppercase tracking-wider text-slate-800 flex items-center gap-2">
-              <Clock className="h-4 w-4 text-red-600" /> Journal des E-mails Transmis via Gmail
+              <Clock className="h-4 w-4 text-indigo-600" /> Journal des E-mails Transmis via Gmail
             </h2>
             <span className="text-xs text-slate-500">{sentLogs.length} envoi(s) enregistré(s)</span>
           </div>
@@ -1403,7 +1511,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
         <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-2xs space-y-6">
           <div className="border-b border-slate-200 pb-3">
             <h2 className="text-base font-black text-slate-900 flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-red-600" /> Pourquoi l'Intégration Gmail est-elle essentielle pour Pasma-sys ?
+              <Sparkles className="h-5 w-5 text-indigo-600" /> Pourquoi l'Intégration Gmail est-elle essentielle pour Pasma-sys ?
             </h2>
             <p className="text-xs text-slate-600 mt-1">
               Connecter votre compte Gmail institutionnel apporte des avantages stratégiques majeurs pour la gestion de l'établissement et de l'APEE.
@@ -1411,9 +1519,9 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="p-4 bg-red-50/50 border border-red-200 rounded-2xl space-y-2">
-              <h3 className="text-xs font-black text-red-900 flex items-center gap-1.5">
-                <Tag className="h-4 w-4 text-red-600" /> 1. Classement par Libellés (School, Pasma-sys)
+            <div className="p-4 bg-indigo-50/50 border border-indigo-200 rounded-2xl space-y-2">
+              <h3 className="text-xs font-black text-indigo-900 flex items-center gap-1.5">
+                <Tag className="h-4 w-4 text-indigo-600" /> 1. Classement par Libellés (School, Pasma-sys)
               </h3>
               <p className="text-xs text-slate-700 leading-relaxed">
                 Organisez facilement la boîte de réception des parents grâce à la création automatique de libellés comme <code>School</code> ou <code>Pasma-sys</code> pour retrouver rapidement tous les avis scolaires.
@@ -1438,9 +1546,9 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
               </p>
             </div>
 
-            <div className="p-4 bg-amber-50/50 border border-amber-200 rounded-2xl space-y-2">
-              <h3 className="text-xs font-black text-amber-900 flex items-center gap-1.5">
-                <Info className="h-4 w-4 text-amber-600" /> 4. Économie sur les Passerelles SMS
+            <div className="p-4 bg-slate-100 border border-slate-200 rounded-2xl space-y-2">
+              <h3 className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                <Info className="h-4 w-4 text-slate-600" /> 4. Économie sur les Passerelles SMS
               </h3>
               <p className="text-xs text-slate-700 leading-relaxed">
                 L'envoi par Gmail est 100% gratuit et illimité selon les quotas Google Workspace, permettant d'économiser sur les coûts d'envoi de SMS.
@@ -1456,7 +1564,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
           <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-xl w-full p-6 space-y-5 animate-in fade-in zoom-in duration-150 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
               <div className="space-y-0.5">
-                <span className="text-[10px] font-bold uppercase text-red-600 tracking-wider">Courriel Gmail</span>
+                <span className="text-[10px] font-bold uppercase text-indigo-600 tracking-wider">Courriel Gmail</span>
                 <h3 className="text-sm font-black text-slate-900">{selectedMessage.subject}</h3>
               </div>
               <button 
@@ -1483,7 +1591,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
               <div className="flex items-center gap-1.5 py-1">
                 <span className="text-slate-400 text-[11px]">Libellés :</span>
                 {selectedMessage.labelIds.map(l => (
-                  <span key={l} className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-red-100 text-red-800">
+                  <span key={l} className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-indigo-100 text-indigo-800">
                     {l}
                   </span>
                 ))}
@@ -1496,16 +1604,16 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
 
             {/* Inline Reply Form */}
             {isReplying ? (
-              <div className="p-4 bg-red-50/40 border border-red-200/80 rounded-2xl space-y-3 animate-in fade-in duration-150">
-                <div className="flex items-center justify-between text-xs font-bold text-red-900">
+              <div className="p-4 bg-indigo-50/40 border border-indigo-200/80 rounded-2xl space-y-3 animate-in fade-in duration-150">
+                <div className="flex items-center justify-between text-xs font-bold text-indigo-950">
                   <span className="flex items-center gap-1.5">
-                    <Reply className="h-4 w-4 text-red-600" />
-                    Répondre à : <code className="text-red-700 font-mono">{extractEmail(selectedMessage.from)}</code>
+                    <Reply className="h-4 w-4 text-indigo-600" />
+                    Répondre à : <code className="text-indigo-700 font-mono">{extractEmail(selectedMessage.from)}</code>
                   </span>
                   <button
                     type="button"
                     onClick={() => handleOpenComposerWithReply(selectedMessage)}
-                    className="text-[11px] text-red-600 hover:underline font-normal"
+                    className="text-[11px] text-indigo-600 hover:underline font-normal"
                   >
                     Ouvrir l'éditeur complet →
                   </button>
@@ -1516,7 +1624,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
                   value={replyBody}
                   onChange={(e) => setReplyBody(e.target.value)}
                   placeholder="Rédigez votre réponse ici (ex: Bien reçu, merci pour cette information)..."
-                  className="w-full p-3 bg-white border border-slate-300 rounded-xl text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500/20"
+                  className="w-full p-3 bg-white border border-slate-300 rounded-xl text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                 />
 
                 <div className="flex items-center justify-end gap-2">
@@ -1532,7 +1640,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
                     type="button"
                     disabled={isSendingReply || !replyBody.trim()}
                     onClick={handleSendReply}
-                    className="px-4 py-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-sm"
+                    className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-sm"
                   >
                     <Send className="h-3.5 w-3.5" />
                     <span>{isSendingReply ? 'Envoi...' : 'Envoyer la réponse'}</span>
@@ -1540,15 +1648,26 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
                 </div>
               </div>
             ) : (
-              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setIsReplying(true)}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-2 shadow-xs"
-                >
-                  <Reply className="h-4 w-4" />
-                  <span>Répondre à cet e-mail</span>
-                </button>
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100 gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsReplying(true)}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-2 shadow-xs"
+                  >
+                    <Reply className="h-4 w-4" />
+                    <span>Répondre à cet e-mail</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadPdf(selectedMessage)}
+                    className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 border border-slate-300"
+                  >
+                    <Download className="h-4 w-4 text-slate-600" />
+                    <span>Télécharger en PDF</span>
+                  </button>
+                </div>
 
                 <button
                   type="button"
@@ -1568,7 +1687,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[2000]">
           <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-5 animate-in fade-in zoom-in duration-150">
             <div className="flex items-center gap-3 border-b border-slate-200 pb-3">
-              <div className="p-2.5 bg-red-100 rounded-2xl text-red-600">
+              <div className="p-2.5 bg-indigo-100 rounded-2xl text-indigo-600">
                 <AlertTriangle className="h-6 w-6" />
               </div>
               <div>
@@ -1585,7 +1704,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
 
               <div>
                 <span className="text-slate-400 block font-semibold">Destinataires concernés :</span>
-                <strong className="text-red-700">{targetRecipients.length} parent(s) sélectionné(s)</strong>
+                <strong className="text-indigo-700">{targetRecipients.length} parent(s) sélectionné(s)</strong>
               </div>
 
               <div className="pt-2 border-t border-slate-200 text-[11px] text-slate-500 italic">
@@ -1605,7 +1724,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
               <button
                 type="button"
                 onClick={handleExecuteSendEmail}
-                className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md transition cursor-pointer flex items-center gap-1.5"
               >
                 <Send className="h-4 w-4" />
                 <span>Confirmer et Envoyer</span>

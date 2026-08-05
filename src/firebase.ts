@@ -128,6 +128,10 @@ googleProvider.setCustomParameters({ prompt: 'select_account' });
 export const googleDriveProvider = new GoogleAuthProvider();
 googleDriveProvider.addScope('https://www.googleapis.com/auth/drive.file');
 googleDriveProvider.addScope('https://www.googleapis.com/auth/spreadsheets');
+googleDriveProvider.addScope('https://www.googleapis.com/auth/gmail.readonly');
+googleDriveProvider.addScope('https://www.googleapis.com/auth/gmail.send');
+googleDriveProvider.addScope('https://www.googleapis.com/auth/gmail.labels');
+googleDriveProvider.addScope('https://www.googleapis.com/auth/gmail.modify');
 googleDriveProvider.setCustomParameters({ prompt: 'select_account' });
 
 export let googleAccessToken: string | null = typeof localStorage !== 'undefined' ? localStorage.getItem('pasma_google_access_token') : null;

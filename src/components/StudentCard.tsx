@@ -1,12 +1,44 @@
 import React, { useState, useEffect } from 'react';
 import { Student, ApeeSettings, ApeeParent, Grade, Attendance, Message } from '../types';
-import { Mail, GraduationCap, Calendar, User, UserCheck, Camera, Printer, Phone, TrendingUp, TrendingDown, Clock, MessageSquare, Send, X, Check, AlertCircle, QrCode, Trash2 } from 'lucide-react';
+import { Mail, GraduationCap, Calendar, User, UserCheck, Camera, Printer, Phone, TrendingUp, TrendingDown, Clock, MessageSquare, Send, X, Check, AlertCircle, QrCode, Trash2, Activity, Sparkles, Award, Target, Edit3, Trophy } from 'lucide-react';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
 import StudentCameraModal from './StudentCameraModal';
 import StudentIDCardModal from './StudentIDCardModal';
 import { useLanguage } from '../utils/TranslationContext';
 import { doc, setDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
+
+const GradeEvolutionTooltip = ({ active, payload, isSelected, isFr }: any) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    return (
+      <div className={`p-2.5 rounded-xl shadow-xl text-xs border backdrop-blur-md z-30 ${
+        isSelected 
+          ? 'bg-slate-900/95 text-white border-indigo-400/50' 
+          : 'bg-white/95 text-slate-800 border-slate-200 shadow-slate-200 dark:bg-slate-900/95 dark:text-slate-100 dark:border-slate-700'
+      }`}>
+        <div className="flex items-center justify-between gap-3 border-b border-slate-700/50 pb-1 font-bold text-indigo-400">
+          <span>{data.subject}</span>
+          <span className="text-[10px] text-slate-400 font-mono">{data.dateStr}</span>
+        </div>
+        <p className="text-[11px] font-medium text-slate-300 mt-0.5">{data.examName}</p>
+        <div className="flex items-center justify-between gap-3 mt-1.5 pt-1 border-t border-slate-700/30">
+          <span className="text-[10px] text-slate-400 uppercase font-bold">{isFr ? 'Note :' : 'Score:'}</span>
+          <span className={`font-mono font-black text-xs ${data.score >= 10 ? 'text-emerald-400' : 'text-rose-400'}`}>
+            {data.score} / 20 <span className="text-[9.5px] font-normal text-slate-400">({data.rawScore})</span>
+          </span>
+        </div>
+        {data.remarks && (
+          <p className="text-[10px] italic text-slate-400 mt-1 max-w-[160px] truncate">
+            "{data.remarks}"
+          </p>
+        )}
+      </div>
+    );
+  }
+  return null;
+};
 
 interface StudentCardProps {
   key?: string;
@@ -51,6 +83,21 @@ export default function StudentCard({
   const [messageText, setMessageText] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [sentSuccess, setSentSuccess] = useState(false);
+
+  // Grade Goal state
+  const [targetGoal, setTargetGoal] = useState<number>(() => {
+    const saved = localStorage.getItem(`pasma_grade_goal_${student.id}`);
+    return saved ? Math.min(20, Math.max(1, parseFloat(saved))) : 16.0;
+  });
+  const [isEditingGoal, setIsEditingGoal] = useState<boolean>(false);
+  const [customGoalInput, setCustomGoalInput] = useState<string>(targetGoal.toString());
+
+  const handleSaveGoal = (goalVal: number) => {
+    const validGoal = Math.min(20, Math.max(1, goalVal));
+    setTargetGoal(validGoal);
+    localStorage.setItem(`pasma_grade_goal_${student.id}`, validGoal.toString());
+    setIsEditingGoal(false);
+  };
 
   const { language } = useLanguage();
   const isFr = language === 'fr';
@@ -167,6 +214,80 @@ export default function StudentCard({
   const presenceRate = totalLogs > 0
     ? (((presentCount + excusedCount) / totalLogs) * 100).toFixed(1)
     : '100.0';
+
+  // Recharts grade evolution data: last 5 assessments
+  const last5GradesData = React.useMemo(() => {
+    const sGrades = (grades || []).filter(g => g.studentId === student.id);
+    if (sGrades.length === 0) return [];
+
+    // Sort chronologically by date
+    const sorted = [...sGrades].sort((a, b) => {
+      const timeA = new Date(a.date).getTime();
+      const timeB = new Date(b.date).getTime();
+      if (isNaN(timeA) || isNaN(timeB)) return 0;
+      return timeA - timeB;
+    });
+
+    // Take last 5
+    const last5 = sorted.slice(-5);
+
+    return last5.map((g, idx) => {
+      const scoreOn20 = Number(((g.score / g.maxScore) * 20).toFixed(1));
+      const formattedDate = g.date 
+        ? new Date(g.date).toLocaleDateString(isFr ? 'fr-FR' : 'en-US', { day: 'numeric', month: 'short' })
+        : `N°${idx + 1}`;
+      
+      const shortSubject = g.subject 
+        ? (g.subject.length > 8 ? `${g.subject.substring(0, 7)}.` : g.subject)
+        : `Éval ${idx + 1}`;
+
+      return {
+        id: g.id || `grade-${idx}`,
+        idx: idx + 1,
+        examName: g.examName || (isFr ? `Évaluation ${idx + 1}` : `Exam ${idx + 1}`),
+        subject: g.subject || 'Général',
+        label: shortSubject,
+        score: scoreOn20,
+        rawScore: `${g.score}/${g.maxScore}`,
+        dateStr: formattedDate,
+        remarks: g.teacherRemarks || ''
+      };
+    });
+  }, [grades, student.id, isFr]);
+
+  const last5Average = React.useMemo(() => {
+    if (last5GradesData.length === 0) return 0;
+    const sum = last5GradesData.reduce((acc, curr) => acc + curr.score, 0);
+    return Number((sum / last5GradesData.length).toFixed(1));
+  }, [last5GradesData]);
+
+  const last5TrendDelta = React.useMemo(() => {
+    if (last5GradesData.length < 2) return 0;
+    const first = last5GradesData[0].score;
+    const last = last5GradesData[last5GradesData.length - 1].score;
+    return Number((last - first).toFixed(1));
+  }, [last5GradesData]);
+
+  const overallAvg = React.useMemo(() => {
+    if (studentGrades.length === 0) return 0;
+    const sum = studentGrades.reduce((acc, g) => acc + ((g.score / g.maxScore) * 20), 0);
+    return Number((sum / studentGrades.length).toFixed(1));
+  }, [studentGrades]);
+
+  const goalProgress = React.useMemo(() => {
+    const currentAvg = last5GradesData.length > 0 ? last5Average : overallAvg;
+    const percent = Math.min(100, Math.max(0, Math.round((currentAvg / targetGoal) * 100)));
+    const gap = Number((currentAvg - targetGoal).toFixed(1));
+    const isReached = currentAvg >= targetGoal;
+
+    return {
+      currentAvg,
+      targetGoal,
+      percent,
+      gap,
+      isReached
+    };
+  }, [last5Average, last5GradesData.length, overallAvg, targetGoal]);
 
   return (
     <>
@@ -287,6 +408,312 @@ export default function StudentCard({
               <div className={`flex items-center gap-1.5 ${isSelected ? 'text-indigo-100' : 'text-gray-500'}`}>
                 <Clock className="h-3 w-3 shrink-0" />
                 <span className="truncate">Assiduité : <strong className={isSelected ? 'text-white font-mono' : 'text-gray-700 font-mono'}>{presenceRate}%</strong></span>
+              </div>
+            </div>
+
+            {/* Recharts Grade Evolution Section (Last 5 Assessments) */}
+            <div className={`mt-3 pt-3 border-t ${isSelected ? 'border-white/20' : 'border-slate-100 dark:border-slate-800/80'}`}>
+              <div className="flex items-center justify-between gap-1 mb-2">
+                <span className={`text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 ${
+                  isSelected ? 'text-indigo-100' : 'text-slate-600 dark:text-slate-300'
+                }`}>
+                  <Activity className={`h-3.5 w-3.5 ${isSelected ? 'text-amber-300' : 'text-indigo-600 dark:text-indigo-400'}`} />
+                  <span>{isFr ? 'Évolution (5 Dernières Évals)' : 'Trend (Last 5 Grades)'}</span>
+                </span>
+
+                {last5GradesData.length > 0 && (
+                  <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold shrink-0">
+                    <span className={`px-1.5 py-0.5 rounded-md ${
+                      isSelected ? 'bg-white/20 text-white' : 'bg-indigo-50 text-indigo-700 dark:bg-slate-800 dark:text-indigo-300'
+                    }`}>
+                      Moy: {last5Average}/20
+                    </span>
+                    {last5GradesData.length >= 2 && (
+                      <span className={`px-1.5 py-0.5 rounded-md flex items-center gap-0.5 ${
+                        last5TrendDelta >= 0 
+                          ? (isSelected ? 'bg-emerald-400/30 text-emerald-100' : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300')
+                          : (isSelected ? 'bg-rose-400/30 text-rose-100' : 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300')
+                      }`}>
+                        {last5TrendDelta >= 0 ? '↗ +' : '↘ '}{last5TrendDelta} pts
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {last5GradesData.length > 0 ? (
+                <div className="space-y-2">
+                  {/* Recharts Area/Line Chart */}
+                  <div className={`w-full p-2 rounded-xl transition-colors ${
+                    isSelected 
+                      ? 'bg-slate-900/40 border border-white/10' 
+                      : 'bg-slate-50/80 dark:bg-slate-800/40 border border-slate-150 dark:border-slate-800'
+                  }`}>
+                    <div className="h-28 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={last5GradesData} margin={{ top: 10, right: 10, left: -22, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id={`gradeGrad-${student.id}`} x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor={isSelected ? '#38bdf8' : '#6366f1'} stopOpacity={0.4} />
+                              <stop offset="95%" stopColor={isSelected ? '#38bdf8' : '#6366f1'} stopOpacity={0.0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="2 2" vertical={false} stroke={isSelected ? 'rgba(255,255,255,0.1)' : '#e2e8f0'} />
+                          <XAxis 
+                            dataKey="label" 
+                            tickLine={false} 
+                            axisLine={false}
+                            tick={{ fill: isSelected ? '#cbd5e1' : '#64748b', fontSize: 9, fontWeight: 600 }}
+                          />
+                          <YAxis 
+                            domain={[0, 20]} 
+                            ticks={[0, 10, 20]}
+                            tickLine={false} 
+                            axisLine={false}
+                            tick={{ fill: isSelected ? '#cbd5e1' : '#64748b', fontSize: 9, fontWeight: 600 }}
+                          />
+                          <ReferenceLine y={10} stroke="#f59e0b" strokeDasharray="3 3" strokeWidth={1} />
+                          <Tooltip content={<GradeEvolutionTooltip isSelected={isSelected} isFr={isFr} />} />
+                          <Area 
+                            type="monotone" 
+                            dataKey="score" 
+                            stroke={isSelected ? '#38bdf8' : '#4f46e5'} 
+                            strokeWidth={2.5}
+                            fillOpacity={1} 
+                            fill={`url(#gradeGrad-${student.id})`} 
+                            dot={{ r: 3, fill: isSelected ? '#ffffff' : '#4f46e5', strokeWidth: 1.5, stroke: isSelected ? '#38bdf8' : '#ffffff' }}
+                            activeDot={{ r: 5, strokeWidth: 2 }}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* Individual grade tags for the last 5 evaluations */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    {last5GradesData.map((item) => (
+                      <div 
+                        key={item.id}
+                        title={`${item.subject} (${item.examName}) : ${item.rawScore}`}
+                        className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold border transition-all flex items-center justify-between gap-1 flex-1 min-w-[62px] ${
+                          isSelected
+                            ? (item.score >= 10 ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-100' : 'bg-rose-500/20 border-rose-400/40 text-rose-100')
+                            : (item.score >= 10 ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300' : 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300')
+                        }`}
+                      >
+                        <span className="truncate max-w-[42px]">{item.label}</span>
+                        <span className="font-black">{item.score}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className={`p-2.5 rounded-xl border text-center text-[11px] italic ${
+                  isSelected ? 'bg-white/10 border-white/20 text-indigo-100' : 'bg-slate-50 border-slate-200/80 text-slate-400 dark:bg-slate-800/40 dark:border-slate-800'
+                }`}>
+                  {isFr ? 'Aucune évaluation récente à afficher' : 'No recent evaluation recorded'}
+                </div>
+              )}
+            </div>
+
+            {/* Grade Goal & Progress Ring Section */}
+            <div className={`mt-3 pt-3 border-t ${isSelected ? 'border-white/20' : 'border-slate-100 dark:border-slate-800/80'}`}>
+              <div className="flex items-center justify-between gap-1 mb-2">
+                <span className={`text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 ${
+                  isSelected ? 'text-indigo-100' : 'text-slate-600 dark:text-slate-300'
+                }`}>
+                  <Target className={`h-3.5 w-3.5 ${isSelected ? 'text-amber-300' : 'text-indigo-600 dark:text-indigo-400'}`} />
+                  <span>{isFr ? 'Objectif de Note' : 'Grade Goal'}</span>
+                </span>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCustomGoalInput(targetGoal.toString());
+                    setIsEditingGoal(!isEditingGoal);
+                  }}
+                  className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer ${
+                    isSelected 
+                      ? 'bg-white/20 hover:bg-white/30 text-white' 
+                      : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-slate-800 dark:text-indigo-300 border border-indigo-100 dark:border-slate-700'
+                  }`}
+                  title={isFr ? "Ajuster l'objectif de note" : "Edit grade goal"}
+                >
+                  <Edit3 className="h-2.5 w-2.5" />
+                  <span>{isEditingGoal ? (isFr ? 'Fermer' : 'Close') : (isFr ? 'Ajuster' : 'Edit')}</span>
+                </button>
+              </div>
+
+              {/* Edit Goal Drawer/Presets */}
+              {isEditingGoal && (
+                <motion.div 
+                  initial={{ opacity: 0, height: 0 }} 
+                  animate={{ opacity: 1, height: 'auto' }} 
+                  exit={{ opacity: 0, height: 0 }}
+                  onClick={(e) => e.stopPropagation()}
+                  className={`p-2.5 mb-2.5 rounded-xl border space-y-2 text-xs ${
+                    isSelected ? 'bg-slate-900/80 border-indigo-400/30 text-white' : 'bg-indigo-50/70 border-indigo-200 text-slate-800 dark:bg-slate-800/90 dark:border-slate-700 dark:text-slate-200'
+                  }`}
+                >
+                  <p className="font-bold text-[11px]">
+                    {isFr ? 'Définir la note cible (sur 20) :' : 'Set target score (out of 20):'}
+                  </p>
+                  
+                  {/* Quick Preset Buttons */}
+                  <div className="flex flex-wrap items-center gap-1">
+                    {[12, 14, 15, 16, 17, 18, 20].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => {
+                          setCustomGoalInput(preset.toString());
+                          handleSaveGoal(preset);
+                        }}
+                        className={`px-2 py-1 rounded-md text-[10px] font-mono font-bold transition cursor-pointer ${
+                          targetGoal === preset
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : 'bg-white text-slate-700 hover:bg-slate-100 dark:bg-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600'
+                        }`}
+                      >
+                        {preset}/20
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Custom Manual Input */}
+                  <div className="flex items-center gap-2 pt-1">
+                    <input
+                      type="number"
+                      min="1"
+                      max="20"
+                      step="0.5"
+                      value={customGoalInput}
+                      onChange={(e) => setCustomGoalInput(e.target.value)}
+                      placeholder="Ex: 15.5"
+                      className="w-24 px-2 py-1 rounded-md bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-xs font-mono font-bold text-slate-900 dark:text-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const val = parseFloat(customGoalInput);
+                        if (!isNaN(val)) handleSaveGoal(val);
+                      }}
+                      className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded-md shadow-xs transition flex items-center gap-1 cursor-pointer"
+                    >
+                      <Check className="h-3 w-3" />
+                      <span>{isFr ? 'Valider' : 'Save'}</span>
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* Progress Ring & Goal Visualizer */}
+              <div className={`p-3 rounded-2xl border flex items-center gap-3 transition-colors ${
+                isSelected 
+                  ? 'bg-slate-900/40 border-white/10' 
+                  : 'bg-slate-50/80 dark:bg-slate-800/40 border-slate-150 dark:border-slate-800'
+              }`}>
+                {/* SVG Circular Progress Ring */}
+                <div className="relative shrink-0 flex items-center justify-center">
+                  <svg className="w-16 h-16 transform -rotate-90" viewBox="0 0 60 60">
+                    {/* Track */}
+                    <circle
+                      cx="30"
+                      cy="30"
+                      r="24"
+                      stroke={isSelected ? 'rgba(255,255,255,0.15)' : 'rgba(203, 213, 225, 0.6)'}
+                      strokeWidth="5"
+                      fill="transparent"
+                    />
+                    {/* Progress Indicator */}
+                    <circle
+                      cx="30"
+                      cy="30"
+                      r="24"
+                      stroke={
+                        goalProgress.isReached 
+                          ? '#10b981' 
+                          : goalProgress.percent >= 80 
+                          ? (isSelected ? '#38bdf8' : '#6366f1') 
+                          : '#f59e0b'
+                      }
+                      strokeWidth="5"
+                      strokeDasharray="150.8"
+                      strokeDashoffset={150.8 - (150.8 * goalProgress.percent) / 100}
+                      strokeLinecap="round"
+                      fill="transparent"
+                      className="transition-all duration-700 ease-out"
+                    />
+                  </svg>
+                  {/* Center Text inside Ring */}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                    <span className={`text-[12px] font-mono font-black leading-none ${
+                      isSelected 
+                        ? 'text-white' 
+                        : goalProgress.isReached ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-800 dark:text-white'
+                    }`}>
+                      {goalProgress.percent}%
+                    </span>
+                    <span className={`text-[8px] uppercase font-bold tracking-tight mt-0.5 ${
+                      isSelected ? 'text-indigo-200' : 'text-slate-400'
+                    }`}>
+                      {isFr ? 'atteint' : 'goal'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Text Metrics & Status */}
+                <div className="space-y-1 flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className={`text-[11px] font-semibold truncate ${isSelected ? 'text-indigo-100' : 'text-slate-600 dark:text-slate-300'}`}>
+                      {isFr ? 'Moy. 5 Dernières Évals' : 'Last 5 Assessments Avg'}
+                    </span>
+                    <span className={`text-xs font-mono font-black ${
+                      isSelected 
+                        ? 'text-white' 
+                        : goalProgress.currentAvg >= 10 ? 'text-slate-900 dark:text-white' : 'text-rose-600'
+                    }`}>
+                      {goalProgress.currentAvg} / 20
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-1 text-[11px]">
+                    <span className={`font-semibold ${isSelected ? 'text-indigo-200' : 'text-slate-500'}`}>
+                      {isFr ? 'Objectif Cible :' : 'Target Goal:'}
+                    </span>
+                    <span className={`font-mono font-bold ${isSelected ? 'text-amber-300' : 'text-indigo-700 dark:text-indigo-300'}`}>
+                      {goalProgress.targetGoal} / 20
+                    </span>
+                  </div>
+
+                  {/* Gap Status Pill */}
+                  <div className="pt-1 flex items-center justify-between gap-1 text-[10px]">
+                    <span className={`px-2 py-0.5 rounded-full font-bold flex items-center gap-1 ${
+                      goalProgress.isReached
+                        ? (isSelected ? 'bg-emerald-400/20 text-emerald-100 border border-emerald-400/30' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300')
+                        : goalProgress.gap >= -2
+                        ? (isSelected ? 'bg-amber-400/20 text-amber-100 border border-amber-400/30' : 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300')
+                        : (isSelected ? 'bg-rose-400/20 text-rose-100 border border-rose-400/30' : 'bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300')
+                    }`}>
+                      {goalProgress.isReached ? (
+                        <>
+                          <Trophy className="h-3 w-3 shrink-0" />
+                          <span>{isFr ? 'Objectif Atteint !' : 'Goal Achieved!'} (+{goalProgress.gap} pts)</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="h-3 w-3 shrink-0" />
+                          <span>
+                            {isFr 
+                              ? `Écart : ${goalProgress.gap} pts` 
+                              : `Gap: ${goalProgress.gap} pts`}
+                          </span>
+                        </>
+                      )}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
 
