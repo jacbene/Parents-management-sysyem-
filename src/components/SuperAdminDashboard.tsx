@@ -205,8 +205,6 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
             for (const le of localEsts) {
               if (le && le.id && !deletedSchoolSet.has(le.id) && !deletedSchoolSet.has(sanitizeFirestoreId(le.id)) && !schoolList.some(m => m.id === le.id)) {
                 schoolList.push(le);
-                // Save to Firestore so it's registered in DB
-                saveAndSyncEstablishment(le).catch(err => console.warn('Sync fallback school failed:', err));
               }
             }
           }
@@ -224,6 +222,19 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
           });
         }
         setSchools(mergedSchools);
+
+        // Auto-persist and sync any school that isn't yet registered in BD
+        for (const sch of mergedSchools) {
+          const schId = sch.id;
+          const sanId = sanitizeFirestoreId(schId);
+          if (!registeredDbIds.has(schId) && !registeredDbIds.has(sanId)) {
+            registeredDbIds.add(schId);
+            registeredDbIds.add(sanId);
+            saveAndSyncEstablishment(sch).catch(err => console.warn('Auto sync school failed:', err));
+          }
+        }
+
+        setDbSchoolIds(new Set(registeredDbIds));
 
         // 2. Fetch all students
         const studentList: Student[] = [];
@@ -999,6 +1010,9 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
   };
 
   const totalSchools = schools.length;
+  const registeredSchoolCount = schools.filter(s => 
+    dbSchoolIds.has(s.id) || dbSchoolIds.has(sanitizeFirestoreId(s.id))
+  ).length;
   
   // Real statistical summaries calculated across all establishments
   const totalStudents = schools.reduce((acc, sch) => {
@@ -1128,10 +1142,10 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
             </div>
             <div 
               className="bg-emerald-50 text-emerald-700 text-[9.5px] font-extrabold px-2 py-0.5 rounded-md absolute top-4 right-4 border border-emerald-200/80 flex items-center gap-1 shadow-2xs"
-              title={`${dbSchoolIds.size} établissement(s) effectivement présent(s) en base de données Firestore`}
+              title={`${registeredSchoolCount} établissement(s) effectivement présent(s) en base de données Firestore`}
             >
               <Database className="h-2.5 w-2.5 text-emerald-600 shrink-0" />
-              <span>{dbSchoolIds.size} en BD</span>
+              <span>{registeredSchoolCount} en BD</span>
             </div>
           </div>
 
@@ -1339,7 +1353,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                                       <div className="flex items-center gap-1.5 flex-wrap">
                                         <span className="font-extrabold text-slate-900 text-[12.5px] leading-snug">{school.name}</span>
                                         {/* Badge pour école effectivement enregistrée en base de données */}
-                                        {dbSchoolIds.has(school.id) ? (
+                                        {dbSchoolIds.has(school.id) || dbSchoolIds.has(sanitizeFirestoreId(school.id)) ? (
                                           <span 
                                             className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-[8.5px] font-black uppercase rounded-md shadow-2xs"
                                             title="Établissement effectivement enregistré et vérifié dans la base de données Firestore"

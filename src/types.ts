@@ -83,6 +83,23 @@ export interface Announcement {
   adImpressions?: number;
 }
 
+export type AcademicEventType = 'Holiday' | 'Exam' | 'Event' | 'Meeting' | 'Pedagogic' | 'Other';
+
+export interface AcademicEvent {
+  id: string;
+  schoolId: string;
+  title: string;
+  description?: string;
+  startDate: string; // YYYY-MM-DD
+  endDate?: string;   // YYYY-MM-DD
+  type: AcademicEventType;
+  targetClassRoom?: string; // e.g. "Toutes les classes", "6ème", "3ème", etc.
+  location?: string;
+  isPublic?: boolean;
+  createdAt?: string;
+  createdBy?: string;
+}
+
 export type AppointmentStatus = 'Scheduled' | 'Completed' | 'Cancelled';
 
 export interface Appointment {

@@ -47,6 +47,7 @@ import DrivePortal from './components/DrivePortal';
 import SheetsPortal from './components/SheetsPortal';
 import GmailPortal from './components/GmailPortal';
 import FirebaseConsole from './components/FirebaseConsole';
+import AcademicCalendar from './components/AcademicCalendar';
 import SyncToastContainer from './components/SyncToastContainer';
 import ForgotPasswordModal from './components/ForgotPasswordModal';
 
@@ -80,6 +81,7 @@ import {
   BookOpen,
   BookMarked,
   Calendar,
+  CalendarDays,
   Award,
   Landmark,
   MessageSquare,
@@ -114,7 +116,11 @@ import {
   HelpCircle,
   Mail,
   Eye,
-  EyeOff
+  EyeOff,
+  Rows,
+  LayoutList,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
 type TabType = 
@@ -132,6 +138,7 @@ type TabType =
   | 'gmail_portal'
   | 'firebase_console'
   | 'announcements' 
+  | 'academic_calendar' 
   | 'students_by_class'
   | 'homework' 
   | 'lessons'
@@ -679,6 +686,10 @@ export default function App() {
 
   // Search query for filtering students in left navigation pane
   const [studentSearchQuery, setStudentSearchQuery] = useState<string>('');
+  // Mode for student cards in ENT section: 'compact' (space-saving) or 'expanded'
+  const [studentCardMode, setStudentCardMode] = useState<'compact' | 'expanded'>('compact');
+  // Maximum students displayed at once in ENT list (default 10, expandable to see more or all)
+  const [studentDisplayLimit, setStudentDisplayLimit] = useState<number>(10);
 
   // Nav tab control
   const [activeTab, setActiveTab] = useState<TabType>(() => {
@@ -1240,7 +1251,7 @@ export default function App() {
       return studentClassLower.includes(teacherClassLower) || teacherClassLower.includes(studentClassLower);
     }
     return true;
-  });
+  }).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fr', { sensitivity: 'base' }));
 
   // Selected student entity helper (using filtered list)
   const activeStudent = filteredStudents.find(s => s.id === selectedStudentId) || filteredStudents[0];
@@ -2866,10 +2877,13 @@ export default function App() {
   const handleGuestLogin = async () => {
     setAuthError(null);
     try {
-      await loginAnonymously();
+      const guestUser = await loginAnonymously();
+      if (guestUser) {
+        setUser(guestUser as any);
+      }
       setShowMainLogin(false);
     } catch (e: any) {
-      console.error("Anonymous authentication process failed, falling back to local simulation:", e);
+      console.info("Notice during guest authentication, using local simulation fallback:", e?.message || e);
       setUser({
         uid: 'sandboxed_guest_user_ekali',
         email: 'directeur.ekali@gmail.com',
@@ -3521,18 +3535,45 @@ export default function App() {
                   {/* Supervised Pupils - Left panel - Only display if not in dedicated Apee workspace */}
                   {!activeTab.startsWith('apee_') ? (
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-1.5 shrink-0">
                           <GraduationCap className="h-3.5 w-3.5" /> Éléves Supervisés (ENT)
-                        </h3>
-                        {studentSearchQuery && (
-                          <span className="text-[9px] bg-slate-100 dark:bg-slate-800 text-slate-550 dark:text-slate-400 font-bold px-1.5 py-0.5 rounded-md animate-in fade-in duration-150">
-                            {filteredStudents.filter(stu => {
-                              const q = studentSearchQuery.toLowerCase().trim();
-                              return (stu.name || '').toLowerCase().includes(q) || (stu.classRoom || '').toLowerCase().includes(q);
-                            }).length} {language === 'en' ? 'found' : 'trouvé(s)'}
+                          <span className="ml-1 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/80 shadow-2xs">
+                            {filteredStudents.length} {language === 'en' ? 'loaded' : 'élèves'}
                           </span>
-                        )}
+                        </h3>
+                        
+                        <div className="flex items-center gap-1.5">
+                          {/* Compact / Detailed Mode Switcher */}
+                          <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800/80 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                            <button
+                              type="button"
+                              onClick={() => setStudentCardMode('compact')}
+                              className={`px-1.5 py-0.5 text-[9px] font-bold rounded-md transition cursor-pointer flex items-center gap-1 ${
+                                studentCardMode === 'compact'
+                                  ? 'bg-indigo-600 text-white shadow-2xs'
+                                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                              }`}
+                              title={language === 'fr' ? "Vue compacte (gain de place)" : "Compact view (space saving)"}
+                            >
+                              <Rows className="h-3 w-3" />
+                              <span className="hidden sm:inline">{language === 'fr' ? "Compact" : "Compact"}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setStudentCardMode('expanded')}
+                              className={`px-1.5 py-0.5 text-[9px] font-bold rounded-md transition cursor-pointer flex items-center gap-1 ${
+                                studentCardMode === 'expanded'
+                                  ? 'bg-indigo-600 text-white shadow-2xs'
+                                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                              }`}
+                              title={language === 'fr' ? "Vue détaillée complète" : "Detailed view"}
+                            >
+                              <LayoutList className="h-3 w-3" />
+                              <span className="hidden sm:inline">{language === 'fr' ? "Détaillé" : "Detailed"}</span>
+                            </button>
+                          </div>
+                        </div>
                       </div>
 
                       {/* Real-time Text Search Bar */}
@@ -3555,43 +3596,99 @@ export default function App() {
                         )}
                       </div>
 
-                      <div className="grid grid-cols-1 gap-3">
-                        {filteredStudents
-                          .filter((stu) => {
-                            if (!studentSearchQuery.trim()) return true;
-                            const q = studentSearchQuery.toLowerCase().trim();
-                            return (stu.name || '').toLowerCase().includes(q) || (stu.classRoom || '').toLowerCase().includes(q);
-                          })
-                          .map((stu) => (
-                            <StudentCard
-                              key={stu.id}
-                              student={stu}
-                              isSelected={selectedStudentId === stu.id}
-                              onSelect={() => setSelectedStudentId(stu.id)}
-                              onUpdateStudent={handleUpdateStudentInPlace}
-                              onDeleteStudent={handleDeleteStudent}
-                              onPrint={() => setPrintingStudent(stu)}
-                              settings={apeeSettings}
-                              apeeParents={apeeParents}
-                              grades={grades}
-                              attendanceLogs={attendanceLogs}
-                              portalUserRole={portalUserRole}
-                              onAddMessage={handleAddMessageInPlace}
-                            />
-                          ))
-                        }
-                        {filteredStudents.filter((stu) => {
+                      {/* Filter matching students with 10 max pagination */}
+                      {(() => {
+                        const entMatchingStudents = filteredStudents.filter((stu) => {
                           if (!studentSearchQuery.trim()) return true;
                           const q = studentSearchQuery.toLowerCase().trim();
                           return (stu.name || '').toLowerCase().includes(q) || (stu.classRoom || '').toLowerCase().includes(q);
-                        }).length === 0 && (
-                          <div className="text-center py-6 bg-slate-50/50 dark:bg-slate-950/20 rounded-xl border border-dashed border-slate-250 dark:border-slate-800/80 animate-in fade-in duration-200">
-                            <p className="text-[11px] font-bold text-slate-450 dark:text-slate-500">
-                              {language === 'en' ? "No pupils match this query." : "Aucun élève trouvé."}
-                            </p>
+                        });
+
+                        const totalMatching = entMatchingStudents.length;
+                        const displayedStudents = entMatchingStudents.slice(0, studentDisplayLimit);
+
+                        return (
+                          <div className="space-y-3">
+                            {/* Scrollable list container with adaptive max height for mobile/desktop screen sizes */}
+                            <div className="grid grid-cols-1 gap-2.5 max-h-[calc(100vh-320px)] sm:max-h-[580px] overflow-y-auto pr-1 sm:pr-1.5 scrollbar-thin scrollbar-thumb-slate-250 dark:scrollbar-thumb-slate-700">
+                              {displayedStudents.map((stu) => (
+                                <StudentCard
+                                  key={stu.id}
+                                  student={stu}
+                                  isSelected={selectedStudentId === stu.id}
+                                  onSelect={() => setSelectedStudentId(stu.id)}
+                                  onUpdateStudent={handleUpdateStudentInPlace}
+                                  onDeleteStudent={handleDeleteStudent}
+                                  onPrint={() => setPrintingStudent(stu)}
+                                  settings={apeeSettings}
+                                  apeeParents={apeeParents}
+                                  grades={grades}
+                                  attendanceLogs={attendanceLogs}
+                                  portalUserRole={portalUserRole}
+                                  onAddMessage={handleAddMessageInPlace}
+                                  isCompactMode={studentCardMode === 'compact'}
+                                />
+                              ))}
+
+                              {totalMatching === 0 && (
+                                <div className="text-center py-6 bg-slate-50/50 dark:bg-slate-950/20 rounded-xl border border-dashed border-slate-250 dark:border-slate-800/80 animate-in fade-in duration-200">
+                                  <p className="text-[11px] font-bold text-slate-450 dark:text-slate-500">
+                                    {language === 'en' ? "No pupils match this query." : "Aucun élève trouvé."}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Pagination / Expand / Collapse Control Toolbar */}
+                            {totalMatching > 0 && (
+                              <div className="bg-slate-50 dark:bg-slate-900/60 p-2 rounded-xl border border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs">
+                                <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 font-mono">
+                                  {language === 'fr' 
+                                    ? `Affichage: ${displayedStudents.length} / ${totalMatching} élèves`
+                                    : `Showing: ${displayedStudents.length} of ${totalMatching} pupils`}
+                                </span>
+
+                                <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end">
+                                  {/* Voir plus (+10) button if not all shown */}
+                                  {displayedStudents.length < totalMatching && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setStudentDisplayLimit(prev => prev + 10)}
+                                      className="flex-1 sm:flex-initial px-2 py-1 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-400 font-bold text-[10px] rounded-lg border border-slate-200 dark:border-slate-700 transition cursor-pointer flex items-center justify-center gap-1 shadow-2xs active:scale-95"
+                                      title="Afficher 10 élèves supplémentaires"
+                                    >
+                                      <ChevronDown className="h-3 w-3" />
+                                      <span>{language === 'fr' ? "Voir plus (+10)" : "Show +10"}</span>
+                                    </button>
+                                  )}
+
+                                  {/* Voir tout / Réduire button */}
+                                  {studentDisplayLimit < totalMatching ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => setStudentDisplayLimit(totalMatching)}
+                                      className="flex-1 sm:flex-initial px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] rounded-lg border border-indigo-500 transition cursor-pointer flex items-center justify-center gap-1 shadow-2xs active:scale-95"
+                                      title="Afficher la totalité des élèves"
+                                    >
+                                      <span>{language === 'fr' ? `Voir tout (${totalMatching})` : `Show all (${totalMatching})`}</span>
+                                    </button>
+                                  ) : totalMatching > 10 ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => setStudentDisplayLimit(10)}
+                                      className="flex-1 sm:flex-initial px-2 py-1 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-[10px] rounded-lg border border-slate-300 dark:border-slate-700 transition cursor-pointer flex items-center justify-center gap-1 active:scale-95"
+                                      title="Réduire l'affichage à 10 élèves"
+                                    >
+                                      <ChevronUp className="h-3 w-3" />
+                                      <span>{language === 'fr' ? "Réduire à 10" : "Collapse to 10"}</span>
+                                    </button>
+                                  ) : null}
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
+                        );
+                      })()}
                     </div>
                   ) : (
                     /* APEE General Cash Status Panel */
@@ -3913,6 +4010,17 @@ export default function App() {
                       <span className="flex items-center gap-2"><Newspaper className="h-4 w-4" /> {t('tab.announcements')}</span>
                     </button>
 
+                    <button
+                      onClick={() => setActiveTab('academic_calendar')}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
+                        activeTab === 'academic_calendar'
+                          ? 'bg-slate-900 text-white'
+                          : 'text-gray-650 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2"><CalendarDays className="h-4 w-4" /> {t('tab.academic_calendar')}</span>
+                    </button>
+
                     {filteredStudents.length > 0 && portalUserRole !== 'parent' && (
                       <button
                         onClick={() => setActiveTab('students_by_class')}
@@ -4218,6 +4326,18 @@ export default function App() {
                     )}
 
                     {/* CLASSIC PÉDAGOGIQUE CHANNELS */}
+                    {activeTab === 'academic_calendar' && (
+                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="academic_calendar">
+                        <AcademicCalendar
+                          schoolId={selectedSchoolId || auth.currentUser?.uid || 'demo_school_ekali'}
+                          portalUserRole={portalUserRole}
+                          schoolName={apeeSettings.associationName || 'Complexe Scolaire Ekali Pasma'}
+                          schoolYear={apeeSettings.schoolYear || '2026-2027'}
+                          language={language}
+                        />
+                      </motion.div>
+                    )}
+
                     {activeTab === 'announcements' && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="announcements">
                         <AnnouncementsFeed

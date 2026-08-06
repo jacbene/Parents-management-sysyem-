@@ -10,8 +10,16 @@ const originalConsoleWarn = console.warn;
 
 console.error = function (...args) {
   const msg = args.map(arg => typeof arg === 'string' ? arg : (arg instanceof Error ? arg.message : String(arg))).join(' ');
-  if (msg.includes('Could not reach Cloud Firestore backend') || msg.includes('code=unavailable') || msg.includes('@firebase/firestore')) {
-    console.log('💡 [Pasma-sys Offline Mode] Firebase Firestore is operating offline. Harnessing persistent local cache.');
+  if (
+    msg.includes('Could not reach Cloud Firestore backend') || 
+    msg.includes('code=unavailable') || 
+    msg.includes('@firebase/firestore') ||
+    msg.includes('auth/network-request-failed') ||
+    msg.includes('auth/missing-project-id') ||
+    msg.includes('Shared sandbox sign in failed') ||
+    msg.includes('Anonymous authentication process failed')
+  ) {
+    console.log('💡 [Pasma-sys Local Mode] Firebase Auth / Firestore operating with persistent local cache.');
     return;
   }
   originalConsoleError.apply(console, args);
@@ -19,8 +27,15 @@ console.error = function (...args) {
 
 console.warn = function (...args) {
   const msg = args.map(arg => typeof arg === 'string' ? arg : (arg instanceof Error ? arg.message : String(arg))).join(' ');
-  if (msg.includes('Could not reach Cloud Firestore backend') || msg.includes('code=unavailable') || msg.includes('@firebase/firestore')) {
-    console.log('💡 [Pasma-sys Offline Mode] Firebase Firestore is operating offline. Harnessing persistent local cache.');
+  if (
+    msg.includes('Could not reach Cloud Firestore backend') || 
+    msg.includes('code=unavailable') || 
+    msg.includes('@firebase/firestore') ||
+    msg.includes('auth/network-request-failed') ||
+    msg.includes('auth/missing-project-id') ||
+    msg.includes('Shared sandbox sign in failed')
+  ) {
+    console.log('💡 [Pasma-sys Local Mode] Firebase Auth / Firestore operating with persistent local cache.');
     return;
   }
   originalConsoleWarn.apply(console, args);

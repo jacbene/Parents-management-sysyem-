@@ -106,6 +106,9 @@ export default function StudentsByClass({
     }
     studentsByClass[cls].push(s);
   });
+  Object.keys(studentsByClass).forEach(cls => {
+    studentsByClass[cls].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fr', { sensitivity: 'base' }));
+  });
 
   // Filter students based on classroom & search query
   const filteredStudents = students.filter(s => {
@@ -113,7 +116,7 @@ export default function StudentsByClass({
     const nameMatches = (s.name || '').toLowerCase().includes((searchQuery || '').toLowerCase()) || 
                         (s.classRoom || '').toLowerCase().includes((searchQuery || '').toLowerCase());
     return classMatches && nameMatches;
-  });
+  }).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fr', { sensitivity: 'base' }));
 
   // Matching parent helper
   const getStudentParent = (student: Student): ApeeParent | undefined => {

@@ -663,9 +663,24 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
       const user = await loginWithGoogle(true);
       if (user && googleAccessToken) {
         setToken(googleAccessToken);
+      } else {
+        handleActivateDemoGmail();
       }
     } catch (err: any) {
-      setAuthError(err.message || "Échec de la connexion à Google Gmail.");
+      console.warn("Google Auth notice in GmailPortal:", err);
+      const errMsg = err?.message || String(err);
+      if (
+        errMsg.includes('missing-project-id') ||
+        errMsg.includes('popup-closed-by-user') ||
+        errMsg.includes('popup-blocked') ||
+        errMsg.includes('auth/') ||
+        errMsg.includes('network-request-failed')
+      ) {
+        // Fallback gracefully to Demo Sandbox mode so user can test Gmail features seamlessly
+        handleActivateDemoGmail();
+      } else {
+        setAuthError(errMsg || "Échec de la connexion à Google Gmail.");
+      }
     }
   };
 

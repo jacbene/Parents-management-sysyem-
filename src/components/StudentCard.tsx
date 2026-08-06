@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Student, ApeeSettings, ApeeParent, Grade, Attendance, Message } from '../types';
-import { Mail, GraduationCap, Calendar, User, UserCheck, Camera, Printer, Phone, TrendingUp, TrendingDown, Clock, MessageSquare, Send, X, Check, AlertCircle, QrCode, Trash2, Activity, Sparkles, Award, Target, Edit3, Trophy } from 'lucide-react';
+import { Mail, GraduationCap, Calendar, User, UserCheck, Camera, Printer, Phone, TrendingUp, TrendingDown, Clock, MessageSquare, Send, X, Check, AlertCircle, QrCode, Trash2, Activity, Sparkles, Award, Target, Edit3, Trophy, Share2, Copy, ChevronDown, ChevronUp } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
 import StudentCameraModal from './StudentCameraModal';
@@ -54,6 +54,7 @@ interface StudentCardProps {
   attendanceLogs?: Attendance[];
   portalUserRole?: 'manager' | 'parent' | null;
   onAddMessage?: (newMsg: Message) => void;
+  isCompactMode?: boolean;
 }
 
 const isImageAvatar = (avatar: string) => {
@@ -72,8 +73,10 @@ export default function StudentCard({
   grades, 
   attendanceLogs,
   portalUserRole,
-  onAddMessage
+  onAddMessage,
+  isCompactMode = true
 }: StudentCardProps) {
+  const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const [showCamera, setShowCamera] = useState(false);
   const [showIDCard, setShowIDCard] = useState(false);
   const [showQuickContact, setShowQuickContact] = useState(false);
@@ -92,11 +95,38 @@ export default function StudentCard({
   const [isEditingGoal, setIsEditingGoal] = useState<boolean>(false);
   const [customGoalInput, setCustomGoalInput] = useState<string>(targetGoal.toString());
 
-  const handleSaveGoal = (goalVal: number) => {
+  // Grade Goal parent comment / reflection state
+  const [goalComment, setGoalComment] = useState<string>(() => {
+    return localStorage.getItem(`pasma_grade_goal_comment_${student.id}`) || '';
+  });
+  const [commentInput, setCommentInput] = useState<string>(goalComment);
+  const [isEditingComment, setIsEditingComment] = useState<boolean>(false);
+
+  const handleSaveGoal = (goalVal: number, commentVal?: string) => {
     const validGoal = Math.min(20, Math.max(1, goalVal));
     setTargetGoal(validGoal);
     localStorage.setItem(`pasma_grade_goal_${student.id}`, validGoal.toString());
+
+    if (commentVal !== undefined) {
+      const trimmed = commentVal.trim();
+      setGoalComment(trimmed);
+      localStorage.setItem(`pasma_grade_goal_comment_${student.id}`, trimmed);
+    }
     setIsEditingGoal(false);
+  };
+
+  const handleSaveCommentOnly = (commentVal: string) => {
+    const trimmed = commentVal.trim();
+    setGoalComment(trimmed);
+    localStorage.setItem(`pasma_grade_goal_comment_${student.id}`, trimmed);
+    setIsEditingComment(false);
+  };
+
+  const handleClearComment = () => {
+    setGoalComment('');
+    setCommentInput('');
+    localStorage.removeItem(`pasma_grade_goal_comment_${student.id}`);
+    setIsEditingComment(false);
   };
 
   const { language } = useLanguage();
@@ -289,127 +319,270 @@ export default function StudentCard({
     };
   }, [last5Average, last5GradesData.length, overallAvg, targetGoal]);
 
+  // Share Goal Progress state
+  const [isSharingProgress, setIsSharingProgress] = useState<boolean>(false);
+  const [copiedShareText, setCopiedShareText] = useState<boolean>(false);
+
+  const generatedShareSummary = React.useMemo(() => {
+    const currentDateStr = new Date().toLocaleDateString(isFr ? 'fr-FR' : 'en-US', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+
+    const header = isFr
+      ? `📊 [PASMA-SYS] Rapport d'Objectif de Note - ${student.name} (${student.classRoom || student.grade || 'Élève'})`
+      : `📊 [PASMA-SYS] Grade Goal Progress Report - ${student.name} (${student.classRoom || student.grade || 'Student'})`;
+
+    const goalText = isFr
+      ? `🎯 Objectif Cible : ${goalProgress.targetGoal}/20`
+      : `🎯 Target Goal: ${goalProgress.targetGoal}/20`;
+
+    const avgText = isFr
+      ? `📈 Moyenne Actuelle (5 Dernières Évals) : ${goalProgress.currentAvg}/20`
+      : `📈 Current Average (Last 5 Assessments): ${goalProgress.currentAvg}/20`;
+
+    const percentText = isFr
+      ? `⏳ Progression : ${goalProgress.percent}% de l'objectif`
+      : `⏳ Progress: ${goalProgress.percent}% of goal`;
+
+    const gapText = goalProgress.isReached
+      ? (isFr ? `🏆 Statut : Objectif Atteint ! (+${goalProgress.gap} pts)` : `🏆 Status: Goal Achieved! (+${goalProgress.gap} pts)`)
+      : (isFr ? `📉 Écart restant : ${goalProgress.gap} pts` : `📉 Remaining Gap: ${goalProgress.gap} pts`);
+
+    const commentBlock = goalComment
+      ? (isFr ? `\n💬 Note & Réflexion des parents :\n"${goalComment}"` : `\n💬 Parent Note & Reflection:\n"${goalComment}"`)
+      : '';
+
+    const footer = isFr
+      ? `\n📅 Édité le ${currentDateStr} • Complexe Scolaire Ekali Pasma`
+      : `\n📅 Generated on ${currentDateStr} • Ekali Pasma School`;
+
+    return `${header}\n--------------------------------------------------\n${goalText}\n${avgText}\n${percentText}\n${gapText}${commentBlock}\n${footer}`;
+  }, [student.name, student.classRoom, student.grade, goalProgress, goalComment, isFr]);
+
+  const handleCopyShareText = async (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(generatedShareSummary);
+      setCopiedShareText(true);
+      setTimeout(() => setCopiedShareText(false), 2500);
+    } catch (err) {
+      console.error('Failed to copy text:', err);
+    }
+  };
+
+  const handleNativeShare = async (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (typeof navigator !== 'undefined' && 'share' in navigator) {
+      try {
+        await navigator.share({
+          title: isFr ? `Progression de ${student.name}` : `Progress report for ${student.name}`,
+          text: generatedShareSummary,
+        });
+      } catch (err) {
+        console.warn('Native share error or dismissed:', err);
+      }
+    } else {
+      handleCopyShareText();
+    }
+  };
+
+  const showFullDetails = !isCompactMode || isExpanded;
+
   return (
     <>
       <motion.div
         onClick={onSelect}
-        className={`StudentCard relative p-5 rounded-2xl border transition-all cursor-pointer duration-300 ${
+        className={`StudentCard relative rounded-2xl border transition-all cursor-pointer duration-300 ${
+          isCompactMode && !isExpanded ? 'p-3.5' : 'p-4.5'
+        } ${
           isSelected
             ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-100 dark:shadow-none'
             : 'bg-white border-gray-100 text-gray-900 dark:text-slate-100 hover:border-gray-200 hover:shadow-sm dark:bg-slate-900 dark:border-slate-800/80 dark:hover:border-slate-700'
         }`}
-        whileHover={{ scale: 1.01 }}
-        whileTap={{ scale: 0.99 }}
+        whileHover={{ scale: 1.005 }}
+        whileTap={{ scale: 0.995 }}
       >
-        <div className="flex gap-4 items-start">
-          <div className="relative shrink-0">
-            {/* Avatar display frame with interactive hover overlay */}
-            <div 
-              onClick={(e) => {
-                e.stopPropagation(); // prevent selecting the card
-                setShowCamera(true);
-              }}
-              className={`group w-14 h-14 rounded-xl overflow-hidden flex items-center justify-center relative border cursor-pointer transition-all duration-300 ${
-                isSelected 
-                  ? 'border-indigo-400 bg-white/10 hover:bg-white/20' 
-                  : 'border-gray-150 bg-slate-50 hover:border-indigo-300 hover:bg-indigo-50/25 dark:border-slate-700 dark:bg-slate-800/85'
-              }`}
-              title="Cliquer pour changer la photo"
-            >
-              {isImageAvatar(student.avatar) ? (
-                <img 
-                  src={student.avatar} 
-                  alt={student.name} 
-                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110" 
-                  referrerPolicy="no-referrer" 
-                />
-              ) : (
-                <span className="text-3xl font-sans transition-transform duration-300 group-hover:scale-110" role="img" aria-label="student avatar">
-                  {student.avatar}
-                </span>
-              )}
-              {/* Sleek cover overlay for photo customization */}
-              <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col items-center justify-center text-white">
-                <Camera className="h-4.5 w-4.5" />
-                <span className="text-[7.5px] font-sans font-black uppercase tracking-wider mt-0.5">Éditer</span>
-              </div>
-            </div>
-
-            {/* Quick Camera Badge Trigger */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation(); // prevent selecting the card
-                setShowCamera(true);
-              }}
-              className={`absolute -bottom-1 -right-1 p-1 rounded-full border shadow-xs hover:scale-110 active:scale-95 transition-all text-xs cursor-pointer ${
-                isSelected 
-                  ? 'bg-amber-500 border-amber-400 text-white hover:bg-amber-600' 
-                  : 'bg-indigo-600 border-indigo-500 text-white hover:bg-indigo-700'
-              }`}
-              title="Prendre une photo de l'élève"
-            >
-              <Camera className="h-3 w-3" />
-            </button>
-          </div>
-
-          <div className="space-y-1 flex-1 min-w-0">
-            <div className="flex items-center justify-between gap-1">
-              <h3 className={`font-bold font-sans text-base truncate ${isSelected ? 'text-white' : 'text-gray-900 dark:text-white'}`}>
-                {student.name}
-              </h3>
-              {isSelected && <span className="bg-white/20 text-white text-[9px] uppercase font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5 shrink-0"><UserCheck className="h-2.5 w-2.5" /> Actif</span>}
-            </div>
-            <p className={`text-xs ${isSelected ? 'text-indigo-100' : 'text-gray-500 dark:text-slate-400'} font-medium`}>
-              {student.grade} • {student.classRoom}
-            </p>
-            <div className="pt-2 border-t border-dashed mt-2 border-white/10 space-y-1 text-[11px] sm:text-xs">
-              <div className={`flex items-center justify-between gap-1.5 ${isSelected ? 'text-indigo-100' : 'text-gray-500 dark:text-slate-400'}`}>
-                <div className="flex items-center gap-1.5 truncate">
-                  <User className="h-3 w-3 shrink-0" />
-                  <span className="truncate">Enseignant : <strong className={isSelected ? 'text-white' : 'text-gray-700 dark:text-slate-300'}>{teacherName}</strong></span>
+        {/* Top Header Row (Always visible) */}
+        <div className="flex gap-3 items-center justify-between">
+          
+          {/* Avatar & Main Identification */}
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="relative shrink-0">
+              <div 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowCamera(true);
+                }}
+                className={`group ${
+                  isCompactMode && !isExpanded ? 'w-10 h-10' : 'w-12 h-12'
+                } rounded-xl overflow-hidden flex items-center justify-center relative border cursor-pointer transition-all duration-300 ${
+                  isSelected 
+                    ? 'border-indigo-400 bg-white/10 hover:bg-white/20' 
+                    : 'border-gray-150 bg-slate-50 hover:border-indigo-300 dark:border-slate-700 dark:bg-slate-800/85'
+                }`}
+                title="Cliquer pour changer la photo"
+              >
+                {isImageAvatar(student.avatar) ? (
+                  <img 
+                    src={student.avatar} 
+                    alt={student.name} 
+                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110" 
+                    referrerPolicy="no-referrer" 
+                  />
+                ) : (
+                  <span className={`${isCompactMode && !isExpanded ? 'text-xl' : 'text-2xl'} font-sans`} role="img" aria-label="student avatar">
+                    {student.avatar}
+                  </span>
+                )}
+                <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col items-center justify-center text-white">
+                  <Camera className="h-3.5 w-3.5" />
                 </div>
-                {portalUserRole === 'parent' && onAddMessage && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowQuickContact(true);
-                    }}
-                    className={`p-1 rounded-md border transition-all hover:scale-110 active:scale-95 cursor-pointer flex items-center justify-center shrink-0 ${
-                      isSelected
-                        ? 'bg-white/20 border-white/30 text-white hover:bg-white/30'
-                        : 'bg-indigo-50 dark:bg-slate-800 border-indigo-100 dark:border-slate-700 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-slate-700'
-                    }`}
-                    title={isFr ? "Contacter rapidement l'enseignant" : "Quick contact teacher"}
-                  >
-                    <MessageSquare className="h-3 w-3" />
-                  </button>
+              </div>
+
+              {/* Quick Camera Badge Trigger */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowCamera(true);
+                }}
+                className={`absolute -bottom-1 -right-1 p-0.5 rounded-full border shadow-2xs hover:scale-110 active:scale-95 transition-all cursor-pointer ${
+                  isSelected 
+                    ? 'bg-amber-500 border-amber-400 text-white' 
+                    : 'bg-indigo-600 border-indigo-500 text-white'
+                }`}
+                title="Prendre une photo de l'élève"
+              >
+                <Camera className="h-2.5 w-2.5" />
+              </button>
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h3 className={`font-bold font-sans text-xs sm:text-sm truncate ${isSelected ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
+                  {student.name}
+                </h3>
+                <span className={`text-[9.5px] font-bold px-1.5 py-0.2 rounded-md shrink-0 ${
+                  isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                }`}>
+                  {student.classRoom || student.grade}
+                </span>
+                {isSelected && (
+                  <span className="bg-emerald-400/30 text-white text-[8.5px] uppercase font-bold px-1.5 py-0.2 rounded-full flex items-center gap-0.5 shrink-0 border border-emerald-300/30">
+                    <UserCheck className="h-2.5 w-2.5" /> Actif
+                  </span>
                 )}
               </div>
-              <div className={`flex items-center gap-1.5 ${isSelected ? 'text-indigo-100' : 'text-gray-500'}`}>
-                <User className="h-3 w-3 shrink-0" />
-                <span className="truncate">Tuteur : <strong className={isSelected ? 'text-white' : 'text-gray-700'}>{matchingParent?.name || 'Non renseigné'}</strong></span>
-              </div>
-              {matchingParent?.phone && (
-                <div className={`flex items-center gap-1.5 ${isSelected ? 'text-indigo-100' : 'text-gray-500'}`}>
-                  <Phone className="h-3 w-3 shrink-0" />
-                  <span className="truncate">Tél Parent : <strong className={isSelected ? 'text-white font-mono' : 'text-gray-700 font-mono'}>{matchingParent.phone}</strong></span>
-                </div>
-              )}
-              <div className={`flex items-center gap-1.5 ${isSelected ? 'text-indigo-100' : 'text-gray-500'}`}>
-                <TrendingUp className={`h-3 w-3 shrink-0 ${isSelected ? 'text-indigo-200' : 'text-emerald-600'}`} />
-                <span className="truncate">Best : <strong className={isSelected ? 'text-white' : 'text-emerald-700 font-bold'}>{bestSubject ? `${bestSubject.subject} (${bestSubject.avg.toFixed(1)}/20)` : 'N/A'}</strong></span>
-              </div>
-              <div className={`flex items-center gap-1.5 ${isSelected ? 'text-indigo-100' : 'text-gray-500'}`}>
-                <TrendingDown className={`h-3 w-3 shrink-0 ${isSelected ? 'text-indigo-200' : 'text-rose-600'}`} />
-                <span className="truncate">Pire : <strong className={isSelected ? 'text-white' : 'text-rose-700 font-bold'}>{worstSubject ? `${worstSubject.subject} (${worstSubject.avg.toFixed(1)}/20)` : 'N/A'}</strong></span>
-              </div>
-              <div className={`flex items-center gap-1.5 ${isSelected ? 'text-indigo-100' : 'text-gray-500'}`}>
-                <Clock className="h-3 w-3 shrink-0" />
-                <span className="truncate">Assiduité : <strong className={isSelected ? 'text-white font-mono' : 'text-gray-700 font-mono'}>{presenceRate}%</strong></span>
+
+              {/* Compact Metrics Row */}
+              <div className="flex flex-wrap items-center gap-1.5 mt-1 text-[10px]">
+                <span className={`font-bold px-1.5 py-0.5 rounded-md ${
+                  isSelected
+                    ? 'bg-white/20 text-white'
+                    : last5Average > 0 && last5Average >= 12
+                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300'
+                    : last5Average > 0 && last5Average >= 10
+                    ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'
+                    : last5Average > 0
+                    ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300'
+                    : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                }`}>
+                  {last5Average > 0 ? `Moy: ${last5Average}/20` : (isFr ? 'Sans note' : 'No grades')}
+                </span>
+
+                <span className={`font-medium px-1.5 py-0.5 rounded-md ${
+                  isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                }`}>
+                  Assiduité: {presenceRate}%
+                </span>
+
+                {matchingParent?.name && (
+                  <span className={`hidden sm:inline-block truncate max-w-[120px] text-[9.5px] opacity-85 ${
+                    isSelected ? 'text-indigo-100' : 'text-slate-500 dark:text-slate-400'
+                  }`}>
+                    Tuteur: {matchingParent.name.split(' ')[0]}
+                  </span>
+                )}
               </div>
             </div>
+          </div>
+
+          {/* Details Toggle Button */}
+          <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setIsExpanded(!isExpanded)}
+              className={`p-1.5 rounded-xl border transition-all cursor-pointer flex items-center gap-1 text-[10px] font-bold ${
+                isSelected
+                  ? 'bg-white/20 border-white/30 text-white hover:bg-white/30'
+                  : 'bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+              }`}
+              title={isExpanded ? "Masquer la fiche complète" : "Afficher la fiche complète"}
+            >
+              <span className="hidden sm:inline">{isExpanded ? "Réduire" : "Détails"}</span>
+              {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            </button>
+          </div>
+        </div>
+
+        {/* Expandable Section: Full details, charts, goals & action bar */}
+        <AnimatePresence>
+          {showFullDetails && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="pt-3 mt-3 border-t border-dashed border-white/20 dark:border-slate-800 space-y-3"
+            >
+              <div className="space-y-1 text-[11px] sm:text-xs">
+                <div className={`flex items-center justify-between gap-1.5 ${isSelected ? 'text-indigo-100' : 'text-gray-500 dark:text-slate-400'}`}>
+                  <div className="flex items-center gap-1.5 truncate">
+                    <User className="h-3 w-3 shrink-0" />
+                    <span className="truncate">Enseignant : <strong className={isSelected ? 'text-white' : 'text-gray-700 dark:text-slate-300'}>{teacherName}</strong></span>
+                  </div>
+                  {portalUserRole === 'parent' && onAddMessage && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowQuickContact(true);
+                      }}
+                      className={`p-1 rounded-md border transition-all hover:scale-110 active:scale-95 cursor-pointer flex items-center justify-center shrink-0 ${
+                        isSelected
+                          ? 'bg-white/20 border-white/30 text-white hover:bg-white/30'
+                          : 'bg-indigo-50 dark:bg-slate-800 border-indigo-100 dark:border-slate-700 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-slate-700'
+                      }`}
+                      title={isFr ? "Contacter rapidement l'enseignant" : "Quick contact teacher"}
+                    >
+                      <MessageSquare className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+                <div className={`flex items-center gap-1.5 ${isSelected ? 'text-indigo-100' : 'text-gray-500'}`}>
+                  <User className="h-3 w-3 shrink-0" />
+                  <span className="truncate">Tuteur : <strong className={isSelected ? 'text-white' : 'text-gray-700'}>{matchingParent?.name || 'Non renseigné'}</strong></span>
+                </div>
+                {matchingParent?.phone && (
+                  <div className={`flex items-center gap-1.5 ${isSelected ? 'text-indigo-100' : 'text-gray-500'}`}>
+                    <Phone className="h-3 w-3 shrink-0" />
+                    <span className="truncate">Tél Parent : <strong className={isSelected ? 'text-white font-mono' : 'text-gray-700 font-mono'}>{matchingParent.phone}</strong></span>
+                  </div>
+                )}
+                <div className={`flex items-center gap-1.5 ${isSelected ? 'text-indigo-100' : 'text-gray-500'}`}>
+                  <TrendingUp className={`h-3 w-3 shrink-0 ${isSelected ? 'text-indigo-200' : 'text-emerald-600'}`} />
+                  <span className="truncate">Best : <strong className={isSelected ? 'text-white' : 'text-emerald-700 font-bold'}>{bestSubject ? `${bestSubject.subject} (${bestSubject.avg.toFixed(1)}/20)` : 'N/A'}</strong></span>
+                </div>
+                <div className={`flex items-center gap-1.5 ${isSelected ? 'text-indigo-100' : 'text-gray-500'}`}>
+                  <TrendingDown className={`h-3 w-3 shrink-0 ${isSelected ? 'text-indigo-200' : 'text-rose-600'}`} />
+                  <span className="truncate">Pire : <strong className={isSelected ? 'text-white' : 'text-rose-700 font-bold'}>{worstSubject ? `${worstSubject.subject} (${worstSubject.avg.toFixed(1)}/20)` : 'N/A'}</strong></span>
+                </div>
+                <div className={`flex items-center gap-1.5 ${isSelected ? 'text-indigo-100' : 'text-gray-500'}`}>
+                  <Clock className="h-3 w-3 shrink-0" />
+                  <span className="truncate">Assiduité : <strong className={isSelected ? 'text-white font-mono' : 'text-gray-700 font-mono'}>{presenceRate}%</strong></span>
+                </div>
+              </div>
 
             {/* Recharts Grade Evolution Section (Last 5 Assessments) */}
             <div className={`mt-3 pt-3 border-t ${isSelected ? 'border-white/20' : 'border-slate-100 dark:border-slate-800/80'}`}>
@@ -526,24 +699,104 @@ export default function StudentCard({
                   <span>{isFr ? 'Objectif de Note' : 'Grade Goal'}</span>
                 </span>
 
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setCustomGoalInput(targetGoal.toString());
-                    setIsEditingGoal(!isEditingGoal);
-                  }}
-                  className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer ${
-                    isSelected 
-                      ? 'bg-white/20 hover:bg-white/30 text-white' 
-                      : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-slate-800 dark:text-indigo-300 border border-indigo-100 dark:border-slate-700'
-                  }`}
-                  title={isFr ? "Ajuster l'objectif de note" : "Edit grade goal"}
-                >
-                  <Edit3 className="h-2.5 w-2.5" />
-                  <span>{isEditingGoal ? (isFr ? 'Fermer' : 'Close') : (isFr ? 'Ajuster' : 'Edit')}</span>
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsEditingGoal(false);
+                      setIsSharingProgress(!isSharingProgress);
+                    }}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer ${
+                      isSelected 
+                        ? (isSharingProgress ? 'bg-amber-400 text-slate-900 font-extrabold' : 'bg-amber-400/30 hover:bg-amber-400/40 text-amber-100 border border-amber-300/30') 
+                        : (isSharingProgress ? 'bg-emerald-600 text-white font-extrabold shadow-xs' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800')
+                    }`}
+                    title={isFr ? "Partager la progression de l'objectif" : "Share goal progress"}
+                  >
+                    <Share2 className="h-2.5 w-2.5" />
+                    <span>{isSharingProgress ? (isFr ? 'Fermer' : 'Close') : (isFr ? 'Partager' : 'Share Progress')}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsSharingProgress(false);
+                      setCustomGoalInput(targetGoal.toString());
+                      setIsEditingGoal(!isEditingGoal);
+                    }}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer ${
+                      isSelected 
+                        ? 'bg-white/20 hover:bg-white/30 text-white' 
+                        : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-slate-800 dark:text-indigo-300 border border-indigo-100 dark:border-slate-700'
+                    }`}
+                    title={isFr ? "Ajuster l'objectif de note" : "Edit grade goal"}
+                  >
+                    <Edit3 className="h-2.5 w-2.5" />
+                    <span>{isEditingGoal ? (isFr ? 'Fermer' : 'Close') : (isFr ? 'Ajuster' : 'Edit')}</span>
+                  </button>
+                </div>
               </div>
+
+              {/* Share Progress Drawer */}
+              {isSharingProgress && (
+                <motion.div 
+                  initial={{ opacity: 0, height: 0 }} 
+                  animate={{ opacity: 1, height: 'auto' }} 
+                  exit={{ opacity: 0, height: 0 }}
+                  onClick={(e) => e.stopPropagation()}
+                  className={`p-3 mb-2.5 rounded-xl border space-y-2 text-xs ${
+                    isSelected ? 'bg-slate-900/90 border-amber-400/30 text-white' : 'bg-emerald-50/80 border-emerald-200 text-slate-800 dark:bg-slate-800/95 dark:border-slate-700 dark:text-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="font-bold text-[11px] flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300">
+                      <Share2 className="h-3 w-3" />
+                      <span>{isFr ? 'Partager le Bilan d\'Objectif' : 'Share Progress Summary'}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsSharingProgress(false)}
+                      className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 rounded cursor-pointer"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+
+                  <div className="relative">
+                    <pre className="w-full p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[10.5px] font-mono text-slate-800 dark:text-slate-200 whitespace-pre-wrap break-words max-h-36 overflow-y-auto leading-relaxed shadow-inner">
+                      {generatedShareSummary}
+                    </pre>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-1">
+                    {typeof navigator !== 'undefined' && 'share' in navigator && (
+                      <button
+                        type="button"
+                        onClick={handleNativeShare}
+                        className="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-white text-[10px] font-bold rounded-md transition flex items-center gap-1 cursor-pointer"
+                      >
+                        <Share2 className="h-3 w-3" />
+                        <span>{isFr ? 'Partager...' : 'Device Share'}</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handleCopyShareText}
+                      className={`px-3 py-1.5 text-[10.5px] font-bold rounded-md shadow-xs transition flex items-center gap-1.5 cursor-pointer ${
+                        copiedShareText 
+                          ? 'bg-emerald-600 text-white' 
+                          : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                      }`}
+                    >
+                      {copiedShareText ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                      <span>{copiedShareText ? (isFr ? 'Copié !' : 'Copied!') : (isFr ? 'Copier le texte' : 'Copy Summary')}</span>
+                    </button>
+                  </div>
+                </motion.div>
+              )}
 
               {/* Edit Goal Drawer/Presets */}
               {isEditingGoal && (
@@ -568,7 +821,7 @@ export default function StudentCard({
                         type="button"
                         onClick={() => {
                           setCustomGoalInput(preset.toString());
-                          handleSaveGoal(preset);
+                          handleSaveGoal(preset, commentInput);
                         }}
                         className={`px-2 py-1 rounded-md text-[10px] font-mono font-bold transition cursor-pointer ${
                           targetGoal === preset
@@ -597,13 +850,27 @@ export default function StudentCard({
                       type="button"
                       onClick={() => {
                         const val = parseFloat(customGoalInput);
-                        if (!isNaN(val)) handleSaveGoal(val);
+                        if (!isNaN(val)) handleSaveGoal(val, commentInput);
                       }}
                       className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded-md shadow-xs transition flex items-center gap-1 cursor-pointer"
                     >
                       <Check className="h-3 w-3" />
                       <span>{isFr ? 'Valider' : 'Save'}</span>
                     </button>
+                  </div>
+
+                  {/* Parent Reflection / Comment Field */}
+                  <div className="pt-2 border-t border-indigo-200/50 dark:border-slate-700/60 space-y-1">
+                    <label className="font-bold text-[10.5px] block text-slate-700 dark:text-slate-300">
+                      {isFr ? 'Note ou réflexion des parents (optionnel) :' : 'Parent note or reflection (optional):'}
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={commentInput}
+                      onChange={(e) => setCommentInput(e.target.value)}
+                      placeholder={isFr ? "Ex: Encourager les révisions en mathématiques avant le prochain examen..." : "Ex: Encourage math revision on weekends before next exam..."}
+                      className="w-full p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-xs text-slate-900 dark:text-white resize-none focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                    />
                   </div>
                 </motion.div>
               )}
@@ -715,6 +982,107 @@ export default function StudentCard({
                   </div>
                 </div>
               </div>
+
+              {/* Parent Reflection / Comment Display or Inline Editor */}
+              {isEditingComment ? (
+                <div 
+                  onClick={(e) => e.stopPropagation()}
+                  className={`mt-2 p-2.5 rounded-xl border space-y-2 text-xs ${
+                    isSelected ? 'bg-slate-900/80 border-indigo-400/30 text-white' : 'bg-white border-slate-200 text-slate-800 dark:bg-slate-800/90 dark:border-slate-700 dark:text-slate-200'
+                  }`}
+                >
+                  <label className="font-bold text-[11px] flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400">
+                    <MessageSquare className="h-3 w-3" />
+                    <span>{isFr ? 'Réflexion des Parents sur l\'Objectif' : 'Parent Goal Reflection'}</span>
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={commentInput}
+                    onChange={(e) => setCommentInput(e.target.value)}
+                    placeholder={isFr ? "Ajoutez une note, observation ou encouragement..." : "Add a note, observation, or encouragement..."}
+                    className="w-full p-2 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white resize-none focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <div className="flex items-center justify-end gap-1.5">
+                    {goalComment && (
+                      <button
+                        type="button"
+                        onClick={handleClearComment}
+                        className="px-2.5 py-1 text-[10px] font-bold text-rose-600 hover:text-rose-700 dark:text-rose-400 transition cursor-pointer"
+                      >
+                        {isFr ? 'Supprimer' : 'Delete'}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingComment(false)}
+                      className="px-2.5 py-1 text-[10px] font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 transition cursor-pointer"
+                    >
+                      {isFr ? 'Annuler' : 'Cancel'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSaveCommentOnly(commentInput)}
+                      className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded-md shadow-xs transition flex items-center gap-1 cursor-pointer"
+                    >
+                      <Check className="h-3 w-3" />
+                      <span>{isFr ? 'Enregistrer' : 'Save'}</span>
+                    </button>
+                  </div>
+                </div>
+              ) : goalComment ? (
+                <div 
+                  onClick={(e) => e.stopPropagation()}
+                  className={`mt-2 p-2.5 rounded-xl border flex items-start justify-between gap-2 text-xs transition-all ${
+                    isSelected 
+                      ? 'bg-indigo-950/40 border-indigo-400/30 text-indigo-100' 
+                      : 'bg-indigo-50/60 dark:bg-slate-800/60 border-indigo-100 dark:border-slate-700/80 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  <div className="flex items-start gap-2 min-w-0">
+                    <MessageSquare className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${isSelected ? 'text-amber-300' : 'text-indigo-600 dark:text-indigo-400'}`} />
+                    <div className="min-w-0">
+                      <span className={`text-[10px] font-bold uppercase tracking-wider block ${isSelected ? 'text-indigo-200' : 'text-indigo-800 dark:text-indigo-300'}`}>
+                        {isFr ? 'Note & Réflexion des parents :' : 'Parent Note & Reflection:'}
+                      </span>
+                      <p className="text-[11px] italic leading-relaxed mt-0.5 break-words">
+                        "{goalComment}"
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCommentInput(goalComment);
+                      setIsEditingComment(true);
+                    }}
+                    className={`p-1 rounded-md shrink-0 transition cursor-pointer ${
+                      isSelected ? 'hover:bg-white/20 text-indigo-200' : 'hover:bg-indigo-100 dark:hover:bg-slate-700 text-slate-400 hover:text-indigo-600'
+                    }`}
+                    title={isFr ? "Modifier la réflexion" : "Edit reflection"}
+                  >
+                    <Edit3 className="h-3 w-3" />
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-1.5 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCommentInput('');
+                      setIsEditingComment(true);
+                    }}
+                    className={`text-[10px] font-bold flex items-center gap-1 transition cursor-pointer ${
+                      isSelected 
+                        ? 'text-indigo-200 hover:text-white' 
+                        : 'text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300'
+                    }`}
+                  >
+                    <MessageSquare className="h-2.5 w-2.5" />
+                    <span>{isFr ? '+ Ajouter une réflexion parentale' : '+ Add parent reflection note'}</span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Action Buttons */}
@@ -781,9 +1149,10 @@ export default function StudentCard({
                 )}
               </div>
             )}
-          </div>
-        </div>
-      </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
 
       {/* Modal interface rendered dynamically */}
       {showCamera && onUpdateStudent && (
