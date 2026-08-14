@@ -741,6 +741,138 @@ app.post("/api/send-confirmation-email", async (req, res) => {
   }
 });
 
+// API: Send Security Notification on Secondary Admin Revocation / Deletion
+app.post("/api/send-admin-revocation-alert", async (req, res) => {
+  const {
+    primaryAdminEmail = "jacquesbene301@gmail.com",
+    revokedAdminName,
+    revokedAdminEmail,
+    revokedAdminRole,
+    operatorEmail,
+    timestamp,
+    reason
+  } = req.body;
+
+  const targetEmail = (primaryAdminEmail || "jacquesbene301@gmail.com").trim().toLowerCase();
+  const adminName = revokedAdminName || "Administrateur Inconnu";
+  const adminEmail = revokedAdminEmail || "Non spécifié";
+  const adminRoleLabel = revokedAdminRole === 'deputy' 
+    ? 'Superviseur Adjoint (Privilèges Étendus)' 
+    : 'Admin Secondaire (Standard)';
+  const initiator = operatorEmail || "jacquesbene301@gmail.com";
+  const formattedDate = timestamp ? new Date(timestamp).toLocaleString('fr-FR', {
+    dateStyle: 'full',
+    timeStyle: 'medium',
+    timeZone: 'Africa/Douala'
+  }) : new Date().toLocaleString('fr-FR');
+
+  const subject = `🛡️ [ALERTE SÉCURITÉ PASMA-SYS] Révocation d'un administrateur : ${adminName}`;
+
+  const htmlContent = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 620px; margin: 0 auto; padding: 28px; border: 1px solid #fee2e2; border-radius: 16px; background-color: #ffffff;">
+      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #fecaca; padding-bottom: 18px; margin-bottom: 22px;">
+        <div>
+          <span style="display: inline-block; padding: 4px 10px; background-color: #fee2e2; color: #991b1b; font-size: 11px; font-weight: 800; border-radius: 6px; text-transform: uppercase; letter-spacing: 0.5px;">Alerte de Sécurité Système</span>
+          <h2 style="color: #0f172a; margin: 8px 0 0 0; font-size: 20px; font-weight: 900;">PASMA-SYS • Super-Admin Security</h2>
+        </div>
+      </div>
+
+      <p style="font-size: 15px; color: #334155; line-height: 1.5; margin-bottom: 20px;">
+        Bonjour Monsieur <strong>Jacques Bene Mbama</strong>,
+      </p>
+
+      <div style="background-color: #fff1f2; border-left: 4px solid #e11d48; padding: 14px 18px; border-radius: 8px; margin-bottom: 24px;">
+        <p style="margin: 0; color: #9f1239; font-size: 14px; font-weight: 700;">
+          ⚠️ Un compte d'administrateur secondaire vient d'être supprimé / révoqué du système.
+        </p>
+      </div>
+
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 13.5px; background-color: #f8fafc; border-radius: 10px; overflow: hidden; border: 1px solid #e2e8f0;">
+        <tbody>
+          <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 12px 16px; color: #64748b; font-weight: 600; width: 40%;">Administrateur Révoqué</td>
+            <td style="padding: 12px 16px; color: #0f172a; font-weight: 800;">${adminName}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 12px 16px; color: #64748b; font-weight: 600;">Adresse E-mail</td>
+            <td style="padding: 12px 16px; color: #0f172a; font-family: monospace; font-size: 13px;">${adminEmail}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 12px 16px; color: #64748b; font-weight: 600;">Statut / Habilitation</td>
+            <td style="padding: 12px 16px; color: #b91c1c; font-weight: 700;">${adminRoleLabel}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 12px 16px; color: #64748b; font-weight: 600;">Opérateur à l'origine</td>
+            <td style="padding: 12px 16px; color: #4338ca; font-weight: 700;">${initiator}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 12px 16px; color: #64748b; font-weight: 600;">Date & Heure de Révocation</td>
+            <td style="padding: 12px 16px; color: #334155; font-weight: 600;">${formattedDate}</td>
+          </tr>
+          <tr>
+            <td style="padding: 12px 16px; color: #64748b; font-weight: 600;">Code Journal d'Audit</td>
+            <td style="padding: 12px 16px; color: #475569; font-family: monospace; font-size: 12px;">REVOKE_SUPER_ADMIN</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="background-color: #f1f5f9; padding: 16px; border-radius: 10px; font-size: 12.5px; color: #475569; line-height: 1.6; margin-bottom: 24px;">
+        <strong>📋 Mesures automatiques appliquées :</strong><br>
+        • Suppression du profil dans la collection Firestore <code>super_admins</code>.<br>
+        • Clôture immédiate de la session et purge des autorisations dans le cache local.<br>
+        • Enregistrement de la trace cryptographique dans les journaux d'audit de facturation/sécurité.
+      </div>
+
+      <p style="font-size: 12px; color: #64748b; line-height: 1.5;">
+        Si cette opération n'a pas été ordonnée par vos soins, connectez-vous d'urgence sur votre portail <strong>SuperAdminDashboard</strong> pour révoquer toutes les sessions et auditer le journal des événements.
+      </p>
+
+      <hr style="border: none; border-top: 1px solid #f1f5f9; margin: 24px 0 16px 0;" />
+      <p style="font-size: 11px; color: #94a3b8; text-align: center; margin: 0;">
+        © PASMA-SYS Security Protocol • Notification Automatique Haute Priorité • Ne pas répondre à cet e-mail.
+      </p>
+    </div>
+  `;
+
+  try {
+    const mailer = await getTransporter();
+    const fromAddress = process.env.SMTP_FROM || (etherealAccount ? `"PASMA-SYS Security" <${etherealAccount.user}>` : '"PASMA-SYS Security" <security@pasma-sys.com>');
+
+    if (mailer) {
+      const info = await mailer.sendMail({
+        from: fromAddress,
+        to: targetEmail,
+        subject: subject,
+        text: `ALERTE SÉCURITÉ PASMA-SYS\n\nRévocation de l'administrateur : ${adminName} (${adminEmail})\nStatut : ${adminRoleLabel}\nOpérateur : ${initiator}\nDate : ${formattedDate}\nCode Audit : REVOKE_SUPER_ADMIN\n\nNotification automatique expédiée au Super-Admin Principal.`,
+        html: htmlContent
+      });
+
+      const testUrl = nodemailer.getTestMessageUrl(info);
+      console.log(`[Security Alert Email] Sent revocation alert to ${targetEmail} for admin ${adminEmail}. MessageId: ${info.messageId}`);
+      
+      return res.json({
+        success: true,
+        message: `Notification e-mail de sécurité transmise avec succès au Super-Admin Principal (${targetEmail}).`,
+        messageId: info.messageId,
+        testUrl: testUrl || undefined
+      });
+    } else {
+      console.log(`[Security Alert Email Simulated] Sent revocation alert to ${targetEmail} for admin ${adminEmail}.`);
+      return res.json({
+        success: true,
+        message: `Notification e-mail de sécurité enregistrée pour ${targetEmail}.`,
+        simulated: true
+      });
+    }
+  } catch (err: any) {
+    console.error("[Security Alert Email Error]:", err);
+    return res.status(500).json({
+      success: false,
+      error: `Échec de l'envoi de la notification e-mail de sécurité: ${err.message || err}`
+    });
+  }
+});
+
 // API: Trigger bulk email reminders for parents
 app.post("/api/apee/send-bulk-reminders", async (req, res) => {
   const { parentIds, parents, emailSubject, emailTemplate, smsTemplate, settings, channel } = req.body;

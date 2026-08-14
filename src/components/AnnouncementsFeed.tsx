@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Announcement, AnnouncementCategory } from '../types';
-import { Newspaper, Bell, Award, Calendar, AlertTriangle, Plus, Trash2, Shield, Lock, Unlock, CheckCircle, Volume2, VolumeX, Pin, FileText, FileUp, File, Eye, EyeOff, Image as ImageIcon, ArrowRight, X, Sparkles } from 'lucide-react';
+import { Newspaper, Bell, Award, Calendar, AlertTriangle, Plus, Trash2, Shield, Lock, Unlock, CheckCircle, Volume2, VolumeX, Pin, FileText, FileUp, File, Eye, EyeOff, Image as ImageIcon, ArrowRight, X, Sparkles, RotateCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLanguage } from '../utils/TranslationContext';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -104,6 +104,7 @@ export default function AnnouncementsFeed({
   const [author, setAuthor] = useState(pedManagerName || 'Responsable Pédagogique');
   const [speakingAnnId, setSpeakingAnnId] = useState<string | null>(null);
   const [deleteAnnConfirmId, setDeleteAnnConfirmId] = useState<string | null>(null);
+  const [isDeletingAnn, setIsDeletingAnn] = useState(false);
   const utteranceRef = React.useRef<SpeechSynthesisUtterance | null>(null);
   const resumeIntervalRef = React.useRef<any>(null);
 
@@ -1296,61 +1297,137 @@ export default function AnnouncementsFeed({
         })}
       </div>
 
-      {/* Custom Confirmation Modal for Deleting Announcements */}
-      {deleteAnnConfirmId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
-            <div className="p-6 text-center">
-              <div className="mx-auto flex items-center justify-center h-14 w-14 rounded-full bg-red-50 text-red-600 mb-4 shadow-3xs">
-                <Trash2 className="h-6.5 w-6.5" />
+      {/* Visually Harmonized Confirmation Modal for Announcement Deletion */}
+      <AnimatePresence>
+        {deleteAnnConfirmId && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-rose-200/80 dark:border-rose-900/50 max-w-md w-full p-6 space-y-5 overflow-hidden relative text-slate-900 dark:text-slate-100"
+            >
+              {/* Top Accent Gradient Bar */}
+              <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-rose-500 via-red-600 to-amber-500" />
+
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 rounded-2xl shrink-0">
+                    <Trash2 className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 dark:text-white leading-tight">
+                      {isEn ? "Delete Official Announcement" : "Suppression de Communiqué"}
+                    </h3>
+                    <p className="text-xs text-rose-600 dark:text-rose-400 font-bold">
+                      {isEn ? "Irreversible action • Removed from all feeds" : "Action irréversible • Retrait immédiat du fil"}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDeleteAnnConfirmId(null)}
+                  disabled={isDeletingAnn}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer disabled:opacity-50"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
-              <h3 className="text-base font-extrabold text-slate-950">
-                {isEn ? "Confirm deletion" : "Confirmer la suppression"}
-              </h3>
-              <p className="text-xs text-slate-500 mt-2 font-medium leading-relaxed">
-                {isEn 
-                  ? "Are you sure you want to permanently delete this official announcement? This action is irreversible." 
-                  : "Êtes-vous sûr de vouloir supprimer définitivement ce communiqué officiel ? Cette action est irréversible."}
-              </p>
-              
+
+              {/* Announcement Preview Summary Box */}
               {(() => {
                 const ann = allAnnouncements.find(a => a.id === deleteAnnConfirmId);
                 if (!ann) return null;
                 return (
-                  <div className="mt-4 p-3 bg-red-50/50 rounded-2xl border border-red-100 text-left space-y-1">
-                    <div className="text-[10px] font-bold text-red-800 uppercase tracking-wide">Titre du communiqué :</div>
-                    <div className="text-xs font-extrabold text-slate-800">{ann.title}</div>
-                    <div className="text-[10px] text-slate-500 line-clamp-2 mt-1 font-medium">{ann.content}</div>
+                  <div className="p-4 bg-rose-50/60 dark:bg-rose-950/30 border border-rose-200/70 dark:border-rose-900/40 rounded-2xl space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-black text-rose-900/70 dark:text-rose-300/70 uppercase tracking-wider">
+                        {isEn ? "Announcement details" : "Détails du communiqué ciblé"}
+                      </span>
+                      <span className="text-[10px] font-extrabold px-2.5 py-0.5 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 rounded-lg">
+                        {ann.category}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1">
+                      <p className="text-sm font-black text-slate-900 dark:text-white leading-snug">
+                        {ann.title}
+                      </p>
+                      <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed font-normal">
+                        {ann.content}
+                      </p>
+                      <div className="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400 pt-1 font-mono">
+                        <span className="flex items-center gap-1">
+                          <Calendar className="h-3 w-3 text-rose-500" />
+                          {new Date(ann.date).toLocaleDateString(isEn ? 'en-US' : 'fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </span>
+                        {ann.author && (
+                          <span className="truncate max-w-[180px]">
+                            • {ann.author}
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 );
               })()}
-            </div>
-            
-            <div className="bg-slate-50 px-6 py-4 flex gap-3 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setDeleteAnnConfirmId(null)}
-                className="flex-1 px-4 py-2 text-xs font-extrabold text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition cursor-pointer text-center"
-              >
-                {isEn ? "Cancel" : "Annuler"}
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  const id = deleteAnnConfirmId;
-                  setDeleteAnnConfirmId(null);
-                  if (onDeleteAnnouncement && id) {
-                    await onDeleteAnnouncement(id);
-                  }
-                }}
-                className="flex-1 px-4 py-2 text-xs font-black bg-red-600 hover:bg-red-700 text-white rounded-xl transition shadow-xs active:scale-97 cursor-pointer text-center"
-              >
-                {isEn ? "Delete" : "Supprimer"}
-              </button>
-            </div>
+
+              {/* Warning Notice */}
+              <div className="p-3 bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/40 rounded-xl space-y-1">
+                <div className="flex items-center gap-1.5 text-xs font-black text-amber-900 dark:text-amber-300">
+                  <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span>{isEn ? "Warning" : "Avertissement"}</span>
+                </div>
+                <p className="text-[11px] text-amber-900/80 dark:text-amber-300/80 leading-relaxed">
+                  {isEn
+                    ? "This announcement will be permanently removed from school feeds, push notifications, and archives."
+                    : "Ce communiqué sera définitivement retiré du tableau d'affichage officiel de l'école et de l'espace des familles."}
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setDeleteAnnConfirmId(null)}
+                  disabled={isDeletingAnn}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition cursor-pointer disabled:opacity-50"
+                >
+                  {isEn ? "Cancel" : "Annuler"}
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeletingAnn}
+                  onClick={async () => {
+                    const id = deleteAnnConfirmId;
+                    if (!onDeleteAnnouncement || !id) return;
+                    setIsDeletingAnn(true);
+                    try {
+                      await onDeleteAnnouncement(id);
+                      setDeleteAnnConfirmId(null);
+                    } finally {
+                      setIsDeletingAnn(false);
+                    }
+                  }}
+                  className="px-5 py-2.5 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 active:scale-95 text-white rounded-xl text-xs font-black shadow-md shadow-rose-600/20 transition cursor-pointer flex items-center gap-2 disabled:opacity-50"
+                >
+                  {isDeletingAnn ? (
+                    <>
+                      <RotateCw className="h-4 w-4 animate-spin" />
+                      <span>{isEn ? "Deleting..." : "Suppression en cours..."}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="h-4 w-4" />
+                      <span>{isEn ? "Confirm Deletion" : "Supprimer définitivement"}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
 
     </div>
   );

@@ -4,6 +4,20 @@ import { Establishment } from '../types';
 
 export const DEFAULT_FALLBACK_SCHOOLS: Establishment[] = [
   {
+    id: 'demo_school_ekali',
+    name: "CES d'Ekali 1 - MFOU",
+    cotisationAmount: 25000,
+    financialGoal: 5000000,
+    finManagerName: 'Marie Béné',
+    finManagerPhone: '677002233',
+    finManagerPassword: '1234',
+    pedManagerName: 'Marie Béné',
+    pedManagerPhone: '677002233',
+    pedManagerPassword: '1234',
+    schoolYear: '2025/2026',
+    ownerId: 'demo_admin'
+  },
+  {
     id: 'demo_school_vogt',
     name: "Collège Vogt - Yaoundé",
     cotisationAmount: 35000,
@@ -39,7 +53,7 @@ export function sanitizeFirestoreId(id: string): string {
 }
 
 // In-memory set of deleted IDs for cross-module consistency within session
-const inMemoryDeletedIds = new Set<string>(['demo_school_ekali', 'demo_school_ekali_settings']);
+const inMemoryDeletedIds = new Set<string>();
 
 /**
  * Fetch deleted school IDs directly from Firestore (`system/deleted_schools`)
@@ -54,7 +68,7 @@ export async function fetchAndSyncDeletedSchoolIds(): Promise<Set<string>> {
       const data = snap.data();
       if (Array.isArray(data?.ids)) {
         data.ids.forEach((id: string) => {
-          if (id) {
+          if (id && id !== 'demo_school_ekali' && id !== 'demo_school_ekali_settings') {
             merged.add(id);
             merged.add(sanitizeFirestoreId(id));
             inMemoryDeletedIds.add(id);
@@ -67,18 +81,25 @@ export async function fetchAndSyncDeletedSchoolIds(): Promise<Set<string>> {
   } catch (err) {
     console.warn('[schoolSync] Could not fetch system/deleted_schools from Firestore:', err);
   }
+  merged.delete('demo_school_ekali');
+  merged.delete('demo_school_ekali_settings');
   return merged;
 }
 
 export function getDeletedSchoolIds(): Set<string> {
-  const set = new Set<string>(inMemoryDeletedIds);
+  const set = new Set<string>();
+  inMemoryDeletedIds.forEach(id => {
+    if (id !== 'demo_school_ekali' && id !== 'demo_school_ekali_settings') {
+      set.add(id);
+    }
+  });
   try {
     const deletedStr = localStorage.getItem('pasma_deleted_schools');
     if (deletedStr) {
       const parsed = JSON.parse(deletedStr);
       if (Array.isArray(parsed)) {
         parsed.forEach((id: string) => {
-          if (id) {
+          if (id && id !== 'demo_school_ekali' && id !== 'demo_school_ekali_settings') {
             set.add(id);
             set.add(sanitizeFirestoreId(id));
           }
@@ -88,6 +109,8 @@ export function getDeletedSchoolIds(): Set<string> {
   } catch (e) {
     console.warn('[schoolSync] Error reading pasma_deleted_schools:', e);
   }
+  set.delete('demo_school_ekali');
+  set.delete('demo_school_ekali_settings');
   return set;
 }
 
@@ -190,6 +213,7 @@ export async function deleteAndPurgeSchool(schoolId: string): Promise<boolean> {
 
 export function cleanPayload(data: Record<string, any>): Record<string, any> {
   const clean: Record<string, any> = {};
+  if (!data || typeof data !== 'object') return clean;
   Object.keys(data).forEach((k) => {
     if (data[k] !== undefined && typeof data[k] !== 'function') {
       clean[k] = data[k];
@@ -432,6 +456,13 @@ export async function saveAndSyncEstablishment(est: Establishment, isUserCreated
 
   // 2. Save directly to Firestore
   try {
+    if (!auth.currentUser) {
+      try {
+        await loginAnonymously();
+      } catch (authErr) {
+        console.warn('[schoolSync] Anonymous auth notice before saving establishment:', authErr);
+      }
+    }
     const docRef = doc(db, 'establishments', id);
     const cleanData = cleanPayload(updatedEst);
     await setDoc(docRef, cleanData, { merge: true });

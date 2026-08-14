@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Student, ApeeSettings, ApeeParent, Grade, Attendance, Message } from '../types';
-import { Mail, GraduationCap, Calendar, User, UserCheck, Camera, Printer, Phone, TrendingUp, TrendingDown, Clock, MessageSquare, Send, X, Check, AlertCircle, QrCode, Trash2, Activity, Sparkles, Award, Target, Edit3, Trophy, Share2, Copy, ChevronDown, ChevronUp } from 'lucide-react';
+import { Mail, GraduationCap, Calendar, User, UserCheck, Camera, Printer, Phone, TrendingUp, TrendingDown, Clock, MessageSquare, Send, X, Check, AlertCircle, AlertTriangle, QrCode, Trash2, Activity, Sparkles, Award, Target, Edit3, Trophy, Share2, Copy, ChevronDown, ChevronUp, BellRing } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
 import StudentCameraModal from './StudentCameraModal';
 import StudentIDCardModal from './StudentIDCardModal';
+import AlertStaffModal from './AlertStaffModal';
 import { useLanguage } from '../utils/TranslationContext';
 import { doc, setDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
@@ -12,6 +13,7 @@ import { db, handleFirestoreError, OperationType } from '../firebase';
 const GradeEvolutionTooltip = ({ active, payload, isSelected, isFr }: any) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
+    const isPendingReview = data.status === 'PendingReview' || data.isPendingReview;
     return (
       <div className={`p-2.5 rounded-xl shadow-xl text-xs border backdrop-blur-md z-30 ${
         isSelected 
@@ -23,12 +25,25 @@ const GradeEvolutionTooltip = ({ active, payload, isSelected, isFr }: any) => {
           <span className="text-[10px] text-slate-400 font-mono">{data.dateStr}</span>
         </div>
         <p className="text-[11px] font-medium text-slate-300 mt-0.5">{data.examName}</p>
+
+        {isPendingReview && (
+          <div className="my-1.5 px-2 py-0.5 rounded-md bg-amber-500/25 border border-amber-400/50 text-amber-300 flex items-center gap-1.5 text-[10px] font-extrabold animate-pulse">
+            <AlertTriangle className="h-3 w-3 text-amber-400 shrink-0" />
+            <span>{isFr ? 'En attente de révision' : 'Pending Review'}</span>
+          </div>
+        )}
+
         <div className="flex items-center justify-between gap-3 mt-1.5 pt-1 border-t border-slate-700/30">
           <span className="text-[10px] text-slate-400 uppercase font-bold">{isFr ? 'Note :' : 'Score:'}</span>
-          <span className={`font-mono font-black text-xs ${data.score >= 10 ? 'text-emerald-400' : 'text-rose-400'}`}>
+          <span className={`font-mono font-black text-xs ${isPendingReview ? 'text-amber-400' : data.score >= 10 ? 'text-emerald-400' : 'text-rose-400'}`}>
             {data.score} / 20 <span className="text-[9.5px] font-normal text-slate-400">({data.rawScore})</span>
           </span>
         </div>
+        {data.reviewReason && (
+          <p className="text-[10px] text-amber-300 font-medium mt-1">
+            ⚠️ <span className="font-bold">{isFr ? 'Motif :' : 'Reason:'}</span> {data.reviewReason}
+          </p>
+        )}
         {data.remarks && (
           <p className="text-[10px] italic text-slate-400 mt-1 max-w-[160px] truncate">
             "{data.remarks}"
@@ -80,6 +95,7 @@ export default function StudentCard({
   const [showCamera, setShowCamera] = useState(false);
   const [showIDCard, setShowIDCard] = useState(false);
   const [showQuickContact, setShowQuickContact] = useState(false);
+  const [showAlertStaff, setShowAlertStaff] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState('absence');
@@ -209,6 +225,11 @@ export default function StudentCard({
 
   // Calculate best and worst subjects
   const studentGrades = (grades || []).filter(g => g.studentId === student.id);
+  const pendingReviewGrades = React.useMemo(() => {
+    return studentGrades.filter(g => g.status === 'PendingReview');
+  }, [studentGrades]);
+  const hasPendingReview = pendingReviewGrades.length > 0;
+
   const subjectAveragesMap: { [subj: string]: { sumBase20: number; count: number } } = {};
   studentGrades.forEach(g => {
     const scoreOn20 = (g.score / g.maxScore) * 20;
@@ -280,7 +301,12 @@ export default function StudentCard({
         score: scoreOn20,
         rawScore: `${g.score}/${g.maxScore}`,
         dateStr: formattedDate,
-        remarks: g.teacherRemarks || ''
+        remarks: g.teacherRemarks || '',
+        status: g.status,
+        reviewReason: g.reviewReason,
+        reviewNote: g.reviewNote,
+        isPendingReview: g.status === 'PendingReview',
+        isCorrected: g.status === 'Corrected',
       };
     });
   }, [grades, student.id, isFr]);
@@ -492,6 +518,22 @@ export default function StudentCard({
                   {last5Average > 0 ? `Moy: ${last5Average}/20` : (isFr ? 'Sans note' : 'No grades')}
                 </span>
 
+                {hasPendingReview && (
+                  <span 
+                    className={`font-black px-1.5 py-0.5 rounded-md flex items-center gap-1 border animate-pulse ${
+                      isSelected
+                        ? 'bg-amber-400 text-slate-900 border-amber-300 shadow-xs'
+                        : 'bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                    }`}
+                    title={isFr 
+                      ? `${pendingReviewGrades.length} note(s) en attente de révision par l'enseignant` 
+                      : `${pendingReviewGrades.length} grade(s) pending teacher review`}
+                  >
+                    <AlertTriangle className={`h-3 w-3 shrink-0 ${isSelected ? 'text-slate-900' : 'text-amber-600 dark:text-amber-400'}`} />
+                    <span>{isFr ? `${pendingReviewGrades.length} en révision` : `${pendingReviewGrades.length} review`}</span>
+                  </span>
+                )}
+
                 <span className={`font-medium px-1.5 py-0.5 rounded-md ${
                   isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
                 }`}>
@@ -509,8 +551,22 @@ export default function StudentCard({
             </div>
           </div>
 
-          {/* Details Toggle Button */}
-          <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+          {/* Details & Quick Alert Action Buttons */}
+          <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setShowAlertStaff(true)}
+              className={`p-1.5 rounded-xl border transition-all cursor-pointer flex items-center gap-1 text-[10px] font-extrabold ${
+                isSelected
+                  ? 'bg-amber-400 hover:bg-amber-300 text-slate-900 border-amber-300 shadow-xs'
+                  : 'bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300'
+              }`}
+              title={isFr ? "Alerter le Staff (Urgence, Santé, Retard Bus, Absence...)" : "Alert Staff (Emergency, Health, Bus Delay...)"}
+            >
+              <BellRing className={`h-3.5 w-3.5 shrink-0 ${isSelected ? 'text-slate-900' : 'text-rose-600 dark:text-rose-400'}`} />
+              <span className="hidden sm:inline">{isFr ? "Alerter" : "Alert"}</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setIsExpanded(!isExpanded)}
@@ -583,6 +639,37 @@ export default function StudentCard({
                   <span className="truncate">Assiduité : <strong className={isSelected ? 'text-white font-mono' : 'text-gray-700 font-mono'}>{presenceRate}%</strong></span>
                 </div>
               </div>
+
+            {/* Pending Review Flag Banner for Parents */}
+            {hasPendingReview && (
+              <div className={`p-2.5 rounded-xl border flex items-center justify-between gap-2.5 text-xs transition-all ${
+                isSelected
+                  ? 'bg-amber-400/20 border-amber-300/40 text-amber-100'
+                  : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/80 text-amber-900 dark:text-amber-200'
+              }`}>
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="p-1 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0">
+                    <AlertTriangle className="h-4 w-4 animate-pulse" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-extrabold text-[11px] leading-tight flex items-center gap-1.5 truncate">
+                      <span>{isFr ? "Note(s) en cours de révision" : "Grade(s) Under Pedagogical Review"}</span>
+                      <span className="px-1.5 py-0.2 rounded-full text-[9px] font-mono font-black bg-amber-500/30 text-amber-200 dark:text-amber-300">
+                        {pendingReviewGrades.length}
+                      </span>
+                    </p>
+                    <p className="text-[10px] opacity-85 truncate mt-0.5">
+                      {isFr 
+                        ? `${pendingReviewGrades.length} évaluation(s) signalée(s) par l'enseignant pour ajustement ou vérification.` 
+                        : `${pendingReviewGrades.length} assessment(s) flagged by teacher for adjustment or review.`}
+                    </p>
+                  </div>
+                </div>
+                <span className="text-[9.5px] font-extrabold px-2 py-0.5 rounded-md uppercase tracking-wider bg-amber-500/25 border border-amber-400/40 text-amber-200 dark:text-amber-300 shrink-0">
+                  {isFr ? "Vérification" : "Pending"}
+                </span>
+              </div>
+            )}
 
             {/* Recharts Grade Evolution Section (Last 5 Assessments) */}
             <div className={`mt-3 pt-3 border-t ${isSelected ? 'border-white/20' : 'border-slate-100 dark:border-slate-800/80'}`}>
@@ -664,20 +751,44 @@ export default function StudentCard({
 
                   {/* Individual grade tags for the last 5 evaluations */}
                   <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                    {last5GradesData.map((item) => (
-                      <div 
-                        key={item.id}
-                        title={`${item.subject} (${item.examName}) : ${item.rawScore}`}
-                        className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold border transition-all flex items-center justify-between gap-1 flex-1 min-w-[62px] ${
-                          isSelected
-                            ? (item.score >= 10 ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-100' : 'bg-rose-500/20 border-rose-400/40 text-rose-100')
-                            : (item.score >= 10 ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300' : 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300')
-                        }`}
-                      >
-                        <span className="truncate max-w-[42px]">{item.label}</span>
-                        <span className="font-black">{item.score}</span>
-                      </div>
-                    ))}
+                    {last5GradesData.map((item) => {
+                      const isPending = item.isPendingReview || item.status === 'PendingReview';
+                      const reviewTooltip = isPending
+                        ? `${item.subject} (${item.examName}) : ${item.rawScore} - [${isFr ? 'EN ATTENTE DE RÉVISION' : 'PENDING REVIEW'}]${item.reviewReason ? ` Motif: ${item.reviewReason}` : ''}`
+                        : `${item.subject} (${item.examName}) : ${item.rawScore}`;
+
+                      return (
+                        <div 
+                          key={item.id}
+                          title={reviewTooltip}
+                          className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold border transition-all flex items-center justify-between gap-1 flex-1 min-w-[64px] ${
+                            isPending
+                              ? (isSelected
+                                  ? 'bg-amber-500/30 border-amber-300/80 text-amber-100 ring-1 ring-amber-400/60 shadow-xs'
+                                  : 'bg-amber-50 dark:bg-amber-950/50 border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 ring-1 ring-amber-400/40')
+                              : isSelected
+                              ? (item.score >= 10 ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-100' : 'bg-rose-500/20 border-rose-400/40 text-rose-100')
+                              : (item.score >= 10 ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300' : 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300')
+                          }`}
+                        >
+                          <span className="truncate max-w-[40px] flex items-center gap-0.5">
+                            {item.label}
+                          </span>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            {isPending && (
+                              <span 
+                                className="inline-flex items-center text-amber-500 dark:text-amber-400 animate-pulse"
+                                title={isFr ? "Note signalée en attente de révision par l'enseignant" : "Grade flagged for teacher review"}
+                              >
+                                <AlertTriangle className="h-3 w-3 shrink-0" />
+                              </span>
+                            )}
+                            <span className="font-black">{item.score}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               ) : (
@@ -893,8 +1004,8 @@ export default function StudentCard({
                       strokeWidth="5"
                       fill="transparent"
                     />
-                    {/* Progress Indicator */}
-                    <circle
+                    {/* Animated Progress Indicator */}
+                    <motion.circle
                       cx="30"
                       cy="30"
                       r="24"
@@ -907,10 +1018,11 @@ export default function StudentCard({
                       }
                       strokeWidth="5"
                       strokeDasharray="150.8"
-                      strokeDashoffset={150.8 - (150.8 * goalProgress.percent) / 100}
+                      initial={{ strokeDashoffset: 150.8 }}
+                      animate={{ strokeDashoffset: 150.8 - (150.8 * goalProgress.percent) / 100 }}
+                      transition={{ duration: 1.2, ease: "easeOut" }}
                       strokeLinecap="round"
                       fill="transparent"
-                      className="transition-all duration-700 ease-out"
                     />
                   </svg>
                   {/* Center Text inside Ring */}
@@ -952,6 +1064,22 @@ export default function StudentCard({
                     <span className={`font-mono font-bold ${isSelected ? 'text-amber-300' : 'text-indigo-700 dark:text-indigo-300'}`}>
                       {goalProgress.targetGoal} / 20
                     </span>
+                  </div>
+
+                  {/* Horizontal Animated Progress Bar */}
+                  <div className="w-full bg-slate-200/80 dark:bg-slate-700/60 h-2 rounded-full overflow-hidden my-1 relative shadow-inner">
+                    <motion.div
+                      initial={{ width: '0%' }}
+                      animate={{ width: `${Math.min(100, Math.max(0, goalProgress.percent))}%` }}
+                      transition={{ duration: 1.2, ease: 'easeOut' }}
+                      className={`h-full rounded-full transition-colors ${
+                        goalProgress.isReached 
+                          ? 'bg-gradient-to-r from-emerald-500 to-teal-400' 
+                          : goalProgress.percent >= 80 
+                          ? 'bg-gradient-to-r from-indigo-500 to-sky-400' 
+                          : 'bg-gradient-to-r from-amber-500 to-orange-400'
+                      }`}
+                    />
                   </div>
 
                   {/* Gap Status Pill */}
@@ -1088,6 +1216,32 @@ export default function StudentCard({
             {/* Action Buttons */}
             {isSelected && (
               <div className="pt-3 mt-3 border-t border-white/20 flex flex-col sm:flex-row gap-2">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowAlertStaff(true);
+                  }}
+                  className="bg-gradient-to-r from-rose-600 via-amber-600 to-indigo-600 hover:from-rose-500 hover:to-indigo-500 text-white font-black text-[10px] px-3 py-1.5 rounded-xl shadow-xs border border-amber-300/40 cursor-pointer flex items-center justify-center gap-1.5 transition-all flex-1 active:scale-97"
+                  title={isFr ? "Alerter le Staff de la classe" : "Alert Class Staff"}
+                >
+                  <BellRing className="h-3.5 w-3.5 shrink-0 animate-bounce" />
+                  <span>{isFr ? "Alerter le Staff" : "Alert Staff"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowCamera(true);
+                  }}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[10px] px-3 py-1.5 rounded-xl border border-indigo-500 shadow-xs cursor-pointer flex items-center justify-center gap-1.5 transition-all flex-1 active:scale-97"
+                  title={isFr ? "Prendre ou mettre à jour la photo de l'élève avec la caméra" : "Take or update student photo using camera"}
+                >
+                  <Camera className="h-3.5 w-3.5 shrink-0" />
+                  <span>{isFr ? "Photo" : "Photo"}</span>
+                </button>
+
                 {onPrint && (
                   <button
                     type="button"
@@ -1155,12 +1309,16 @@ export default function StudentCard({
     </motion.div>
 
       {/* Modal interface rendered dynamically */}
-      {showCamera && onUpdateStudent && (
+      {showCamera && (
         <StudentCameraModal
           student={student}
           isOpen={showCamera}
           onClose={() => setShowCamera(false)}
-          onUpdate={onUpdateStudent}
+          onUpdate={(updatedStudent) => {
+            if (onUpdateStudent) {
+              onUpdateStudent(updatedStudent);
+            }
+          }}
         />
       )}
 
@@ -1436,6 +1594,18 @@ export default function StudentCard({
             </motion.div>
           </div>
         </AnimatePresence>
+      )}
+
+      {/* Alert Staff Modal */}
+      {showAlertStaff && (
+        <AlertStaffModal
+          student={student}
+          isOpen={showAlertStaff}
+          onClose={() => setShowAlertStaff(false)}
+          settings={settings}
+          onAddMessage={onAddMessage}
+          portalUserRole={portalUserRole}
+        />
       )}
     </>
   );

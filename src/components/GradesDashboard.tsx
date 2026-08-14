@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Grade, Student } from '../types';
-import { Award, BookOpen, TrendingUp, TrendingDown, Sparkles, Filter, Plus, Trash2, Lock, Unlock, CheckCircle, Printer, Download, Activity, AlertCircle, BarChart2, Check, HelpCircle, FileText } from 'lucide-react';
+import { Grade, Student, GradeReviewStatus } from '../types';
+import { Award, BookOpen, TrendingUp, TrendingDown, Sparkles, Filter, Plus, Trash2, Lock, Unlock, CheckCircle, Printer, Download, Activity, AlertCircle, BarChart2, Check, HelpCircle, FileText, X, RotateCw, AlertTriangle, Calendar, SlidersHorizontal, Mail, Send, CheckSquare, Flag, ShieldAlert, ShieldCheck, Clock, CheckCheck, MessageSquare, Info } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { motion, AnimatePresence } from 'motion/react';
 import { ResponsiveContainer, LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, Legend, Cell } from 'recharts';
@@ -13,7 +13,11 @@ interface GradesDashboardProps {
   allGrades?: Grade[];
   allStudents?: Student[];
   onAddGrade?: (grade: Grade) => Promise<boolean>;
+  onUpdateGrade?: (grade: Grade) => Promise<boolean>;
   onDeleteGrade?: (id: string) => Promise<boolean>;
+  onSendMessage?: (msg: any) => Promise<boolean> | void;
+  portalUserRole?: 'parent' | 'teacher' | 'admin';
+  apeeParents?: any[];
   isPedAuthorized?: boolean;
   onPromptUnlockPed?: () => void;
   pedManagerName?: string;
@@ -29,7 +33,11 @@ export default function GradesDashboard({
   allGrades = [],
   allStudents = [],
   onAddGrade,
+  onUpdateGrade,
   onDeleteGrade,
+  onSendMessage,
+  portalUserRole = 'teacher',
+  apeeParents = [],
   isPedAuthorized = false,
   onPromptUnlockPed,
   pedManagerName = '',
@@ -58,6 +66,8 @@ export default function GradesDashboard({
   
   // Add Grade states
   const [showAddForm, setShowAddForm] = useState(false);
+  const [gradeToDelete, setGradeToDelete] = useState<Grade | null>(null);
+  const [isDeletingGrade, setIsDeletingGrade] = useState(false);
   const [subject, setSubject] = useState('Mathématiques');
   const [customSubject, setCustomSubject] = useState('');
   const [examName, setExamName] = useState('');
@@ -65,6 +75,20 @@ export default function GradesDashboard({
   const [maxScore, setMaxScore] = useState<number>(20);
   const [remarks, setRemarks] = useState('');
   const [gradeDate, setGradeDate] = useState('');
+
+  // Correction Tool states
+  const [gradeToCorrect, setGradeToCorrect] = useState<Grade | null>(null);
+  const [isSavingCorrection, setIsSavingCorrection] = useState(false);
+  const [corrStatus, setCorrStatus] = useState<GradeReviewStatus>('PendingReview');
+  const [corrReason, setCorrReason] = useState<string>('Erreur de saisie / report');
+  const [customCorrReason, setCustomCorrReason] = useState<string>('');
+  const [corrScore, setCorrScore] = useState<number>(10);
+  const [corrMaxScore, setCorrMaxScore] = useState<number>(20);
+  const [corrRemarks, setCorrRemarks] = useState<string>('');
+  const [corrNote, setCorrNote] = useState<string>('');
+  const [corrNotifyParent, setCorrNotifyParent] = useState<boolean>(true);
+  const [filterReviewStatus, setFilterReviewStatus] = useState<'all' | 'pending' | 'published' | 'corrected'>('all');
+  const [correctionSuccessMsg, setCorrectionSuccessMsg] = useState<string | null>(null);
 
   // Dynamically compute configured subjects from settings or defaults
   const configuredSubjectsList = React.useMemo(() => {
@@ -98,10 +122,20 @@ export default function GradesDashboard({
   // Compute unique subjects
   const subjects = ['all', ...Array.from(new Set([...grades.map(g => g.subject), ...configuredSubjectsList]))];
 
+  // Compute Review counts
+  const pendingReviewCount = grades.filter(g => g.status === 'PendingReview').length;
+  const correctedGradesCount = grades.filter(g => g.status === 'Corrected').length;
+
   // Filter grades
-  const filteredGrades = selectedSubject === 'all'
-    ? grades
-    : grades.filter(g => g.subject === selectedSubject);
+  const filteredGrades = grades.filter(g => {
+    const matchesSubject = selectedSubject === 'all' || g.subject === selectedSubject;
+    const matchesReview =
+      filterReviewStatus === 'all' ? true :
+      filterReviewStatus === 'pending' ? g.status === 'PendingReview' :
+      filterReviewStatus === 'published' ? (!g.status || g.status === 'Published') :
+      filterReviewStatus === 'corrected' ? g.status === 'Corrected' : true;
+    return matchesSubject && matchesReview;
+  });
 
   // Sort grades chronologically for charts
   const sortedGradesForChart = [...filteredGrades].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -400,13 +434,110 @@ export default function GradesDashboard({
     }
   };
 
-  const handleDelete = async (id: string, name: string) => {
+  const handleDeletePrompt = (g: Grade) => {
     if (!verifyTeacherIdentity()) {
       return;
     }
-    const confirm = window.confirm(`Voulez-vous supprimer l'évaluation "${name}" ?`);
-    if (confirm && onDeleteGrade) {
-      await onDeleteGrade(id);
+    setGradeToDelete(g);
+  };
+
+  const handleConfirmDeleteGrade = async () => {
+    if (!gradeToDelete || !onDeleteGrade) return;
+    setIsDeletingGrade(true);
+    try {
+      await onDeleteGrade(gradeToDelete.id);
+      setGradeToDelete(null);
+    } finally {
+      setIsDeletingGrade(false);
+    }
+  };
+
+  const handleOpenCorrection = (g: Grade) => {
+    if (!verifyTeacherIdentity()) {
+      return;
+    }
+    setGradeToCorrect(g);
+    setCorrStatus(g.status || 'PendingReview');
+    setCorrReason(g.reviewReason || (language === 'en' ? 'Entry / data input error' : 'Erreur de saisie / report de note'));
+    setCustomCorrReason('');
+    setCorrScore(g.score);
+    setCorrMaxScore(g.maxScore || 20);
+    setCorrRemarks(g.teacherRemarks || '');
+    setCorrNote(g.reviewNote || '');
+    setCorrNotifyParent(true);
+  };
+
+  const handleSaveCorrection = async () => {
+    if (!gradeToCorrect || !onUpdateGrade) return;
+    setIsSavingCorrection(true);
+    try {
+      const finalReason = (corrReason === 'Autre motif...' || corrReason === 'Other reason...') && customCorrReason.trim()
+        ? customCorrReason.trim()
+        : corrReason;
+
+      const previousScore = gradeToCorrect.score;
+      const isNewScoreDifferent = Number(corrScore) !== previousScore || Number(corrMaxScore) !== gradeToCorrect.maxScore;
+
+      const updatedGrade: Grade = {
+        ...gradeToCorrect,
+        score: Number(corrScore),
+        maxScore: Number(corrMaxScore),
+        teacherRemarks: corrRemarks.trim(),
+        status: corrStatus,
+        reviewReason: finalReason,
+        reviewNote: corrNote.trim(),
+        flaggedForReviewAt: corrStatus === 'PendingReview' ? (gradeToCorrect.flaggedForReviewAt || new Date().toISOString()) : gradeToCorrect.flaggedForReviewAt,
+        flaggedBy: pedManagerName || (language === 'en' ? 'Academic Staff' : 'Enseignant / Direction Pédagogique'),
+        originalScore: gradeToCorrect.originalScore !== undefined ? gradeToCorrect.originalScore : (isNewScoreDifferent ? previousScore : undefined),
+        originalMaxScore: gradeToCorrect.originalMaxScore !== undefined ? gradeToCorrect.originalMaxScore : (isNewScoreDifferent ? gradeToCorrect.maxScore : undefined),
+        parentNotified: corrNotifyParent ? true : gradeToCorrect.parentNotified,
+        parentNotifiedAt: corrNotifyParent ? new Date().toISOString() : gradeToCorrect.parentNotifiedAt,
+      };
+
+      const success = await onUpdateGrade(updatedGrade);
+
+      // Send notification / message to student's parent if requested
+      if (corrNotifyParent && onSendMessage) {
+        const studentName = activeStudent?.name || (language === 'en' ? 'your child' : 'votre enfant');
+        const statusTitle = corrStatus === 'PendingReview'
+          ? (language === 'en' ? '⚠️ Evaluation Flagged for Review' : '⚠️ Évaluation Placée sous Statut "En attente de révision"')
+          : corrStatus === 'Corrected'
+          ? (language === 'en' ? '✨ Grade Corrected & Updated' : '✨ Note Rectifiée & Mise à Jour')
+          : (language === 'en' ? '✅ Grade Confirmed & Published' : '✅ Note Confirmée & Publiée');
+
+        const messageBody = language === 'en'
+          ? `📋 [Academic Notification - ${gradeToCorrect.subject}]\n${statusTitle}\n\n• Assessment: ${gradeToCorrect.examName}\n• Current Score: ${corrScore}/${corrMaxScore}${isNewScoreDifferent ? ` (Initial: ${previousScore}/${gradeToCorrect.maxScore})` : ''}\n• Review Reason: ${finalReason}${corrNote ? `\n• Teacher's Note: "${corrNote}"` : ''}\n\nThe academic team is monitoring this record.`
+          : `📋 [Notification Académique - ${gradeToCorrect.subject}]\n${statusTitle}\n\n• Évaluation : ${gradeToCorrect.examName}\n• Note actuelle : ${corrScore}/${corrMaxScore}${isNewScoreDifferent ? ` (Initiale : ${previousScore}/${gradeToCorrect.maxScore})` : ''}\n• Motif : ${finalReason}${corrNote ? `\n• Message de l'enseignant : "${corrNote}"` : ''}\n\nL'équipe pédagogique reste à votre disposition pour tout échange complémentaire.`;
+
+        const notificationMsg: any = {
+          id: `msg_corr_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          studentId: gradeToCorrect.studentId,
+          parentId: gradeToCorrect.parentId || activeStudent?.parentId || '',
+          senderType: 'Teacher',
+          teacherName: pedManagerName || (language === 'en' ? 'Academic Supervisor' : 'Responsable Pédagogique'),
+          senderRole: language === 'en' ? 'Teacher / Academic Staff' : 'Professeur / Direction Pédagogique',
+          recipientName: language === 'en' ? 'Parents' : 'Parents d\'élèves',
+          recipientRole: language === 'en' ? 'Parent' : 'Parent d\'élève',
+          category: 'Grade',
+          content: messageBody,
+          timestamp: new Date().toISOString(),
+          isRead: false,
+        };
+
+        await onSendMessage(notificationMsg);
+      }
+
+      setCorrectionSuccessMsg(
+        corrStatus === 'PendingReview'
+          ? (language === 'en' ? "Grade flagged for 'Pending Review' and notification sent to parents!" : "Note marquée 'En attente de révision' et notification envoyée aux parents avec succès !")
+          : (language === 'en' ? "Grade successfully updated and parents notified!" : "Note mise à jour et notification transmise aux parents avec succès !")
+      );
+      setTimeout(() => setCorrectionSuccessMsg(null), 4500);
+      setGradeToCorrect(null);
+    } catch (err) {
+      console.error("Failed to save grade correction:", err);
+    } finally {
+      setIsSavingCorrection(false);
     }
   };
 
@@ -2283,33 +2414,117 @@ export default function GradesDashboard({
 
           {/* Select and Filter Row */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between flex-wrap gap-2 pt-2 border-t border-gray-100">
+            {/* Review Status Banner if there are grades pending review */}
+            {pendingReviewCount > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-center justify-between gap-3 flex-wrap text-amber-900 dark:text-amber-200"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-xl shrink-0">
+                    <AlertTriangle className="h-4 w-4 animate-bounce" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-black leading-tight">
+                      {language === 'en' 
+                        ? `${pendingReviewCount} grade(s) flagged for 'Pending Review'` 
+                        : `${pendingReviewCount} évaluation(s) marquée(s) "En attente de révision"`}
+                    </p>
+                    <p className="text-[11px] text-amber-800/80 dark:text-amber-300/80">
+                      {language === 'en'
+                        ? "Check flagged assessments, adjust marks if needed, and communicate updates to parents."
+                        : "Vérifiez les notes signalées, ajustez-les si besoin et informez directement les parents."}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFilterReviewStatus(filterReviewStatus === 'pending' ? 'all' : 'pending')}
+                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition cursor-pointer shadow-xs"
+                >
+                  {filterReviewStatus === 'pending' 
+                    ? (language === 'en' ? "Show all grades" : "Afficher toutes les notes")
+                    : (language === 'en' ? "Filter pending only" : "Filtrer les notes en révision")}
+                </button>
+              </motion.div>
+            )}
+
+            <div className="flex items-center justify-between flex-wrap gap-2 pt-2 border-t border-gray-100 dark:border-slate-800">
               <div className="flex items-center gap-2.5">
-                <h3 className="text-sm font-semibold text-gray-800">Détail des Évaluations</h3>
+                <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                  {language === 'en' ? "Assessment Breakdown" : "Détail des Évaluations"}
+                </h3>
                 <button
                   type="button"
                   onClick={handleExportGradesPDF}
-                  className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer active:scale-97"
+                  className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer active:scale-97"
                   title="Télécharger le relevé de notes complet en PDF"
                 >
-                  <FileText className="h-3.5 w-3.5 text-indigo-600" />
-                  <span>Exporter en PDF</span>
+                  <FileText className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+                  <span>{language === 'en' ? "Export PDF" : "Exporter en PDF"}</span>
                 </button>
               </div>
-              <div className="flex items-center gap-2 flex-wrap text-left">
-                <span className="text-xs font-semibold text-gray-400">Filtrer par matière :</span>
-                <div className="flex bg-gray-100 p-0.5 rounded-xl border border-gray-200">
-                  {subjects.map((subj) => (
+
+              {/* Status and Subject Filters */}
+              <div className="flex items-center gap-2.5 flex-wrap text-left">
+                {/* Review status filter */}
+                <div className="flex bg-gray-100 dark:bg-slate-800 p-0.5 rounded-xl border border-gray-200 dark:border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => setFilterReviewStatus('all')}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer transition-all ${
+                      filterReviewStatus === 'all'
+                        ? 'bg-white dark:bg-slate-700 text-gray-900 dark:text-white shadow-3xs'
+                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                    }`}
+                  >
+                    {language === 'en' ? 'All' : 'Toutes'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFilterReviewStatus('pending')}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer transition-all flex items-center gap-1.5 ${
+                      filterReviewStatus === 'pending'
+                        ? 'bg-amber-500 text-white shadow-3xs'
+                        : 'text-amber-700 dark:text-amber-400 hover:text-amber-900'
+                    }`}
+                  >
+                    <span>{language === 'en' ? 'In Review' : 'En révision'}</span>
+                    {pendingReviewCount > 0 && (
+                      <span className={`px-1.5 py-0.2 text-[9px] rounded-full font-black ${
+                        filterReviewStatus === 'pending' ? 'bg-amber-700 text-white' : 'bg-amber-200 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200'
+                      }`}>
+                        {pendingReviewCount}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFilterReviewStatus('corrected')}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer transition-all ${
+                      filterReviewStatus === 'corrected'
+                        ? 'bg-sky-600 text-white shadow-3xs'
+                        : 'text-sky-700 dark:text-sky-400 hover:text-sky-900'
+                    }`}
+                  >
+                    {language === 'en' ? 'Corrected' : 'Rectifiées'}
+                  </button>
+                </div>
+
+                {/* Subject filter */}
+                <div className="flex bg-gray-100 dark:bg-slate-800 p-0.5 rounded-xl border border-gray-200 dark:border-slate-700 max-w-full overflow-x-auto">
+                  {subjects.slice(0, 7).map((subj) => (
                     <button
                       key={subj}
                       onClick={() => setSelectedSubject(subj)}
-                      className={`px-3 py-1 rounded-lg text-xs font-medium cursor-pointer transition-all ${
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-medium cursor-pointer transition-all shrink-0 ${
                         selectedSubject === subj
-                          ? 'bg-white text-gray-900 shadow-3xs'
-                          : 'text-gray-500 hover:text-gray-900'
+                          ? 'bg-white dark:bg-slate-700 text-gray-900 dark:text-white shadow-3xs'
+                          : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
                       }`}
                     >
-                      {subj === 'all' ? 'Toutes' : subj}
+                      {subj === 'all' ? (language === 'en' ? 'All Subjects' : 'Toutes') : subj}
                     </button>
                   ))}
                 </div>
@@ -2321,6 +2536,8 @@ export default function GradesDashboard({
                 {filteredGrades.map((g, idx) => {
                   const relativeScore = (g.score / g.maxScore) * 20;
                   const isCustom = g.id.startsWith('gr_') && Number(g.id.split('_')[1]) > 10000;
+                  const isPendingReview = g.status === 'PendingReview';
+                  const isCorrected = g.status === 'Corrected';
 
                   return (
                     <motion.div
@@ -2329,44 +2546,91 @@ export default function GradesDashboard({
                       animate={{ opacity: 1, x: 0 }}
                       exit={{ opacity: 0, scale: 0.95 }}
                       transition={{ delay: idx * 0.04 }}
-                      className="p-4 bg-white border border-gray-100 rounded-2xl flex items-center justify-between gap-4 flex-wrap hover:shadow-xs group duration-200 transition-all"
+                      className={`p-4 rounded-2xl flex items-center justify-between gap-4 flex-wrap hover:shadow-xs group duration-200 transition-all ${
+                        isPendingReview
+                          ? 'bg-amber-50/40 dark:bg-amber-950/20 border-2 border-amber-300/80 dark:border-amber-700/60 shadow-xs'
+                          : isCorrected
+                          ? 'bg-sky-50/30 dark:bg-sky-950/20 border border-sky-200/80 dark:border-sky-800/60'
+                          : 'bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800'
+                      }`}
                     >
-                      <div className="flex-1 space-y-1 min-w-[200px]">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs bg-gray-100 text-gray-700 px-2.5 py-0.5 rounded-md font-medium">
+                      <div className="flex-1 space-y-1 min-w-[220px]">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-gray-300 px-2.5 py-0.5 rounded-md font-medium">
                             {g.subject}
                           </span>
                           <span className="text-[11px] font-mono text-gray-400">
-                            {new Date(g.date).toLocaleDateString('fr-FR')}
+                            {new Date(g.date).toLocaleDateString(language === 'en' ? 'en-US' : 'fr-FR')}
                           </span>
-                          {activeStudent?.gradesValidated ? (
-                            <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1 select-none">
+
+                          {/* Review Status Badges */}
+                          {isPendingReview ? (
+                            <span className="text-[10px] font-black bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-xs animate-pulse">
+                              <AlertTriangle className="h-3 w-3 text-amber-600 dark:text-amber-400" />
+                              {language === 'en' ? 'Pending Review' : 'En attente de révision'}
+                            </span>
+                          ) : isCorrected ? (
+                            <span className="text-[10px] font-black bg-sky-100 dark:bg-sky-900/60 text-sky-800 dark:text-sky-300 border border-sky-300 dark:border-sky-700 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-xs">
+                              <Sparkles className="h-3 w-3 text-sky-600 dark:text-sky-400" />
+                              {language === 'en' ? 'Corrected' : 'Note Rectifiée'}
+                            </span>
+                          ) : activeStudent?.gradesValidated ? (
+                            <span className="text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded-full flex items-center gap-1 select-none">
                               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                              Validated
+                              {language === 'en' ? 'Validated' : 'Validé'}
                             </span>
                           ) : (
-                            <span className="text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1 select-none">
-                              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                              Pending
+                            <span className="text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-full flex items-center gap-1 select-none">
+                              <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+                              {language === 'en' ? 'Published' : 'Publiée'}
                             </span>
                           )}
                         </div>
-                        <h4 className="font-semibold text-gray-900 text-sm">
+
+                        <h4 className="font-bold text-gray-900 dark:text-white text-sm">
                           {g.examName}
                         </h4>
-                        <p className="text-xs text-gray-500 italic">
-                          "{g.teacherRemarks}"
-                        </p>
+
+                        {g.teacherRemarks && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400 italic">
+                            "{g.teacherRemarks}"
+                          </p>
+                        )}
+
+                        {/* Review Reason & Parent Notification Indicators */}
+                        {(g.reviewReason || g.parentNotified || isPendingReview) && (
+                          <div className="pt-1 flex items-center gap-2 flex-wrap">
+                            {g.reviewReason && (
+                              <span className="text-[10.5px] font-semibold text-amber-800 dark:text-amber-300 bg-amber-100/70 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                <Flag className="h-3 w-3 text-amber-600" />
+                                <span className="font-bold">{language === 'en' ? 'Reason:' : 'Motif :'}</span> {g.reviewReason}
+                              </span>
+                            )}
+                            {g.parentNotified && (
+                              <span className="text-[10px] font-medium text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-1.5 py-0.5 rounded-md flex items-center gap-1">
+                                <CheckCheck className="h-3 w-3 text-emerald-600" />
+                                <span>{language === 'en' ? 'Parent notified' : 'Parent notifié'}</span>
+                              </span>
+                            )}
+                            {g.originalScore !== undefined && (
+                              <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                                {language === 'en' ? 'Initial mark:' : 'Note initiale :'} {g.originalScore}/{g.originalMaxScore || 20}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
 
-                      {/* Display score and custom delete action */}
-                      <div className="flex items-center gap-4">
+                      {/* Display score and actions */}
+                      <div className="flex items-center gap-3">
                         <div className="text-right">
-                          <span className={`text-lg font-bold px-3 py-1 rounded-xl ${
-                            relativeScore >= 16 ? 'bg-emerald-50 text-emerald-700' :
-                            relativeScore >= 12 ? 'bg-indigo-50 text-indigo-700' :
-                            relativeScore >= 10 ? 'bg-amber-50 text-amber-700' :
-                            'bg-red-50 text-red-700'
+                          <span className={`text-lg font-bold px-3 py-1 rounded-xl inline-block ${
+                            isPendingReview
+                              ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700'
+                              : relativeScore >= 16 ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' :
+                              relativeScore >= 12 ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300' :
+                              relativeScore >= 10 ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300' :
+                              'bg-red-50 dark:bg-red-950/60 text-red-700 dark:text-red-300'
                           }`}>
                             {g.score} <span className="text-xs opacity-60">/ {g.maxScore}</span>
                           </span>
@@ -2375,14 +2639,32 @@ export default function GradesDashboard({
                           </div>
                         </div>
 
+                        {/* Correction Tool Button */}
+                        {onUpdateGrade && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenCorrection(g)}
+                            className={`p-2 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/60 rounded-xl transition duration-200 cursor-pointer flex items-center gap-1.5 ${
+                              isPedAuthorized || isCustom ? 'opacity-100' : 'opacity-70 hover:opacity-100 md:opacity-0 md:group-hover:opacity-100'
+                            }`}
+                            title={language === 'en' ? "Correction Tool / Flag for Review" : "Outil de Correction / Mettre en révision"}
+                          >
+                            <SlidersHorizontal className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                            <span className="text-xs font-bold hidden sm:inline">
+                              {language === 'en' ? "Correction Tool" : "Correction"}
+                            </span>
+                          </button>
+                        )}
+
+                        {/* Delete Grade Button */}
                         {onDeleteGrade && (
                           <button
                             type="button"
-                            onClick={() => handleDelete(g.id, g.examName)}
-                            className={`text-red-650 hover:text-red-800 p-1.5 bg-red-100/15 hover:bg-red-200/30 border border-transparent hover:border-red-500/10 rounded-xl transition duration-200 cursor-pointer ${
-                              isPedAuthorized || isCustom ? 'opacity-100' : 'opacity-45 hover:opacity-105 md:opacity-0 md:group-hover:opacity-100'
+                            onClick={() => handleDeletePrompt(g)}
+                            className={`text-red-650 hover:text-red-800 dark:text-red-400 p-2 bg-red-100/15 hover:bg-red-200/30 border border-transparent hover:border-red-500/10 rounded-xl transition duration-200 cursor-pointer ${
+                              isPedAuthorized || isCustom ? 'opacity-100' : 'opacity-45 hover:opacity-100 md:opacity-0 md:group-hover:opacity-100'
                             }`}
-                            title="Supprimer cette note"
+                            title={language === 'en' ? "Delete this grade" : "Supprimer cette note"}
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
@@ -2398,6 +2680,400 @@ export default function GradesDashboard({
       )}
       </>
       )}
+
+      {/* Floating Success Toast Alert */}
+      <AnimatePresence>
+        {correctionSuccessMsg && (
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            className="fixed bottom-6 right-6 z-50 bg-emerald-900 text-white px-5 py-3.5 rounded-2xl shadow-2xl border border-emerald-600/50 flex items-center gap-3 text-xs font-bold"
+          >
+            <CheckCircle className="h-5 w-5 text-emerald-400 shrink-0" />
+            <span>{correctionSuccessMsg}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Correction Tool Modal */}
+      <AnimatePresence>
+        {gradeToCorrect && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 12 }}
+              className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-amber-200/80 dark:border-amber-900/50 max-w-lg w-full p-6 space-y-5 overflow-hidden relative text-slate-900 dark:text-slate-100 my-8"
+            >
+              {/* Top Accent Gradient Bar */}
+              <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-amber-500 via-orange-500 to-indigo-600" />
+
+              {/* Header */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 rounded-2xl shrink-0">
+                    <SlidersHorizontal className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 dark:text-white leading-tight">
+                      {language === 'en' ? "Grade Correction & Review Tool" : "Outil de Correction & Révision Pédagogique"}
+                    </h3>
+                    <p className="text-xs text-amber-700 dark:text-amber-400 font-bold">
+                      {language === 'en' 
+                        ? "Flag for 'Pending Review' or adjust grade and notify parents" 
+                        : "Mettre en attente de révision ou corriger la note avec notification parentale"}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setGradeToCorrect(null)}
+                  disabled={isSavingCorrection}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer disabled:opacity-50"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Assessment Context Box */}
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                    {language === 'en' ? "Target Evaluation" : "Évaluation Ciblée"}
+                  </span>
+                  <span className="text-xs font-black text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 px-2.5 py-0.5 rounded-lg">
+                    {gradeToCorrect.subject}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="min-w-0 pr-2">
+                    <p className="text-xs font-extrabold text-slate-900 dark:text-white truncate">
+                      {gradeToCorrect.examName}
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                      <Calendar className="h-3 w-3 text-slate-400" />
+                      <span>{new Date(gradeToCorrect.date).toLocaleDateString(language === 'en' ? 'en-US' : 'fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="text-xs font-mono font-bold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-1 rounded-lg">
+                      {language === 'en' ? 'Current:' : 'Actuelle :'} {gradeToCorrect.score}/{gradeToCorrect.maxScore}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Form Controls */}
+              <div className="space-y-4 text-left">
+                {/* Review Status Choice */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    {language === 'en' ? "Select Status :" : "Statut pédagogique de la note :"}
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCorrStatus('PendingReview')}
+                      className={`p-2.5 rounded-xl border text-xs font-bold cursor-pointer transition flex flex-col items-center gap-1 text-center ${
+                        corrStatus === 'PendingReview'
+                          ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-400 dark:border-amber-600 text-amber-900 dark:text-amber-200 ring-2 ring-amber-400/40'
+                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-amber-300'
+                      }`}
+                    >
+                      <AlertTriangle className={`h-4 w-4 ${corrStatus === 'PendingReview' ? 'text-amber-600 animate-pulse' : 'text-slate-400'}`} />
+                      <span>{language === 'en' ? 'Pending Review' : 'En révision'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setCorrStatus('Corrected')}
+                      className={`p-2.5 rounded-xl border text-xs font-bold cursor-pointer transition flex flex-col items-center gap-1 text-center ${
+                        corrStatus === 'Corrected'
+                          ? 'bg-sky-50 dark:bg-sky-950/60 border-sky-400 dark:border-sky-600 text-sky-900 dark:text-sky-200 ring-2 ring-sky-400/40'
+                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-sky-300'
+                      }`}
+                    >
+                      <Sparkles className={`h-4 w-4 ${corrStatus === 'Corrected' ? 'text-sky-600' : 'text-slate-400'}`} />
+                      <span>{language === 'en' ? 'Corrected' : 'Rectifiée'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setCorrStatus('Published')}
+                      className={`p-2.5 rounded-xl border text-xs font-bold cursor-pointer transition flex flex-col items-center gap-1 text-center ${
+                        corrStatus === 'Published'
+                          ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-400 dark:border-emerald-600 text-emerald-900 dark:text-emerald-200 ring-2 ring-emerald-400/40'
+                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-emerald-300'
+                      }`}
+                    >
+                      <CheckCircle className={`h-4 w-4 ${corrStatus === 'Published' ? 'text-emerald-600' : 'text-slate-400'}`} />
+                      <span>{language === 'en' ? 'Validated / Published' : 'Validée / Publiée'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Review Reason Predefined Selection */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    {language === 'en' ? "Reason for Review / Flagging :" : "Motif de la révision / signalement :"}
+                  </label>
+                  <select
+                    value={corrReason}
+                    onChange={(e) => setCorrReason(e.target.value)}
+                    className="w-full text-xs font-medium bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-800 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                  >
+                    <option value="Erreur de saisie / report de note">Erreur de saisie / report de note</option>
+                    <option value="Réclamation parentale / contestation légitime">Réclamation parentale / contestation légitime</option>
+                    <option value="Barème d'évaluation recalculé">Barème d'évaluation recalculé</option>
+                    <option value="Copie recomptée ou réévaluée">Copie recomptée ou réévaluée</option>
+                    <option value="Épreuve de rattrapage effectuée">Épreuve de rattrapage effectuée</option>
+                    <option value="Absence justifiée / Devoir remis ultérieurement">Absence justifiée / Devoir remis ultérieurement</option>
+                    <option value="Autre motif...">Autre motif personnalisé...</option>
+                  </select>
+                </div>
+
+                {(corrReason === 'Autre motif...' || corrReason === 'Other reason...') && (
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
+                    <input
+                      type="text"
+                      value={customCorrReason}
+                      onChange={(e) => setCustomCorrReason(e.target.value)}
+                      placeholder={language === 'en' ? "Specify reason..." : "Précisez le motif..."}
+                      className="w-full text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-800 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                    />
+                  </motion.div>
+                )}
+
+                {/* Score adjustment */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      {language === 'en' ? "Adjusted Score :" : "Note attribuée :"}
+                    </label>
+                    <input
+                      type="number"
+                      step="0.25"
+                      min="0"
+                      max={corrMaxScore}
+                      value={corrScore}
+                      onChange={(e) => setCorrScore(Number(e.target.value))}
+                      className="w-full text-sm font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                      {language === 'en' ? "Out of (Max) :" : "Sur barème de :"}
+                    </label>
+                    <input
+                      type="number"
+                      step="1"
+                      min="1"
+                      value={corrMaxScore}
+                      onChange={(e) => setCorrMaxScore(Number(e.target.value))}
+                      className="w-full text-sm font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Pedagogical Note / Teacher Word */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    {language === 'en' ? "Teacher's Review Note (visible to parents) :" : "Mot d'explication pédagogique pour les parents :"}
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={corrNote}
+                    onChange={(e) => setCorrNote(e.target.value)}
+                    placeholder={language === 'en' 
+                      ? "Add an explanatory note for parents regarding this review or correction..." 
+                      : "Expliquez brièvement le contexte de la révision ou de la rectification pour le parent d'élève..."}
+                    className="w-full text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-800 dark:text-slate-100 focus:outline-hidden focus:ring-2 focus:ring-amber-500 resize-none"
+                  />
+                </div>
+
+                {/* Parent Notification Checkbox */}
+                <div className="p-3 bg-amber-50/70 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-900/50 rounded-2xl flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    id="notifyParentCheckbox"
+                    checked={corrNotifyParent}
+                    onChange={(e) => setCorrNotifyParent(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 text-amber-600 rounded border-amber-300 focus:ring-amber-500 cursor-pointer"
+                  />
+                  <label htmlFor="notifyParentCheckbox" className="text-xs text-slate-700 dark:text-slate-300 cursor-pointer leading-tight space-y-0.5">
+                    <span className="font-extrabold text-amber-900 dark:text-amber-200 flex items-center gap-1">
+                      <Mail className="h-3.5 w-3.5 text-amber-600" />
+                      {language === 'en' ? "Send automatic notification to student's parent" : "Envoyer une notification automatique au parent de l'élève"}
+                    </span>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      {language === 'en'
+                        ? "Transmits a formal alert in the Parent Portal with the review status, motive, and updated evaluation score."
+                        : "Transmet un message formel dans l'espace Parent avec le statut de révision, le motif et la note actualisée."}
+                    </p>
+                  </label>
+                </div>
+              </div>
+
+              {/* Modal Actions */}
+              <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setGradeToCorrect(null)}
+                  disabled={isSavingCorrection}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition cursor-pointer disabled:opacity-50"
+                >
+                  {language === 'en' ? "Cancel" : "Annuler"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveCorrection}
+                  disabled={isSavingCorrection}
+                  className="px-5 py-2.5 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:from-amber-700 hover:to-orange-700 active:scale-95 text-white rounded-xl text-xs font-black shadow-md shadow-amber-600/20 transition cursor-pointer flex items-center gap-2 disabled:opacity-50"
+                >
+                  {isSavingCorrection ? (
+                    <>
+                      <RotateCw className="h-4 w-4 animate-spin" />
+                      <span>{language === 'en' ? "Saving..." : "Enregistrement..."}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="h-4 w-4" />
+                      <span>
+                        {corrStatus === 'PendingReview'
+                          ? (language === 'en' ? "Flag for Pending Review & Notify" : "Placer en Révision & Notifier")
+                          : (language === 'en' ? "Save Correction & Notify" : "Valider la Correction & Notifier")}
+                      </span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Visually Harmonized Confirmation Modal for Grade Deletion */}
+      <AnimatePresence>
+        {gradeToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-rose-200/80 dark:border-rose-900/50 max-w-md w-full p-6 space-y-5 overflow-hidden relative text-slate-900 dark:text-slate-100"
+            >
+              {/* Top Accent Gradient Bar */}
+              <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-rose-500 via-red-600 to-amber-500" />
+
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 rounded-2xl shrink-0">
+                    <Trash2 className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 dark:text-white leading-tight">
+                      {language === 'en' ? "Delete Grade Assessment" : "Suppression de Note / Évaluation"}
+                    </h3>
+                    <p className="text-xs text-rose-600 dark:text-rose-400 font-bold">
+                      {language === 'en' ? "Irreversible action • Recalculates averages" : "Action irréversible • Recalcul immédiat des moyennes"}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setGradeToDelete(null)}
+                  disabled={isDeletingGrade}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer disabled:opacity-50"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Grade Preview Summary Box */}
+              <div className="p-4 bg-rose-50/60 dark:bg-rose-950/30 border border-rose-200/70 dark:border-rose-900/40 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-black text-rose-900/70 dark:text-rose-300/70 uppercase tracking-wider">
+                    {language === 'en' ? "Grade assessment details" : "Détails de l'évaluation ciblée"}
+                  </span>
+                  <span className="text-[10.5px] font-extrabold px-2.5 py-0.5 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 rounded-lg">
+                    {gradeToDelete.subject}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between bg-white dark:bg-slate-850 p-3 rounded-xl border border-rose-100 dark:border-rose-900/30">
+                  <div className="min-w-0 pr-2">
+                    <p className="text-xs font-black text-slate-900 dark:text-white truncate">
+                      {gradeToDelete.examName || (language === 'en' ? 'Assessment' : 'Évaluation')}
+                    </p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1 mt-0.5">
+                      <Calendar className="h-3 w-3 text-slate-400" />
+                      <span>{new Date(gradeToDelete.date).toLocaleDateString(language === 'en' ? 'en-US' : 'fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="text-base font-black px-2.5 py-1 rounded-lg bg-rose-150/60 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                      {gradeToDelete.score} / {gradeToDelete.maxScore}
+                    </span>
+                    <div className="text-[9.5px] font-mono text-slate-400 mt-1">
+                      {((gradeToDelete.score / gradeToDelete.maxScore) * 20).toFixed(1)} / 20
+                    </div>
+                  </div>
+                </div>
+
+                {gradeToDelete.teacherRemarks && (
+                  <p className="text-xs text-slate-600 dark:text-slate-300 italic bg-white/70 dark:bg-slate-800/60 p-2.5 rounded-xl border border-rose-100/80 dark:border-rose-900/30">
+                    « {gradeToDelete.teacherRemarks} »
+                  </p>
+                )}
+              </div>
+
+              {/* Warning Notice */}
+              <div className="p-3 bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/40 rounded-xl space-y-1">
+                <div className="flex items-center gap-1.5 text-xs font-black text-amber-900 dark:text-amber-300">
+                  <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span>{language === 'en' ? "Warning • Impact on report cards" : "Avertissement • Impact sur les bulletins"}</span>
+                </div>
+                <p className="text-[11px] text-amber-900/80 dark:text-amber-300/80 leading-relaxed">
+                  {language === 'en'
+                    ? "Deleting this grade will automatically update the student's subject and overall averages on their grade report and parent portal."
+                    : "La suppression de cette note recalculera automatiquement la moyenne de la matière et la moyenne générale de l'élève sur son relevé et son bulletin."}
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setGradeToDelete(null)}
+                  disabled={isDeletingGrade}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition cursor-pointer disabled:opacity-50"
+                >
+                  {language === 'en' ? "Cancel" : "Annuler"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDeleteGrade}
+                  disabled={isDeletingGrade}
+                  className="px-5 py-2.5 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 active:scale-95 text-white rounded-xl text-xs font-black shadow-md shadow-rose-600/20 transition cursor-pointer flex items-center gap-2 disabled:opacity-50"
+                >
+                  {isDeletingGrade ? (
+                    <>
+                      <RotateCw className="h-4 w-4 animate-spin" />
+                      <span>{language === 'en' ? "Deleting..." : "Suppression en cours..."}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="h-4 w-4" />
+                      <span>{language === 'en' ? "Confirm Deletion" : "Supprimer définitivement"}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

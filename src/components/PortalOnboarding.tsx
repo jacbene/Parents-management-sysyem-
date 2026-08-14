@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { collection, doc, getDoc, getDocs, query, setDoc, writeBatch, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, setDoc, writeBatch, where, onSnapshot } from 'firebase/firestore';
 import { db, auth, loginAnonymously } from '../firebase';
 import { logAuthError } from '../utils/authLogger';
 import { Landmark, Plus, CheckCircle, AlertOctagon, UserCheck, Phone, ShieldCheck, ArrowRight, X, User, HelpCircle, Mail, Smartphone, Key, RotateCw, Bell, Share2, Eye, EyeOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ApeeSettings, ApeeParent, Student, Grade, Homework, Attendance, Invoice, Establishment } from '../types';
-import { syncLocalSchoolsToFirestore, saveAndSyncEstablishment, getDeletedSchoolIds, fetchAndSyncDeletedSchoolIds, sanitizeFirestoreId } from '../utils/schoolSync';
+import { syncLocalSchoolsToFirestore, saveAndSyncEstablishment, getDeletedSchoolIds, fetchAndSyncDeletedSchoolIds, sanitizeFirestoreId, cleanPayload, DEFAULT_FALLBACK_SCHOOLS } from '../utils/schoolSync';
+import { useLanguage } from '../utils/TranslationContext';
 
 
 interface PortalOnboardingProps {
@@ -18,6 +19,7 @@ interface PortalOnboardingProps {
 }
 
 export default function PortalOnboarding({ onSelectSchool, currentUserUid, currentUserEmail, onRequestLogin, onRequestSuperAdmin, onAutoLoginGuest }: PortalOnboardingProps) {
+  const { t, language } = useLanguage();
   const [schools, setSchools] = useState<Establishment[]>([]);
   const [loadingSchools, setLoadingSchools] = useState(true);
   const [activeTab, setActiveTab] = useState<'choose' | 'create'>('choose');
@@ -82,184 +84,102 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
 
   const [creatingSchool, setCreatingSchool] = useState(false);
 
-  // Fetch establishments or fallback to pre-set seeds if empty
-  const fetchSchools = async () => {
-    setLoadingSchools(true);
+  // Helper to build reliable fallback school list if Firestore fails or has partial entries
+  const buildFallbackSchoolsList = (deletedSet: Set<string>): Establishment[] => {
+    const merged: Establishment[] = [];
+    DEFAULT_FALLBACK_SCHOOLS.forEach(fb => {
+      if (!deletedSet.has(fb.id) && !deletedSet.has(sanitizeFirestoreId(fb.id))) {
+        merged.push(fb);
+      }
+    });
     try {
-      // First sync deleted school IDs from Firestore central registry
-      const deletedSet = await fetchAndSyncDeletedSchoolIds();
-
-      // First sync any cached local schools into Firestore
-      await syncLocalSchoolsToFirestore();
-
-      const q = query(collection(db, 'establishments'));
-      const snapshot = await getDocs(q);
-      const list: Establishment[] = [];
-      snapshot.forEach(docSnap => {
-        const data = docSnap.data();
-        const sanId = sanitizeFirestoreId(docSnap.id);
-        if (!data.isDeleted && !deletedSet.has(docSnap.id) && !deletedSet.has(sanId)) {
-          list.push({ id: docSnap.id, ...data } as Establishment);
-        }
-      });
-
-      // Merge local-only establishments created on this device (resilient fallback)
-      try {
-        const localEstsStr = localStorage.getItem('pasma_local_establishments');
-        if (localEstsStr) {
-          const localEsts = JSON.parse(localEstsStr);
-          for (const le of localEsts) {
-            if (le && le.id && !deletedSet.has(le.id) && !deletedSet.has(sanitizeFirestoreId(le.id)) && !list.some(m => m.id === le.id)) {
-              list.push(le);
-              // Save to Firestore so it's registered in DB
-              saveAndSyncEstablishment(le).catch(err => console.warn('Sync fallback school failed:', err));
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("Failed to parse local establishments:", e);
-      }
-
-      // Default fallback schools so there's always an active list (if not deleted)
-      const rawFallbackList: Establishment[] = [
-        {
-          id: 'demo_school_vogt',
-          name: "Collège Vogt - Yaoundé",
-          cotisationAmount: 35000,
-          financialGoal: 12000000,
-          finManagerName: 'Abbé Ondoa',
-          finManagerPhone: '699445522',
-          finManagerPassword: '1234',
-          pedManagerName: 'Abbé Ondoa',
-          pedManagerPhone: '699445522',
-          pedManagerPassword: '1234',
-          schoolYear: '2025/2026',
-          ownerId: 'demo_admin'
-        },
-        {
-          id: 'demo_school_bilingue',
-          name: "Lycée Bilingue d'Ekounou",
-          cotisationAmount: 25000,
-          financialGoal: 8000000,
-          finManagerName: 'M. Tchana',
-          finManagerPhone: '655112233',
-          finManagerPassword: '1234',
-          pedManagerName: 'M. Tchana',
-          pedManagerPhone: '655112233',
-          pedManagerPassword: '1234',
-          schoolYear: '2025/2026',
-          ownerId: 'demo_admin'
-        }
-      ];
-
-      const fallbackList = rawFallbackList.filter(fb => 
-        !deletedSet.has(fb.id) && !deletedSet.has(sanitizeFirestoreId(fb.id))
-      );
-
-      const isPreprod = typeof window !== 'undefined' && (
-        window.location.hostname.includes('ais-pre-') || 
-        window.location.hostname.includes('ais-prod-') ||
-        window.location.hostname.includes('pasma-app')
-      );
-
-      if (isPreprod) {
-        if (list.length === 0) {
-          setSchools(fallbackList);
-        } else {
-          setSchools(list);
-        }
-      } else {
-        if (list.length === 0) {
-          setSchools(fallbackList);
-        } else {
-          // Merge list with fallback fallback fallback to ensure variety
-          const merged = [...list];
-          fallbackList.forEach(fb => {
-            if (!deletedSet.has(fb.id) && !deletedSet.has(sanitizeFirestoreId(fb.id)) && !merged.some(m => m.id === fb.id)) {
-              merged.push(fb);
-            }
-          });
-          setSchools(merged);
-        }
-      }
-    } catch (err) {
-      console.warn("Could not load establishments from Firestore:", err);
-      // fallback in UI
-      const isPreprod = typeof window !== 'undefined' && (
-        window.location.hostname.includes('ais-pre-') || 
-        window.location.hostname.includes('ais-prod-') ||
-        window.location.hostname.includes('pasma-app')
-      );
-      
-      const fallbackList: Establishment[] = [
-        {
-          id: 'demo_school_ekali',
-          name: "CES d'Ekali 1 - MFOU",
-          cotisationAmount: 25000,
-          financialGoal: 5000000,
-          finManagerName: 'Marie Béné',
-          finManagerPhone: '677002233',
-          finManagerPassword: '1234',
-          pedManagerName: 'Marie Béné',
-          pedManagerPhone: '677002233',
-          pedManagerPassword: '1234',
-          schoolYear: '2025/2026',
-          ownerId: 'demo_admin'
-        },
-        {
-          id: 'demo_school_vogt',
-          name: "Collège Vogt - Yaoundé",
-          cotisationAmount: 35000,
-          financialGoal: 12000000,
-          finManagerName: 'Abbé Ondoa',
-          finManagerPhone: '699445522',
-          finManagerPassword: '1234',
-          pedManagerName: 'Abbé Ondoa',
-          pedManagerPhone: '699445522',
-          pedManagerPassword: '1234',
-          schoolYear: '2025/2026',
-          ownerId: 'demo_admin'
-        },
-        {
-          id: 'demo_school_bilingue',
-          name: "Lycée Bilingue d'Ekounou",
-          cotisationAmount: 25000,
-          financialGoal: 8000000,
-          finManagerName: 'M. Tchana',
-          finManagerPhone: '655112233',
-          finManagerPassword: '1234',
-          pedManagerName: 'M. Tchana',
-          pedManagerPhone: '655112233',
-          pedManagerPassword: '1234',
-          schoolYear: '2025/2026',
-          ownerId: 'demo_admin'
-        }
-      ];
-
-      const deletedSetFallback = getDeletedSchoolIds();
-      const merged = fallbackList.filter(fb => !deletedSetFallback.has(fb.id));
-      try {
-        const localEstsStr = localStorage.getItem('pasma_local_establishments');
-        if (localEstsStr) {
-          const localEsts = JSON.parse(localEstsStr);
+      const localEstsStr = localStorage.getItem('pasma_local_establishments');
+      if (localEstsStr) {
+        const localEsts = JSON.parse(localEstsStr);
+        if (Array.isArray(localEsts)) {
           localEsts.forEach((le: any) => {
-            if (le && le.id && !deletedSetFallback.has(le.id) && !merged.some(m => m.id === le.id)) {
+            if (le && le.id && !deletedSet.has(le.id) && !deletedSet.has(sanitizeFirestoreId(le.id)) && !merged.some(m => m.id === le.id)) {
               merged.push(le);
             }
           });
         }
-      } catch (e) {
-        console.warn("Failed to parse local establishments:", e);
       }
-      setSchools(merged);
-    } finally {
-      setLoadingSchools(false);
+    } catch (e) {
+      console.warn("Failed to parse local establishments:", e);
     }
+    return merged;
   };
 
+  // Fetch establishments or bind real-time subscription
   useEffect(() => {
-    fetchSchools();
-  }, []);
+    let unsubscribe: (() => void) | null = null;
+    let isMounted = true;
+
+    const setupSchoolListener = async () => {
+      setLoadingSchools(true);
+      try {
+        // Ensure user is signed in to pass Firestore Security Rules (allow read: if isSignedIn())
+        if (!auth.currentUser) {
+          try {
+            await loginAnonymously();
+          } catch (authErr) {
+            console.warn('[PortalOnboarding] Anonymous auth notice during school fetch:', authErr);
+          }
+        }
+
+        // 1. First sync deleted school IDs from Firestore central registry
+        const deletedSet = await fetchAndSyncDeletedSchoolIds();
+
+        // 2. First sync any cached local schools into Firestore
+        await syncLocalSchoolsToFirestore();
+
+        // 3. Real-time subscription to establishments collection
+        const q = query(collection(db, 'establishments'));
+        unsubscribe = onSnapshot(q, (snapshot) => {
+          if (!isMounted) return;
+          const list: Establishment[] = [];
+          snapshot.forEach(docSnap => {
+            const data = docSnap.data();
+            const sanId = sanitizeFirestoreId(docSnap.id);
+            if (!data.isDeleted && !deletedSet.has(docSnap.id) && !deletedSet.has(sanId)) {
+              list.push({ id: docSnap.id, ...data } as Establishment);
+            }
+          });
+
+          const fallbackList = buildFallbackSchoolsList(deletedSet);
+          const merged = [...list];
+          fallbackList.forEach(fb => {
+            if (!merged.some(m => m.id === fb.id)) {
+              merged.push(fb);
+            }
+          });
+
+          setSchools(merged);
+          setLoadingSchools(false);
+        }, (err) => {
+          console.warn("[PortalOnboarding] Real-time establishments listener error (using static local fallback):", err);
+          if (isMounted) {
+            setSchools(buildFallbackSchoolsList(getDeletedSchoolIds()));
+            setLoadingSchools(false);
+          }
+        });
+
+      } catch (err) {
+        console.warn("Could not setup establishments listener from Firestore:", err);
+        if (isMounted) {
+          setSchools(buildFallbackSchoolsList(getDeletedSchoolIds()));
+          setLoadingSchools(false);
+        }
+      }
+    };
+
+    setupSchoolListener();
+
+    return () => {
+      isMounted = false;
+      if (unsubscribe) unsubscribe();
+    };
+  }, [currentUserUid]);
 
   // Dynamically load teachers list from the school settings
   useEffect(() => {
@@ -945,7 +865,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
       // we must write the establishment document first as a separate awaitable operation, rather than within the same batch.
       let dbWriteSucceeded = false;
       try {
-        await setDoc(doc(db, 'establishments', newSchoolId), estDoc);
+        await setDoc(doc(db, 'establishments', newSchoolId), cleanPayload(estDoc));
         dbWriteSucceeded = true;
       } catch (estWriteErr: any) {
         console.warn("Firestore establishment write failed (proceeding to local offline storage cache mode):", estWriteErr);
@@ -961,6 +881,9 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
         });
       }
 
+      // Also invoke saveAndSyncEstablishment to guarantee local + remote fallback storage synchronization
+      saveAndSyncEstablishment(estDoc, true).catch(err => console.warn('PortalOnboarding saveAndSyncEstablishment sync note:', err));
+
       const batch = writeBatch(db);
 
       // 3. Write default APEE Settings inside the invoices collection
@@ -972,7 +895,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
         { id: 'bl_5', name: 'Fonds d\'Administration Générale', allocatedAmount: Math.round(financialGoal * 0.15), description: 'Frais divers de bureau' }
       ];
 
-      batch.set(doc(db, 'invoices', `${newSchoolId}_settings`), {
+      batch.set(doc(db, 'invoices', `${newSchoolId}_settings`), cleanPayload({
         id: 'apee_settings',
         studentId: 'apee_settings',
         parentId: newSchoolId,
@@ -989,7 +912,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
         pedManagerPhone: pedPhone.trim() || '',
         pedManagerPassword: pedPassword.trim() || '1234',
         logoUrl: schoolLogo
-      });
+      }));
 
       // 4. Seed standard students for this specific school
       const student1Id = `stu_lucas_${newSchoolId.slice(4, 10)}`;
@@ -1258,9 +1181,6 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
       }
 
       setSuccessMessage("✨ Établissement créé et configuré avec succès ! Seeding de démo rattaché.");
-      
-      // Update local listing
-      await fetchSchools();
 
       // Automatically log inside the new school as Administrator
       setTimeout(() => {
@@ -1302,40 +1222,58 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 py-8">
-      <div className="text-center space-y-3 mb-8 flex flex-col items-center">
-        <img
-          src="/icon-512.png"
-          alt="Logo"
-          className="h-16 w-16 object-contain rounded-2xl bg-white p-1.5 border border-indigo-100 shadow-xs"
-        />
-        <h1 className="text-3xl font-black tracking-tight text-slate-950 font-sans mt-2">Portail Scolaire Pasma-sys</h1>
-        <p className="text-sm text-slate-500 max-w-lg mx-auto">
-          Bienvenue sur le portail de suivi et de gestion parentale des établissements scolaires.
-        </p>
+    <div className="w-full max-w-4xl mx-auto px-3 sm:px-4 py-6 sm:py-8 space-y-6">
+      {/* Brand Hero Header */}
+      <div className="relative bg-slate-900 text-white rounded-3xl p-6 sm:p-8 shadow-xl border border-indigo-800/40 overflow-hidden">
+        {/* Ambient Decorative Light Glows */}
+        <div className="absolute -top-16 -right-16 w-48 h-48 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-16 -left-16 w-48 h-48 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="relative z-10 flex flex-col items-center text-center space-y-3">
+          <div className="relative">
+            <div className="absolute -inset-1 bg-indigo-500 rounded-2xl blur-xs opacity-75 animate-pulse" />
+            <img
+              src="/icon-512.png"
+              alt="Logo Pasma-sys"
+              className="relative h-16 w-16 sm:h-20 sm:w-20 object-contain rounded-2xl bg-white p-2 border border-white/20 shadow-lg"
+            />
+          </div>
+
+          <div>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-500/20 text-indigo-200 border border-indigo-400/30 mb-2">
+              {t('portal.header_badge')}
+            </span>
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white font-sans">
+              {t('portal.header_title')}
+            </h1>
+            <p className="text-xs sm:text-sm text-indigo-200/90 max-w-xl mx-auto mt-1 leading-relaxed font-medium">
+              {t('portal.header_subtitle')}
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex bg-slate-200/60 p-1.5 rounded-2xl w-fit mx-auto mb-8 border border-slate-300/40">
+      {/* Tabs Switcher */}
+      <div className="flex bg-slate-100 dark:bg-slate-800/80 p-1.5 rounded-2xl w-fit mx-auto border border-slate-200 dark:border-slate-700 shadow-xs">
         <button
           onClick={() => { setActiveTab('choose'); setErrorMessage(null); }}
           className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer ${
             activeTab === 'choose'
-              ? 'bg-slate-900 text-white shadow-md'
-              : 'text-slate-600 hover:text-slate-900'
+              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+              : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white/50'
           }`}
         >
-          <Landmark className="h-4.5 w-4.5" /> Choisir un Établissement Visiteur
+          <Landmark className="h-4.5 w-4.5" /> Accéder à mon Établissement
         </button>
         <button
           onClick={() => { setActiveTab('create'); setErrorMessage(null); }}
           className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer ${
             activeTab === 'create'
-              ? 'bg-slate-900 text-white shadow-md'
-              : 'text-slate-600 hover:text-slate-900'
+              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+              : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-white/50'
           }`}
         >
-          <Plus className="h-4.5 w-4.5" /> Enregistrer mon Établissement
+          <Plus className="h-4.5 w-4.5" /> Enregistrer un Établissement
         </button>
       </div>
 
@@ -1346,9 +1284,9 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="mb-6 p-4 bg-red-50 border border-red-200 text-red-900 text-xs rounded-2xl font-medium leading-relaxed flex items-start gap-2.5 shadow-sm"
+            className="p-4 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-200 text-xs rounded-2xl font-medium leading-relaxed flex items-start gap-2.5 shadow-sm"
           >
-            <AlertOctagon className="h-5 w-5 text-red-650 shrink-0 mt-0.5" />
+            <AlertOctagon className="h-5 w-5 text-rose-600 shrink-0 mt-0.5" />
             <div className="whitespace-pre-line">{errorMessage}</div>
           </motion.div>
         )}
@@ -1357,7 +1295,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mb-6 p-4 bg-emerald-50 border border-emerald-250 text-emerald-950 text-xs rounded-2xl font-bold leading-relaxed flex items-center gap-2.5 shadow-xs"
+            className="p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-250 dark:border-emerald-800 text-emerald-950 dark:text-emerald-200 text-xs rounded-2xl font-bold leading-relaxed flex items-center gap-2.5 shadow-xs"
           >
             <CheckCircle className="h-5 w-5 text-emerald-600 shrink-0" />
             <div>{successMessage}</div>
@@ -1367,16 +1305,23 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
         {/* Core Screen Panels Custom layout based on active tab selection */}
-        <div className={`${activeTab === 'choose' ? 'md:col-span-3 max-w-2xl mx-auto w-full' : 'md:col-span-2'} bg-white border border-slate-150 p-6 rounded-3xl shadow-sm`}>
+        <div className={`${activeTab === 'choose' ? 'md:col-span-3 max-w-2xl mx-auto w-full' : 'md:col-span-2'} bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 sm:p-8 rounded-3xl shadow-xl transition-all`}>
           {activeTab === 'choose' ? (
-            <form onSubmit={handleParentSubmit} className="space-y-5">
-              <div className="border-b border-gray-100 pb-3">
-                <h2 className="text-lg font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-                  🔐 Connexion Portail Scolaire
-                </h2>
-                <p className="text-xs text-slate-500 mt-1">
-                  Connectez-vous au portail en fonction de votre profil d'habilitation (Parent, Enseignant ou Administration).
-                </p>
+            <form onSubmit={handleParentSubmit} className="space-y-6">
+              <div className="border-b border-slate-100 dark:border-slate-800 pb-4">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 rounded-xl text-indigo-600 dark:text-indigo-400">
+                    <Key className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+                      {t('portal.login_title')}
+                    </h2>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      Accédez à votre espace dédié selon votre profil (Parent, Enseignant ou Administration).
+                    </p>
+                  </div>
+                </div>
               </div>
 
               {/* Authenticated Email Status Banner */}
@@ -1386,30 +1331,30 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                 return (
                   <div className={`p-3.5 rounded-2xl border flex items-center justify-between text-xs font-semibold ${
                     activeEmail && !isAnonymousGuest
-                      ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
-                      : 'bg-amber-50 border-amber-200 text-amber-950'
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-950 dark:text-emerald-200'
+                      : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-950 dark:text-amber-200'
                   }`}>
                     <div className="flex items-center gap-2.5">
                       {activeEmail && !isAnonymousGuest ? (
                         <>
-                          <ShieldCheck className="h-4.5 w-4.5 text-emerald-600 shrink-0" />
+                          <ShieldCheck className="h-4.5 w-4.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                           <div>
-                            <p className="text-[11px] font-extrabold text-emerald-950">
+                            <p className="text-[11px] font-extrabold text-emerald-950 dark:text-emerald-200">
                               Compte e-mail authentifié : <span className="underline">{activeEmail}</span>
                             </p>
-                            <p className="text-[10px] text-emerald-800">
+                            <p className="text-[10px] text-emerald-800 dark:text-emerald-300">
                               L'adresse e-mail est vérifiée et contrôlée en base de données lors de l'accès au portail.
                             </p>
                           </div>
                         </>
                       ) : (
                         <>
-                          <AlertOctagon className="h-4.5 w-4.5 text-amber-600 shrink-0" />
+                          <AlertOctagon className="h-4.5 w-4.5 text-amber-600 dark:text-amber-400 shrink-0" />
                           <div>
-                            <p className="text-[11px] font-extrabold text-amber-950">
+                            <p className="text-[11px] font-extrabold text-amber-950 dark:text-amber-200">
                               Authentification par e-mail obligatoire
                             </p>
-                            <p className="text-[10px] text-amber-800">
+                            <p className="text-[10px] text-amber-800 dark:text-amber-300">
                               Seuls les utilisateurs authentifiés avec une adresse e-mail enregistrée dans la BD ont accès aux portails.
                             </p>
                           </div>
@@ -1420,7 +1365,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                       <button
                         type="button"
                         onClick={onRequestLogin}
-                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl cursor-pointer shrink-0 shadow-xs"
+                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl cursor-pointer shrink-0 shadow-xs active:scale-95 transition"
                       >
                         Se connecter
                       </button>
@@ -1429,51 +1374,55 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                 );
               })()}
 
-
-               {/* Role Toggle Choice */}
-              <div className="flex gap-2 p-1 bg-slate-100 rounded-xl w-full border border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => { setOnboardingRole('parent'); setErrorMessage(null); }}
-                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                    onboardingRole === 'parent'
-                      ? 'bg-white text-indigo-700 shadow-xs border border-slate-150'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  👤 Parent
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setOnboardingRole('teacher'); setErrorMessage(null); }}
-                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                    onboardingRole === 'teacher'
-                      ? 'bg-white text-indigo-700 shadow-xs border border-slate-150'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  🧑‍🏫 Enseignant
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setOnboardingRole('manager'); setErrorMessage(null); }}
-                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                    onboardingRole === 'manager'
-                      ? 'bg-white text-indigo-700 shadow-xs border border-slate-150'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  💼 Administration
-                </button>
+              {/* Role Toggle Choice */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                  Sélectionnez votre profil d'accès :
+                </label>
+                <div className="grid grid-cols-3 gap-2 p-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700">
+                  <button
+                    type="button"
+                    onClick={() => { setOnboardingRole('parent'); setErrorMessage(null); }}
+                    className={`py-2 px-2 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      onboardingRole === 'parent'
+                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <span>👤</span> <span>Parent</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setOnboardingRole('teacher'); setErrorMessage(null); }}
+                    className={`py-2 px-2 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      onboardingRole === 'teacher'
+                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <span>🧑‍🏫</span> <span>Enseignant</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setOnboardingRole('manager'); setErrorMessage(null); }}
+                    className={`py-2 px-2 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      onboardingRole === 'manager'
+                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    <span>💼</span> <span>Admin</span>
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider flex items-center gap-1">
-                    Établissement Scolaire de référence <span className="text-red-500">*</span>
+                  <label className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1">
+                    Établissement Scolaire de référence <span className="text-rose-500">*</span>
                   </label>
                   {loadingSchools ? (
-                    <div className="w-full flex items-center justify-between px-3.5 py-3.5 bg-slate-50/50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-500 select-none animate-pulse">
+                    <div className="w-full flex items-center justify-between px-3.5 py-3.5 bg-slate-50/50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl text-xs font-semibold text-slate-500 select-none animate-pulse">
                       <div className="flex items-center gap-2">
                         <RotateCw className="h-4 w-4 text-indigo-500 animate-spin shrink-0" />
                         <span>Chargement des établissements disponibles...</span>
@@ -1489,7 +1438,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                       value={selectedSchoolId}
                       required
                       onChange={(e) => setSelectedSchoolId(e.target.value)}
-                      className="w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-indigo-500 focus:bg-white cursor-pointer"
+                      className="w-full px-3.5 py-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-2xl text-xs font-bold text-slate-850 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/50 cursor-pointer"
                     >
                       <option value="">-- Choisissez l'établissement en visite --</option>
                       {schools.map(sch => (
@@ -1505,8 +1454,8 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                   otpStep === 'input_phone' ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 animate-fadeIn">
                       <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider">
-                          Nom complet du parent <span className="text-red-500">*</span>
+                        <label className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                          Nom complet du parent <span className="text-rose-500">*</span>
                         </label>
                         <div className="relative">
                           <input
@@ -1515,15 +1464,15 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                             value={parentName}
                             onChange={(e) => setParentName(e.target.value)}
                             placeholder="Ex: Martin"
-                            className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-indigo-500 focus:bg-white"
+                            className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-2xl text-xs font-semibold text-slate-850 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/50"
                           />
                           <User className="h-4 w-4 text-slate-400 absolute left-3 top-3" />
                         </div>
                       </div>
 
                       <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider">
-                          Numéro de téléphone <span className="text-red-500">*</span>
+                        <label className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                          Numéro de téléphone <span className="text-rose-500">*</span>
                         </label>
                         <div className="relative">
                           <input
@@ -1532,7 +1481,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                             value={parentPhone}
                             onChange={(e) => setParentPhone(e.target.value)}
                             placeholder="Ex: 677112233"
-                            className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-indigo-500 focus:bg-white font-mono"
+                            className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-2xl text-xs font-semibold text-slate-850 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/50 font-mono"
                           />
                           <Phone className="h-4 w-4 text-slate-400 absolute left-3 top-3" />
                         </div>
@@ -1540,11 +1489,11 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
 
                       <div className="space-y-1.5 sm:col-span-2">
                         <div className="flex justify-between items-center">
-                          <label className="text-[10px] font-black text-slate-550 uppercase">
+                          <label className="text-[10px] font-black text-slate-550 dark:text-slate-400 uppercase">
                             Adresse e-mail (Optionnelle)
                           </label>
-                          <span className="text-[8px] font-bold text-gray-400 bg-slate-100 px-1.5 py-0.5 rounded-md uppercase tracking-wider">
-                            Optionnel • Milieu urbain
+                          <span className="text-[8px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                            Optionnel
                           </span>
                         </div>
                         <div className="relative">
@@ -1552,35 +1501,32 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                             type="email"
                             value={parentEmail}
                             onChange={(e) => setParentEmail(e.target.value)}
-                            placeholder="Ex: parent@email.com (Laisser vide en zone rurale)"
-                            className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-indigo-500 focus:bg-white"
+                            placeholder="Ex: parent@email.com"
+                            className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-2xl text-xs font-semibold text-slate-850 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/50"
                           />
                           <Mail className="h-4 w-4 text-slate-400 absolute left-3 top-3" />
                         </div>
-                        <p className="text-[9.5px] text-indigo-600/90 leading-tight">
-                          💡 En zone rurale au Cameroun, l'identification par e-mail reste optionnelle. Seul votre numéro de téléphone (Orange/MTN) valide est nécessaire pour recevoir le code unique temporaire.
-                        </p>
                       </div>
                     </div>
                   ) : (
-                    <div className="space-y-4 animate-fadeIn p-4 bg-indigo-50/45 border border-indigo-150/50 rounded-2xl">
+                    <div className="space-y-4 animate-fadeIn p-4 bg-indigo-50/60 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded-2xl">
                       <div className="flex items-start gap-3">
-                        <div className="p-2 bg-indigo-600/10 text-indigo-700 rounded-lg">
+                        <div className="p-2 bg-indigo-600/10 text-indigo-700 dark:text-indigo-300 rounded-xl shrink-0">
                           <Key className="h-5 w-5" />
                         </div>
                         <div>
-                          <h4 className="text-xs font-extrabold text-indigo-950 uppercase tracking-wide">
+                          <h4 className="text-xs font-extrabold text-indigo-950 dark:text-indigo-200 uppercase tracking-wide">
                             🔒 Double Facteur Académique (OTP)
                           </h4>
-                          <p className="text-[11px] text-slate-500 leading-tight mt-0.5">
-                            Saisissez le code d'authentification à 6 chiffres transmis sur le numéro : <strong className="font-bold font-mono text-slate-700">{parentPhone}</strong>.
+                          <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-tight mt-0.5">
+                            Saisissez le code d'authentification à 6 chiffres transmis sur le numéro : <strong className="font-bold font-mono text-slate-850 dark:text-white">{parentPhone}</strong>.
                           </p>
                         </div>
                       </div>
 
                       <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider">
-                          Code OTP reçu par SMS <span className="text-red-500">*</span>
+                        <label className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                          Code OTP reçu par SMS <span className="text-rose-500">*</span>
                         </label>
                         <div className="relative">
                           <input
@@ -1590,13 +1536,13 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                             value={enteredOtp}
                             onChange={(e) => setEnteredOtp(e.target.value.replace(/\D/g, ''))}
                             placeholder="Saisissez les 6 chiffres"
-                            className="w-full pl-9 pr-3.5 py-3 tracking-[0.5em] text-center bg-white border border-slate-250 rounded-xl text-sm font-black font-mono text-indigo-950 focus:outline-indigo-650"
+                            className="w-full pl-9 pr-3.5 py-3 tracking-[0.5em] text-center bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-2xl text-sm font-black font-mono text-indigo-950 dark:text-indigo-300 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/50"
                           />
                           <Key className="h-4 w-4 text-slate-400 absolute left-3 top-3.5" />
                         </div>
                         
                         <div className="flex items-center justify-between text-[10px] pt-1">
-                          <span className="text-amber-700 font-bold flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                          <span className="text-amber-700 dark:text-amber-300 font-bold flex items-center gap-1 bg-amber-50 dark:bg-amber-950/50 px-2.5 py-1 rounded-xl border border-amber-200 dark:border-amber-800">
                             🛡️ {otpAttemptsLeft} tentatives d'identification restantes
                           </span>
                           <button
@@ -1614,14 +1560,14 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                                 schoolName: schools.find(s => s.id === selectedSchoolId)?.name || "CES d'Ekali 1"
                               });
                             }}
-                            className="text-indigo-600 hover:text-indigo-850 font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
+                            className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
                           >
                             <RotateCw className="h-3 w-3 inline" /> Renvoyer le SMS
                           </button>
                         </div>
                       </div>
                       
-                      <div className="pt-1.5 border-t border-slate-200/50 flex justify-between">
+                      <div className="pt-1.5 border-t border-slate-200/60 dark:border-slate-800 flex justify-between">
                         <button
                           type="button"
                           onClick={() => {
@@ -1629,7 +1575,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                             setEnteredOtp('');
                             setErrorMessage(null);
                           }}
-                          className="text-[10px] text-slate-500 hover:text-slate-800 font-black uppercase tracking-wider cursor-pointer"
+                          className="text-[10px] text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 font-black uppercase tracking-wider cursor-pointer"
                         >
                           ⬅️ Modifier mes identifiants
                         </button>
@@ -1642,14 +1588,14 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                 ) : onboardingRole === 'teacher' ? (
                   <div className="space-y-4 animate-fadeIn">
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider flex items-center gap-1">
-                        Sélectionnez votre Nom d'Enseignant <span className="text-red-500">*</span>
+                      <label className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1">
+                        Sélectionnez votre Nom d'Enseignant <span className="text-rose-500">*</span>
                       </label>
                       <select
                         value={selectedTeacherName}
                         required={onboardingRole === 'teacher'}
                         onChange={(e) => setSelectedTeacherName(e.target.value)}
-                        className="w-full px-3.5 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-indigo-500 focus:bg-white cursor-pointer"
+                        className="w-full px-3.5 py-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-2xl text-xs font-bold text-slate-850 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500/50 cursor-pointer"
                       >
                         <option value="">-- Choisissez votre nom d'enseignant --</option>
                         {availableTeachers.map((t, idx) => (
@@ -1661,8 +1607,8 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                     </div>
 
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider">
-                        Code d'Accès de l'Enseignant <span className="text-red-500">*</span>
+                      <label className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                        Code d'Accès de l'Enseignant <span className="text-rose-500">*</span>
                       </label>
                       <div className="relative">
                         <input
@@ -1671,7 +1617,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                           value={teacherVerificationCode}
                           onChange={(e) => setTeacherVerificationCode(e.target.value)}
                           placeholder="Saisissez votre code d'accès"
-                          className="w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 tracking-wider focus:outline-indigo-500 focus:bg-white font-mono"
+                          className="w-full pl-9 pr-10 py-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-2xl text-xs font-bold text-slate-850 dark:text-white tracking-wider focus:outline-hidden focus:ring-2 focus:ring-emerald-500/50 font-mono"
                         />
                         <ShieldCheck className="h-4 w-4 text-slate-400 absolute left-3 top-3.5" />
                         <button
@@ -1683,19 +1629,19 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                           {showTeacherCode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </button>
                       </div>
-                      <p className="text-[10.5px] text-slate-500 leading-normal p-3 bg-indigo-50/50 rounded-2xl border border-indigo-100 flex items-center gap-2">
+                      <p className="text-[10.5px] text-slate-600 dark:text-slate-400 leading-normal p-3 bg-emerald-50/50 dark:bg-emerald-950/30 rounded-2xl border border-emerald-100 dark:border-emerald-800 flex items-center gap-2">
                         💡 Saisissez le code d'accès de démonstration <strong>1234</strong> ou le code d'accès de l'établissement pour vous connecter directement.
                       </p>
                     </div>
                   </div>
                 ) : (
                   <div className="space-y-4 animate-fadeIn">
-                    <div className="p-3.5 bg-amber-50/80 border border-amber-200 rounded-2xl space-y-1 text-xs">
-                      <p className="font-extrabold text-amber-950 flex items-center gap-1.5">
+                    <div className="p-3.5 bg-amber-50/80 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-2xl space-y-1 text-xs">
+                      <p className="font-extrabold text-amber-950 dark:text-amber-200 flex items-center gap-1.5">
                         <ShieldCheck className="h-4 w-4 text-amber-600 shrink-0" />
                         Corps Administratif Scolaire vs Équipe d'Administration du Portail
                       </p>
-                      <p className="text-[11px] text-amber-900 leading-relaxed">
+                      <p className="text-[11px] text-amber-900 dark:text-amber-300 leading-relaxed">
                         • <strong>Corps Administratif Scolaire</strong> (Directeur, Surveillant Général, Intendant, Censeur) : Connectez-vous ici avec le code d'accès de votre établissement.
                         <br />
                         • <strong>Équipe d'Administration du Portail</strong> (Super-Admin & Adjoints) : Les adresses e-mail désignées par le Super-Admin principal (e-mail + code d'accès) sont automatiquement reconnues et redirigées vers le Portail d'Administration Principal.
@@ -1704,13 +1650,13 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider">
-                          Fonction Administrative <span className="text-red-500">*</span>
+                        <label className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                          Fonction Administrative <span className="text-rose-500">*</span>
                         </label>
                         <select
                           value={adminRole}
                           onChange={(e) => setAdminRole(e.target.value)}
-                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-indigo-500 focus:bg-white cursor-pointer animate-fadeIn"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-2xl text-xs font-bold text-slate-850 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-amber-500/50 cursor-pointer animate-fadeIn"
                         >
                           <option value="Directeur d'établissement">Directeur d'établissement</option>
                           <option value="Surveillant Général">Surveillant Général</option>
@@ -1722,8 +1668,8 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                       </div>
 
                       <div className="space-y-1.5">
-                        <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider">
-                          Nom complet de l'administrateur <span className="text-red-500">*</span>
+                        <label className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                          Nom complet de l'administrateur <span className="text-rose-500">*</span>
                         </label>
                         <div className="relative">
                           <input
@@ -1732,7 +1678,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                             value={adminName}
                             onChange={(e) => setAdminName(e.target.value)}
                             placeholder="Ex: Mme Marie Béné"
-                            className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-indigo-500 focus:bg-white"
+                            className="w-full pl-9 pr-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-2xl text-xs font-semibold text-slate-850 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-amber-500/50"
                           />
                           <User className="h-4 w-4 text-slate-400 absolute left-3 top-3.5" />
                         </div>
@@ -1740,8 +1686,8 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                     </div>
 
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider">
-                        Code secret d'accès Administrateur <span className="text-red-500">*</span>
+                      <label className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                        Code secret d'accès Administrateur <span className="text-rose-500">*</span>
                       </label>
                       <div className="relative">
                         <input
@@ -1750,7 +1696,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                           value={managerPassword}
                           onChange={(e) => setManagerPassword(e.target.value)}
                           placeholder="Ex: 1234"
-                          className="w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 font-mono tracking-widest focus:outline-indigo-500 focus:bg-white"
+                          className="w-full pl-9 pr-10 py-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-2xl text-xs font-bold text-slate-850 dark:text-white font-mono tracking-widest focus:outline-hidden focus:ring-2 focus:ring-amber-500/50"
                         />
                         <ShieldCheck className="h-4 w-4 text-slate-400 absolute left-3 top-3" />
                         <button
@@ -1762,7 +1708,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                           {showManagerPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </button>
                       </div>
-                      <p className="text-[10px] text-gray-500 leading-normal p-2.5 bg-amber-50 rounded-xl border border-amber-200/80 flex items-center gap-1.5 shadow-3xs">
+                      <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-normal p-2.5 bg-amber-50/80 dark:bg-amber-950/40 rounded-2xl border border-amber-200 dark:border-amber-800 flex items-center gap-1.5 shadow-3xs">
                         ✨ Pour les écoles de démonstration par défaut, le code d'accès de l'administration est <strong>1234</strong>.
                       </p>
                     </div>
@@ -1774,7 +1720,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                 <button
                   type="submit"
                   disabled={verifyingParent}
-                  className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition shadow-md shadow-indigo-150 relative cursor-pointer"
+                  className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-md shadow-indigo-600/20 active:scale-98 relative cursor-pointer"
                 >
                   {verifyingParent ? (
                     <>
@@ -1797,42 +1743,42 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
             </form>
           ) : (
             <form onSubmit={handleCreateSchool} className="space-y-6">
-              <div className="border-b border-gray-100 pb-3">
-                <h2 className="text-lg font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+              <div className="border-b border-slate-100 dark:border-slate-800 pb-3">
+                <h2 className="text-lg font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
                   🏫 Enregistrer un établissement scolaire
                 </h2>
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                   Créez le profil public de votre école pour y gérer ses cotisations, son budget, ses élèves, ses bulletins de notes et assiduité.
                 </p>
               </div>
 
               <div className="space-y-5">
                 {/* LOGO DE L'ÉTABLISSEMENT */}
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3.5">
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/80 rounded-2xl space-y-3.5">
                   <div className="flex items-center justify-between">
-                    <label className="text-[10px] font-black text-slate-700 uppercase tracking-wider block">
+                    <label className="text-[10px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
                       Logo Officiel de l'Établissement
                     </label>
-                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider bg-slate-100 px-2 py-0.5 rounded-md">Optionnel</span>
+                    <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">Optionnel</span>
                   </div>
                   
                   <div className="flex flex-col sm:flex-row gap-4 items-center">
                     {/* Visual Preview */}
-                    <div className="h-20 w-20 bg-white border-2 border-dashed border-slate-250 rounded-2xl flex items-center justify-center overflow-hidden shrink-0 relative shadow-3xs">
+                    <div className="h-20 w-20 bg-white dark:bg-slate-900 border-2 border-dashed border-slate-250 dark:border-slate-700 rounded-2xl flex items-center justify-center overflow-hidden shrink-0 relative shadow-3xs">
                       {schoolLogo ? (
                         <>
                           <img src={schoolLogo} alt="Logo" className="h-full w-full object-contain p-1" referrerPolicy="no-referrer" />
                           <button
                             type="button"
                             onClick={() => setSchoolLogo('')}
-                            className="absolute -top-1 -right-1 p-1 bg-red-100 hover:bg-red-200 text-red-600 rounded-full cursor-pointer shadow-xs transition"
+                            className="absolute -top-1 -right-1 p-1 bg-rose-100 dark:bg-rose-950 hover:bg-rose-200 text-rose-600 dark:text-rose-400 rounded-full cursor-pointer shadow-xs transition"
                             title="Supprimer le logo"
                           >
                             <X className="h-3 w-3" />
                           </button>
                         </>
                       ) : (
-                        <div className="text-center p-2 text-slate-400">
+                        <div className="text-center p-2 text-slate-400 dark:text-slate-500">
                           <Plus className="h-5 w-5 mx-auto opacity-70" />
                           <span className="text-[8px] font-black uppercase">Aucun</span>
                         </div>
@@ -1841,7 +1787,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
 
                     {/* Interactive drag-and-drop & preset picker */}
                     <div className="flex-1 space-y-2.5 w-full">
-                      <div className="relative border border-slate-200 bg-white hover:bg-slate-50 transition rounded-xl p-2.5 text-center cursor-pointer">
+                      <div className="relative border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition rounded-xl p-2.5 text-center cursor-pointer">
                         <input
                           type="file"
                           accept="image/*"
@@ -1861,18 +1807,18 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                           }}
                           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                         />
-                        <div className="text-xs text-slate-600 font-semibold">
+                        <div className="text-xs text-slate-600 dark:text-slate-300 font-semibold">
                           📁 Télécharger une image locale...
                         </div>
-                        <p className="text-[10px] text-slate-400 mt-0.5 font-medium">Fichiers PNG, JPG ou SVG de moins de 1 Mo</p>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 font-medium">Fichiers PNG, JPG ou SVG de moins de 1 Mo</p>
                       </div>
 
                       {/* Quick Choice preset school badges */}
                       <div className="space-y-1">
-                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider block">
+                        <span className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
                           Ou générer un écusson de démonstration :
                         </span>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
                           {[
                             { emoji: '🏫', name: 'Établissement' },
                             { emoji: '🎓', name: 'Alumni' },
@@ -1904,7 +1850,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                                   setSchoolLogo(canvas.toDataURL('image/png'));
                                 }
                               }}
-                              className="px-2 py-1.5 bg-white border border-slate-250 rounded-lg hover:border-indigo-400 hover:bg-slate-50 transition text-sm cursor-pointer shadow-4xs"
+                              className="px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:border-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition text-sm cursor-pointer shadow-4xs"
                               title={pest.name}
                             >
                               {pest.emoji}
@@ -1919,8 +1865,8 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                 {/* School main inputs */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider">
-                      Nom officiel de l'établissement <span className="text-red-500">*</span>
+                    <label className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                      Nom officiel de l'établissement <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -1928,12 +1874,12 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                       value={schoolName}
                       onChange={(e) => setSchoolName(e.target.value)}
                       placeholder="Ex: Lycée Classique de Bafoussam"
-                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-indigo-500 focus:bg-white"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-850 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/50"
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider">
+                    <label className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">
                       Année Académique de Référence
                     </label>
                     <input
@@ -1942,15 +1888,15 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                       value={schoolYear}
                       onChange={(e) => setSchoolYear(e.target.value)}
                       placeholder="Ex: 2025/2026"
-                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-indigo-500 focus:bg-white font-mono"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-850 dark:text-white font-mono focus:outline-hidden focus:ring-2 focus:ring-indigo-500/50"
                     />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider">
-                      Montant de la cotisation APEE (FCFA) <span className="text-red-500">*</span>
+                    <label className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">
+                      Montant de la cotisation APEE (FCFA) <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="number"
@@ -1958,12 +1904,12 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                       min="5000"
                       value={cotisationAmount}
                       onChange={(e) => setCotisationAmount(Number(e.target.value))}
-                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-indigo-500 focus:bg-white font-mono"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-850 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/50 font-mono"
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-600 uppercase tracking-wider">
+                    <label className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-wider">
                       Budget Prévisionnel Total (FCFA)
                     </label>
                     <input
@@ -1972,40 +1918,40 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                       min="100000"
                       value={financialGoal}
                       onChange={(e) => setFinancialGoal(Number(e.target.value))}
-                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-indigo-500 focus:bg-white font-mono"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-850 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/50 font-mono"
                     />
                   </div>
                 </div>
 
                 {/* Financier Profile */}
-                <div className="p-4 bg-indigo-50/50 border border-indigo-100 rounded-2xl space-y-4">
-                  <h3 className="text-xs font-black text-indigo-950 uppercase tracking-wider flex items-center gap-1.5">
-                    <ShieldCheck className="h-4 w-4 text-indigo-650" /> Paramètres Secrétariat Financier (APEE)
+                <div className="p-4 bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/50 rounded-2xl space-y-4">
+                  <h3 className="text-xs font-black text-indigo-950 dark:text-indigo-200 uppercase tracking-wider flex items-center gap-1.5">
+                    <ShieldCheck className="h-4 w-4 text-indigo-600 dark:text-indigo-400" /> Paramètres Secrétariat Financier (APEE)
                   </h3>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="space-y-1">
-                      <label className="text-[9px] font-black text-slate-500 uppercase">Nom du responsable *</label>
+                      <label className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase">Nom du responsable *</label>
                       <input
                         type="text"
                         required
                         value={finName}
                         onChange={(e) => setFinName(e.target.value)}
                         placeholder="Ex: M. Béné"
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-850"
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-850 dark:text-white"
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[9px] font-black text-slate-500 uppercase">Téléphone portable</label>
+                      <label className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase">Téléphone portable</label>
                       <input
                         type="tel"
                         value={finPhone}
                         onChange={(e) => setFinPhone(e.target.value)}
                         placeholder="Ex: 677334455"
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-850"
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-850 dark:text-white"
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[9px] font-black text-slate-500 uppercase">Code secret d'accès *</label>
+                      <label className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase">Code secret d'accès *</label>
                       <div className="relative">
                         <input
                           type={showFinPassword ? "text" : "password"}
@@ -2013,7 +1959,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                           value={finPassword}
                           onChange={(e) => setFinPassword(e.target.value)}
                           placeholder="Ex: 1234"
-                          className="w-full pl-3 pr-9 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800 font-mono focus:outline-indigo-550"
+                          className="w-full pl-3 pr-9 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-800 dark:text-white font-mono focus:outline-hidden"
                         />
                         <button
                           type="button"
@@ -2029,33 +1975,33 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                 </div>
 
                 {/* Pedagogic Profile */}
-                <div className="p-4 bg-emerald-50/40 border border-emerald-100 rounded-2xl space-y-4">
-                  <h3 className="text-xs font-black text-emerald-950 uppercase tracking-wider flex items-center gap-1.5">
-                    <ShieldCheck className="h-4 w-4 text-emerald-650" /> Paramètres Surveillant Général / Censeur (Pédagogique)
+                <div className="p-4 bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/50 rounded-2xl space-y-4">
+                  <h3 className="text-xs font-black text-emerald-950 dark:text-emerald-200 uppercase tracking-wider flex items-center gap-1.5">
+                    <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /> Paramètres Surveillant Général / Censeur (Pédagogique)
                   </h3>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="space-y-1">
-                      <label className="text-[9px] font-black text-slate-500 uppercase">Nom du surveillant / censeur</label>
+                      <label className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase">Nom du surveillant / censeur</label>
                       <input
                         type="text"
                         value={pedName}
                         onChange={(e) => setPedName(e.target.value)}
                         placeholder="Ex: Mme Sissoko"
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-850"
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-850 dark:text-white"
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[9px] font-black text-slate-500 uppercase">Téléphone portable</label>
+                      <label className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase">Téléphone portable</label>
                       <input
                         type="tel"
                         value={pedPhone}
                         onChange={(e) => setPedPhone(e.target.value)}
                         placeholder="Ex: 666778891"
-                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-850"
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-medium text-slate-850 dark:text-white"
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[9px] font-black text-slate-500 uppercase">Code de protection cahier textes *</label>
+                      <label className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase">Code de protection cahier textes *</label>
                       <div className="relative">
                         <input
                           type={showPedPassword ? "text" : "password"}
@@ -2063,7 +2009,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                           value={pedPassword}
                           onChange={(e) => setPedPassword(e.target.value)}
                           placeholder="Ex: 5678"
-                          className="w-full pl-3 pr-9 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-800 font-mono focus:outline-emerald-550"
+                          className="w-full pl-3 pr-9 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-800 dark:text-white font-mono focus:outline-hidden"
                         />
                         <button
                           type="button"
@@ -2083,7 +2029,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                 <button
                   type="submit"
                   disabled={creatingSchool}
-                  className="w-full py-3 bg-slate-900 hover:bg-slate-850 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition shadow-md shadow-slate-350 relative cursor-pointer"
+                  className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-md shadow-indigo-600/20 active:scale-98 relative cursor-pointer"
                 >
                   {creatingSchool ? (
                     <>
@@ -2103,9 +2049,9 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
 
         {/* Right Side: Demo Helper Controls / Guidance (Only shown when creating a school) */}
         {activeTab === 'create' && (
-          <div className="bg-slate-50 border border-slate-200/80 p-5 rounded-3xl space-y-5">
-            <div className="p-3.5 bg-indigo-50 text-indigo-950 rounded-2xl border border-indigo-100 space-y-1.5">
-              <span className="font-black text-indigo-900 text-[10px] uppercase tracking-wider flex items-center gap-1">
+          <div className="bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 p-5 rounded-3xl space-y-5">
+            <div className="p-3.5 bg-indigo-50/80 dark:bg-indigo-950/40 text-indigo-950 dark:text-indigo-200 rounded-2xl border border-indigo-100 dark:border-indigo-900/50 space-y-1.5">
+              <span className="font-black text-indigo-900 dark:text-indigo-300 text-[10px] uppercase tracking-wider flex items-center gap-1">
                 <HelpCircle className="h-3.5 w-3.5 shrink-0" /> Comment ça marche ?
               </span>
               <p className="text-[11px] leading-relaxed opacity-90">
@@ -2146,7 +2092,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
               </div>
 
               <div className="text-[9px] text-amber-500/90 leading-tight bg-amber-500/10 p-1.5 rounded-lg border border-amber-500/20 font-sans">
-                ⚡️ <strong>Simulateur de Zone Rurale :</strong> En conditions réelles, ce code est acheminé par le réseau GSM local Orange/MTN. Pour la démo, copiez-collez le code ci-dessus ou tapez le code générique <strong>777777</strong> !
+                ⚡️ <strong>Simulateur SMS OTP :</strong> En conditions réelles, ce code est acheminé par le réseau GSM local Orange/MTN. Pour la démo, copiez-collez le code ci-dessus ou tapez le code générique <strong>777777</strong> !
               </div>
             </div>
           </div>

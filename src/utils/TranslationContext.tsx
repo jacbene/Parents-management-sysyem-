@@ -26,6 +26,10 @@ interface TranslationContextType {
 const translations: Record<LanguageType, Record<string, string>> = {
   fr: {
     'app.name': 'Parents-Schools Management System (Pasma-sys)',
+    'portal.header_badge': '🎓 PASMA-SYS • ENT & TRESORERIE',
+    'portal.header_title': 'Portail Scolaire & Espace Parent',
+    'portal.header_subtitle': 'Plateforme numérique de suivi des élèves, gestion des frais scolaires, cahier de textes et bulletins de notes.',
+    'portal.login_title': '🔐 Portail de Connexion Scolaire',
     // Nav Tabs & General labels
     'tab.apee_dashboard': 'Tableau de bord',
     'tab.apee_recording': 'Saisie Cotisation',
@@ -106,6 +110,7 @@ const translations: Record<LanguageType, Record<string, string>> = {
     'drive.delete_perm': 'Supprimer définitivement',
     'tab.announcements': 'Annonces',
     'tab.academic_calendar': 'Calendrier Académique',
+    'tab.campus_map': 'Plan du Campus & Salles',
     'tab.students_by_class': 'Liste par Classe',
     'tab.homework': 'Cahier de textes',
     'tab.lessons': 'Cours & Leçons',
@@ -331,6 +336,10 @@ const translations: Record<LanguageType, Record<string, string>> = {
 
   en: {
     'app.name': 'Parents-Schools Management System (Pasma-sys)',
+    'portal.header_badge': '🎓 PASMA-SYS • ENT & TREASURY',
+    'portal.header_title': 'School Portal & Parent Area',
+    'portal.header_subtitle': 'Digital platform for student tracking, school fee management, digital logbook, and report cards.',
+    'portal.login_title': '🔐 School Login Portal',
     // Nav Tabs & General labels
     'tab.apee_dashboard': 'Dashboard',
     'tab.apee_recording': 'Record Payment',
@@ -410,6 +419,7 @@ const translations: Record<LanguageType, Record<string, string>> = {
     'drive.delete_perm': 'Delete permanently',
     'tab.announcements': 'Announcements',
     'tab.academic_calendar': 'Academic Calendar',
+    'tab.campus_map': 'Campus Map & Classrooms',
     'tab.students_by_class': 'Students by Class',
     'tab.homework': 'Homework Board',
     'tab.lessons': 'Lessons & Courses',
@@ -635,6 +645,10 @@ const translations: Record<LanguageType, Record<string, string>> = {
 
   es: {
     'app.name': 'Sistema de Gestión de Padres y Escuelas (Pasma-sys)',
+    'portal.header_badge': '🎓 PASMA-SYS • ENT Y TESORERÍA',
+    'portal.header_title': 'Portal Escolar y Área de Padres',
+    'portal.header_subtitle': 'Plataforma digital para seguimiento de estudiantes, gestión de tarifas escolares, libreta digital y boletines de notas.',
+    'portal.login_title': '🔐 Portal de Conexión Escolar',
     // Nav Tabs & General labels
     'tab.apee_dashboard': 'Panel de Control',
     'tab.apee_recording': 'Registro de Cuota',
@@ -939,6 +953,10 @@ const translations: Record<LanguageType, Record<string, string>> = {
 
   de: {
     'app.name': 'Eltern-Schul-Managementsystem (Pasma-sys)',
+    'portal.header_badge': '🎓 PASMA-SYS • ENT & SCHATZMEISTEREI',
+    'portal.header_title': 'Schulportal & Elternbereich',
+    'portal.header_subtitle': 'Digitale Plattform für Schülerverfolgung, Schulgebührenverwaltung, digitales Klassenbuch und Zeugnisse.',
+    'portal.login_title': '🔐 Anmeldeportal für Schulen',
     // Nav Tabs & General labels
     'tab.apee_dashboard': 'Dashboard',
     'tab.apee_recording': 'Beitrag erfassen',

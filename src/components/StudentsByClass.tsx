@@ -27,12 +27,14 @@ import {
   ArrowRight,
   QrCode,
   Camera,
-  Trash2
+  Trash2,
+  BellRing
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLanguage } from '../utils/TranslationContext';
 import { jsPDF } from 'jspdf';
 import StudentQRBadge, { generateBulkBadgesPDF } from './StudentQRBadge';
+import AlertStaffModal from './AlertStaffModal';
 
 interface StudentsByClassProps {
   students: Student[];
@@ -46,6 +48,7 @@ interface StudentsByClassProps {
   onUpdateStudent?: (updated: Student) => Promise<boolean>;
   onDeleteStudent?: (studentId: string) => Promise<boolean>;
   onAddAttendance?: (log: Attendance) => Promise<boolean>;
+  onAddMessage?: (newMsg: Message) => void;
 }
 
 export default function StudentsByClass({
@@ -60,6 +63,7 @@ export default function StudentsByClass({
   onUpdateStudent,
   onDeleteStudent,
   onAddAttendance,
+  onAddMessage,
 }: StudentsByClassProps) {
   const { t, language } = useLanguage();
   const isFr = language === 'fr';
@@ -87,6 +91,7 @@ export default function StudentsByClass({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClass, setSelectedClass] = useState<string>('all');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [alertStaffStudent, setAlertStaffStudent] = useState<Student | null>(null);
   const [cameraStudent, setCameraStudent] = useState<Student | null>(null);
   const [deletingStudent, setDeletingStudent] = useState<Student | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -756,11 +761,21 @@ export default function StudentsByClass({
                   </div>
                 </div>
 
-                {/* Print individual report card PDF trigger & Delete button */}
-                <div className="shrink-0 pt-3 md:pt-0 flex items-center gap-2">
+                {/* Print individual report card PDF trigger, Alerter le staff & Delete button */}
+                <div className="shrink-0 pt-3 md:pt-0 flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setAlertStaffStudent(selectedStudent)}
+                    className="flex items-center gap-1.5 text-[10.5px] bg-gradient-to-r from-rose-500 via-amber-500 to-indigo-600 hover:from-rose-600 hover:to-indigo-700 text-white font-black px-3.5 py-1.5 rounded-xl transition cursor-pointer shadow-sm active:scale-95"
+                    title={isFr ? "Alerter le Staff de la classe" : "Alert Class Staff"}
+                  >
+                    <BellRing className="h-3.5 w-3.5 animate-bounce" />
+                    <span>{isFr ? "Alerter le Staff" : "Alert Staff"}</span>
+                  </button>
+
                   <button
                     onClick={() => exportPDFCard(selectedStudent)}
-                    className="flex items-center gap-1.5 text-[10.5px] bg-white/10 hover:bg-white/20 border border-white/15 text-white font-extrabold px-3.5 py-1.5 rounded-xl transition cursor-pointer"
+                    className="flex items-center gap-1.5 text-[10.5px] bg-white/10 hover:bg-white/20 border border-white/15 text-white font-extrabold px-3 py-1.5 rounded-xl transition cursor-pointer"
                   >
                     <Printer className="h-3.5 w-3.5" />
                     <span>{isFr ? "Exporter Fiche PDF" : "Export PDF Sheet"}</span>
@@ -877,6 +892,16 @@ export default function StudentsByClass({
                         <div className="flex justify-between py-1">
                           <span className="text-slate-450">{isFr ? "Statut dossiers scolaires" : "Record status"}</span>
                           <span className="text-[10px] bg-emerald-50 dark:bg-emerald-950/35 text-emerald-600 dark:text-emerald-400 font-extrabold px-1.5 py-0.5 rounded">CONFORME</span>
+                        </div>
+                        <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                          <button
+                            type="button"
+                            onClick={() => setAlertStaffStudent(selectedStudent)}
+                            className="w-full py-2 px-3 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-950/60 border border-rose-200 dark:border-rose-900/50 text-rose-700 dark:text-rose-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer"
+                          >
+                            <BellRing className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400 animate-pulse" />
+                            <span>{isFr ? "Alerter le Staff de la classe" : "Send Quick Staff Alert"}</span>
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -1318,6 +1343,18 @@ export default function StudentsByClass({
             setLastScannedStudent(student);
             setIsQRScannerOpen(false);
           }}
+        />
+      )}
+
+      {/* Alert Staff Modal */}
+      {alertStaffStudent && (
+        <AlertStaffModal
+          student={alertStaffStudent}
+          isOpen={!!alertStaffStudent}
+          onClose={() => setAlertStaffStudent(null)}
+          settings={settings}
+          onAddMessage={onAddMessage}
+          portalUserRole={portalUserRole}
         />
       )}
 

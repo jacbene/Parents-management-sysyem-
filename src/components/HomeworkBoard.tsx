@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Homework, Student, HomeworkStatus, ApeeSettings } from '../types';
-import { BookOpen, CheckCircle, Circle, Clock, CheckCircle2, AlertCircle, Plus, Trash2, Lock, Unlock, CheckSquare } from 'lucide-react';
+import { BookOpen, CheckCircle, Circle, Clock, CheckCircle2, AlertCircle, Plus, Trash2, Lock, Unlock, CheckSquare, X, RotateCw, AlertTriangle, Calendar, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
+import { useLanguage } from '../utils/TranslationContext';
 
 interface HomeworkBoardProps {
   homeworks: Homework[];
@@ -30,11 +31,15 @@ export default function HomeworkBoard({
   activeStudent,
   settings,
 }: HomeworkBoardProps) {
+  const { language } = useLanguage();
+  const isEn = language === 'en';
   const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'completed'>('all');
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   
   // Add Homework states
   const [showAddForm, setShowAddForm] = useState(false);
+  const [hwToDelete, setHwToDelete] = useState<Homework | null>(null);
+  const [isDeletingHw, setIsDeletingHw] = useState(false);
 
   useEffect(() => {
     const handleQuickAction = (e: any) => {
@@ -151,14 +156,22 @@ export default function HomeworkBoard({
     }
   };
 
-  const handleDelete = async (id: string, hwTitle: string) => {
+  const handleDeletePrompt = (hw: Homework) => {
     if (hasPedPassword && !isPedAuthorized && onPromptUnlockPed) {
       onPromptUnlockPed();
       return;
     }
-    const confirm = window.confirm(`Voulez-vous supprimer ce devoir "${hwTitle}" du cahier de textes ?`);
-    if (confirm && onDeleteHomework) {
-      await onDeleteHomework(id);
+    setHwToDelete(hw);
+  };
+
+  const handleConfirmDeleteHw = async () => {
+    if (!hwToDelete || !onDeleteHomework) return;
+    setIsDeletingHw(true);
+    try {
+      await onDeleteHomework(hwToDelete.id);
+      setHwToDelete(null);
+    } finally {
+      setIsDeletingHw(false);
     }
   };
 
@@ -449,7 +462,7 @@ export default function HomeworkBoard({
                   {onDeleteHomework && (
                     <button
                       type="button"
-                      onClick={() => handleDelete(hw.id, hw.title)}
+                      onClick={() => handleDeletePrompt(hw)}
                       className={`text-red-600 hover:text-red-850 p-1.5 bg-red-100/10 hover:bg-red-200/20 border border-transparent hover:border-red-500/10 rounded-xl transition duration-200 shrink-0 self-center cursor-pointer ${
                         isPedAuthorized || isCustom ? 'opacity-100' : 'opacity-40 hover:opacity-100 md:opacity-0 md:group-hover:opacity-100'
                       }`}
@@ -464,6 +477,122 @@ export default function HomeworkBoard({
           </AnimatePresence>
         </div>
       )}
+
+      {/* Visually Harmonized Confirmation Modal for Homework Deletion */}
+      <AnimatePresence>
+        {hwToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-rose-200/80 dark:border-rose-900/50 max-w-md w-full p-6 space-y-5 overflow-hidden relative text-slate-900 dark:text-slate-100"
+            >
+              {/* Top Accent Gradient Bar */}
+              <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-rose-500 via-red-600 to-amber-500" />
+
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 rounded-2xl shrink-0">
+                    <Trash2 className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 dark:text-white leading-tight">
+                      {isEn ? "Delete Homework Assignment" : "Suppression de Devoir"}
+                    </h3>
+                    <p className="text-xs text-rose-600 dark:text-rose-400 font-bold">
+                      {isEn ? "Irreversible action • Immediate removal" : "Action irréversible • Retrait immédiat"}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setHwToDelete(null)}
+                  disabled={isDeletingHw}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer disabled:opacity-50"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Homework Preview Summary Box */}
+              <div className="p-4 bg-rose-50/60 dark:bg-rose-950/30 border border-rose-200/70 dark:border-rose-900/40 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-black text-rose-900/70 dark:text-rose-300/70 uppercase tracking-wider">
+                    {isEn ? "Homework details" : "Détails du devoir ciblé"}
+                  </span>
+                  <span className="text-[10.5px] font-extrabold px-2.5 py-0.5 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 rounded-lg">
+                    {hwToDelete.subject}
+                  </span>
+                </div>
+
+                <div className="space-y-1">
+                  <p className="text-sm font-black text-slate-900 dark:text-white leading-snug">
+                    {hwToDelete.title}
+                  </p>
+                  {hwToDelete.description && (
+                    <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed font-normal">
+                      {hwToDelete.description}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 pt-1 font-mono">
+                    <Calendar className="h-3.5 w-3.5 text-rose-500 shrink-0" />
+                    <span>
+                      {isEn ? "Due date: " : "Rendu le : "}
+                      <strong className="text-slate-700 dark:text-slate-200">
+                        {new Date(hwToDelete.dueDate).toLocaleDateString(isEn ? 'en-US' : 'fr-FR', { weekday: 'short', month: 'long', day: 'numeric' })}
+                      </strong>
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Warning Notice */}
+              <div className="p-3 bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/40 rounded-xl space-y-1">
+                <div className="flex items-center gap-1.5 text-xs font-black text-amber-900 dark:text-amber-300">
+                  <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span>{isEn ? "Consequences of deletion" : "Conséquences de la suppression"}</span>
+                </div>
+                <p className="text-[11px] text-amber-900/80 dark:text-amber-300/80 leading-relaxed">
+                  {isEn
+                    ? "This assignment will be permanently removed from the class homework tracker and will no longer appear on student/parent portals."
+                    : "Ce devoir sera définitivement supprimé du cahier de textes et ne sera plus visible par les élèves ni par les parents sur leur portail."}
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setHwToDelete(null)}
+                  disabled={isDeletingHw}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition cursor-pointer disabled:opacity-50"
+                >
+                  {isEn ? "Cancel" : "Annuler"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDeleteHw}
+                  disabled={isDeletingHw}
+                  className="px-5 py-2.5 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 active:scale-95 text-white rounded-xl text-xs font-black shadow-md shadow-rose-600/20 transition cursor-pointer flex items-center gap-2 disabled:opacity-50"
+                >
+                  {isDeletingHw ? (
+                    <>
+                      <RotateCw className="h-4 w-4 animate-spin" />
+                      <span>{isEn ? "Deleting..." : "Suppression en cours..."}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="h-4 w-4" />
+                      <span>{isEn ? "Confirm Deletion" : "Supprimer définitivement"}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -12,6 +12,8 @@ export interface Student {
   attendanceValidated?: boolean;
 }
 
+export type GradeReviewStatus = 'Published' | 'PendingReview' | 'Corrected';
+
 export interface Grade {
   id: string;
   studentId: string;
@@ -22,6 +24,15 @@ export interface Grade {
   maxScore: number;
   teacherRemarks: string;
   date: string;
+  status?: GradeReviewStatus;
+  reviewReason?: string;
+  reviewNote?: string;
+  flaggedForReviewAt?: string;
+  flaggedBy?: string;
+  originalScore?: number;
+  originalMaxScore?: number;
+  parentNotified?: boolean;
+  parentNotifiedAt?: string;
 }
 
 export type AttendanceStatus = 'Present' | 'Absent' | 'Late' | 'Excused';

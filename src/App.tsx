@@ -48,6 +48,7 @@ import SheetsPortal from './components/SheetsPortal';
 import GmailPortal from './components/GmailPortal';
 import FirebaseConsole from './components/FirebaseConsole';
 import AcademicCalendar from './components/AcademicCalendar';
+import SchoolCampusMap from './components/SchoolCampusMap';
 import SyncToastContainer from './components/SyncToastContainer';
 import ForgotPasswordModal from './components/ForgotPasswordModal';
 
@@ -139,6 +140,7 @@ type TabType =
   | 'firebase_console'
   | 'announcements' 
   | 'academic_calendar' 
+  | 'campus_map'
   | 'students_by_class'
   | 'homework' 
   | 'lessons'
@@ -2190,6 +2192,43 @@ export default function App() {
     return true;
   };
 
+  const handleUpdateGrade = async (grade: Grade) => {
+    if (portalUserRole === 'parent') {
+      alert("Accès refusé: Les parents ne sont pas autorisés à modifier les relevés de notes.");
+      return false;
+    }
+    setGrades(prev => prev.map(g => g.id === grade.id ? grade : g));
+    if (userId) {
+      await runFirestoreWrite(
+        'grades',
+        grade.id,
+        'UPDATE',
+        grade,
+        `Mise à jour / Révision note : ${grade.subject} (${grade.score}/${grade.maxScore})`
+      );
+    }
+    return true;
+  };
+
+  const handleSendMessageDirectly = async (msg: Message) => {
+    setMessages(prev => [msg, ...prev]);
+    try {
+      if (userId) {
+        localStorage.setItem(`pasma_messages_${userId}`, JSON.stringify([msg, ...messages]));
+        await runFirestoreWrite(
+          'messages',
+          msg.id,
+          'CREATE',
+          msg,
+          `Notification transmise aux parents : ${msg.category || 'Message'}`
+        );
+      }
+    } catch (e) {
+      console.warn("Message sync warning:", e);
+    }
+    return true;
+  };
+
   const handleDeleteGrade = async (id: string) => {
     if (portalUserRole === 'parent') {
       alert("Accès refusé: Les parents ne sont pas autorisés à supprimer les relevés de notes.");
@@ -4021,6 +4060,17 @@ export default function App() {
                       <span className="flex items-center gap-2"><CalendarDays className="h-4 w-4" /> {t('tab.academic_calendar')}</span>
                     </button>
 
+                    <button
+                      onClick={() => setActiveTab('campus_map')}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
+                        activeTab === 'campus_map'
+                          ? 'bg-slate-900 text-white'
+                          : 'text-gray-650 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2"><Compass className="h-4 w-4" /> {t('tab.campus_map')}</span>
+                    </button>
+
                     {filteredStudents.length > 0 && portalUserRole !== 'parent' && (
                       <button
                         onClick={() => setActiveTab('students_by_class')}
@@ -4338,6 +4388,16 @@ export default function App() {
                       </motion.div>
                     )}
 
+                    {activeTab === 'campus_map' && (
+                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="campus_map">
+                        <SchoolCampusMap
+                          schoolName={apeeSettings.associationName || "CES d'Ekali 1 - MFOU"}
+                          schoolYear={apeeSettings.schoolYear || '2026-2027'}
+                          language={language}
+                        />
+                      </motion.div>
+                    )}
+
                     {activeTab === 'announcements' && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="announcements">
                         <AnnouncementsFeed
@@ -4386,6 +4446,7 @@ export default function App() {
                           onUpdateStudent={handleUpdateStudent}
                           onDeleteStudent={handleDeleteStudent}
                           onAddAttendance={handleAddAttendance}
+                          onAddMessage={handleAddMessageInPlace}
                         />
                       </motion.div>
                     )}
@@ -4413,7 +4474,11 @@ export default function App() {
                           allGrades={grades}
                           allStudents={students}
                           onAddGrade={handleAddGrade}
+                          onUpdateGrade={handleUpdateGrade}
                           onDeleteGrade={handleDeleteGrade}
+                          onSendMessage={handleSendMessageDirectly}
+                          portalUserRole={portalUserRole}
+                          apeeParents={apeeParents}
                           isPedAuthorized={portalUserRole === 'teacher' || isPedAuthorized}
                           onPromptUnlockPed={handlePromptUnlockPed}
                           pedManagerName={apeeSettings.pedManagerName}

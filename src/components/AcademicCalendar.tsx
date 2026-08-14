@@ -26,12 +26,14 @@ import {
   Sun, 
   Bell, 
   Layers,
-  RefreshCw
+  RefreshCw,
+  Compass
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection, query, where, onSnapshot, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db, queuePendingAction } from '../firebase';
 import { AcademicEvent, AcademicEventType } from '../types';
+import SchoolCampusMap from './SchoolCampusMap';
 
 interface AcademicCalendarProps {
   schoolId: string;
@@ -210,6 +212,7 @@ export default function AcademicCalendar({
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [classFilter, setClassFilter] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'month' | 'list' | 'trimesters'>('month');
+  const [activeSubView, setActiveSubView] = useState<'calendar' | 'map'>('calendar');
 
   // Month navigation state
   const [currentDate, setCurrentDate] = useState<Date>(new Date());

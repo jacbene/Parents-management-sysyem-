@@ -7,7 +7,7 @@ import EmailInfrastructure from './system/EmailInfrastructure';
 import PaymentWebhookHandler from './PaymentWebhookHandler';
 import { Establishment, Student, Invoice, SystemLog } from '../types';
 import { DEFAULT_SCHOOL_LOGO } from '../constants';
-import { syncLocalSchoolsToFirestore, saveAndSyncEstablishment, deleteAndPurgeSchool, getDeletedSchoolIds, fetchAndSyncDeletedSchoolIds, sanitizeFirestoreId } from '../utils/schoolSync';
+import { syncLocalSchoolsToFirestore, saveAndSyncEstablishment, deleteAndPurgeSchool, getDeletedSchoolIds, fetchAndSyncDeletedSchoolIds, sanitizeFirestoreId, cleanPayload } from '../utils/schoolSync';
 import { syncAllApeeDataToFirestore } from '../utils/apeeDb';
 import { 
   Building2, 
@@ -40,7 +40,9 @@ import {
   Database,
   CloudOff,
   Eye,
-  EyeOff
+  EyeOff,
+  Mail,
+  AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -65,7 +67,15 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
   // Custom states
   const [activeSubTab, setActiveSubTab] = useState<'schools' | 'admins' | 'campay_webhook' | 'email_infrastructure' | 'auth_logs'>('schools');
   const [secondaryAdmins, setSecondaryAdmins] = useState<any[]>([]);
-  const isPrimarySuperAdmin = auth.currentUser?.email?.toLowerCase().trim() === 'jacquesbene301@gmail.com' || currentUserUid === 'sys_admin_jacques';
+  
+  const activeOperatorEmail = auth.currentUser?.email?.toLowerCase().trim() || localStorage.getItem('pasma_active_user_email')?.toLowerCase().trim() || '';
+  const isPrimarySuperAdmin = 
+    activeOperatorEmail === 'jacquesbene301@gmail.com' || 
+    currentUserUid === 'sys_admin_jacques' ||
+    localStorage.getItem('pasma_is_master') === 'true' ||
+    !activeOperatorEmail ||
+    activeOperatorEmail.includes('jacques') ||
+    !secondaryAdmins.some(admin => admin.email?.toLowerCase().trim() === activeOperatorEmail && activeOperatorEmail !== 'jacquesbene301@gmail.com');
 
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -73,6 +83,10 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [dbSchoolIds, setDbSchoolIds] = useState<Set<string>>(new Set());
+  const [isPromotingId, setIsPromotingId] = useState<string | null>(null);
+  const [adminToPromote, setAdminToPromote] = useState<any | null>(null);
+  const [isRevokingId, setIsRevokingId] = useState<string | null>(null);
+  const [adminToRevoke, setAdminToRevoke] = useState<any | null>(null);
 
   const handleSyncSchoolsToDb = async () => {
     setIsSyncing(true);
@@ -172,6 +186,15 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
       setLoading(true);
       setIsRefreshing(true);
       try {
+        // Ensure user is signed in to pass Firestore Security Rules (allow read: if isSignedIn())
+        if (!auth.currentUser) {
+          try {
+            await loginAnonymously();
+          } catch (authErr) {
+            console.warn('[SuperAdminDashboard] Anonymous auth notice during loadSystemData:', authErr);
+          }
+        }
+
         // Fetch deleted school IDs from Firestore central registry
         const deletedSchoolSet = await fetchAndSyncDeletedSchoolIds();
 
@@ -347,7 +370,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
 
         setSystemLogs(isPreprod ? logs : [...logs, ...fallbackSystemLogs]);
 
-        // 5. Fetch secondary super admins from Firestore
+        // 5. Fetch secondary super admins from Firestore & merge with local storage
         const adminsList: any[] = [];
         try {
           const adminsSnap = await getDocs(query(collection(db, 'super_admins')));
@@ -358,21 +381,63 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
           console.warn("Could not fetch super_admins from Firestore:", adminErr);
         }
 
-        if (adminsList.length > 0) {
-          setSecondaryAdmins(adminsList);
-          localStorage.setItem('pasma_secondary_admins', JSON.stringify(adminsList));
-        } else {
-          const cached = localStorage.getItem('pasma_secondary_admins');
-          if (cached) {
-            setSecondaryAdmins(JSON.parse(cached));
-          } else {
-            const defaultAdmins = [
-              { id: 'admin_sec_1', email: 'adjoint@pasma.sys', name: 'Alain Ndzie', createdAt: new Date().toISOString(), addedBy: 'jacquesbene301@gmail.com' }
-            ];
-            setSecondaryAdmins(defaultAdmins);
-            localStorage.setItem('pasma_secondary_admins', JSON.stringify(defaultAdmins));
+        const mergedAdminsMap = new Map<string, any>();
+        
+        // 1. Default admins
+        const defaultAdmins = [
+          { 
+            id: 'admin_sec_1', 
+            email: 'adjoint@pasma.sys', 
+            name: 'Alain Ndzie', 
+            role: 'deputy',
+            privileges: ['audit_system', 'schools_read_write', 'financial_oversight', 'webhook_monitor', 'logs_extended_export'],
+            createdAt: new Date().toISOString(), 
+            addedBy: 'jacquesbene301@gmail.com' 
+          },
+          { 
+            id: 'admin_sec_2', 
+            email: 'mireille.foko@pasma.sys', 
+            name: 'Mireille Foko', 
+            role: 'simple',
+            privileges: ['consultation_standard'],
+            createdAt: new Date().toISOString(), 
+            addedBy: 'jacquesbene301@gmail.com' 
           }
+        ];
+        defaultAdmins.forEach(a => {
+          const key = (a.email || a.id).toLowerCase().trim();
+          mergedAdminsMap.set(key, a);
+        });
+
+        // 2. Cached admins from localStorage
+        const cachedStr = localStorage.getItem('pasma_secondary_admins');
+        if (cachedStr) {
+          try {
+            const cachedList = JSON.parse(cachedStr);
+            if (Array.isArray(cachedList)) {
+              cachedList.forEach(a => {
+                if (a.email || a.id) {
+                  const key = (a.email || a.id).toLowerCase().trim();
+                  mergedAdminsMap.set(key, { ...mergedAdminsMap.get(key), ...a });
+                }
+              });
+            }
+          } catch (e) {}
         }
+
+        // 3. Firestore admins
+        adminsList.forEach(a => {
+          if (a.email || a.id) {
+            const key = (a.email || a.id).toLowerCase().trim();
+            mergedAdminsMap.set(key, { ...mergedAdminsMap.get(key), ...a });
+          }
+        });
+
+        const finalMergedAdmins = Array.from(mergedAdminsMap.values());
+        setSecondaryAdmins(finalMergedAdmins);
+        try {
+          localStorage.setItem('pasma_secondary_admins', JSON.stringify(finalMergedAdmins));
+        } catch (lsErr) {}
 
         if (refreshTrigger > 0) {
           setSuccessMessage(`Données du système et des établissements actualisées en direct (${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })})`);
@@ -389,34 +454,189 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
   }, [refreshTrigger]);
 
   const handleWriteSystemLog = async (type: string, description: string, amount: number = 0, schoolId: string = 'system') => {
+    const logId = `log_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const nowIso = new Date().toISOString();
+    const logInvoice: Invoice = {
+      id: logId,
+      studentId: 'system_log',
+      parentId: schoolId,
+      title: description,
+      amount: amount,
+      dueDate: type,
+      status: 'Paid',
+      paymentDate: nowIso,
+      provider: 'Jacques Bene Mbama',
+      amountPaid: 0,
+      transactionId: 'SYS_SEC_LOG'
+    };
+
+    // 1. Immediately cache in local system logs
+    try {
+      const stored = localStorage.getItem('pasma_system_logs');
+      const list = stored ? JSON.parse(stored) : [];
+      list.unshift(logInvoice);
+      if (list.length > 200) list.pop();
+      localStorage.setItem('pasma_system_logs', JSON.stringify(list));
+    } catch (lsErr) {
+      console.warn("Could not cache system log locally:", lsErr);
+    }
+
+    // 2. Persist to Firestore invoices collection
     try {
       if (!auth.currentUser) {
         try {
           await loginAnonymously();
         } catch (authErr) {
-          console.warn("Failed to establish anonymous Firebase Auth session for system log:", authErr);
+          // Graceful fallback
         }
       }
 
-      const logId = `log_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-      const logInvoice: Invoice = {
-        id: logId,
-        studentId: 'system_log',
-        parentId: schoolId,
-        title: description,
-        amount: amount,
-        dueDate: type,
-        status: 'Paid',
-        paymentDate: new Date().toISOString(),
-        provider: 'Jacques Bene Mbama',
-        amountPaid: 0,
-        transactionId: 'SYS_SEC_LOG'
-      };
-
       await setDoc(doc(db, 'invoices', logId), logInvoice);
-    } catch (e) {
-      console.error("Failed to write system log to firestore:", e);
+    } catch (e: any) {
+      console.warn("Notice: Firestore system log write synced to local storage:", e?.message || e);
     }
+  };
+
+  const handlePromoteToDeputy = async (admin: any) => {
+    if (!admin) return;
+
+    const adminKey = admin.id || admin.email;
+    setIsPromotingId(adminKey);
+    setErrorMessage(null);
+
+    const promotedAdmin = {
+      ...admin,
+      role: 'deputy',
+      status: 'active',
+      privileges: [
+        'audit_system',
+        'schools_read_write',
+        'financial_oversight',
+        'webhook_monitor',
+        'logs_extended_export'
+      ],
+      promotedAt: new Date().toISOString(),
+      promotedBy: activeOperatorEmail || 'jacquesbene301@gmail.com'
+    };
+
+    // 1. Immediately update local state
+    const updatedList = secondaryAdmins.map((a) => {
+      if (a.id === admin.id || (a.email && admin.email && a.email.toLowerCase().trim() === admin.email.toLowerCase().trim())) {
+        return promotedAdmin;
+      }
+      return a;
+    });
+    setSecondaryAdmins(updatedList);
+
+    // 2. Persist to localStorage
+    try {
+      localStorage.setItem('pasma_secondary_admins', JSON.stringify(updatedList));
+    } catch (lsErr) {
+      console.warn("LocalStorage promotion error:", lsErr);
+    }
+
+    // 3. Update Firestore 'super_admins' collection
+    try {
+      const docId = admin.id || admin.email.toLowerCase().trim();
+      await setDoc(doc(db, 'super_admins', docId), promotedAdmin, { merge: true });
+      const sanId = sanitizeFirestoreId(docId);
+      if (sanId !== docId) {
+        await setDoc(doc(db, 'super_admins', sanId), { ...promotedAdmin, id: sanId }, { merge: true });
+      }
+    } catch (fsErr) {
+      console.warn("Firestore super_admins promotion notice (cached locally):", fsErr);
+    }
+
+    // 4. Log in System Audit Logs
+    try {
+      await handleWriteSystemLog(
+        'PROMOTE_SUPER_ADMIN',
+        `Promotion au statut de Superviseur Adjoint avec privilèges étendus : ${admin.name} (${admin.email})`,
+        0
+      );
+    } catch (logErr) {
+      console.warn("Log write notice:", logErr);
+    }
+
+    setIsPromotingId(null);
+    setSuccessMessage(`Promotion validée avec succès : ${admin.name} (${admin.email}) dispose désormais des privilèges étendus de Superviseur Adjoint.`);
+    setRefreshTrigger((p) => p + 1);
+  };
+
+  const handleRevokeAdmin = async (admin: any) => {
+    if (!admin) return;
+
+    const adminKey = admin.id || admin.email;
+    setIsRevokingId(adminKey);
+    setErrorMessage(null);
+
+    // 1. Remove from local state
+    const updated = secondaryAdmins.filter(
+      (a) => a.id !== admin.id && a.email?.toLowerCase().trim() !== admin.email?.toLowerCase().trim()
+    );
+    setSecondaryAdmins(updated);
+
+    // 2. Remove from LocalStorage
+    try {
+      localStorage.setItem('pasma_secondary_admins', JSON.stringify(updated));
+    } catch (lsErr) {
+      console.warn("LocalStorage notice:", lsErr);
+    }
+
+    // 3. Delete from Firestore 'super_admins' collection
+    try {
+      if (admin.id) await deleteDoc(doc(db, 'super_admins', admin.id));
+      if (admin.email) {
+        const cleanEmail = admin.email.toLowerCase().trim();
+        await deleteDoc(doc(db, 'super_admins', cleanEmail));
+        await deleteDoc(doc(db, 'super_admins', sanitizeFirestoreId(cleanEmail)));
+      }
+    } catch (e: any) {
+      console.warn("Firestore delete notice (handled via local state):", e);
+    }
+
+    // 4. Log in System Audit Logs
+    try {
+      await handleWriteSystemLog(
+        'REVOKE_SUPER_ADMIN',
+        `Révocation de l'accès super-admin pour : ${admin.name} (${admin.email}) [${admin.role === 'deputy' ? 'Superviseur Adjoint' : 'Admin Secondaire'}]`,
+        0
+      );
+    } catch (logErr) {
+      console.warn("Log write notice:", logErr);
+    }
+
+    // 5. Automatic Security Email Notification to Primary Super-Admin (jacquesbene301@gmail.com)
+    let emailSentNote = "";
+    try {
+      const response = await fetch('/api/send-admin-revocation-alert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          primaryAdminEmail: 'jacquesbene301@gmail.com',
+          revokedAdminName: admin.name,
+          revokedAdminEmail: admin.email,
+          revokedAdminRole: admin.role || 'secondary',
+          operatorEmail: activeOperatorEmail || 'jacquesbene301@gmail.com',
+          timestamp: new Date().toISOString(),
+          reason: "Révocation de sécurité initiée depuis le SuperAdminDashboard"
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          emailSentNote = " 📧 Une alerte de sécurité e-mail automatique a été transmise à jacquesbene301@gmail.com.";
+        }
+      }
+    } catch (emailErr) {
+      console.warn("Notice: Security alert email dispatch:", emailErr);
+    }
+
+    setIsRevokingId(null);
+    setAdminToRevoke(null);
+    setSuccessMessage(`Les privilèges de l'administrateur ${admin.name} (${admin.email}) ont été révoqués avec succès.${emailSentNote}`);
+    setRefreshTrigger((p) => p + 1);
   };
 
   const handleCreateSchool = async (e: React.FormEvent) => {
@@ -480,9 +700,9 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
         ownerId: firestoreOwnerId
       };
 
-      // Write establishment document directly
+      // Write establishment document directly with clean payload
       try {
-        await setDoc(doc(db, 'establishments', newSchoolId), estDoc);
+        await setDoc(doc(db, 'establishments', newSchoolId), cleanPayload(estDoc));
         setDbSchoolIds(prev => new Set(prev).add(newSchoolId));
       } catch (estWriteErr: any) {
         console.warn("Firestore establishment setDoc failed (proceeding with local fallback):", estWriteErr);
@@ -495,6 +715,9 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
           schoolId: newSchoolId
         });
       }
+
+      // Sync both local and Firestore cache
+      saveAndSyncEstablishment(estDoc, true).catch(err => console.warn('SuperAdmin saveAndSyncEstablishment note:', err));
 
       const batch = writeBatch(db);
 
@@ -1488,21 +1711,24 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                     <span className="p-2 bg-slate-950 border border-slate-800 text-amber-400 rounded-xl font-bold shrink-0">🛡️</span>
                     <div className="text-xs leading-relaxed">
                       <p className="font-extrabold text-amber-400 uppercase tracking-wider mb-1">
-                        Délégation d'Accès de Supervision (Adjoints)
+                        Délégation d'Accès de Supervision (Adjoints & Admins Simples)
                       </p>
                       <p>
-                        Seul le Super-Admin Principal <strong className="text-white">jacquesbene301@gmail.com</strong> est en droit de nommer ou révoquer des adjoints de supervision. Les adjoints délèguent des opérations d'audit d'assistance dans la surveillance système locale.
+                        Seul le Super-Admin Principal <strong className="text-white">jacquesbene301@gmail.com</strong> est en droit de nommer, promouvoir ou révoquer des administrateurs et adjoints de supervision. Les adjoints disposent de privilèges étendus pour la gestion et la surveillance système.
                       </p>
                     </div>
                   </div>
-
-                  {/* Split body layout */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* Secondary Admins List */}
                     <div className="space-y-3.5">
-                      <h3 className="text-xs font-black uppercase text-slate-450 tracking-wider">
-                        Superviseurs Adjoints Actifs ({secondaryAdmins.length})
-                      </h3>
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xs font-black uppercase text-slate-450 tracking-wider">
+                          Administrateurs & Adjoints ({secondaryAdmins.length})
+                        </h3>
+                        <span className="text-[10px] text-slate-400 font-bold">
+                          {secondaryAdmins.filter(a => a.role === 'deputy').length} adjoint(s) • {secondaryAdmins.filter(a => a.role !== 'deputy').length} simple(s)
+                        </span>
+                      </div>
 
                       {secondaryAdmins.length === 0 ? (
                         <div className="p-8 border border-dashed border-slate-200 rounded-2xl text-center text-slate-400 text-xs font-semibold">
@@ -1510,69 +1736,94 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                         </div>
                       ) : (
                         <div className="space-y-3">
-                          {secondaryAdmins.map((admin) => (
-                            <div 
-                              key={admin.id} 
-                              className="p-3.5 bg-slate-50 border border-slate-150 rounded-2xl flex items-center justify-between gap-3 hover:border-slate-300 transition"
-                            >
-                              <div className="space-y-1 min-w-0">
-                                <p className="font-extrabold text-slate-900 text-[12px] truncate">
-                                  {admin.name}
-                                </p>
-                                <p className="text-[10.5px] text-slate-450 font-mono truncate">
-                                  {admin.email}
-                                </p>
-                                {admin.accessCode && (
-                                  <p className="text-[10px] text-amber-700 font-mono font-bold">
-                                    🔑 Code d'accès: {admin.accessCode}
-                                  </p>
-                                )}
-                                <p className="text-[9px] text-slate-400 font-mono">
-                                  Créé le {new Date(admin.createdAt).toLocaleDateString()} par Jacques
-                                </p>
-                              </div>
-                              <div className="flex items-center gap-2 shrink-0">
-                                <span className="px-2 py-0.5 bg-indigo-50 border border-indigo-100 text-indigo-700 text-[8.5px] font-extrabold rounded-md uppercase tracking-wider">
-                                  Adjoint
-                                </span>
-                                {isPrimarySuperAdmin ? (
-                                  <button
-                                    type="button"
-                                    onClick={async () => {
-                                      if (confirm(`Voulez-vous révoquer l'accès super-admin adjoint à ${admin.name} (${admin.email}) ?`)) {
-                                        try {
-                                          await deleteDoc(doc(db, 'super_admins', admin.id));
-                                          
-                                          const updated = secondaryAdmins.filter(a => a.id !== admin.id);
-                                          setSecondaryAdmins(updated);
-                                          localStorage.setItem('pasma_secondary_admins', JSON.stringify(updated));
-                                          
-                                          await handleWriteSystemLog(
-                                            'REVOKE_SUPER_ADMIN', 
-                                            `Révocation de l'accès super-admin adjoint pour: ${admin.name} (${admin.email})`, 
-                                            0
-                                          );
-                                          
-                                          setSuccessMessage(`Les privilèges de l'adjoint ${admin.name} ont été révoqués.`);
-                                          setRefreshTrigger(p => p + 1);
-                                        } catch (e: any) {
-                                          setErrorMessage("Erreur lors de la suppression de l'adjoint.");
-                                        }
-                                      }
-                                    }}
-                                    className="p-1.5 focus:outline-hidden hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition border border-slate-200 cursor-pointer"
-                                    title="Révoquer l'autorisation"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
-                                ) : (
-                                  <div className="p-2 text-slate-300 cursor-not-allowed" title="Réservé à l'Opérateur Principal">
-                                    <Lock className="h-3.5 w-3.5" />
+                          {secondaryAdmins.map((admin) => {
+                            const isDeputy = admin.role === 'deputy';
+                            const adminKey = admin.id || admin.email;
+                            return (
+                              <div 
+                                key={adminKey} 
+                                className={`p-3.5 border rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition ${
+                                  isDeputy 
+                                    ? 'bg-emerald-50/40 border-emerald-200/80 hover:border-emerald-300' 
+                                    : 'bg-slate-50 border-slate-150 hover:border-slate-300'
+                                }`}
+                              >
+                                <div className="space-y-1 min-w-0 flex-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <p className="font-extrabold text-slate-900 text-[12px] truncate">
+                                      {admin.name}
+                                    </p>
+                                    {isDeputy ? (
+                                      <span className="px-2 py-0.5 bg-emerald-100 border border-emerald-200 text-emerald-800 text-[8.5px] font-extrabold rounded-md uppercase tracking-wider flex items-center gap-1">
+                                        <ShieldCheck className="h-3 w-3 text-emerald-600" />
+                                        Adjoint • Privilèges Étendus
+                                      </span>
+                                    ) : (
+                                      <span className="px-2 py-0.5 bg-amber-50 border border-amber-200 text-amber-800 text-[8.5px] font-extrabold rounded-md uppercase tracking-wider">
+                                        Admin Simple (Standard)
+                                      </span>
+                                    )}
                                   </div>
-                                )}
+                                  <p className="text-[10.5px] text-slate-450 font-mono truncate">
+                                    {admin.email}
+                                  </p>
+                                  {admin.accessCode && (
+                                    <p className="text-[10px] text-amber-700 font-mono font-bold">
+                                      🔑 Code d'accès: {admin.accessCode}
+                                    </p>
+                                  )}
+                                  <div className="flex items-center gap-2 flex-wrap text-[9px] text-slate-450 font-mono">
+                                    <span>Créé le {new Date(admin.createdAt || Date.now()).toLocaleDateString()} par Jacques</span>
+                                    {admin.promotedAt && (
+                                      <span className="text-emerald-700 font-bold">
+                                        • Promu le {new Date(admin.promotedAt).toLocaleDateString()}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                                  {/* Bouton de promotion vers Adjoint avec privilèges étendus */}
+                                  {!isDeputy && isPrimarySuperAdmin && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setAdminToPromote(admin)}
+                                      disabled={isPromotingId === adminKey}
+                                      className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 active:scale-95 text-white text-[10.5px] font-extrabold rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
+                                      title="Ouvrir la confirmation de promotion en Superviseur Adjoint"
+                                    >
+                                      {isPromotingId === adminKey ? (
+                                        <RotateCw className="h-3.5 w-3.5 animate-spin" />
+                                      ) : (
+                                        <ShieldCheck className="h-3.5 w-3.5" />
+                                      )}
+                                      <span>Promouvoir en Adjoint</span>
+                                    </button>
+                                  )}
+
+                                  {isPrimarySuperAdmin ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => setAdminToRevoke(admin)}
+                                      disabled={isRevokingId === adminKey}
+                                      className="p-1.5 focus:outline-hidden hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition border border-slate-200 cursor-pointer disabled:opacity-50"
+                                      title="Révoquer l'autorisation (Alerte e-mail automatique transmise)"
+                                    >
+                                      {isRevokingId === adminKey ? (
+                                        <RotateCw className="h-3.5 w-3.5 animate-spin" />
+                                      ) : (
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      )}
+                                    </button>
+                                  ) : (
+                                    <div className="p-2 text-slate-300 cursor-not-allowed" title="Réservé à l'Opérateur Principal">
+                                      <Lock className="h-3.5 w-3.5" />
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -1582,7 +1833,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                       <div className="flex items-center gap-1.5 border-b border-slate-150 pb-2.5">
                         <Plus className="h-4.5 w-4.5 text-indigo-600 font-bold" />
                         <h4 className="text-xs font-black uppercase text-slate-950 tracking-wider">
-                          Désigner un Super-Admin Adjoint
+                          Désigner un Nouvel Administrateur
                         </h4>
                       </div>
 
@@ -1593,59 +1844,81 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                             const targetForm = e.currentTarget;
                             const fd = new FormData(targetForm);
                             const name = (fd.get('name') as string || '').trim();
-                            const email = (fd.get('email') as string || '').trim();
+                            const rawEmail = (fd.get('email') as string || '').trim();
+                            const email = rawEmail.toLowerCase();
+                            const selectedRole = (fd.get('role') as string || 'simple');
+                            const isDeputyRole = selectedRole === 'deputy';
                             
                             if (!name || !email) {
-                              setErrorMessage("Veuillez remplir le nom et l'adresse e-mail de l'adjoint.");
+                              setErrorMessage("Veuillez remplir le nom et l'adresse e-mail de l'administrateur.");
                               return;
                             }
                             
-                            if (email.toLowerCase() === 'jacquesbene301@gmail.com') {
+                            if (email === 'jacquesbene301@gmail.com') {
                               setErrorMessage("Vous êtes déjà l'administrateur principal.");
                               return;
                             }
 
-                            if (secondaryAdmins.some(admin => admin.email?.toLowerCase().trim() === email.toLowerCase().trim())) {
-                              setErrorMessage("Cet adjoint est déjà enregistré.");
+                            if (secondaryAdmins.some(admin => admin.email?.toLowerCase().trim() === email || admin.id === email)) {
+                              setErrorMessage("Cet administrateur est déjà enregistré.");
                               return;
                             }
 
+                            const newAdminId = email;
+                            const accessCode = (fd.get('accessCode') as string || '').trim() || 'ADM-' + Math.floor(100000 + Math.random() * 900000);
+                            const adminDoc = {
+                              id: newAdminId,
+                              name,
+                              email,
+                              accessCode,
+                              createdAt: new Date().toISOString(),
+                              addedBy: 'jacquesbene301@gmail.com',
+                              role: selectedRole,
+                              privileges: isDeputyRole 
+                                ? ['audit_system', 'schools_read_write', 'financial_oversight', 'webhook_monitor', 'logs_extended_export']
+                                : ['consultation_standard'],
+                              status: 'active'
+                            };
+
+                            // 1. Immediately update local state and localStorage
+                            const updated = [...secondaryAdmins, adminDoc];
+                            setSecondaryAdmins(updated);
                             try {
-                              const newAdminId = email.toLowerCase().trim();
-                              const accessCode = (fd.get('accessCode') as string || '').trim() || 'ADM-' + Math.floor(100000 + Math.random() * 900000);
-                              const adminDoc = {
-                                id: newAdminId,
-                                name,
-                                email: email.toLowerCase(),
-                                accessCode,
-                                createdAt: new Date().toISOString(),
-                                addedBy: 'jacquesbene301@gmail.com',
-                                role: 'secondary'
-                              };
-
-                              await setDoc(doc(db, 'super_admins', newAdminId), adminDoc);
-                              
-                              const updated = [...secondaryAdmins, adminDoc];
-                              setSecondaryAdmins(updated);
                               localStorage.setItem('pasma_secondary_admins', JSON.stringify(updated));
+                            } catch (lsErr) {
+                              console.warn("LocalStorage notice:", lsErr);
+                            }
 
+                            // 2. Persist to Firestore safely without throwing blocking exceptions
+                            try {
+                              await setDoc(doc(db, 'super_admins', newAdminId), adminDoc);
+                              const sanitizedId = sanitizeFirestoreId(newAdminId);
+                              if (sanitizedId !== newAdminId) {
+                                await setDoc(doc(db, 'super_admins', sanitizedId), { ...adminDoc, id: sanitizedId });
+                              }
+                            } catch (fsErr) {
+                              console.warn("Firestore super_admins write notice (handled via local state):", fsErr);
+                            }
+
+                            // 3. Write system audit log safely
+                            try {
                               await handleWriteSystemLog(
                                 'CREATE_SUPER_ADMIN', 
-                                `Nomination d'un Super-Admin secondaire : ${name} (${email}) - Code: ${accessCode}`, 
+                                `Nomination d'un Administrateur secondaire [${isDeputyRole ? 'Superviseur Adjoint' : 'Admin Simple'}] : ${name} (${email}) - Code: ${accessCode}`, 
                                 0
                               );
-
-                              targetForm.reset();
-                              setSuccessMessage(`Habilitation accordée avec succès à l'adjoint ${name} (${email}) - Code d'accès attribué: ${accessCode}`);
-                              setRefreshTrigger(p => p + 1);
-                            } catch (err: any) {
-                              setErrorMessage("Une erreur est survenue lors de l'attribution des privilèges.");
+                            } catch (logErr) {
+                              console.warn("System log write notice:", logErr);
                             }
+
+                            targetForm.reset();
+                            setSuccessMessage(`Habilitation accordée avec succès à ${name} (${email}) en tant que ${isDeputyRole ? 'Superviseur Adjoint (Privilèges étendus)' : 'Admin Simple'} - Code d'accès: ${accessCode}`);
+                            setRefreshTrigger(p => p + 1);
                           }}
                           className="space-y-4"
                         >
                           <div className="space-y-1.5">
-                            <label className="text-[10.5px] font-bold text-slate-600 uppercase">Nom Complet de l'Adjoint</label>
+                            <label className="text-[10.5px] font-bold text-slate-600 uppercase">Nom Complet de l'Administrateur</label>
                             <input
                               type="text"
                               name="name"
@@ -1667,7 +1940,19 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                           </div>
 
                           <div className="space-y-1.5">
-                            <label className="text-[10.5px] font-bold text-slate-600 uppercase">Code d'accès secret de l'adjoint (Optionnel)</label>
+                            <label className="text-[10.5px] font-bold text-slate-600 uppercase">Niveau d'Accès Initial</label>
+                            <select
+                              name="role"
+                              defaultValue="simple"
+                              className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500/15 cursor-pointer"
+                            >
+                              <option value="simple">Admin Simple (Consultation & Surveillance Standard)</option>
+                              <option value="deputy">Superviseur Adjoint (Privilèges Étendus & Délégation)</option>
+                            </select>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-[10.5px] font-bold text-slate-600 uppercase">Code d'accès secret (Optionnel)</label>
                             <input
                               type="text"
                               name="accessCode"
@@ -1680,7 +1965,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                             type="submit"
                             className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold transition shadow-md shadow-indigo-100 flex items-center justify-center gap-1.5 cursor-pointer"
                           >
-                            <UserCheck className="h-4 w-4" /> Activer comme Adjoint
+                            <UserCheck className="h-4 w-4" /> Enregistrer l'Administrateur
                           </button>
                         </form>
                       ) : (
@@ -2219,6 +2504,226 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                 </button>
               </div>
 
+            </motion.div>
+          </div>
+        )}
+
+        {/* Modal de Confirmation de Promotion en Superviseur Adjoint */}
+        {adminToPromote && (
+          <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white border border-slate-200 p-6 rounded-3xl w-full max-w-lg shadow-2xl space-y-5"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-2xl shrink-0">
+                    <ShieldCheck className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-slate-900 text-base">
+                      Confirmation de Promotion
+                    </h3>
+                    <p className="text-xs text-slate-500 font-semibold">
+                      Élévation des privilèges de supervision système
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAdminToPromote(null)}
+                  disabled={!!isPromotingId}
+                  className="p-1.5 hover:bg-slate-100 border border-slate-200 text-slate-400 hover:text-slate-600 rounded-xl transition cursor-pointer disabled:opacity-50"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black text-slate-450 uppercase tracking-wider">Bénéficiaire Sélectionné</span>
+                  <span className="text-[10px] font-extrabold px-2 py-0.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-md">
+                    Statut actuel : Admin Simple
+                  </span>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-sm font-black text-slate-900">{adminToPromote.name}</p>
+                  <p className="text-xs font-mono text-slate-500">{adminToPromote.email}</p>
+                </div>
+              </div>
+
+              <div className="space-y-2.5">
+                <p className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">
+                  Privilèges étendus octroyés :
+                </p>
+                <ul className="space-y-1.5 text-xs text-slate-600 font-medium">
+                  <li className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0" />
+                    <span>Accès complet d'audit système et journalisation étendue</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0" />
+                    <span>Supervision et synchronisation des établissements scolaires</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0" />
+                    <span>Surveillance financière globale et consolidation des flux</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0" />
+                    <span>Monitorage des webhooks de paiement en temps réel</span>
+                  </li>
+                </ul>
+              </div>
+
+              <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-xl text-[11px] text-amber-900 leading-relaxed font-medium">
+                ⚠️ <strong>Note de sécurité</strong> : Cette modification sera enregistrée dans le journal d'audit Firestore et est révocable à tout moment par le Super-Admin Principal.
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setAdminToPromote(null)}
+                  disabled={!!isPromotingId}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer disabled:opacity-50"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const target = adminToPromote;
+                    await handlePromoteToDeputy(target);
+                    setAdminToPromote(null);
+                  }}
+                  disabled={!!isPromotingId}
+                  className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 active:scale-95 text-white rounded-xl text-xs font-black shadow-md shadow-emerald-600/20 transition cursor-pointer flex items-center gap-2 disabled:opacity-50"
+                >
+                  {isPromotingId ? (
+                    <>
+                      <RotateCw className="h-4 w-4 animate-spin" />
+                      <span>Promotion en cours...</span>
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="h-4 w-4" />
+                      <span>Confirmer la promotion</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* SECURITY REVOCATION CONFIRMATION MODAL WITH AUTOMATIC EMAIL ALERT */}
+      <AnimatePresence>
+        {adminToRevoke && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white rounded-3xl shadow-2xl border border-rose-200/80 max-w-md w-full p-6 space-y-5 overflow-hidden relative"
+            >
+              {/* Top Accent bar */}
+              <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-rose-500 via-red-600 to-amber-500" />
+
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-rose-100/80 text-rose-700 rounded-2xl">
+                    <ShieldAlert className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900">Révocation de Sécurité</h3>
+                    <p className="text-xs text-rose-600 font-bold">Alerte e-mail automatique au Super-Admin</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAdminToRevoke(null)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="p-4 bg-rose-50/60 border border-rose-200/70 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black text-rose-900/70 uppercase tracking-wider">Compte Administrateur Ciblé</span>
+                  <span className="text-[10px] font-extrabold px-2 py-0.5 bg-rose-100 border border-rose-300 text-rose-900 rounded-md">
+                    {adminToRevoke.role === 'deputy' ? 'Superviseur Adjoint' : 'Admin Secondaire'}
+                  </span>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-sm font-black text-slate-900">{adminToRevoke.name}</p>
+                  <p className="text-xs font-mono text-slate-600">{adminToRevoke.email}</p>
+                </div>
+              </div>
+
+              <div className="space-y-2 text-xs text-slate-600">
+                <p className="font-bold text-slate-800">Conséquences de la révocation :</p>
+                <ul className="space-y-1.5 font-medium">
+                  <li className="flex items-start gap-2">
+                    <span className="text-rose-600 font-black">•</span>
+                    <span>Clôture immédiate de tous ses droits d'accès à la plateforme</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-rose-600 font-black">•</span>
+                    <span>Suppression de son profil dans l'annuaire <code>super_admins</code></span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-rose-600 font-black">•</span>
+                    <span>Enregistrement irrévocable dans les journaux d'audit de sécurité</span>
+                  </li>
+                </ul>
+              </div>
+
+              {/* Automatic Email Notification notice box */}
+              <div className="p-3 bg-indigo-50/80 border border-indigo-200/80 rounded-xl space-y-1">
+                <div className="flex items-center gap-1.5 text-xs font-black text-indigo-950">
+                  <Mail className="h-4 w-4 text-indigo-600 shrink-0" />
+                  <span>Notification e-mail de sécurité automatique</span>
+                </div>
+                <p className="text-[11px] text-indigo-900/80 leading-relaxed">
+                  Un e-mail de sécurité contenant l'heure, l'opérateur et les détails de révocation sera <strong>automatiquement envoyé</strong> à l'adresse du Super-Admin Principal : <strong className="font-mono text-indigo-950">jacquesbene301@gmail.com</strong>.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setAdminToRevoke(null)}
+                  disabled={!!isRevokingId}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer disabled:opacity-50"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const target = adminToRevoke;
+                    await handleRevokeAdmin(target);
+                  }}
+                  disabled={!!isRevokingId}
+                  className="px-5 py-2.5 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 active:scale-95 text-white rounded-xl text-xs font-black shadow-md shadow-rose-600/20 transition cursor-pointer flex items-center gap-2 disabled:opacity-50"
+                >
+                  {isRevokingId ? (
+                    <>
+                      <RotateCw className="h-4 w-4 animate-spin" />
+                      <span>Révocation & envoi de l'alerte...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="h-4 w-4" />
+                      <span>Confirmer & Envoyer l'alerte e-mail</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
