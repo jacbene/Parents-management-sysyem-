@@ -28,7 +28,9 @@ import {
   QrCode,
   Camera,
   Trash2,
-  BellRing
+  BellRing,
+  LifeBuoy,
+  Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLanguage } from '../utils/TranslationContext';
@@ -565,11 +567,16 @@ export default function StudentsByClass({
                       const parent = getStudentParent(stu);
                       const gpa = getStudentGPA(stu.id);
                       const attendance = getStudentAttendanceRate(stu.id);
+                      const isHelpActive = !!stu.helpRequested;
 
                       return (
                         <tr 
                           key={stu.id} 
-                          className="hover:bg-slate-50/50 dark:hover:bg-slate-800/15 cursor-pointer transition-colors"
+                          className={`cursor-pointer transition-colors ${
+                            isHelpActive
+                              ? 'bg-rose-50/80 hover:bg-rose-100/80 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 border-l-4 border-l-rose-500'
+                              : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/15'
+                          }`}
                           onClick={() => {
                             setSelectedStudent(stu);
                             setActiveDetailTab('profile');
@@ -583,15 +590,23 @@ export default function StudentsByClass({
                                   src={stu.avatar} 
                                   alt={stu.name} 
                                   referrerPolicy="no-referrer"
-                                  className="h-8 w-8 rounded-full object-cover border border-slate-200 dark:border-slate-800"
+                                  className="h-8 w-8 rounded-full object-cover border border-slate-200 dark:border-slate-800 shrink-0"
                                 />
                               ) : (
-                                <div className="h-8 w-8 rounded-full bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-[11px] border border-indigo-100 dark:border-indigo-900/40">
+                                <div className="h-8 w-8 rounded-full bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-[11px] border border-indigo-100 dark:border-indigo-900/40 shrink-0">
                                   {stu.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                                 </div>
                               )}
-                              <div>
-                                <p className="font-semibold text-slate-900 dark:text-white text-xs hover:text-indigo-600 dark:hover:text-indigo-400">{stu.name}</p>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <p className="font-semibold text-slate-900 dark:text-white text-xs hover:text-indigo-600 dark:hover:text-indigo-400 truncate">{stu.name}</p>
+                                  {isHelpActive && (
+                                    <span className="bg-gradient-to-r from-rose-600 to-amber-600 text-white text-[8.5px] uppercase font-black px-1.5 py-0.2 rounded-full inline-flex items-center gap-1 animate-pulse shadow-xs border border-rose-300 shrink-0">
+                                      <LifeBuoy className="h-2.5 w-2.5 shrink-0" />
+                                      <span>{isFr ? "Assistance demandée" : "Help Requested"}</span>
+                                    </span>
+                                  )}
+                                </div>
                                 <p className="text-[10px] text-slate-400 dark:text-slate-500 font-normal">ID: {stu.id.replace('stu_', '')}</p>
                               </div>
                             </div>
@@ -641,6 +656,28 @@ export default function StudentsByClass({
                           {/* Quick details trigger button & delete action */}
                           <td className="p-3.5 pr-5 text-right" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-end gap-1.5">
+                              {isHelpActive && (
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const updated: Student = {
+                                      ...stu,
+                                      helpRequested: false,
+                                      helpAcknowledgedBy: 'Staff Enseignant',
+                                      helpAcknowledgedAt: new Date().toISOString(),
+                                    };
+                                    if (onUpdateStudent) {
+                                      await onUpdateStudent(updated);
+                                    }
+                                  }}
+                                  className="inline-flex items-center gap-1 text-[10px] bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black px-2.5 py-1 rounded-xl shadow-xs transition cursor-pointer border border-emerald-500 shrink-0"
+                                  title={isFr ? "Confirmer la lecture et lever l'alerte d'assistance" : "Confirm read & clear help alert"}
+                                >
+                                  <Check className="h-3 w-3" />
+                                  <span className="hidden sm:inline">{isFr ? "Confirmer lecture" : "Confirm Read"}</span>
+                                </button>
+                              )}
+
                               <button
                                 onClick={() => {
                                   setSelectedStudent(stu);
@@ -866,7 +903,56 @@ export default function StudentsByClass({
                 
                 {/* TAB 1: PROFILE / PARENT IDENTITY */}
                 {activeDetailTab === 'profile' && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5 animate-in fade-in duration-200">
+                  <div className="space-y-4 animate-in fade-in duration-200">
+                    {selectedStudent.helpRequested && (
+                      <div className="bg-gradient-to-r from-rose-50 to-amber-50 dark:from-rose-950/50 dark:to-amber-950/30 border border-rose-300 dark:border-rose-700/80 p-4 rounded-2xl flex items-center justify-between gap-3 shadow-xs">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-rose-600 text-white rounded-xl shadow-xs shrink-0">
+                            <LifeBuoy className="h-5 w-5 animate-spin" style={{ animationDuration: '6s' }} />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h5 className="text-xs font-black text-rose-900 dark:text-rose-200 uppercase tracking-wide">
+                                {isFr ? "Assistance Demandée par l'élève / parent" : "Help Requested by Student / Parent"}
+                              </h5>
+                              <span className="text-[9px] bg-rose-600 text-white font-bold px-1.5 py-0.2 rounded-full">Actif</span>
+                            </div>
+                            {selectedStudent.helpRequestNote && (
+                              <p className="text-xs italic text-slate-700 dark:text-slate-300 mt-1">
+                                "{selectedStudent.helpRequestNote}"
+                              </p>
+                            )}
+                            {selectedStudent.helpRequestedAt && (
+                              <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                Demandé le : {new Date(selectedStudent.helpRequestedAt).toLocaleString(isFr ? 'fr-FR' : 'en-US')}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const updated: Student = {
+                              ...selectedStudent,
+                              helpRequested: false,
+                              helpAcknowledgedBy: 'Staff Enseignant',
+                              helpAcknowledgedAt: new Date().toISOString(),
+                            };
+                            setSelectedStudent(updated);
+                            if (onUpdateStudent) {
+                              await onUpdateStudent(updated);
+                            }
+                          }}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black text-xs rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer shrink-0 border border-emerald-500"
+                        >
+                          <Check className="h-4 w-4" />
+                          <span>{isFr ? "Confirmer la lecture" : "Confirm Read"}</span>
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     
                     {/* Academic block */}
                     <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-4">
@@ -963,6 +1049,7 @@ export default function StudentsByClass({
                         </div>
                       )}
                     </div>
+                  </div>
 
                   </div>
                 )}

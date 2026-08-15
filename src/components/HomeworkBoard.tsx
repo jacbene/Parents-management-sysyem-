@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Homework, Student, HomeworkStatus, ApeeSettings } from '../types';
-import { BookOpen, CheckCircle, Circle, Clock, CheckCircle2, AlertCircle, Plus, Trash2, Lock, Unlock, CheckSquare, X, RotateCw, AlertTriangle, Calendar, Sparkles } from 'lucide-react';
+import { Homework, Student, HomeworkStatus, ApeeSettings, HomeworkFrequency } from '../types';
+import { BookOpen, CheckCircle, Circle, Clock, CheckCircle2, AlertCircle, Plus, Trash2, Lock, Unlock, CheckSquare, X, RotateCw, AlertTriangle, Calendar, Sparkles, Repeat, CalendarDays, Layers, List } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useLanguage } from '../utils/TranslationContext';
+import HomeworkCalendarView from './HomeworkCalendarView';
 
 interface HomeworkBoardProps {
   homeworks: Homework[];
@@ -18,6 +19,30 @@ interface HomeworkBoardProps {
   activeStudent?: Student | null;
   settings?: ApeeSettings;
 }
+
+// Helper to compute recurrence dates
+const computeRecurrenceDates = (startDateStr: string, freq: HomeworkFrequency, count: number): string[] => {
+  const dates: string[] = [];
+  if (!startDateStr || count <= 0) return dates;
+
+  for (let i = 0; i < count; i++) {
+    const d = new Date(startDateStr + 'T12:00:00');
+    if (isNaN(d.getTime())) break;
+
+    if (freq === 'daily') {
+      d.setDate(d.getDate() + i);
+    } else if (freq === 'weekly') {
+      d.setDate(d.getDate() + i * 7);
+    } else if (freq === 'biweekly') {
+      d.setDate(d.getDate() + i * 14);
+    } else if (freq === 'monthly') {
+      d.setMonth(d.getMonth() + i);
+    }
+
+    dates.push(d.toISOString().split('T')[0]);
+  }
+  return dates;
+};
 
 export default function HomeworkBoard({
   homeworks,
@@ -33,13 +58,36 @@ export default function HomeworkBoard({
 }: HomeworkBoardProps) {
   const { language } = useLanguage();
   const isEn = language === 'en';
-  const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'completed'>('all');
+  const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
+  const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'completed' | 'recurring'>('all');
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   
   // Add Homework states
   const [showAddForm, setShowAddForm] = useState(false);
   const [hwToDelete, setHwToDelete] = useState<Homework | null>(null);
   const [isDeletingHw, setIsDeletingHw] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Form Fields
+  const [subject, setSubject] = useState('Mathématiques');
+  const [customSubject, setCustomSubject] = useState('');
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const [hwGradeValue, setHwGradeValue] = useState('');
+
+  // Quick Add for specific calendar date
+  const handleQuickAddForDate = (dateStr: string) => {
+    setDueDate(dateStr);
+    setShowAddForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Recurring Homework Options
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurrenceFrequency, setRecurrenceFrequency] = useState<HomeworkFrequency>('weekly');
+  const [recurrenceCount, setRecurrenceCount] = useState<number>(4);
+  const [includeSeriesIndex, setIncludeSeriesIndex] = useState(true);
 
   useEffect(() => {
     const handleQuickAction = (e: any) => {
@@ -50,12 +98,6 @@ export default function HomeworkBoard({
     window.addEventListener('pasma_trigger_quick_action', handleQuickAction);
     return () => window.removeEventListener('pasma_trigger_quick_action', handleQuickAction);
   }, []);
-  const [subject, setSubject] = useState('Mathématiques');
-  const [customSubject, setCustomSubject] = useState('');
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [dueDate, setDueDate] = useState('');
-  const [hwGradeValue, setHwGradeValue] = useState('');
 
   const configuredSubjectsList = useMemo(() => {
     if (settings?.classSubjects && Array.isArray(settings.classSubjects) && settings.classSubjects.length > 0) {
@@ -84,10 +126,21 @@ export default function HomeworkBoard({
     ];
   }, [settings?.classSubjects, activeStudent?.classRoom, activeStudent?.grade]);
 
+  // Preview dates for recurring schedule
+  const previewScheduleDates = useMemo(() => {
+    if (!isRecurring || !dueDate) return [];
+    return computeRecurrenceDates(dueDate, recurrenceFrequency, recurrenceCount);
+  }, [isRecurring, dueDate, recurrenceFrequency, recurrenceCount]);
+
   // Filter homeworks
+  const recurringHomeworksCount = useMemo(() => {
+    return homeworks.filter(h => h.isRecurring).length;
+  }, [homeworks]);
+
   const filteredHomeworks = homeworks.filter(hw => {
     if (activeTab === 'pending') return hw.status === 'Pending';
     if (activeTab === 'completed') return hw.status === 'Completed';
+    if (activeTab === 'recurring') return hw.isRecurring;
     return true;
   });
 
@@ -118,41 +171,101 @@ export default function HomeworkBoard({
       return;
     }
     setDueDate(new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0]); // Default 2 days later
+    setIsRecurring(false);
+    setRecurrenceFrequency('weekly');
+    setRecurrenceCount(4);
     setShowAddForm(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeStudent) {
-      alert('Veuillez sélectionner un élève avant de pouvoir introduire des devoirs.');
+      alert(isEn ? 'Please select a student before adding homework.' : 'Veuillez sélectionner un élève avant de pouvoir introduire des devoirs.');
       return;
     }
     if (!title.trim()) {
-      alert('Veuillez spécifier le titre du travail exigé.');
+      alert(isEn ? 'Please specify the assignment title.' : 'Veuillez spécifier le titre du travail exigé.');
+      return;
+    }
+    if (!dueDate) {
+      alert(isEn ? 'Please specify the initial due date.' : 'Veuillez renseigner la date d\'échéance.');
       return;
     }
 
-    if (onAddHomework) {
-      const targetSubj = (subject === 'Autre' || subject === '__custom__') ? (customSubject.trim() || 'Autre') : subject;
-      const newHw: Homework = {
-        id: 'hw_' + Date.now(),
-        studentId: activeStudent.id,
-        parentId: activeStudent.parentId,
-        subject: targetSubj,
-        title: title.trim(),
-        description: description.trim() || undefined,
-        dueDate,
-        status: 'Pending',
-        grade: hwGradeValue.trim() || undefined
-      };
+    if (!onAddHomework) return;
 
-      const success = await onAddHomework(newHw);
-      if (success) {
-        setTitle('');
-        setDescription('');
-        setHwGradeValue('');
-        setShowAddForm(false);
+    setIsSubmitting(true);
+    try {
+      const targetSubj = (subject === 'Autre' || subject === '__custom__') ? (customSubject.trim() || 'Autre') : subject;
+      const baseTimestamp = Date.now();
+
+      if (isRecurring && previewScheduleDates.length > 1) {
+        const seriesId = `series_${baseTimestamp}`;
+        const frequencyLabel = 
+          recurrenceFrequency === 'weekly' ? (isEn ? 'Weekly' : 'Hebdomadaire') :
+          recurrenceFrequency === 'biweekly' ? (isEn ? 'Bi-weekly' : 'Bimensuel') :
+          recurrenceFrequency === 'monthly' ? (isEn ? 'Monthly' : 'Mensuel') :
+          (isEn ? 'Daily' : 'Quotidien');
+
+        const durationStr = `${previewScheduleDates.length} ${
+          recurrenceFrequency === 'weekly' ? (isEn ? 'weeks' : 'semaines') :
+          recurrenceFrequency === 'biweekly' ? (isEn ? 'periods (2 wks)' : 'quinzaines') :
+          recurrenceFrequency === 'monthly' ? (isEn ? 'months' : 'mois') :
+          (isEn ? 'days' : 'jours')
+        }`;
+
+        for (let idx = 0; idx < previewScheduleDates.length; idx++) {
+          const itemDate = previewScheduleDates[idx];
+          const unitWord = recurrenceFrequency === 'weekly' ? (isEn ? 'Week' : 'Semaine') : (isEn ? 'Session' : 'Séance');
+          const instanceTitle = includeSeriesIndex
+            ? `${title.trim()} (${unitWord} ${idx + 1}/${previewScheduleDates.length})`
+            : title.trim();
+
+          const recurringHw: Homework = {
+            id: `hw_${baseTimestamp}_${idx}`,
+            studentId: activeStudent.id,
+            parentId: activeStudent.parentId,
+            subject: targetSubj,
+            title: instanceTitle,
+            description: description.trim() || undefined,
+            dueDate: itemDate,
+            status: 'Pending',
+            grade: hwGradeValue.trim() || undefined,
+            isRecurring: true,
+            recurrenceFrequency,
+            recurrenceCount: previewScheduleDates.length,
+            recurrenceDuration: durationStr,
+            recurrenceSeriesId: seriesId,
+            recurrenceIndex: idx + 1,
+          };
+
+          await onAddHomework(recurringHw);
+        }
+      } else {
+        const singleHw: Homework = {
+          id: 'hw_' + baseTimestamp,
+          studentId: activeStudent.id,
+          parentId: activeStudent.parentId,
+          subject: targetSubj,
+          title: title.trim(),
+          description: description.trim() || undefined,
+          dueDate,
+          status: 'Pending',
+          grade: hwGradeValue.trim() || undefined,
+          isRecurring: false
+        };
+
+        await onAddHomework(singleHw);
       }
+
+      // Reset form
+      setTitle('');
+      setDescription('');
+      setHwGradeValue('');
+      setIsRecurring(false);
+      setShowAddForm(false);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -181,10 +294,12 @@ export default function HomeworkBoard({
         <div>
           <h2 className="text-xl font-bold font-sans text-gray-900 tracking-tight flex items-center gap-2">
             <BookOpen className="h-5 w-5 text-indigo-600" />
-            Cahier de Textes & Devoirs
+            {isEn ? "Homework & Assignment Tracker" : "Cahier de Textes & Devoirs"}
           </h2>
           <p className="text-sm text-gray-500 mt-0.5">
-            Suivi des devoirs maison à faire, dates de rendu et validation en ligne par les parents.
+            {isEn
+              ? "Track homework assignments, due dates, recurring tasks, and parent validation."
+              : "Suivi des devoirs maison à faire, dates de rendu, devoirs récurrents et validation en ligne par les parents."}
           </p>
         </div>
 
@@ -194,7 +309,7 @@ export default function HomeworkBoard({
             onClick={handleOpenForm}
             className="px-4 py-2 bg-slate-900 hover:bg-slate-850 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
           >
-            <Plus className="h-4 w-4" /> Ajouter un Devoir
+            <Plus className="h-4 w-4" /> {isEn ? "Add Homework" : "Ajouter un Devoir"}
           </button>
         </div>
       </div>
@@ -244,20 +359,22 @@ export default function HomeworkBoard({
             <form onSubmit={handleSubmit} className="bg-slate-50 border border-slate-200 p-5 rounded-2xl space-y-4 shadow-3xs">
               <div className="flex items-center justify-between border-b border-slate-205 pb-2 select-none">
                 <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-1.5">
-                  📚 Enregistrer un nouveau devoir pour {activeStudent.name} ({activeStudent.grade || 'Classe'})
+                  📚 {isEn ? `Create Assignment for ${activeStudent.name}` : `Enregistrer un devoir pour ${activeStudent.name}`} ({activeStudent.grade || 'Classe'})
                 </h3>
                 <button
                   type="button"
                   onClick={() => setShowAddForm(false)}
                   className="text-xs text-gray-400 hover:text-gray-600 font-bold uppercase transition cursor-pointer"
                 >
-                  Annuler
+                  {isEn ? "Cancel" : "Annuler"}
                 </button>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-600 uppercase">Matière / Discipline <span className="text-red-500">*</span></label>
+                  <label className="text-[10px] font-bold text-slate-600 uppercase">
+                    {isEn ? "Subject / Course" : "Matière / Discipline"} <span className="text-red-500">*</span>
+                  </label>
                   <select
                     value={subject}
                     onChange={(e) => setSubject(e.target.value)}
@@ -266,12 +383,12 @@ export default function HomeworkBoard({
                     {configuredSubjectsList.map((s) => (
                       <option key={s} value={s}>{s}</option>
                     ))}
-                    <option value="__custom__">✏️ Autre matière sur-mesure...</option>
+                    <option value="__custom__">✏️ {isEn ? "Custom Subject..." : "Autre matière sur-mesure..."}</option>
                   </select>
                   {(subject === '__custom__' || subject === 'Autre') && (
                     <input
                       type="text"
-                      placeholder="Saisir la matière..."
+                      placeholder={isEn ? "Enter custom subject..." : "Saisir la matière..."}
                       value={customSubject}
                       onChange={(e) => setCustomSubject(e.target.value)}
                       className="w-full mt-1.5 px-2.5 py-1 text-xs border border-indigo-200 rounded-md focus:outline-indigo-500 bg-white"
@@ -280,19 +397,25 @@ export default function HomeworkBoard({
                 </div>
 
                 <div className="md:col-span-2 space-y-1">
-                  <label className="text-[10px] font-bold text-slate-600 uppercase">Intitulé du Travail exigé <span className="text-red-500">*</span></label>
+                  <label className="text-[10px] font-bold text-slate-600 uppercase">
+                    {isEn ? "Assignment Title" : "Intitulé du Travail exigé"} <span className="text-red-500">*</span>
+                  </label>
                   <input
                     type="text"
                     required
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    placeholder="Ex: Devoir de mathématiques à rendre sur feuille double"
+                    placeholder={isEn ? "E.g.: Mathematics review sheet #4" : "Ex: Devoir de mathématiques à rendre sur feuille double"}
                     className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-indigo-500 font-medium text-slate-800"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-600 uppercase">Date limite de rendu <span className="text-red-500">*</span></label>
+                  <label className="text-[10px] font-bold text-slate-600 uppercase">
+                    {isRecurring 
+                      ? (isEn ? "First Due Date" : "1ère Date de rendu") 
+                      : (isEn ? "Due Date" : "Date limite de rendu")} <span className="text-red-500">*</span>
+                  </label>
                   <input
                     type="date"
                     required
@@ -305,41 +428,195 @@ export default function HomeworkBoard({
 
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="md:col-span-3 space-y-1">
-                  <label className="text-[10px] font-bold text-slate-600 uppercase">Consignes / Exercices à faire</label>
+                  <label className="text-[10px] font-bold text-slate-600 uppercase">
+                    {isEn ? "Instructions / Exercise details" : "Consignes / Exercices à faire"}
+                  </label>
                   <input
                     type="text"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Ex: Exercices 4, 5 et 9 p. 234. Faire attention au schéma récapitulatif."
+                    placeholder={isEn ? "E.g.: Exercises 4, 5 and 9 p. 234. Pay attention to diagrams." : "Ex: Exercices 4, 5 et 9 p. 234. Faire attention au schéma récapitulatif."}
                     className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-indigo-500 font-medium text-slate-800"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-slate-600 uppercase">Note indicative (Pondération)</label>
+                  <label className="text-[10px] font-bold text-slate-600 uppercase">
+                    {isEn ? "Indicative Grade / Weight" : "Note indicative (Pondération)"}
+                  </label>
                   <input
                     type="text"
                     value={hwGradeValue}
                     onChange={(e) => setHwGradeValue(e.target.value)}
-                    placeholder="Ex: Note coef. 2 — /20"
+                    placeholder={isEn ? "E.g.: Grade Coef. 2 — /20" : "Ex: Note coef. 2 — /20"}
                     className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:outline-indigo-500 font-medium text-slate-800"
                   />
                 </div>
               </div>
 
+              {/* Recurring Homework Switch & Options */}
+              <div className="p-4 rounded-xl border border-indigo-150 bg-indigo-50/40 dark:bg-indigo-950/20 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className={`p-2 rounded-lg transition-colors ${isRecurring ? 'bg-indigo-600 text-white shadow-xs' : 'bg-indigo-100 text-indigo-700'}`}>
+                      <Repeat className={`h-4 w-4 ${isRecurring ? 'animate-spin-slow' : ''}`} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                        <span>{isEn ? "Recurring Homework" : "Devoir Récurrent (Répétition programmée)"}</span>
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-extrabold bg-indigo-100 text-indigo-800 border border-indigo-200">
+                          {isEn ? "Automated Series" : "Série automatique"}
+                        </span>
+                      </p>
+                      <p className="text-[11px] text-slate-600">
+                        {isEn
+                          ? "Automatically generate repeating assignments across future dates (weekly, monthly, etc.)."
+                          : "Planifiez automatiquement la répétition de ce devoir à fréquence régulière (hebdo, quinzaine, etc.)."}
+                      </p>
+                    </div>
+                  </div>
+
+                  <label className="relative inline-flex items-center cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={isRecurring}
+                      onChange={(e) => setIsRecurring(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-250 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                  </label>
+                </div>
+
+                {isRecurring && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="pt-3 border-t border-indigo-150/80 space-y-3"
+                  >
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                      {/* Frequency Selector */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-indigo-900 uppercase tracking-wider flex items-center gap-1">
+                          <CalendarDays className="h-3 w-3 text-indigo-600" />
+                          {isEn ? "Frequency" : "Fréquence de répétition"}
+                        </label>
+                        <select
+                          value={recurrenceFrequency}
+                          onChange={(e) => setRecurrenceFrequency(e.target.value as HomeworkFrequency)}
+                          className="w-full px-3 py-2 text-xs bg-white border border-indigo-200 rounded-lg focus:outline-indigo-500 font-semibold text-slate-850 shadow-2xs"
+                        >
+                          <option value="weekly">📅 {isEn ? "Weekly (Every week)" : "Hebdomadaire (Chaque semaine)"}</option>
+                          <option value="biweekly">📆 {isEn ? "Bi-weekly (Every 2 weeks)" : "Bimensuel (Toutes les 2 semaines)"}</option>
+                          <option value="monthly">🗓️ {isEn ? "Monthly (Every month)" : "Mensuel (Chaque mois)"}</option>
+                          <option value="daily">⚡ {isEn ? "Daily (Every day)" : "Quotidien (Chaque jour)"}</option>
+                        </select>
+                      </div>
+
+                      {/* Duration / Occurrence Count */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-indigo-900 uppercase tracking-wider flex items-center gap-1">
+                          <Layers className="h-3 w-3 text-indigo-600" />
+                          {isEn ? "Duration / Repetitions" : "Durée / Répétitions"}
+                        </label>
+                        <select
+                          value={recurrenceCount}
+                          onChange={(e) => setRecurrenceCount(Number(e.target.value))}
+                          className="w-full px-3 py-2 text-xs bg-white border border-indigo-200 rounded-lg focus:outline-indigo-500 font-semibold text-slate-850 shadow-2xs"
+                        >
+                          <option value={2}>2 {isEn ? "occurrences (2 sessions)" : "échéances (2 séances)"}</option>
+                          <option value={3}>3 {isEn ? "occurrences (3 sessions)" : "échéances (3 séances)"}</option>
+                          <option value={4}>4 {isEn ? "occurrences (~1 month)" : "échéances (~1 mois / 4 séances)"}</option>
+                          <option value={6}>6 {isEn ? "occurrences (6 sessions)" : "échéances (6 séances)"}</option>
+                          <option value={8}>8 {isEn ? "occurrences (~2 months)" : "échéances (~2 mois / 8 séances)"}</option>
+                          <option value={12}>12 {isEn ? "occurrences (1 term / 3 months)" : "échéances (1 trimestre / 12 séances)"}</option>
+                        </select>
+                      </div>
+
+                      {/* Title Indexing Option */}
+                      <div className="space-y-1 flex flex-col justify-end">
+                        <label className="flex items-center gap-2 p-2 bg-white border border-indigo-200 rounded-lg cursor-pointer hover:bg-indigo-50/50 transition">
+                          <input
+                            type="checkbox"
+                            checked={includeSeriesIndex}
+                            onChange={(e) => setIncludeSeriesIndex(e.target.checked)}
+                            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5"
+                          />
+                          <span className="text-[11px] font-bold text-slate-700 select-none">
+                            {isEn ? "Include numbering in title (e.g. [1/4])" : "Numéroter les titres (ex: Semaine 1/4)"}
+                          </span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Live Schedule Dates Preview */}
+                    {previewScheduleDates.length > 0 && (
+                      <div className="p-3 bg-white border border-indigo-150 rounded-xl space-y-1.5">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-extrabold text-indigo-950 flex items-center gap-1.5">
+                            <Sparkles className="h-3.5 w-3.5 text-indigo-600" />
+                            {isEn
+                              ? `Schedule Preview (${previewScheduleDates.length} assignments will be created):`
+                              : `Aperçu du calendrier (${previewScheduleDates.length} devoirs seront créés automatiquement) :`}
+                          </span>
+                          <span className="font-mono text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-200">
+                            {recurrenceFrequency === 'weekly' ? 'Intervalle: +7j' : recurrenceFrequency === 'biweekly' ? 'Intervalle: +14j' : recurrenceFrequency === 'monthly' ? 'Intervalle: +1 mois' : 'Intervalle: +1j'}
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {previewScheduleDates.map((pDate, idx) => (
+                            <div
+                              key={pDate + idx}
+                              className="px-2.5 py-1 rounded-lg bg-indigo-50/70 border border-indigo-200 text-indigo-900 text-[10.5px] font-mono flex items-center gap-1.5 font-bold"
+                            >
+                              <span className="text-[9.5px] px-1 py-0.2 rounded-md bg-indigo-600 text-white font-sans font-black">
+                                #{idx + 1}
+                              </span>
+                              <span>
+                                {new Date(pDate + 'T12:00:00').toLocaleDateString(isEn ? 'en-US' : 'fr-FR', {
+                                  weekday: 'short',
+                                  day: 'numeric',
+                                  month: 'short'
+                                })}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </div>
+
               <div className="flex justify-end gap-2.5 pt-2">
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => setShowAddForm(false)}
-                  className="px-4 py-2 border border-slate-250 bg-white text-slate-800 text-xs font-bold uppercase tracking-wider rounded-lg hover:bg-slate-50 cursor-pointer text-center"
+                  className="px-4 py-2 border border-slate-250 bg-white text-slate-800 text-xs font-bold uppercase tracking-wider rounded-lg hover:bg-slate-50 cursor-pointer text-center disabled:opacity-50"
                 >
-                  Annuler
+                  {isEn ? "Cancel" : "Annuler"}
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg flex items-center gap-1 cursor-pointer text-center shadow-xs"
+                  disabled={isSubmitting}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg flex items-center gap-1.5 cursor-pointer text-center shadow-xs disabled:opacity-50"
                 >
-                  <CheckSquare className="h-4 w-4" /> Enregistrer Devoir
+                  {isSubmitting ? (
+                    <>
+                      <RotateCw className="h-4 w-4 animate-spin" />
+                      <span>{isEn ? "Creating Series..." : "Génération en cours..."}</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckSquare className="h-4 w-4" />
+                      <span>
+                        {isRecurring 
+                          ? (isEn ? `Create ${previewScheduleDates.length} Recurring Assignments` : `Générer ${previewScheduleDates.length} Devoirs Récurrents`) 
+                          : (isEn ? "Save Assignment" : "Enregistrer Devoir")}
+                      </span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>
@@ -347,46 +624,102 @@ export default function HomeworkBoard({
         )}
       </AnimatePresence>
 
-      {/* Filtering list & layout */}
-      <div className="flex justify-end">
-        <div className="flex bg-gray-100 p-0.5 rounded-xl border border-gray-200">
+      {/* Filtering list & layout + View Mode Switcher */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        {/* View Mode Switcher (List vs Calendar) */}
+        <div className="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700 w-fit">
           <button
-            onClick={() => setActiveTab('all')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
-              activeTab === 'all'
-                ? 'bg-white text-gray-900 shadow-xs'
-                : 'text-gray-500 hover:text-gray-900'
+            type="button"
+            onClick={() => setViewMode('list')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5 ${
+              viewMode === 'list'
+                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            Tous ({homeworks.length})
+            <List className="h-3.5 w-3.5" />
+            <span>{isEn ? "List View" : "Vue Liste"}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setViewMode('calendar')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5 ${
+              viewMode === 'calendar'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <Calendar className="h-3.5 w-3.5" />
+            <span>{isEn ? "Calendar View" : "Vue Calendrier"}</span>
+          </button>
+        </div>
+
+        {/* Status Filtering Tabs */}
+        <div className="flex bg-gray-100 dark:bg-slate-800 p-0.5 rounded-xl border border-gray-200 dark:border-slate-700 overflow-x-auto">
+          <button
+            onClick={() => setActiveTab('all')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all shrink-0 ${
+              activeTab === 'all'
+                ? 'bg-white dark:bg-slate-900 text-gray-900 dark:text-white shadow-xs'
+                : 'text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'
+            }`}
+          >
+            {isEn ? "All" : "Tous"} ({homeworks.length})
           </button>
           <button
             onClick={() => setActiveTab('pending')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all shrink-0 ${
               activeTab === 'pending'
-                ? 'bg-white text-gray-900 shadow-xs'
-                : 'text-gray-500 hover:text-gray-900'
+                ? 'bg-white dark:bg-slate-900 text-gray-900 dark:text-white shadow-xs'
+                : 'text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'
             }`}
           >
-            À Faire ({homeworks.filter(h => h.status === 'Pending').length})
+            {isEn ? "To Do" : "À Faire"} ({homeworks.filter(h => h.status === 'Pending').length})
           </button>
           <button
             onClick={() => setActiveTab('completed')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all shrink-0 ${
               activeTab === 'completed'
-                ? 'bg-white text-gray-900 shadow-xs'
-                : 'text-gray-500 hover:text-gray-900'
+                ? 'bg-white dark:bg-slate-900 text-gray-900 dark:text-white shadow-xs'
+                : 'text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white'
             }`}
           >
-            Terminés ({homeworks.filter(h => h.status === 'Completed').length})
+            {isEn ? "Completed" : "Terminés"} ({homeworks.filter(h => h.status === 'Completed').length})
           </button>
+          {recurringHomeworksCount > 0 && (
+            <button
+              onClick={() => setActiveTab('recurring')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-all flex items-center gap-1 shrink-0 ${
+                activeTab === 'recurring'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-indigo-600 dark:text-indigo-400 hover:text-indigo-900'
+              }`}
+            >
+              <Repeat className="h-3 w-3" />
+              <span>{isEn ? "Recurring" : "Récurrents"} ({recurringHomeworksCount})</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {filteredHomeworks.length === 0 ? (
+      {viewMode === 'calendar' ? (
+        <HomeworkCalendarView
+          homeworks={homeworks}
+          filteredHomeworks={filteredHomeworks}
+          onToggleStatus={handleToggleStatus}
+          onDeletePrompt={handleDeletePrompt}
+          onQuickAddForDate={handleQuickAddForDate}
+          updatingId={updatingId}
+          isPedAuthorized={isPedAuthorized}
+          language={language}
+        />
+      ) : filteredHomeworks.length === 0 ? (
         <div className="text-center p-12 bg-gray-50/50 rounded-2xl border border-gray-100 select-none">
           <CheckCircle2 className="h-8 w-8 text-emerald-400 mx-auto mb-2" />
-          <p className="text-sm text-gray-500 font-medium">Parfait ! Aucun devoir en attente pour cette sélection.</p>
+          <p className="text-sm text-gray-500 font-medium">
+            {isEn ? "Great! No assignments pending for this selection." : "Parfait ! Aucun devoir en attente pour cette sélection."}
+          </p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -407,6 +740,8 @@ export default function HomeworkBoard({
                       ? 'border-gray-100 opacity-80'
                       : isExpired
                       ? 'border-red-200 bg-red-50/10'
+                      : hw.isRecurring
+                      ? 'border-indigo-150 hover:border-indigo-300'
                       : 'border-gray-150 hover:border-gray-200'
                   }`}
                 >
@@ -430,6 +765,25 @@ export default function HomeworkBoard({
                       <span className="text-[11px] font-bold uppercase tracking-wider bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">
                         {hw.subject}
                       </span>
+
+                      {hw.isRecurring && (
+                        <span 
+                          title={isEn 
+                            ? `Recurring assignment: ${hw.recurrenceFrequency || 'weekly'} series (${hw.recurrenceIndex || 1}/${hw.recurrenceCount || '?'})` 
+                            : `Devoir récurrent : série ${hw.recurrenceFrequency === 'weekly' ? 'hebdomadaire' : hw.recurrenceFrequency === 'biweekly' ? 'bimensuelle' : hw.recurrenceFrequency === 'monthly' ? 'mensuelle' : 'quotidienne'} (${hw.recurrenceIndex || 1}/${hw.recurrenceCount || '?'})`}
+                          className="text-[10.5px] font-black px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 flex items-center gap-1"
+                        >
+                          <Repeat className="h-3 w-3 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                          <span>
+                            {hw.recurrenceFrequency === 'weekly' ? (isEn ? 'Weekly' : 'Hebdo') :
+                             hw.recurrenceFrequency === 'biweekly' ? (isEn ? 'Bi-weekly' : 'Bimensuel') :
+                             hw.recurrenceFrequency === 'monthly' ? (isEn ? 'Monthly' : 'Mensuel') :
+                             (isEn ? 'Daily' : 'Quotidien')}
+                            {hw.recurrenceIndex && hw.recurrenceCount ? ` (${hw.recurrenceIndex}/${hw.recurrenceCount})` : ''}
+                          </span>
+                        </span>
+                      )}
+
                       {hw.grade && (
                         <span className="text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-100 px-2 py-0.5 rounded-md">
                           Note / Éval : {hw.grade}
@@ -437,7 +791,7 @@ export default function HomeworkBoard({
                       )}
                       {isExpired && (
                         <span className="text-[10px] bg-red-100 text-red-800 font-bold px-2 py-0.5 rounded-md flex items-center gap-1">
-                          <AlertCircle className="h-3 w-3" /> En retard !
+                          <AlertCircle className="h-3 w-3" /> {isEn ? "Overdue!" : "En retard !"}
                         </span>
                       )}
                     </div>
@@ -452,9 +806,19 @@ export default function HomeworkBoard({
                       </p>
                     )}
 
-                    <div className="pt-2 flex items-center gap-1.5 text-xs text-gray-400 font-mono">
-                      <Clock className="h-3.5 w-3.5" />
-                      <span>Rendu exigé le {new Date(hw.dueDate).toLocaleDateString('fr-FR', { weekday: 'short', month: 'long', day: 'numeric' })}</span>
+                    <div className="pt-2 flex items-center gap-3 text-xs text-gray-400 font-mono flex-wrap">
+                      <div className="flex items-center gap-1.5">
+                        <Clock className="h-3.5 w-3.5 text-indigo-500" />
+                        <span>
+                          {isEn ? "Due on " : "Rendu exigé le "}
+                          {new Date(hw.dueDate + 'T12:00:00').toLocaleDateString(isEn ? 'en-US' : 'fr-FR', { weekday: 'short', month: 'long', day: 'numeric' })}
+                        </span>
+                      </div>
+                      {hw.isRecurring && hw.recurrenceDuration && (
+                        <span className="text-[10px] text-indigo-600 bg-indigo-50/80 px-1.5 py-0.5 rounded border border-indigo-150">
+                          Série : {hw.recurrenceDuration}
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -466,7 +830,7 @@ export default function HomeworkBoard({
                       className={`text-red-600 hover:text-red-850 p-1.5 bg-red-100/10 hover:bg-red-200/20 border border-transparent hover:border-red-500/10 rounded-xl transition duration-200 shrink-0 self-center cursor-pointer ${
                         isPedAuthorized || isCustom ? 'opacity-100' : 'opacity-40 hover:opacity-100 md:opacity-0 md:group-hover:opacity-100'
                       }`}
-                      title="Supprimer ce devoir"
+                      title={isEn ? "Delete this homework" : "Supprimer ce devoir"}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -540,10 +904,16 @@ export default function HomeworkBoard({
                     <span>
                       {isEn ? "Due date: " : "Rendu le : "}
                       <strong className="text-slate-700 dark:text-slate-200">
-                        {new Date(hwToDelete.dueDate).toLocaleDateString(isEn ? 'en-US' : 'fr-FR', { weekday: 'short', month: 'long', day: 'numeric' })}
+                        {new Date(hwToDelete.dueDate + 'T12:00:00').toLocaleDateString(isEn ? 'en-US' : 'fr-FR', { weekday: 'short', month: 'long', day: 'numeric' })}
                       </strong>
                     </span>
                   </div>
+                  {hwToDelete.isRecurring && (
+                    <div className="text-[10px] text-indigo-600 font-bold flex items-center gap-1 pt-0.5">
+                      <Repeat className="h-3 w-3" />
+                      <span>{isEn ? "Part of a recurring assignment series" : "Fait partie d'une série de devoirs récurrents"}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 

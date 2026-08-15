@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Student, ApeeSettings, ApeeParent, Grade, Attendance, Message } from '../types';
-import { Mail, GraduationCap, Calendar, User, UserCheck, Camera, Printer, Phone, TrendingUp, TrendingDown, Clock, MessageSquare, Send, X, Check, AlertCircle, AlertTriangle, QrCode, Trash2, Activity, Sparkles, Award, Target, Edit3, Trophy, Share2, Copy, ChevronDown, ChevronUp, BellRing } from 'lucide-react';
+import { Mail, GraduationCap, Calendar, User, UserCheck, Camera, Printer, Phone, TrendingUp, TrendingDown, Clock, MessageSquare, Send, X, Check, AlertCircle, AlertTriangle, QrCode, Trash2, Activity, Sparkles, Award, Target, Edit3, Trophy, Share2, Copy, ChevronDown, ChevronUp, BellRing, LifeBuoy, CheckCircle2 } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
 import StudentCameraModal from './StudentCameraModal';
 import StudentIDCardModal from './StudentIDCardModal';
 import AlertStaffModal from './AlertStaffModal';
+import StudentHelpRequestModal from './StudentHelpRequestModal';
 import { useLanguage } from '../utils/TranslationContext';
 import { doc, setDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
@@ -98,6 +99,7 @@ export default function StudentCard({
   const [showAlertStaff, setShowAlertStaff] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showHelpModal, setShowHelpModal] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState('absence');
   const [messageText, setMessageText] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
@@ -143,6 +145,37 @@ export default function StudentCard({
     setCommentInput('');
     localStorage.removeItem(`pasma_grade_goal_comment_${student.id}`);
     setIsEditingComment(false);
+  };
+
+  const isHelpActive = !!student.helpRequested;
+
+  const handleQuickAcknowledgeHelp = async () => {
+    const now = new Date().toISOString();
+    const staffName = teacherName || (portalUserRole === 'manager' ? 'Direction / Staff' : 'Enseignant');
+    const updated: Student = {
+      ...student,
+      helpRequested: false,
+      helpAcknowledgedBy: staffName,
+      helpAcknowledgedAt: now,
+    };
+
+    try {
+      await setDoc(doc(db, 'students', student.id), {
+        helpRequested: false,
+        helpAcknowledgedBy: staffName,
+        helpAcknowledgedAt: now,
+      }, { merge: true });
+
+      if (onUpdateStudent) {
+        onUpdateStudent(updated);
+      }
+    } catch (err) {
+      console.warn("Quick acknowledge error in StudentCard:", err);
+      handleFirestoreError(err, OperationType.UPDATE, `students/${student.id}`);
+      if (onUpdateStudent) {
+        onUpdateStudent(updated);
+      }
+    }
   };
 
   const { language } = useLanguage();
@@ -423,9 +456,13 @@ export default function StudentCard({
         className={`StudentCard relative rounded-2xl border transition-all cursor-pointer duration-300 ${
           isCompactMode && !isExpanded ? 'p-3.5' : 'p-4.5'
         } ${
-          isSelected
-            ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-100 dark:shadow-none'
-            : 'bg-white border-gray-100 text-gray-900 dark:text-slate-100 hover:border-gray-200 hover:shadow-sm dark:bg-slate-900 dark:border-slate-800/80 dark:hover:border-slate-700'
+          isHelpActive
+            ? (isSelected
+                ? 'bg-indigo-700 border-amber-300 ring-3 ring-amber-300 text-white shadow-lg shadow-amber-500/20'
+                : 'bg-gradient-to-r from-rose-50/90 via-white to-amber-50/60 dark:from-rose-950/40 dark:via-slate-900 dark:to-amber-950/30 border-rose-300 dark:border-rose-700/80 ring-2 ring-rose-500/80 dark:ring-rose-400/90 shadow-md shadow-rose-500/15 text-slate-900 dark:text-slate-100')
+            : (isSelected
+                ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-100 dark:shadow-none'
+                : 'bg-white border-gray-100 text-gray-900 dark:text-slate-100 hover:border-gray-200 hover:shadow-sm dark:bg-slate-900 dark:border-slate-800/80 dark:hover:border-slate-700')
         }`}
         whileHover={{ scale: 1.005 }}
         whileTap={{ scale: 0.995 }}
@@ -500,6 +537,37 @@ export default function StudentCard({
                     <UserCheck className="h-2.5 w-2.5" /> Actif
                   </span>
                 )}
+
+                {isHelpActive && (
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowHelpModal(true);
+                      }}
+                      className="bg-gradient-to-r from-rose-600 via-rose-500 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white text-[9px] uppercase font-black px-2 py-0.5 rounded-full flex items-center gap-1 animate-pulse shadow-xs border border-rose-300 cursor-pointer transition active:scale-95"
+                      title={isFr ? "Assistance demandée - Cliquer pour voir ou modifier" : "Help requested - Click to view or manage"}
+                    >
+                      <LifeBuoy className="h-3 w-3 shrink-0 animate-spin" style={{ animationDuration: '6s' }} />
+                      <span>{isFr ? "Assistance demandée" : "Help Requested"}</span>
+                    </span>
+
+                    {portalUserRole !== 'parent' && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleQuickAcknowledgeHelp();
+                        }}
+                        className="bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-[9px] font-black px-2 py-0.5 rounded-lg flex items-center gap-1 shadow-xs transition cursor-pointer border border-emerald-400"
+                        title={isFr ? "Confirmer la lecture de l'assistance et clore l'alerte" : "Confirm read & clear alert"}
+                      >
+                        <Check className="h-2.5 w-2.5" />
+                        <span className="hidden sm:inline">{isFr ? "Confirmer lecture" : "Confirm Read"}</span>
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Compact Metrics Row */}
@@ -555,15 +623,31 @@ export default function StudentCard({
           <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
             <button
               type="button"
+              onClick={() => setShowHelpModal(true)}
+              className={`p-1.5 rounded-xl border transition-all cursor-pointer flex items-center gap-1 text-[10px] font-extrabold ${
+                isHelpActive
+                  ? 'bg-rose-600 text-white border-rose-400 shadow-xs animate-pulse'
+                  : isSelected
+                  ? 'bg-amber-400 hover:bg-amber-300 text-slate-900 border-amber-300'
+                  : 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300'
+              }`}
+              title={isFr ? "Besoin d'aide / Demande d'assistance pédagogique" : "Need help / Educational assistance"}
+            >
+              <LifeBuoy className={`h-3.5 w-3.5 shrink-0 ${isHelpActive ? 'animate-spin' : ''}`} style={{ animationDuration: '8s' }} />
+              <span className="hidden sm:inline">{isHelpActive ? (isFr ? "Aide Active" : "Help Active") : (isFr ? "Besoin d'aide" : "Need Help")}</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setShowAlertStaff(true)}
               className={`p-1.5 rounded-xl border transition-all cursor-pointer flex items-center gap-1 text-[10px] font-extrabold ${
                 isSelected
-                  ? 'bg-amber-400 hover:bg-amber-300 text-slate-900 border-amber-300 shadow-xs'
+                  ? 'bg-white/20 hover:bg-white/30 text-white border-white/30'
                   : 'bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300'
               }`}
               title={isFr ? "Alerter le Staff (Urgence, Santé, Retard Bus, Absence...)" : "Alert Staff (Emergency, Health, Bus Delay...)"}
             >
-              <BellRing className={`h-3.5 w-3.5 shrink-0 ${isSelected ? 'text-slate-900' : 'text-rose-600 dark:text-rose-400'}`} />
+              <BellRing className={`h-3.5 w-3.5 shrink-0 ${isSelected ? 'text-white' : 'text-rose-600 dark:text-rose-400'}`} />
               <span className="hidden sm:inline">{isFr ? "Alerter" : "Alert"}</span>
             </button>
 
@@ -592,6 +676,92 @@ export default function StudentCard({
               exit={{ opacity: 0, height: 0 }}
               className="pt-3 mt-3 border-t border-dashed border-white/20 dark:border-slate-800 space-y-3"
             >
+              {/* Active Assistance Banner */}
+              {isHelpActive && (
+                <div className={`p-3 rounded-2xl border flex flex-col gap-2 transition-all ${
+                  isSelected
+                    ? 'bg-rose-950/70 border-rose-400/50 text-white'
+                    : 'bg-rose-50 dark:bg-rose-950/50 border-rose-200 dark:border-rose-800/80 text-rose-900 dark:text-rose-200'
+                }`}>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 bg-rose-600 text-white rounded-xl shadow-xs shrink-0">
+                        <LifeBuoy className="h-4 w-4 animate-spin" style={{ animationDuration: '6s' }} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5 font-black text-xs">
+                          <span>{isFr ? "Assistance Pédagogique Demandée" : "Educational Assistance Requested"}</span>
+                        </div>
+                        {student.helpRequestedAt && (
+                          <span className="text-[10px] opacity-80 flex items-center gap-1 mt-0.5">
+                            <Clock className="h-3 w-3" />
+                            {new Date(student.helpRequestedAt).toLocaleDateString(isFr ? 'fr-FR' : 'en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      {portalUserRole !== 'parent' ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleQuickAcknowledgeHelp();
+                          }}
+                          className="py-1 px-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black text-[10px] rounded-xl shadow-xs transition flex items-center gap-1 cursor-pointer"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                          <span>{isFr ? "Confirmer la lecture" : "Confirm Read"}</span>
+                        </button>
+                      ) : null}
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowHelpModal(true);
+                        }}
+                        className={`py-1 px-2 text-[10px] font-bold rounded-xl border transition cursor-pointer ${
+                          isSelected 
+                            ? 'bg-white/10 hover:bg-white/20 border-white/20 text-white' 
+                            : 'bg-white dark:bg-slate-900 hover:bg-rose-100 dark:hover:bg-rose-900/40 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300'
+                        }`}
+                      >
+                        {isFr ? "Détails" : "Details"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {student.helpRequestNote && (
+                    <div className={`p-2.5 rounded-xl text-xs italic leading-relaxed border ${
+                      isSelected
+                        ? 'bg-slate-900/60 border-rose-400/30 text-rose-100'
+                        : 'bg-white dark:bg-slate-900/80 border-rose-100 dark:border-rose-900/40 text-slate-800 dark:text-slate-200'
+                    }`}>
+                      "{student.helpRequestNote}"
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Resolved / Acknowledged Banner info */}
+              {!isHelpActive && student.helpAcknowledgedAt && (
+                <div className={`p-2 px-3 rounded-xl border flex items-center justify-between text-[10px] ${
+                  isSelected
+                    ? 'bg-emerald-950/40 border-emerald-400/40 text-emerald-200'
+                    : 'bg-emerald-50/80 dark:bg-emerald-950/30 border-emerald-200/80 dark:border-emerald-800/50 text-emerald-800 dark:text-emerald-300'
+                }`}>
+                  <span className="flex items-center gap-1 font-medium">
+                    <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    {isFr ? `Assistance lue & prise en charge par ${student.helpAcknowledgedBy || 'Staff'}` : `Assistance read & handled by ${student.helpAcknowledgedBy || 'Staff'}`}
+                  </span>
+                  <span className="font-mono text-[9.5px] opacity-80">
+                    {new Date(student.helpAcknowledgedAt).toLocaleDateString(isFr ? 'fr-FR' : 'en-US', { day: 'numeric', month: 'short' })}
+                  </span>
+                </div>
+              )}
+
               <div className="space-y-1 text-[11px] sm:text-xs">
                 <div className={`flex items-center justify-between gap-1.5 ${isSelected ? 'text-indigo-100' : 'text-gray-500 dark:text-slate-400'}`}>
                   <div className="flex items-center gap-1.5 truncate">
@@ -1220,12 +1390,29 @@ export default function StudentCard({
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
+                    setShowHelpModal(true);
+                  }}
+                  className={`font-black text-[10px] px-3 py-1.5 rounded-xl shadow-xs border cursor-pointer flex items-center justify-center gap-1.5 transition-all flex-1 active:scale-97 ${
+                    isHelpActive
+                      ? 'bg-rose-600 hover:bg-rose-500 text-white border-rose-300 animate-pulse'
+                      : 'bg-amber-500 hover:bg-amber-600 text-white border-amber-400'
+                  }`}
+                  title={isFr ? "Besoin d'aide / Demande d'assistance pédagogique" : "Educational assistance request"}
+                >
+                  <LifeBuoy className="h-3.5 w-3.5 shrink-0" />
+                  <span>{isHelpActive ? (isFr ? "Assistance Active" : "Help Active") : (isFr ? "Besoin d'aide" : "Need Help")}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
                     setShowAlertStaff(true);
                   }}
                   className="bg-gradient-to-r from-rose-600 via-amber-600 to-indigo-600 hover:from-rose-500 hover:to-indigo-500 text-white font-black text-[10px] px-3 py-1.5 rounded-xl shadow-xs border border-amber-300/40 cursor-pointer flex items-center justify-center gap-1.5 transition-all flex-1 active:scale-97"
                   title={isFr ? "Alerter le Staff de la classe" : "Alert Class Staff"}
                 >
-                  <BellRing className="h-3.5 w-3.5 shrink-0 animate-bounce" />
+                  <BellRing className="h-3.5 w-3.5 shrink-0" />
                   <span>{isFr ? "Alerter le Staff" : "Alert Staff"}</span>
                 </button>
 
@@ -1605,6 +1792,18 @@ export default function StudentCard({
           settings={settings}
           onAddMessage={onAddMessage}
           portalUserRole={portalUserRole}
+        />
+      )}
+
+      {/* Student Help Request Modal */}
+      {showHelpModal && (
+        <StudentHelpRequestModal
+          student={student}
+          isOpen={showHelpModal}
+          onClose={() => setShowHelpModal(false)}
+          onUpdateStudent={onUpdateStudent}
+          portalUserRole={portalUserRole}
+          teacherName={teacherName}
         />
       )}
     </>

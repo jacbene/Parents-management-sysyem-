@@ -49,6 +49,32 @@ interface RoadmapItem {
 
 const DEFAULT_ROADMAP: RoadmapItem[] = [
   {
+    id: 'road_homework_calendar',
+    title: "Cahier de Textes : Vue Calendrier, Devoirs Récurrents & Bilan Mensuel",
+    description: "Planification calendaire mensuelle, calcul automatique du taux d'achèvement et programmation de séries de devoirs récurrents.",
+    longDescription: "Offre une double visualisation Liste / Calendrier mensuel interactif du cahier de textes. Les enseignants peuvent programmer des séries de devoirs récurrents (hebdomadaire, bimensuel, mensuel, quotidien) avec indexation automatique ('Semaine 1/4', etc.). Un widget de bilan mensuel dynamique calcule en temps réel le taux d'achèvement (%), alerte sur les retards et classe les échéances prioritaires par date et par matière.",
+    category: 'pedagogy',
+    status: 'released',
+    progress: 100,
+    expectedDate: 'Disponible - Août 2026',
+    impact: 'High',
+    initialUpvotes: 165,
+    techDetails: ['Vue Calendrier CSS Grid', 'Moteur temporel de récurrence', 'Calculateur de taux d\'achèvement', 'Filtres combinés Matière/Classe/Statut']
+  },
+  {
+    id: 'road_academic_calendar',
+    title: "Calendrier Académique Officiel & Prise de Rendez-vous",
+    description: "Calendrier scolaire officiel intégrant trimestres, examens officiels, congés et réservation de créneaux d'entretien parents-profs.",
+    longDescription: "Intègre le découpage officiel de l'année scolaire (périodes de cours, sessions d'examens BEPC, Probatoire, Baccalauréat, congés et jours fériés) avec export imprimable. Les familles peuvent également solliciter des rendez-vous personnalisés avec les enseignants ou la direction.",
+    category: 'pedagogy',
+    status: 'released',
+    progress: 100,
+    expectedDate: 'Disponible - Août 2026',
+    impact: 'High',
+    initialUpvotes: 138,
+    techDetails: ['Calendrier trimestriel officiel', 'Export PDF/Impression directe', 'Module de réservation de créneaux']
+  },
+  {
     id: 'road_momo_auto',
     title: "Paiements Mobiles MoMo/Orange par QR Code instantané",
     description: "Intégration d'un système de scan de QR code sur facture pour initier des invites de paiement USSD directes Orange et MTN.",
@@ -233,8 +259,61 @@ export default function SchoolHelpCenter({
       tags: ['devoir', 'cahier de textes', 'exercice', 'leçon', 'travail', 'maison'],
       question: "Où trouver les devoirs à faire et le cahier de textes de l'école ?",
       answer: () => (
+        <div className="space-y-2">
+          <p>
+            Pour accompagner l'élève dans son travail quotidien, rendez-vous sur l'onglet <button onClick={() => onNavigateToTab?.('homework')} className="text-indigo-600 hover:underline font-bold inline-flex items-center gap-0.5">Cahier de textes <ExternalLink className="h-3 w-3" /></button>. Les devoirs y sont répertoriés par matière avec leur date d'échéance, consignes détaillées et pièces jointes éventuelles.
+          </p>
+          <p>
+            Vous pouvez basculer en <strong>Vue Calendrier</strong> pour un aperçu mensuel complet et visualiser le <strong>Bilan Mensuel</strong> (taux d'achèvement, devoirs urgents et devoirs récurrents). Les cours théoriques sont également accessibles dans l'onglet <button onClick={() => onNavigateToTab?.('lessons')} className="text-indigo-600 hover:underline font-bold inline-flex items-center gap-0.5">Cours & Leçons <ExternalLink className="h-3 w-3" /></button>.
+          </p>
+        </div>
+      )
+    },
+    {
+      id: 'faq_hw_calendar',
+      category: 'pedagogy',
+      tags: ['calendrier', 'devoirs recurrents', 'recurrent', 'mois', 'bilan', 'taux', 'achevement', 'echeance'],
+      question: "Comment utiliser la Vue Calendrier et programmer des devoirs récurrents ?",
+      answer: () => (
+        <div className="space-y-2">
+          <p>
+            Le <button onClick={() => onNavigateToTab?.('homework')} className="text-indigo-600 hover:underline font-bold inline-flex items-center gap-0.5">Cahier de textes <ExternalLink className="h-3 w-3" /></button> intègre une double vue :
+          </p>
+          <ul className="list-disc pl-5 space-y-1 text-slate-650">
+            <li><strong>Vue Calendrier :</strong> Affiche une grille mensuelle interactive avec indicateurs colorés pour chaque jour (devoirs terminés en vert, à faire en ambre, en retard en rouge et récurrents en violet).</li>
+            <li><strong>Widget Bilan Mensuel :</strong> Calcule le taux d'achèvement en pourcentage (%), liste les prochaines échéances prioritaires et ventile la charge par matière.</li>
+            <li><strong>Devoirs Récurrents (Enseignants) :</strong> Lors de la création d'un devoir, cochez l'option récurrente pour programmer une série hebdomadaire, bimensuelle, mensuelle ou quotidienne avec indexation automatique de chaque épisode.</li>
+          </ul>
+        </div>
+      )
+    },
+    {
+      id: 'faq_academic_cal',
+      category: 'pedagogy',
+      tags: ['calendrier officiel', 'trimestre', 'examen', 'conges', 'bepc', 'bac', 'vacances', 'feries'],
+      question: "Où consulter le Calendrier Scolaire Officiel et les dates d'examens ?",
+      answer: () => (
+        <div className="space-y-2">
+          <p>
+            L'onglet <button onClick={() => onNavigateToTab?.('academic_calendar')} className="text-indigo-600 hover:underline font-bold inline-flex items-center gap-0.5">Calendrier Académique <ExternalLink className="h-3 w-3" /></button> regroupe le calendrier scolaire officiel complet de l'établissement :
+          </p>
+          <ul className="list-disc pl-5 space-y-1 text-slate-650">
+            <li>Découpage officiel en 3 trimestres avec dates précises de rentrée et fin de session.</li>
+            <li>Calendrier des examens officiels nationaux (BEPC, Probatoire, Baccalauréat, Concours).</li>
+            <li>Périodes officielles des congés de fin de trimestre, vacances de Noël/Pâques et jours fériés.</li>
+            <li>Option d'export et d'impression directe haute résolution pour affichage à la maison.</li>
+          </ul>
+        </div>
+      )
+    },
+    {
+      id: 'faq_appointments',
+      category: 'pedagogy',
+      tags: ['rendez-vous', 'rdv', 'professeur', 'parent', 'entretien', 'direction', 'rencontre'],
+      question: "Comment planifier un rendez-vous avec un enseignant ou la direction ?",
+      answer: () => (
         <p>
-          Pour accompagner l'élève dans son travail quotidien, rendez-vous sur l'onglet <button onClick={() => onNavigateToTab?.('homework')} className="text-indigo-600 hover:underline font-bold inline-flex items-center gap-0.5">Cahier de textes <ExternalLink className="h-3 w-3" /></button>. Les devoirs y sont répertoriés par matière avec leur date d'échéance, consignes détaillées et pièces jointes éventuelles. Les cours théoriques sont également disponibles dans l'onglet <button onClick={() => onNavigateToTab?.('lessons')} className="text-indigo-600 hover:underline font-bold inline-flex items-center gap-0.5">Cours & Leçons <ExternalLink className="h-3 w-3" /></button>.
+          Rendez-vous dans l'onglet <button onClick={() => onNavigateToTab?.('appointments')} className="text-indigo-600 hover:underline font-bold inline-flex items-center gap-0.5">Rendez-vous <ExternalLink className="h-3 w-3" /></button>. Vous pouvez y solliciter un entretien avec le professeur principal, le censeur ou le trésorier, choisir un créneau horaire disponible et suivre le statut de confirmation de votre demande.
         </p>
       )
     },

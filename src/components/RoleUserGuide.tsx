@@ -166,19 +166,37 @@ export default function RoleUserGuide({
         },
         {
           id: 'step_parent_4',
-          title: "4. Cahier de Textes, Devoirs & Cours",
+          title: "4. Cahier de Textes : Vue Calendrier & Bilan Mensuel",
           badge: "Accompagnement Scolaire",
           targetTab: 'homework',
           icon: BookOpen,
-          summary: "Suivez le travail personnel à faire à la maison et téléchargez les supports de cours.",
+          summary: "Visualisez les devoirs à rendre sur le calendrier mensuel interactif et suivez le taux d'achèvement.",
           instructions: [
-            "Allez dans l'onglet 'Cahier de textes' pour consulter la liste des devoirs à rendre avec leurs dates d'échéance.",
+            "Allez dans l'onglet 'Cahier de textes' : basculez entre la 'Vue Liste' et la 'Vue Calendrier'.",
+            "Consultez le widget 'Bilan Mensuel des Devoirs' affichant le taux d'achèvement (%) et les prochaines échéances prioritaires.",
+            "Sur le calendrier mensuel, cliquez sur n'importe quel jour pour inspecter les devoirs prévus, repérer les devoirs récurrents et marquer les tâches terminées.",
             "Consultez l'onglet 'Cours & Leçons' pour réviser les résumés de chapitres transmis par les enseignants."
+          ],
+          tips: [
+            "Les devoirs en retard sont automatiquement mis en évidence avec un badge d'alerte rouge 'Retard'."
           ]
         },
         {
           id: 'step_parent_5',
-          title: "5. Obtention & Impression du Badge QR Élève",
+          title: "5. Calendrier Scolaire Officiel & Prise de Rendez-vous",
+          badge: "Planning & Rencontres",
+          targetTab: 'academic_calendar',
+          icon: Calendar,
+          summary: "Consultez les dates des trimestres, sessions d'examens officiels et planifiez un rendez-vous.",
+          instructions: [
+            "Ouvrez l'onglet 'Calendrier Académique' pour consulter les découpages officiels de l'année scolaire, congés et jours fériés.",
+            "Téléchargez ou imprimez le calendrier officiel pour l'afficher à la maison.",
+            "Dans l'onglet 'Rendez-vous', planifiez une entrevue avec le professeur principal ou la direction de l'école."
+          ]
+        },
+        {
+          id: 'step_parent_6',
+          title: "6. Obtention & Impression du Badge QR Élève",
           badge: "Carte Scolaire",
           targetTab: 'students_by_class',
           icon: QrCode,
@@ -217,8 +235,10 @@ export default function RoleUserGuide({
       overview: "Le rôle d'Enseignant offre un espace de travail complet pour saisir et valider les notes d'évaluations, distribuer des devoirs via le cahier de textes numérique, partager des leçons et enregistrer les présences des élèves.",
       keyResponsibilities: [
         "Saisir les notes d'évaluations et examens par classe et par matière",
-        "Publier des devoirs à faire à la maison avec consignes et pièces jointes",
+        "Publier des devoirs ponctuels ou récurrents (hebdo, bimensuel, mensuel) sur le cahier de textes",
+        "Piloter les échéances scolaires via la Vue Calendrier et le Bilan Mensuel",
         "Partager des fiches de cours et résumés pédagogiques dans le module Leçons",
+        "Consulter le calendrier académique officiel et planifier des rendez-vous avec les familles",
         "Prendre les présences en classe et signaler les absences aux surveillants"
       ],
       steps: [
@@ -241,16 +261,20 @@ export default function RoleUserGuide({
         },
         {
           id: 'step_teacher_2',
-          title: "2. Alimentation du Cahier de Textes (Devoirs)",
-          badge: "Cahier de textes",
+          title: "2. Cahier de Textes : Devoirs Récurrents & Vue Calendrier",
+          badge: "Cahier de textes & Planning",
           targetTab: 'homework',
           icon: BookOpen,
-          summary: "Programmez des devoirs à faire à la maison avec dates d'échéance précises.",
+          summary: "Programmez des devoirs individuels ou des séries récurrentes automatisées.",
           instructions: [
-            "Naviguez vers l'onglet 'Cahier de textes'.",
-            "Cliquez sur le bouton '+ Nouveau Devoir'.",
-            "Remplissez le titre, le texte de la consigne, la classe destinataire et la date limite de remise.",
-            "Validez l'enregistrement : le devoir devient instantanément visible par les élèves et leurs parents."
+            "Naviguez vers l'onglet 'Cahier de textes' et cliquez sur '+ Nouveau Devoir'.",
+            "Remplissez le titre, la consigne, la matière et la classe ciblée.",
+            "Pour planifier des devoirs réguliers (ex: exercices chaque semaine), activez l'option 'Répéter ce devoir (Récurrent)'.",
+            "Choisissez la fréquence (Hebdomadaire, Bimensuelle, Mensuelle, Quotidienne), le nombre d'occurrences et visualisez l'échéancier généré.",
+            "Basculez sur la 'Vue Calendrier' pour vérifier la répartition mensuelle de la charge de travail et consulter le widget de Bilan Mensuel."
+          ],
+          tips: [
+            "La numérotation automatique (ex: 'Semaine 1/4', 'Semaine 2/4') indexe automatiquement chaque devoir de la série."
           ]
         },
         {
@@ -264,6 +288,18 @@ export default function RoleUserGuide({
             "Allez sur l'onglet 'Cours & Leçons'.",
             "Cliquez sur '+ Ajouter un cours'.",
             "Rédigez ou collez le contenu structuré du cours et rattachez-le au chapitre du programme officiel."
+          ]
+        },
+        {
+          id: 'step_teacher_4',
+          title: "4. Calendrier Académique & Rendez-vous Parents",
+          badge: "Planning & Échanges",
+          targetTab: 'academic_calendar',
+          icon: Calendar,
+          summary: "Synchronisez votre progression avec le calendrier officiel et gérez les rendez-vous.",
+          instructions: [
+            "Consultez l'onglet 'Calendrier Académique' pour anticiper les fins de trimestres, arrêt des notes et périodes d'examens.",
+            "Dans l'onglet 'Rendez-vous', validez ou proposez des créneaux d'échange aux parents d'élèves pour faire le point sur le travail scolaire."
           ]
         }
       ],
@@ -474,7 +510,20 @@ export default function RoleUserGuide({
         },
         {
           id: 'step_admin_4',
-          title: "4. Intégrations Google Workspace & Sauvegardes",
+          title: "4. Calendrier Académique Officiel & Périodes Scolaires",
+          badge: "Organisation Scolaire",
+          targetTab: 'academic_calendar',
+          icon: Calendar,
+          summary: "Supervisez le calendrier officiel, les dates des examens nationaux et les congés.",
+          instructions: [
+            "Accédez à l'onglet 'Calendrier Académique' pour vérifier la planification des 3 trimestres officiels.",
+            "Visualisez les dates d'examens (BEPC, Probatoire, Baccalauréat, Concours) et les périodes de vacances scolaires.",
+            "Imprimez ou exportez le calendrier officiel pour affichage dans l'enceinte de l'établissement."
+          ]
+        },
+        {
+          id: 'step_admin_5',
+          title: "5. Intégrations Google Workspace & Sauvegardes",
           badge: "Cloud & Export",
           targetTab: 'google_drive',
           icon: Cloud,

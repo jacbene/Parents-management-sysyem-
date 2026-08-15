@@ -10,6 +10,12 @@ export interface Student {
   dob: string;
   gradesValidated?: boolean;
   attendanceValidated?: boolean;
+  helpRequested?: boolean;
+  helpRequestedAt?: string;
+  helpRequestNote?: string;
+  helpRequestReason?: 'comprehension' | 'homework' | 'behavior' | 'health' | 'general';
+  helpAcknowledgedBy?: string;
+  helpAcknowledgedAt?: string;
 }
 
 export type GradeReviewStatus = 'Published' | 'PendingReview' | 'Corrected';
@@ -47,6 +53,7 @@ export interface Attendance {
 }
 
 export type HomeworkStatus = 'Pending' | 'Completed' | 'Overdue';
+export type HomeworkFrequency = 'daily' | 'weekly' | 'biweekly' | 'monthly';
 
 export interface Homework {
   id: string;
@@ -58,6 +65,12 @@ export interface Homework {
   dueDate: string;
   status: HomeworkStatus;
   grade?: string;
+  isRecurring?: boolean;
+  recurrenceFrequency?: HomeworkFrequency;
+  recurrenceCount?: number;
+  recurrenceDuration?: string;
+  recurrenceSeriesId?: string;
+  recurrenceIndex?: number;
 }
 
 export interface Lesson {
