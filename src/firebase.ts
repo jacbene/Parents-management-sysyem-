@@ -232,6 +232,13 @@ export async function loginWithGoogle(requireDriveScopes: boolean = false) {
     // Only attempt redirect fallback if NOT in a sandboxed iframe (redirecting inside an iframe gets blocked by X-Frame-Options)
     if (!isInIframe && (error?.code === 'auth/popup-blocked' || error?.code === 'auth/cancelled-popup-request')) {
       console.info("Popup blocked outside iframe, attempting signInWithRedirect fallback...");
+      try {
+        if (typeof sessionStorage !== 'undefined') {
+          sessionStorage.setItem('pasma_redirect_pending', 'true');
+        }
+      } catch (e) {
+        // ignore
+      }
       await signInWithRedirect(auth, providerToUse);
       return null;
     }
@@ -240,6 +247,46 @@ export async function loginWithGoogle(requireDriveScopes: boolean = false) {
 }
 
 export async function checkRedirectResult() {
+  // If running inside a sandboxed iframe (like AI Studio preview), redirect flows are disabled/unsupported
+  const isInIframe = typeof window !== 'undefined' && window.self !== window.top;
+  if (isInIframe) {
+    return null;
+  }
+
+  // Check if a redirect sign-in was actually initiated before invoking getRedirectResult
+  // Calling getRedirectResult() unconditionally when no redirect took place causes @firebase/auth (v12.x)
+  // to trigger an unhandled assertion "INTERNAL ASSERTION FAILED: Pending promise was never set"
+  let hasPendingRedirect = false;
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      if (sessionStorage.getItem('pasma_redirect_pending') === 'true') {
+        hasPendingRedirect = true;
+        sessionStorage.removeItem('pasma_redirect_pending');
+      } else {
+        for (let i = 0; i < sessionStorage.length; i++) {
+          const key = sessionStorage.key(i);
+          if (key && (key.includes('pendingRedirect') || key.includes('firebase:authUser'))) {
+            hasPendingRedirect = true;
+            break;
+          }
+        }
+      }
+    }
+    if (typeof window !== 'undefined' && window.location) {
+      const hash = window.location.hash || '';
+      const search = window.location.search || '';
+      if (hash.includes('access_token') || hash.includes('id_token') || search.includes('apiKey') || search.includes('state')) {
+        hasPendingRedirect = true;
+      }
+    }
+  } catch (e) {
+    // ignore storage access errors in sandboxes
+  }
+
+  if (!hasPendingRedirect) {
+    return null;
+  }
+
   try {
     const result = await getRedirectResult(auth);
     if (result) {
@@ -249,7 +296,10 @@ export async function checkRedirectResult() {
       }
       return result.user;
     }
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.message?.includes('Pending promise was never set')) {
+      return null;
+    }
     console.warn("Error checking redirect result:", error);
   }
   return null;

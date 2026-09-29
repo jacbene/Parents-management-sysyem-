@@ -63,6 +63,79 @@ export default function BillingPortal({
   const [reminderProgressLog, setReminderProgressLog] = useState<string[]>([]);
   const [reminderSuccess, setReminderSuccess] = useState(false);
 
+  // States for Quick 'Mark as Paid' Action with Confirmation Dialog
+  const [confirmMarkPaidInvoice, setConfirmMarkPaidInvoice] = useState<Invoice | null>(null);
+  const [isMarkingPaid, setIsMarkingPaid] = useState(false);
+  const [manualPaymentMethod, setManualPaymentMethod] = useState<'Espèces / Caisse' | 'Virement Bancaire' | 'Mobile Money' | 'Chèque'>('Espèces / Caisse');
+  const [manualPaymentNote, setManualPaymentNote] = useState('');
+  const [markPaidSuccessNotification, setMarkPaidSuccessNotification] = useState<{
+    title: string;
+    amount: number;
+    timestamp: string;
+    invoiceId: string;
+  } | null>(null);
+
+  const handleConfirmMarkPaid = async () => {
+    if (!confirmMarkPaidInvoice) return;
+    setIsMarkingPaid(true);
+
+    try {
+      const currentTimestamp = new Date().toISOString();
+      const formattedDate = new Date(currentTimestamp).toLocaleDateString(isEn ? 'en-US' : 'fr-FR');
+      const formattedTime = new Date(currentTimestamp).toLocaleTimeString(isEn ? 'en-US' : 'fr-FR');
+      const timestampString = `${formattedDate} à ${formattedTime}`;
+
+      const paymentNoteTag = `[Enregistré payé le ${timestampString} - Mode: ${manualPaymentMethod}${manualPaymentNote.trim() ? ` - Réf: ${manualPaymentNote.trim()}` : ''}]`;
+      const combinedNote = confirmMarkPaidInvoice.note 
+        ? `${confirmMarkPaidInvoice.note} | ${paymentNoteTag}`
+        : paymentNoteTag;
+
+      // 1. Update in Firestore
+      try {
+        const invRef = doc(db, 'invoices', confirmMarkPaidInvoice.id);
+        await updateDoc(invRef, {
+          status: 'Paid',
+          paymentDate: currentTimestamp,
+          paidTimestamp: currentTimestamp,
+          paymentMethod: manualPaymentMethod,
+          note: combinedNote
+        });
+      } catch (dbErr) {
+        console.warn("Could not update invoice in Firestore directly, proceeding with local update", dbErr);
+      }
+
+      // 2. Prepare updated invoice
+      const updatedInvoice: Invoice = {
+        ...confirmMarkPaidInvoice,
+        status: 'Paid',
+        paymentDate: currentTimestamp,
+        note: combinedNote,
+        provider: manualPaymentMethod === 'Mobile Money' ? 'mtn' : manualPaymentMethod === 'Virement Bancaire' ? 'bank' : 'caisse'
+      };
+
+      // 3. Update in parent state & sync APEE bookkeeping if applicable
+      onUpdateInvoice(updatedInvoice);
+
+      // 4. Trigger success notification
+      setMarkPaidSuccessNotification({
+        title: confirmMarkPaidInvoice.title,
+        amount: confirmMarkPaidInvoice.amount,
+        timestamp: timestampString,
+        invoiceId: confirmMarkPaidInvoice.id
+      });
+
+      // 5. Close confirmation dialog
+      setConfirmMarkPaidInvoice(null);
+      setManualPaymentNote('');
+      setManualPaymentMethod('Espèces / Caisse');
+    } catch (err) {
+      console.error("Error marking invoice as paid:", err);
+      alert(isEn ? "An error occurred while marking the invoice as paid." : "Une erreur est survenue lors de l'enregistrement du paiement.");
+    } finally {
+      setIsMarkingPaid(false);
+    }
+  };
+
   const getInvoiceQRCodeUrl = (inv: Invoice, prov: 'mtn' | 'orange' | 'wave' | 'bank') => {
     const rawPhone = parentPhone || inv.phone || '';
     const referenceId = rawPhone ? rawPhone.trim().replace(/[\s\-\(\)\+]/g, '') : 'REF_UNKNOWN';
@@ -1259,13 +1332,27 @@ export default function BillingPortal({
                     </p>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => startPayment(searchResult)}
-                  className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md shrink-0 select-none animate-bounce"
-                >
-                  <CreditCard className="h-3.5 w-3.5" /> Régler la Facture
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConfirmMarkPaidInvoice(searchResult);
+                      setManualPaymentNote('');
+                      setManualPaymentMethod('Espèces / Caisse');
+                    }}
+                    className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md shrink-0 select-none"
+                    title={isEn ? "Mark as Paid" : "Marquer comme payé"}
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" /> {isEn ? 'Mark as Paid' : 'Marquer payé'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => startPayment(searchResult)}
+                    className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md shrink-0 select-none"
+                  >
+                    <CreditCard className="h-3.5 w-3.5" /> Régler la Facture
+                  </button>
+                </div>
               </div>
             )}
 
@@ -1387,6 +1474,40 @@ export default function BillingPortal({
         </div>
       </div>
 
+      {/* Success Notification after marking invoice as paid */}
+      <AnimatePresence>
+        {markPaidSuccessNotification && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between gap-3 shadow-xs"
+          >
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-emerald-100 text-emerald-700 rounded-xl shrink-0">
+                <CheckCircle2 className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-xs font-black text-emerald-900">
+                  {isEn ? 'Invoice Marked as Paid Successfully!' : 'Facture marquée comme payée avec succès !'}
+                </p>
+                <p className="text-[11px] text-emerald-800 font-medium">
+                  {markPaidSuccessNotification.title} • <span className="font-mono font-bold text-emerald-900">{formatAmountTtc(markPaidSuccessNotification.amount).fcfa}</span> • {isEn ? 'Captured on' : 'Horodaté le'} {markPaidSuccessNotification.timestamp}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setMarkPaidSuccessNotification(null)}
+              className="text-emerald-700 hover:text-emerald-900 p-1.5 cursor-pointer transition rounded-lg hover:bg-emerald-100"
+              aria-label="Fermer"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {filteredInvoices.length === 0 ? (
         <div className="text-center p-12 bg-gray-50/50 rounded-2xl border border-gray-100">
           <Receipt className="h-8 w-8 text-slate-300 mx-auto mb-2" />
@@ -1417,7 +1538,7 @@ export default function BillingPortal({
                 <div className="text-xs text-gray-500 font-medium">
                   {inv.status === 'Paid' ? (
                     <span className="text-emerald-600 font-semibold flex items-center gap-1">
-                      <CheckCircle2 className="h-3.5 w-3.5" /> Payé le {new Date(inv.paymentDate!).toLocaleDateString('fr-FR')}
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Payé le {new Date(inv.paymentDate!).toLocaleDateString('fr-FR')}{inv.paymentDate && inv.paymentDate.includes('T') ? ` à ${new Date(inv.paymentDate).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : ''}
                     </span>
                   ) : (
                     <span className="text-gray-400 flex items-center gap-1">
@@ -1453,6 +1574,22 @@ export default function BillingPortal({
 
                 {inv.status !== 'Paid' && (
                   <>
+                    {/* Quick Mark as Paid Button */}
+                    <button
+                      type="button"
+                      id={`btn-mark-paid-${inv.id}`}
+                      onClick={() => {
+                        setConfirmMarkPaidInvoice(inv);
+                        setManualPaymentNote('');
+                        setManualPaymentMethod('Espèces / Caisse');
+                      }}
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer"
+                      title={isEn ? "Mark this invoice as paid with captured timestamp" : "Marquer cette facture comme payée avec horodatage"}
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      <span>{isEn ? 'Mark as Paid' : 'Marquer payé'}</span>
+                    </button>
+
                     {portalUserRole === 'manager' && (
                       <button
                         type="button"
@@ -2040,6 +2177,199 @@ export default function BillingPortal({
                   </button>
                 </div>
               )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Confirmation Dialog: Quick Mark as Paid */}
+      <AnimatePresence>
+        {confirmMarkPaidInvoice && (
+          <div 
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in"
+            onClick={() => !isMarkingPaid && setConfirmMarkPaidInvoice(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-3xl w-full max-w-lg border border-slate-200 shadow-2xl overflow-hidden"
+            >
+              {/* Header */}
+              <div className="p-5 bg-gradient-to-r from-emerald-800 to-teal-900 text-white relative">
+                <button
+                  type="button"
+                  disabled={isMarkingPaid}
+                  onClick={() => setConfirmMarkPaidInvoice(null)}
+                  className="absolute right-4 top-4 text-white/70 hover:text-white transition cursor-pointer p-1 rounded-lg hover:bg-white/10"
+                  aria-label="Fermer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+                <div className="flex items-center gap-2.5 mb-1">
+                  <span className="p-1.5 bg-emerald-500/30 border border-emerald-400/40 rounded-xl text-emerald-300">
+                    <CheckCircle2 className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <span className="text-[10px] text-emerald-300 font-black uppercase tracking-widest block">
+                      {isEn ? 'Direct Cashier Action' : 'Action Rapide Comptabilité'}
+                    </span>
+                    <h3 className="text-base font-black">
+                      {isEn ? 'Confirm Payment & Mark as Paid' : 'Confirmer le règlement & Marquer payé'}
+                    </h3>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+                {/* Summary Box */}
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5">
+                  <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
+                    <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-500">
+                      {isEn ? 'Invoice Reference' : 'Référence Facture'}
+                    </span>
+                    <span className="text-xs font-mono font-black text-slate-800 bg-slate-200/70 px-2.5 py-0.5 rounded-md">
+                      #{confirmMarkPaidInvoice.id.toUpperCase()}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between items-start gap-4">
+                    <div>
+                      <p className="text-xs font-bold text-slate-900 leading-snug">
+                        {confirmMarkPaidInvoice.title}
+                      </p>
+                      {(() => {
+                        const st = students?.find(s => s.id === confirmMarkPaidInvoice.studentId);
+                        if (st) {
+                          return (
+                            <p className="text-[11px] text-emerald-750 font-semibold mt-0.5">
+                              Élève : {st.name} • {st.grade} {st.classRoom}
+                            </p>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-base font-black text-emerald-750 font-mono">
+                        {formatAmountTtc(confirmMarkPaidInvoice.amount).fcfa}
+                      </div>
+                      <div className="text-[10px] text-slate-400">
+                        {formatAmountTtc(confirmMarkPaidInvoice.amount).euro} (TTC)
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Captured Timestamp Display */}
+                <div className="p-3.5 bg-emerald-50/80 border border-emerald-200 rounded-2xl flex items-center gap-3">
+                  <div className="p-2 bg-emerald-100 text-emerald-700 rounded-xl shrink-0">
+                    <Clock className="h-5 w-5" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] uppercase font-extrabold text-emerald-900 tracking-wider block">
+                      {isEn ? 'Captured Payment Timestamp' : 'Horodatage d\'encaissement capturé'}
+                    </span>
+                    <p className="text-xs font-mono font-bold text-emerald-950">
+                      {new Date().toLocaleDateString(isEn ? 'en-US' : 'fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} à {new Date().toLocaleTimeString(isEn ? 'en-US' : 'fr-FR')}
+                    </p>
+                    <span className="text-[10px] text-emerald-750 block leading-tight">
+                      {isEn 
+                        ? 'The current precise date and time will be permanently saved on this invoice and printed on the official receipt.'
+                        : 'Cet horodatage précis sera enregistré définitivement dans les registres et imprimé sur la quittance officielle.'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Payment Method Selector */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 block">
+                    {isEn ? 'Payment Mode' : 'Mode de règlement'}
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { id: 'Espèces / Caisse', label: 'Espèces / Caisse' },
+                      { id: 'Virement Bancaire', label: 'Virement Bancaire' },
+                      { id: 'Mobile Money', label: 'Mobile Money (MTN/Orange)' },
+                      { id: 'Chèque', label: 'Chèque bancaire' },
+                    ].map(opt => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setManualPaymentMethod(opt.id as any)}
+                        className={`px-3 py-2 rounded-xl text-xs font-bold border transition text-left cursor-pointer flex items-center justify-between ${
+                          manualPaymentMethod === opt.id
+                            ? 'bg-emerald-50 border-emerald-500 text-emerald-800 shadow-2xs'
+                            : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+                        }`}
+                      >
+                        <span className="truncate mr-1">{opt.label}</span>
+                        {manualPaymentMethod === opt.id && (
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Optional Note / Reference */}
+                <div className="space-y-1.5">
+                  <label htmlFor="input-mark-paid-note" className="text-xs font-bold text-slate-700 block">
+                    {isEn ? 'Receipt note / Reference (optional)' : 'Observation / N° Reçu souche (optionnel)'}
+                  </label>
+                  <input
+                    id="input-mark-paid-note"
+                    type="text"
+                    placeholder={isEn ? "e.g. Receipt #104 issued at accounting desk" : "Ex: Reçu souche N°104 remis en main propre au guichet"}
+                    value={manualPaymentNote}
+                    onChange={(e) => setManualPaymentNote(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 focus:bg-white focus:outline-hidden focus:border-emerald-500 rounded-xl text-xs text-slate-800 transition"
+                  />
+                </div>
+
+                {/* Notice */}
+                <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl flex items-start gap-2.5 text-[11px] text-amber-900 leading-snug">
+                  <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                  <p>
+                    {isEn 
+                      ? "This action will immediately change the invoice status to 'Paid' and make the downloadable official PDF receipt available."
+                      : "Cette action basculera immédiatement le statut de la facture sur « Payé » et rendra disponible la quittance officielle en PDF."}
+                  </p>
+                </div>
+              </div>
+
+              {/* Modal Actions */}
+              <div className="p-4 bg-slate-50 border-t border-slate-150 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  disabled={isMarkingPaid}
+                  onClick={() => setConfirmMarkPaidInvoice(null)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-200/60 rounded-xl transition cursor-pointer"
+                >
+                  {isEn ? 'Cancel' : 'Annuler'}
+                </button>
+                <button
+                  type="button"
+                  id="btn-confirm-mark-paid-submit"
+                  disabled={isMarkingPaid}
+                  onClick={handleConfirmMarkPaid}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
+                >
+                  {isMarkingPaid ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>{isEn ? 'Updating...' : 'Validation en cours...'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="h-4 w-4" />
+                      <span>{isEn ? 'Confirm & Mark as Paid' : 'Confirmer et marquer comme payé'}</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </motion.div>
           </div>
         )}

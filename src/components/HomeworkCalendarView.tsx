@@ -14,7 +14,8 @@ import {
   CheckCircle2, 
   Sparkles,
   CalendarDays,
-  Check
+  Check,
+  Download
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import MonthlyHomeworkSummaryWidget from './MonthlyHomeworkSummaryWidget';
@@ -28,6 +29,7 @@ interface HomeworkCalendarViewProps {
   updatingId: string | null;
   isPedAuthorized?: boolean;
   language?: string;
+  onExportPDF?: () => void;
 }
 
 export default function HomeworkCalendarView({
@@ -38,7 +40,8 @@ export default function HomeworkCalendarView({
   onQuickAddForDate,
   updatingId,
   isPedAuthorized = false,
-  language = 'fr'
+  language = 'fr',
+  onExportPDF
 }: HomeworkCalendarViewProps) {
   const isEn = language === 'en';
 
@@ -211,7 +214,18 @@ export default function HomeworkCalendarView({
         </div>
 
         {/* Navigation buttons */}
-        <div className="flex items-center gap-1.5 self-end sm:self-auto">
+        <div className="flex items-center gap-1.5 self-end sm:self-auto flex-wrap">
+          {onExportPDF && (
+            <button
+              type="button"
+              onClick={onExportPDF}
+              className="px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer border border-slate-200/80 dark:border-slate-800 flex items-center gap-1.5"
+              title={isEn ? "Export PDF Summary" : "Exporter Synthèse PDF"}
+            >
+              <Download className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span>{isEn ? "PDF Summary" : "Synthèse PDF"}</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={handlePrevMonth}

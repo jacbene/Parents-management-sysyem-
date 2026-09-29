@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Student, ApeeSettings, ApeeParent, Grade, Attendance, Message } from '../types';
-import { Mail, GraduationCap, Calendar, User, UserCheck, Camera, Printer, Phone, TrendingUp, TrendingDown, Clock, MessageSquare, Send, X, Check, AlertCircle, AlertTriangle, QrCode, Trash2, Activity, Sparkles, Award, Target, Edit3, Trophy, Share2, Copy, ChevronDown, ChevronUp, BellRing, LifeBuoy, CheckCircle2 } from 'lucide-react';
+import { Mail, GraduationCap, Calendar, User, UserCheck, Camera, Printer, Phone, TrendingUp, TrendingDown, Clock, MessageSquare, Send, X, Check, AlertCircle, AlertTriangle, QrCode, Trash2, Activity, Sparkles, Award, Target, Edit3, Trophy, Share2, Copy, ChevronDown, ChevronUp, BellRing, LifeBuoy, CheckCircle2, MessageCircle } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
 import StudentCameraModal from './StudentCameraModal';
 import StudentIDCardModal from './StudentIDCardModal';
 import AlertStaffModal from './AlertStaffModal';
 import StudentHelpRequestModal from './StudentHelpRequestModal';
+import StudentWhatsAppShareModal from './StudentWhatsAppShareModal';
 import { useLanguage } from '../utils/TranslationContext';
 import { doc, setDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
@@ -100,6 +101,7 @@ export default function StudentCard({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState<boolean>(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState('absence');
   const [messageText, setMessageText] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
@@ -207,6 +209,10 @@ export default function StudentCard({
   // Find matching parent/guardian details
   const getMatchingParent = (): ApeeParent | undefined => {
     if (!apeeParents) return undefined;
+    if (student.parentId) {
+      const found = apeeParents.find(p => p.id === student.parentId);
+      if (found) return found;
+    }
     if (student.id.startsWith('stu_')) {
       const parts = student.id.split('_');
       if (parts.length >= 3 && parts[0] === 'stu') {
@@ -222,12 +228,15 @@ export default function StudentCard({
     return undefined;
   };
 
+  const matchingParent = getMatchingParent();
+  const linkedParentPhone = (student as any).parentPhone || (student as any).phone || matchingParent?.phone || '';
+  const linkedParentName = matchingParent?.name || (student as any).parentName || '';
+
   const handleSendMessage = async () => {
     if (!messageText.trim()) return;
     setSendingMessage(true);
 
     const id = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-    const matchingParent = getMatchingParent();
     const newMsg: Message = {
       id,
       studentId: student.id,
@@ -253,8 +262,6 @@ export default function StudentCard({
       setSendingMessage(false);
     }
   };
-
-  const matchingParent = getMatchingParent();
 
   // Calculate best and worst subjects
   const studentGrades = (grades || []).filter(g => g.studentId === student.id);
@@ -790,12 +797,28 @@ export default function StudentCard({
                   <User className="h-3 w-3 shrink-0" />
                   <span className="truncate">Tuteur : <strong className={isSelected ? 'text-white' : 'text-gray-700'}>{matchingParent?.name || 'Non renseigné'}</strong></span>
                 </div>
-                {matchingParent?.phone && (
-                  <div className={`flex items-center gap-1.5 ${isSelected ? 'text-indigo-100' : 'text-gray-500'}`}>
+                <div className={`flex items-center justify-between gap-1.5 ${isSelected ? 'text-indigo-100' : 'text-gray-500'}`}>
+                  <div className="flex items-center gap-1.5 truncate">
                     <Phone className="h-3 w-3 shrink-0" />
-                    <span className="truncate">Tél Parent : <strong className={isSelected ? 'text-white font-mono' : 'text-gray-700 font-mono'}>{matchingParent.phone}</strong></span>
+                    <span className="truncate">Tél Parent : <strong className={isSelected ? 'text-white font-mono' : 'text-gray-700 font-mono'}>{linkedParentPhone || 'Non renseigné'}</strong></span>
                   </div>
-                )}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowWhatsAppModal(true);
+                    }}
+                    className={`px-2 py-0.5 rounded-lg border text-[10px] font-extrabold flex items-center gap-1 transition-all cursor-pointer shadow-xs active:scale-95 shrink-0 ${
+                      isSelected
+                        ? 'bg-emerald-500 hover:bg-emerald-400 text-white border-emerald-400'
+                        : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                    }`}
+                    title={isFr ? "Partager les notes ou l'assiduité via WhatsApp au parent" : "Share grades or attendance via WhatsApp"}
+                  >
+                    <MessageCircle className="h-3 w-3" />
+                    <span>WhatsApp</span>
+                  </button>
+                </div>
                 <div className={`flex items-center gap-1.5 ${isSelected ? 'text-indigo-100' : 'text-gray-500'}`}>
                   <TrendingUp className={`h-3 w-3 shrink-0 ${isSelected ? 'text-indigo-200' : 'text-emerald-600'}`} />
                   <span className="truncate">Best : <strong className={isSelected ? 'text-white' : 'text-emerald-700 font-bold'}>{bestSubject ? `${bestSubject.subject} (${bestSubject.avg.toFixed(1)}/20)` : 'N/A'}</strong></span>
@@ -1051,7 +1074,17 @@ export default function StudentCard({
                     </pre>
                   </div>
 
-                  <div className="flex items-center justify-end gap-2 pt-1">
+                  <div className="flex items-center justify-end gap-2 pt-1 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setShowWhatsAppModal(true)}
+                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded-md shadow-xs transition flex items-center gap-1 cursor-pointer"
+                      title={isFr ? "Partager sur WhatsApp" : "Share on WhatsApp"}
+                    >
+                      <MessageCircle className="h-3 w-3" />
+                      <span>WhatsApp</span>
+                    </button>
+
                     {typeof navigator !== 'undefined' && 'share' in navigator && (
                       <button
                         type="button"
@@ -1429,6 +1462,19 @@ export default function StudentCard({
                   <span>{isFr ? "Photo" : "Photo"}</span>
                 </button>
 
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowWhatsAppModal(true);
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] px-3 py-1.5 rounded-xl shadow-xs border border-emerald-500 cursor-pointer flex items-center justify-center gap-1.5 transition-all flex-1 active:scale-97"
+                  title={isFr ? "Partager les notes ou l'assiduité via WhatsApp au parent" : "Share grades or attendance via WhatsApp to parent"}
+                >
+                  <MessageCircle className="h-3.5 w-3.5 shrink-0" />
+                  <span>{isFr ? "Partager via WhatsApp" : "Share via WhatsApp"}</span>
+                </button>
+
                 {onPrint && (
                   <button
                     type="button"
@@ -1804,6 +1850,22 @@ export default function StudentCard({
           onUpdateStudent={onUpdateStudent}
           portalUserRole={portalUserRole}
           teacherName={teacherName}
+        />
+      )}
+
+      {/* WhatsApp Share Modal */}
+      {showWhatsAppModal && (
+        <StudentWhatsAppShareModal
+          student={student}
+          isOpen={showWhatsAppModal}
+          onClose={() => setShowWhatsAppModal(false)}
+          parentPhone={linkedParentPhone}
+          parentName={linkedParentName}
+          grades={grades}
+          attendanceLogs={attendanceLogs}
+          teacherName={teacherName}
+          schoolName={settings?.associationName || settings?.shortName || 'Complexe Scolaire Ekali Pasma'}
+          targetGoal={targetGoal}
         />
       )}
     </>

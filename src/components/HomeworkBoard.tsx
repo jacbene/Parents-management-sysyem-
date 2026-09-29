@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Homework, Student, HomeworkStatus, ApeeSettings, HomeworkFrequency } from '../types';
-import { BookOpen, CheckCircle, Circle, Clock, CheckCircle2, AlertCircle, Plus, Trash2, Lock, Unlock, CheckSquare, X, RotateCw, AlertTriangle, Calendar, Sparkles, Repeat, CalendarDays, Layers, List } from 'lucide-react';
+import { BookOpen, CheckCircle, Circle, Clock, CheckCircle2, AlertCircle, Plus, Trash2, Lock, Unlock, CheckSquare, X, RotateCw, AlertTriangle, Calendar, Sparkles, Repeat, CalendarDays, Layers, List, Loader2, Download, FileText, Printer, FileCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useLanguage } from '../utils/TranslationContext';
 import HomeworkCalendarView from './HomeworkCalendarView';
+import HomeworkPdfPreviewModal from './HomeworkPdfPreviewModal';
+import { jsPDF } from 'jspdf';
 
 interface HomeworkBoardProps {
   homeworks: Homework[];
@@ -68,6 +70,17 @@ export default function HomeworkBoard({
   const [isDeletingHw, setIsDeletingHw] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // AI Homework Assistant Modal states
+  const [showAiModal, setShowAiModal] = useState(false);
+  const [aiTopic, setAiTopic] = useState('');
+  const [aiSubject, setAiSubject] = useState('Mathématiques');
+  const [aiDifficulty, setAiDifficulty] = useState('Standard');
+  const [isGeneratingAiHw, setIsGeneratingAiHw] = useState(false);
+  const [aiGeneratedResult, setAiGeneratedResult] = useState<any>(null);
+
+  // PDF Export Summary Live Modal State
+  const [showExportModal, setShowExportModal] = useState(false);
+
   // Form Fields
   const [subject, setSubject] = useState('Mathématiques');
   const [customSubject, setCustomSubject] = useState('');
@@ -75,6 +88,75 @@ export default function HomeworkBoard({
   const [description, setDescription] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [hwGradeValue, setHwGradeValue] = useState('');
+
+  // Generate Homework with Gemini AI
+  const handleGenerateAiHomework = async () => {
+    if (!aiTopic.trim()) {
+      alert(isEn ? "Please enter a topic or chapter." : "Veuillez préciser le sujet ou chapitre (ex: Fractions, Verbes du 1er groupe, Histoire du Cameroun).");
+      return;
+    }
+
+    setIsGeneratingAiHw(true);
+    setAiGeneratedResult(null);
+
+    try {
+      const studentClass = activeStudent?.classRoom || activeStudent?.grade || 'Primaire/Secondaire';
+      const response = await fetch('/api/gemini/generate-homework-topic', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: aiTopic.trim(),
+          subject: aiSubject,
+          grade: studentClass,
+          studentName: activeStudent?.name,
+          difficulty: aiDifficulty
+        })
+      });
+
+      const resData = await response.json();
+      if (resData.success && resData.data) {
+        setAiGeneratedResult(resData.data);
+      } else {
+        throw new Error(resData.message || 'Generation error');
+      }
+    } catch (err) {
+      console.error("AI Homework generation error:", err);
+      alert(isEn ? "Failed to generate homework with AI." : "Erreur lors de la génération du devoir par l'IA.");
+    } finally {
+      setIsGeneratingAiHw(false);
+    }
+  };
+
+  const handleApplyAiGeneratedToForm = (autoSave = false) => {
+    if (!aiGeneratedResult) return;
+
+    const formattedDesc = `### ${aiGeneratedResult.title}\n\n**Objectifs :**\n${aiGeneratedResult.objectives.map((o: string) => `- ${o}`).join('\n')}\n\n${aiGeneratedResult.exercises.map((ex: any, idx: number) => `**Exercice ${idx + 1} : ${ex.title}**\n*Consigne :* ${ex.instruction}\n\nQuestions :\n${ex.questions.map((q: string, qidx: number) => `${qidx + 1}. ${q}`).join('\n')}\n\n*Corrigé :*\n${ex.solutions.map((s: string, sidx: number) => `R${sidx + 1} : ${s}`).join('\n')}`).join('\n\n')}\n\n**Conseils :**\n${aiGeneratedResult.parentTips}`;
+
+    setSubject(aiSubject);
+    setTitle(aiGeneratedResult.title);
+    setDescription(formattedDesc);
+    if (!dueDate) {
+      setDueDate(new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0]);
+    }
+    setShowAiModal(false);
+    setShowAddForm(true);
+
+    if (autoSave && activeStudent && onAddHomework) {
+      const newHw: Homework = {
+        id: 'hw_' + Date.now(),
+        studentId: activeStudent.id,
+        parentId: activeStudent.parentId,
+        subject: aiSubject,
+        title: `IA: ${aiGeneratedResult.title}`,
+        description: formattedDesc,
+        dueDate: dueDate || new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0],
+        status: 'Pending',
+        isRecurring: false
+      };
+      onAddHomework(newHw);
+      setShowAddForm(false);
+    }
+  };
 
   // Quick Add for specific calendar date
   const handleQuickAddForDate = (dateStr: string) => {
@@ -303,7 +385,34 @@ export default function HomeworkBoard({
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* PDF Summary Export Button */}
+          <button
+            onClick={() => setShowExportModal(true)}
+            className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-800 dark:bg-slate-800 dark:hover:bg-slate-750 dark:text-slate-200 border border-slate-250 dark:border-slate-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+            type="button"
+            title={isEn ? "Export current homework list to PDF summary" : "Exporter la liste des devoirs au format PDF"}
+          >
+            <Download className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+            <span>{isEn ? "Export PDF Summary" : "Exporter Synthèse PDF"}</span>
+          </button>
+
+          {/* AI Homework Generator Button */}
+          <button
+            onClick={() => {
+              if (activeStudent) {
+                setShowAiModal(true);
+              } else {
+                handleOpenForm();
+              }
+            }}
+            className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-750 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/50 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+            type="button"
+          >
+            <Sparkles className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+            <span>{isEn ? "Generate with AI" : "Générer Devoir IA"}</span>
+          </button>
+
           {/* Action Trigger */}
           <button
             onClick={handleOpenForm}
@@ -700,6 +809,17 @@ export default function HomeworkBoard({
               <span>{isEn ? "Recurring" : "Récurrents"} ({recurringHomeworksCount})</span>
             </button>
           )}
+
+          {/* Quick PDF export trigger in tab bar */}
+          <button
+            type="button"
+            onClick={() => setShowExportModal(true)}
+            className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-white dark:hover:bg-slate-900 transition flex items-center gap-1.5 shrink-0 cursor-pointer border-l border-gray-200 dark:border-slate-700 ml-1 pl-2"
+            title={isEn ? "Export PDF Summary" : "Exporter Synthèse PDF"}
+          >
+            <Download className="h-3.5 w-3.5 text-indigo-600" />
+            <span className="hidden sm:inline">{isEn ? "PDF Summary" : "Synthèse PDF"}</span>
+          </button>
         </div>
       </div>
 
@@ -713,6 +833,7 @@ export default function HomeworkBoard({
           updatingId={updatingId}
           isPedAuthorized={isPedAuthorized}
           language={language}
+          onExportPDF={() => setShowExportModal(true)}
         />
       ) : filteredHomeworks.length === 0 ? (
         <div className="text-center p-12 bg-gray-50/50 rounded-2xl border border-gray-100 select-none">
@@ -963,6 +1084,208 @@ export default function HomeworkBoard({
           </div>
         )}
       </AnimatePresence>
+
+      {/* AI Homework Generator Modal */}
+      <AnimatePresence>
+        {showAiModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white dark:bg-slate-900 rounded-3xl max-w-2xl w-full p-6 space-y-5 shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[90vh] overflow-y-auto"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2.5 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 rounded-2xl">
+                    <Sparkles className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 dark:text-white">
+                      {isEn ? "AI Homework Generator" : "Assistant Générateur de Devoir IA"}
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {activeStudent 
+                        ? `${isEn ? "Custom homework for" : "Conçu sur-mesure pour"} ${activeStudent.name} (${activeStudent.grade || activeStudent.classRoom || "Classe"})`
+                        : (isEn ? "Generate homework with exercises and answer key" : "Concevez instantanément un devoir avec exercices et corrigés types")}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAiModal(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Generator Form */}
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase">
+                      {isEn ? "Subject" : "Matière"}
+                    </label>
+                    <select
+                      value={aiSubject}
+                      onChange={(e) => setAiSubject(e.target.value)}
+                      className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-800 dark:text-slate-200 focus:outline-indigo-500"
+                    >
+                      {configuredSubjectsList.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase">
+                      {isEn ? "Difficulty" : "Niveau de difficulté"}
+                    </label>
+                    <select
+                      value={aiDifficulty}
+                      onChange={(e) => setAiDifficulty(e.target.value)}
+                      className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-800 dark:text-slate-200 focus:outline-indigo-500"
+                    >
+                      <option value="Facile">{isEn ? "Easy / Reinforcement" : "Facile (Remédiation / Base)"}</option>
+                      <option value="Standard">{isEn ? "Standard (Curriculum)" : "Standard (Niveau de classe)"}</option>
+                      <option value="Avancé">{isEn ? "Challenging / Advanced" : "Avancé (Perfectionnement)"}</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase">
+                      {isEn ? "Classroom / Target" : "Classe ciblée"}
+                    </label>
+                    <div className="px-3 py-2 text-xs bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-indigo-700 dark:text-indigo-400 truncate">
+                      {activeStudent?.grade || activeStudent?.classRoom || "Classe générale"}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase">
+                    {isEn ? "Topic, Chapter, or Specific keywords" : "Chapitre, Thématique ou Notions clés"} <span className="text-red-500">*</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={aiTopic}
+                      onChange={(e) => setAiTopic(e.target.value)}
+                      placeholder={isEn ? "E.g.: Addition of fractions, Pythagorean theorem, Past tense verbs..." : "Ex: Addition et soustraction des fractions, Théorème de Thalès, Imparfait de l'indicatif..."}
+                      className="flex-1 px-3.5 py-2.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-medium text-slate-800 dark:text-slate-200 focus:outline-indigo-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleGenerateAiHomework}
+                      disabled={isGeneratingAiHw || !aiTopic.trim()}
+                      className="px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 active:scale-95 text-white text-xs font-black rounded-xl transition cursor-pointer flex items-center gap-1.5 shrink-0 disabled:opacity-50 shadow-md shadow-indigo-600/20"
+                    >
+                      {isGeneratingAiHw ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span>{isEn ? "Generating..." : "Génération..."}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="h-4 w-4" />
+                          <span>{isEn ? "Generate" : "Générer"}</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Generated Result Preview */}
+              {aiGeneratedResult && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-4 bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-150 dark:border-indigo-900/40 rounded-2xl space-y-3"
+                >
+                  <div className="flex items-center justify-between border-b border-indigo-100 dark:border-indigo-900/40 pb-2">
+                    <span className="text-xs font-black text-indigo-950 dark:text-indigo-200">
+                      📝 {aiGeneratedResult.title}
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-full">
+                      {aiSubject}
+                    </span>
+                  </div>
+
+                  {aiGeneratedResult.objectives && aiGeneratedResult.objectives.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold text-slate-500 uppercase">{isEn ? "Objectives:" : "Objectifs visés :"}</p>
+                      <ul className="text-xs text-slate-700 dark:text-slate-300 list-disc list-inside space-y-0.5">
+                        {aiGeneratedResult.objectives.map((obj: string, i: number) => (
+                          <li key={i}>{obj}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {aiGeneratedResult.exercises && (
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                      {aiGeneratedResult.exercises.map((ex: any, i: number) => (
+                        <div key={i} className="p-2.5 bg-white dark:bg-slate-800/80 rounded-xl border border-indigo-100 dark:border-slate-700 text-xs space-y-1">
+                          <p className="font-black text-slate-900 dark:text-white">
+                            Exercice {i + 1} : {ex.title}
+                          </p>
+                          <p className="text-slate-600 dark:text-slate-300 text-[11px] italic">{ex.instruction}</p>
+                          <div className="pl-2 space-y-0.5 text-slate-800 dark:text-slate-200 text-[11px]">
+                            {ex.questions.map((q: string, qi: number) => (
+                              <div key={qi}>• {q}</div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {aiGeneratedResult.parentTips && (
+                    <p className="text-[11px] text-indigo-900 dark:text-indigo-300 bg-indigo-100/50 dark:bg-indigo-950/40 p-2.5 rounded-xl">
+                      💡 <strong>{isEn ? "Tips: " : "Conseils d'accompagnement : "}</strong> {aiGeneratedResult.parentTips}
+                    </p>
+                  )}
+
+                  {/* Actions to Insert / Apply */}
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-indigo-100 dark:border-indigo-900/40">
+                    <button
+                      type="button"
+                      onClick={() => handleApplyAiGeneratedToForm(false)}
+                      className="px-3.5 py-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-250 dark:border-slate-600 rounded-xl text-xs font-bold transition cursor-pointer"
+                    >
+                      {isEn ? "Edit in Form" : "Personnaliser dans le formulaire"}
+                    </button>
+                    {activeStudent && (
+                      <button
+                        type="button"
+                        onClick={() => handleApplyAiGeneratedToForm(true)}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5 shadow-md shadow-indigo-600/20"
+                      >
+                        <CheckSquare className="h-4 w-4" />
+                        <span>{isEn ? "Save to Notebook" : "Inscrire directement au Cahier"}</span>
+                      </button>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Live PDF Preview & Export Modal for Parents */}
+      <HomeworkPdfPreviewModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        homeworks={homeworks}
+        filteredHomeworks={filteredHomeworks}
+        activeStudent={activeStudent || undefined}
+        settings={settings}
+        language={language}
+      />
     </div>
   );
 }

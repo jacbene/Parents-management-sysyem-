@@ -343,7 +343,7 @@ Retourne strictement un tableau JSON selon la structure fournie.`;
   try {
     const aiInstance = getAi();
     const response = await aiInstance.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-3.7-flash",
       contents: prompt,
       config: {
         systemInstruction: "Tu es un bibliothécaire d'élite et conseiller d'orientation pédagogique spécialisé dans l'accompagnement scolaire en Afrique francophone (notamment au Cameroun). Tes recommandations doivent être bienveillantes, historiquement riches et instructives.",
@@ -424,7 +424,7 @@ Format de retour JSON attendu : un objet avec un titre 'title' et un tableau d'�
   try {
     const aiInstance = getAi();
     const response = await aiInstance.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-3.7-flash",
       contents: prompt,
       config: {
         systemInstruction: "Tu es un bibliothécaire d'apprentissage dynamique et constructif.",
@@ -587,7 +587,7 @@ Ne mets aucune explication ni texte d'accompagnement en dehors du format JSON de
   try {
     const aiInstance = getAi();
     const response = await aiInstance.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-3.7-flash",
       contents: prompt,
       config: {
         systemInstruction: "Tu es un directeur financier d'école et chef de la régie comptable scolaire en Afrique francophone (Cameroun). Tu maîtrises la rédaction administrative rigoureuse et humaine.",
@@ -1123,7 +1123,7 @@ Tu dois impérativement retourner le résultat au format JSON structuré corresp
   try {
     const aiInstance = getAi();
     const response = await aiInstance.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-3.7-flash",
       contents: prompt,
       config: {
         systemInstruction: "Tu es un tuteur et conseiller d'apprentissage d'élite spécialisé dans le suivi des élèves en école primaire et secondaire. Tu conçois des devoirs ludiques, instructifs et stimulants qui renforcent l'autonomie.",
@@ -1213,6 +1213,106 @@ Tu dois impérativement retourner le résultat au format JSON structuré corresp
       source: "local-heuristic",
       data: fallbackHomework,
       message: "Base de repli locale activée (Gemini indisponible ou hors-ligne)."
+    });
+  }
+});
+
+// API: Direct AI Homework generator by topic/subject/grade
+app.post("/api/gemini/generate-homework-topic", async (req, res) => {
+  const { topic, subject, grade, studentName, difficulty } = req.body;
+
+  const prompt = `Génère un devoir scolaire complet et bien structuré de niveau "${grade || "primaire/secondaire"}" pour la matière "${subject || "Générale"}" sur le thème ou chapitre : "${topic || "Révision générale"}".
+Niveau de difficulté : ${difficulty || "Standard"}.
+${studentName ? `Destiné à l'élève : ${studentName}` : ""}
+
+Exigences :
+1. Un titre accrocheur et clair pour le devoir.
+2. 2 ou 3 objectifs pédagogiques clés.
+3. 2 à 3 exercices avec consignes claires, questions précises et solutions détaillées pour chaque exercice.
+4. Des conseils pratiques et bienveillants pour accompagner l'élève.
+
+Retourne impérativement un objet JSON valide correspondant au schéma.`;
+
+  try {
+    const aiInstance = getAi();
+    const response = await aiInstance.models.generateContent({
+      model: "gemini-3.7-flash",
+      contents: prompt,
+      config: {
+        systemInstruction: "Tu es un enseignant chevronné et concepteur d'exercices pédagogiques.",
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            title: { type: Type.STRING },
+            objectives: { type: Type.ARRAY, items: { type: Type.STRING } },
+            exercises: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  title: { type: Type.STRING },
+                  instruction: { type: Type.STRING },
+                  questions: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  solutions: { type: Type.ARRAY, items: { type: Type.STRING } }
+                },
+                required: ["title", "instruction", "questions", "solutions"]
+              }
+            },
+            parentTips: { type: Type.STRING }
+          },
+          required: ["title", "objectives", "exercises", "parentTips"]
+        }
+      }
+    });
+
+    const parsedData = JSON.parse(response.text?.trim() || "{}");
+    return res.json({ success: true, source: "gemini", data: parsedData });
+  } catch (error) {
+    console.error("Direct homework generation error:", error);
+    const fallbackHomework = {
+      title: `Devoir d'entraînement : ${topic || subject || "Exercices pratiques"}`,
+      objectives: [
+        `Maîtriser les notions fondamentales de : ${topic || subject}`,
+        "Développer les compétences d'application autonome",
+        "Valider les acquis par des exercices progressifs"
+      ],
+      exercises: [
+        {
+          title: "Exercice 1 : Notions de base et définitions",
+          instruction: "Répondez aux questions suivantes avec clarté et précision :",
+          questions: [
+            `Définissez ce qu'est le concept de "${topic || subject}".`,
+            "Donnez deux exemples concrets d'application vus en cours.",
+            "Expliquez la démarche méthodologique à suivre pour résoudre un problème lié à ce sujet."
+          ],
+          solutions: [
+            "Définition conforme au programme académique et aux règles fondamentales.",
+            "Exemples illustratifs pertinents et bien argumentés.",
+            "Respect des étapes méthodologiques clés."
+          ]
+        },
+        {
+          title: "Exercice 2 : Application pratique",
+          instruction: "Résolvez l'exercice d'application ci-dessous :",
+          questions: [
+            "Appliquez la formule ou la règle principale à un cas concret.",
+            "Vérifiez vos calculs ou votre raisonnement étape par étape."
+          ],
+          solutions: [
+            "Démonstration claire avec étapes de calcul intermédiaires.",
+            "Conclusion précise formulée avec une phrase de réponse complète."
+          ]
+        }
+      ],
+      parentTips: "Encouragez l'élève à travailler dans un espace calme, à relire ses réponses avant de valider et à surligner les mots-clés."
+    };
+
+    return res.json({
+      success: true,
+      source: "local-heuristic",
+      data: fallbackHomework,
+      message: "Génération locale de secours réussie."
     });
   }
 });

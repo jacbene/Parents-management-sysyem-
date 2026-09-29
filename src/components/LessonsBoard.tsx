@@ -195,16 +195,19 @@ export default function LessonsBoard({
 
   // Add generated homework to the student's text-book (homework collection)
   const handleAddHomeworkToBoard = async () => {
-    if (!generatedHomework || !activeStudent || !currentHomeworkLesson || !onAddHomework) return;
+    if (!generatedHomework || !currentHomeworkLesson || !onAddHomework) return;
 
     setAddingToBoardId(true);
     try {
       const formattedDescription = `### ${generatedHomework.title}\n\n**Objectifs :**\n${generatedHomework.objectives.map(o => `- ${o}`).join('\n')}\n\n${generatedHomework.exercises.map((ex, idx) => `**Exercice ${idx + 1} : ${ex.title}**\n*Consigne :* ${ex.instruction}\n\nQuestions :\n${ex.questions.map((q, qidx) => `${qidx + 1}. ${q}`).join('\n')}`).join('\n\n')}\n\n**Conseils pour les parents :**\n${generatedHomework.parentTips}`;
 
+      const targetStudentId = activeStudent?.id || `class_${activeClassRoom || 'all'}`;
+      const targetParentId = activeStudent?.parentId || (localStorage.getItem('portal_selected_school_id') || 'school');
+
       const newHw: Homework = {
         id: 'hw_' + Date.now(),
-        studentId: activeStudent.id,
-        parentId: activeStudent.parentId,
+        studentId: targetStudentId,
+        parentId: targetParentId,
         subject: currentHomeworkLesson.subject,
         title: `IA: ${generatedHomework.title}`,
         description: formattedDescription,
@@ -579,56 +582,57 @@ export default function LessonsBoard({
                               {lesson.content}
                             </div>
 
-                            {/* Parent Actions */}
-                            {isParent && (
-                              <div className="bg-indigo-50/50 border border-indigo-100 p-4 rounded-xl space-y-3">
-                                <div className="flex items-start gap-2.5">
-                                  <Sparkles className="h-4 w-4 text-indigo-600 mt-0.5" />
-                                  <div className="space-y-0.5">
-                                    <h5 className="text-xs font-bold text-indigo-950">
-                                      {language === 'fr' ? "🪄 Générateur de Devoir par l'IA" : "🪄 AI Homework Generator"}
-                                    </h5>
-                                    <p className="text-[10px] text-indigo-800 leading-relaxed">
-                                      Générez instantanément des exercices d'application personnalisés basés sur cette leçon pour stimuler votre enfant et mesurer sa compréhension de manière ludique !
-                                    </p>
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center gap-3 pt-1">
-                                  <div className="flex items-center gap-1.5 bg-white border border-gray-250 p-1.5 rounded-lg text-[10px] font-bold">
-                                    <label className="text-gray-500">Type :</label>
-                                    <select
-                                      value={selectedHomeworkType}
-                                      onChange={(e) => setSelectedHomeworkType(e.target.value as any)}
-                                      className="focus:outline-none bg-transparent cursor-pointer font-bold text-indigo-750"
-                                    >
-                                      <option value="app">Application Directe</option>
-                                      <option value="quiz">Quiz de Révision</option>
-                                      <option value="deep">Approfondissement</option>
-                                    </select>
-                                  </div>
-
-                                  <button
-                                    onClick={() => handleGenerateHomework(lesson)}
-                                    disabled={!!generatingHomeworkId}
-                                    className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-black transition flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
-                                    type="button"
-                                  >
-                                    {generatingHomeworkId === lesson.id ? (
-                                      <>
-                                        <Loader2 className="h-3 w-3 animate-spin" />
-                                        <span>Génération en cours...</span>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Sparkles className="h-3 w-3" />
-                                        <span>Générer Devoir</span>
-                                      </>
-                                    )}
-                                  </button>
+                            {/* AI Homework Generator Actions */}
+                            <div className="bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/40 p-4 rounded-xl space-y-3">
+                              <div className="flex items-start gap-2.5">
+                                <Sparkles className="h-4 w-4 text-indigo-600 mt-0.5 shrink-0" />
+                                <div className="space-y-0.5">
+                                  <h5 className="text-xs font-bold text-indigo-950 dark:text-indigo-200">
+                                    {language === 'fr' ? "🪄 Générateur de Devoir par l'IA" : "🪄 AI Homework Generator"}
+                                  </h5>
+                                  <p className="text-[10px] text-indigo-800 dark:text-indigo-300 leading-relaxed">
+                                    {isTeacher 
+                                      ? (language === 'fr' ? "Concevez instantanément des devoirs et exercices progressifs avec corrigés types basés sur cette leçon pour votre classe !" : "Instantly generate homework exercises with step-by-step solutions based on this lesson for your class!")
+                                      : (language === 'fr' ? "Générez des exercices personnalisés basés sur cette leçon pour stimuler votre enfant et mesurer sa compréhension de manière ludique !" : "Generate customized exercises based on this lesson to test and practice at home!")
+                                    }
+                                  </p>
                                 </div>
                               </div>
-                            )}
+
+                              <div className="flex items-center gap-3 pt-1 flex-wrap">
+                                <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 border border-gray-250 dark:border-slate-700 px-2 py-1.5 rounded-lg text-[10px] font-bold">
+                                  <label className="text-gray-500 dark:text-gray-400">Type :</label>
+                                  <select
+                                    value={selectedHomeworkType}
+                                    onChange={(e) => setSelectedHomeworkType(e.target.value as any)}
+                                    className="focus:outline-none bg-transparent cursor-pointer font-bold text-indigo-750 dark:text-indigo-300"
+                                  >
+                                    <option value="app">{language === 'fr' ? 'Application Directe' : 'Direct Practice'}</option>
+                                    <option value="quiz">{language === 'fr' ? 'Quiz de Révision' : 'Review Quiz'}</option>
+                                    <option value="deep">{language === 'fr' ? 'Approfondissement' : 'Advanced Exercises'}</option>
+                                  </select>
+                                </div>
+
+                                <button
+                                  onClick={() => handleGenerateHomework(lesson)}
+                                  disabled={!!generatingHomeworkId}
+                                  className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-lg text-[10px] font-black transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-xs"
+                                  type="button"
+                                >
+                                  {generatingHomeworkId === lesson.id ? (
+                                    <>
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      <span>{language === 'fr' ? 'Génération en cours...' : 'Generating...'}</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Sparkles className="h-3.5 w-3.5" />
+                                      <span>{language === 'fr' ? 'Générer Devoir' : 'Generate Homework'}</span>
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+                            </div>
                           </div>
                         </motion.div>
                       )}

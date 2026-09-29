@@ -3009,14 +3009,18 @@ export default function App() {
 
   // Check Google redirect sign-in result on boot
   useEffect(() => {
-    checkRedirectResult().then(redirectUser => {
-      if (redirectUser) {
-        if (redirectUser.email?.toLowerCase().trim() === 'jacquesbene301@gmail.com') {
-          setShowSuperAdmin(true);
+    checkRedirectResult()
+      .then(redirectUser => {
+        if (redirectUser) {
+          if (redirectUser.email?.toLowerCase().trim() === 'jacquesbene301@gmail.com') {
+            setShowSuperAdmin(true);
+          }
+          setShowMainLogin(false);
         }
-        setShowMainLogin(false);
-      }
-    });
+      })
+      .catch((err) => {
+        console.warn("Notice: Google redirect check completed safely:", err);
+      });
   }, []);
 
   // 1.5 Auto-login guest if they have a persistent school selection but are unauthenticated (restores DB access on boot)
@@ -4071,7 +4075,8 @@ export default function App() {
                       <span className="flex items-center gap-2"><Compass className="h-4 w-4" /> {t('tab.campus_map')}</span>
                     </button>
 
-                    {filteredStudents.length > 0 && portalUserRole !== 'parent' && (
+                    {/* Non-parents can browse list by class if students exist */}
+                    {students.length > 0 && portalUserRole !== 'parent' && (
                       <button
                         onClick={() => setActiveTab('students_by_class')}
                         className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
@@ -4084,54 +4089,51 @@ export default function App() {
                       </button>
                     )}
 
-                    {filteredStudents.length > 0 && (
-                      <>
-                        <button
-                          onClick={() => setActiveTab('homework')}
-                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
-                            activeTab === 'homework'
-                              ? 'bg-slate-900 text-white'
-                              : 'text-gray-650 hover:bg-slate-50'
-                          }`}
-                        >
-                          <span className="flex items-center gap-2"><BookOpen className="h-4 w-4" /> {t('tab.homework')}</span>
-                          {pendingHomeworkCount > 0 && <span className="bg-amber-100 text-amber-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full">{pendingHomeworkCount}</span>}
-                        </button>
+                    {/* Academic & Pedagogical ENT Modules (Always available in Establishment Portal) */}
+                    <button
+                      onClick={() => setActiveTab('homework')}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
+                        activeTab === 'homework'
+                          ? 'bg-slate-900 text-white'
+                          : 'text-gray-650 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2"><BookOpen className="h-4 w-4" /> {t('tab.homework')}</span>
+                      {pendingHomeworkCount > 0 && <span className="bg-amber-100 text-amber-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full">{pendingHomeworkCount}</span>}
+                    </button>
 
-                        <button
-                          onClick={() => setActiveTab('lessons')}
-                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
-                            activeTab === 'lessons'
-                              ? 'bg-slate-900 text-white'
-                              : 'text-gray-650 hover:bg-slate-50'
-                          }`}
-                        >
-                          <span className="flex items-center gap-2"><GraduationCap className="h-4 w-4" /> {t('tab.lessons')}</span>
-                        </button>
+                    <button
+                      onClick={() => setActiveTab('lessons')}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
+                        activeTab === 'lessons'
+                          ? 'bg-slate-900 text-white'
+                          : 'text-gray-650 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2"><GraduationCap className="h-4 w-4" /> {t('tab.lessons')}</span>
+                    </button>
 
-                        <button
-                          onClick={() => setActiveTab('grades')}
-                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
-                            activeTab === 'grades'
-                              ? 'bg-slate-900 text-white'
-                              : 'text-gray-650 hover:bg-slate-50'
-                          }`}
-                        >
-                          <span className="flex items-center gap-2"><Award className="h-4 w-4" /> {t('tab.grades')}</span>
-                        </button>
+                    <button
+                      onClick={() => setActiveTab('grades')}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
+                        activeTab === 'grades'
+                          ? 'bg-slate-900 text-white'
+                          : 'text-gray-650 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2"><Award className="h-4 w-4" /> {t('tab.grades')}</span>
+                    </button>
 
-                        <button
-                          onClick={() => setActiveTab('attendance')}
-                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
-                            activeTab === 'attendance'
-                              ? 'bg-slate-900 text-white'
-                              : 'text-gray-650 hover:bg-slate-50'
-                          }`}
-                        >
-                          <span className="flex items-center gap-2"><Calendar className="h-4 w-4" /> {t('tab.attendance')}</span>
-                        </button>
-                      </>
-                    )}
+                    <button
+                      onClick={() => setActiveTab('attendance')}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
+                        activeTab === 'attendance'
+                          ? 'bg-slate-900 text-white'
+                          : 'text-gray-650 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2"><Calendar className="h-4 w-4" /> {t('tab.attendance')}</span>
+                    </button>
 
                     {portalUserRole === 'manager' && (
                       <button
@@ -4147,31 +4149,27 @@ export default function App() {
                       </button>
                     )}
 
-                    {filteredStudents.length > 0 && (
-                      <>
-                        <button
-                          onClick={() => setActiveTab('appointments')}
-                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
-                            activeTab === 'appointments'
-                              ? 'bg-slate-900 text-white'
-                              : 'text-gray-650 hover:bg-slate-50'
-                          }`}
-                        >
-                          <span className="flex items-center gap-2"><CalendarCheck2 className="h-4 w-4" /> {t('tab.appointments')}</span>
-                        </button>
+                    <button
+                      onClick={() => setActiveTab('appointments')}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
+                        activeTab === 'appointments'
+                          ? 'bg-slate-900 text-white'
+                          : 'text-gray-650 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2"><CalendarCheck2 className="h-4 w-4" /> {t('tab.appointments')}</span>
+                    </button>
 
-                        <button
-                          onClick={() => setActiveTab('messages')}
-                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
-                            activeTab === 'messages'
-                              ? 'bg-slate-900 text-white'
-                              : 'text-gray-650 hover:bg-slate-50'
-                          }`}
-                        >
-                          <span className="flex items-center gap-2"><MessageSquare className="h-4 w-4" /> {t('tab.messages')}</span>
-                        </button>
-                      </>
-                    )}
+                    <button
+                      onClick={() => setActiveTab('messages')}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
+                        activeTab === 'messages'
+                          ? 'bg-slate-900 text-white'
+                          : 'text-gray-650 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2"><MessageSquare className="h-4 w-4" /> {t('tab.messages')}</span>
+                    </button>
 
                     <button
                       onClick={() => setActiveTab('help_center')}

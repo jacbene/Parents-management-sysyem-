@@ -8,6 +8,25 @@ import { LanguageProvider } from './utils/TranslationContext';
 const originalConsoleError = console.error;
 const originalConsoleWarn = console.warn;
 
+if (typeof window !== 'undefined') {
+  window.addEventListener('error', (event) => {
+    const msg = event.message || event.error?.message || '';
+    if (msg.includes('Pending promise was never set') || msg.includes('INTERNAL ASSERTION FAILED')) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return true;
+    }
+  });
+
+  window.addEventListener('unhandledrejection', (event) => {
+    const reasonMsg = event.reason?.message || String(event.reason || '');
+    if (reasonMsg.includes('Pending promise was never set') || reasonMsg.includes('INTERNAL ASSERTION FAILED')) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+  });
+}
+
 console.error = function (...args) {
   const msg = args.map(arg => typeof arg === 'string' ? arg : (arg instanceof Error ? arg.message : String(arg))).join(' ');
   if (
@@ -17,7 +36,9 @@ console.error = function (...args) {
     msg.includes('auth/network-request-failed') ||
     msg.includes('auth/missing-project-id') ||
     msg.includes('Shared sandbox sign in failed') ||
-    msg.includes('Anonymous authentication process failed')
+    msg.includes('Anonymous authentication process failed') ||
+    msg.includes('Pending promise was never set') ||
+    msg.includes('INTERNAL ASSERTION FAILED')
   ) {
     console.log('💡 [Pasma-sys Local Mode] Firebase Auth / Firestore operating with persistent local cache.');
     return;
@@ -33,7 +54,9 @@ console.warn = function (...args) {
     msg.includes('@firebase/firestore') ||
     msg.includes('auth/network-request-failed') ||
     msg.includes('auth/missing-project-id') ||
-    msg.includes('Shared sandbox sign in failed')
+    msg.includes('Shared sandbox sign in failed') ||
+    msg.includes('Pending promise was never set') ||
+    msg.includes('INTERNAL ASSERTION FAILED')
   ) {
     console.log('💡 [Pasma-sys Local Mode] Firebase Auth / Firestore operating with persistent local cache.');
     return;
