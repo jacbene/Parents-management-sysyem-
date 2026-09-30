@@ -45,7 +45,7 @@ export default function PaymentWebhookHandler() {
     receivedResponse?: any;
   } | null>(null);
 
-  const webhookUrl = `${import.meta.env.VITE_API_URL || window.location.origin}/api/campay-webhook``;
+  const webhookUrl = `${import.meta.env.VITE_API_URL || window.location.origin}/api/campay-webhook`;
   const defaultWebhookKey = import.meta.env.VITE_CAMPAY_WEBHOOK_KEY || "";
 
   // Fetch logs on mount & refresh
