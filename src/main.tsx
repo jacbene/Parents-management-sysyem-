@@ -4,6 +4,25 @@ import App from './App.tsx';
 import './index.css';
 import { LanguageProvider } from './utils/TranslationContext';
 
+// Redirection automatique des appels /api/* vers le backend en production
+const API_BASE = import.meta.env.VITE_API_URL || '';
+
+if (API_BASE) {
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
+    // Cas 1 : URL string commençant par /api/
+    if (typeof input === 'string' && input.startsWith('/api/')) {
+      return originalFetch(API_BASE + input, init);
+    }
+    // Cas 2 : Request object dont l'URL commence par /api/
+    if (input instanceof Request && input.url.startsWith('/api/')) {
+      return originalFetch(API_BASE + input.url, init);
+    }
+    return originalFetch(input, init);
+  };
+  console.log(`📡 API_BASE configuré : ${API_BASE}`);
+}
+
 // De-escalate and suppress expected Firestore network warnings in local sandbox environment
 const originalConsoleError = console.error;
 const originalConsoleWarn = console.warn;

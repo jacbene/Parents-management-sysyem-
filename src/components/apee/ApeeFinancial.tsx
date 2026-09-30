@@ -1198,10 +1198,10 @@ export default function ApeeFinancial({
                         <div className="flex flex-col gap-0.5">
                           <span className="text-[8px] font-black uppercase text-slate-400">Pasma-sys Callback / Webhook URL</span>
                           <div className="flex items-center justify-between gap-1.5 bg-slate-50 border border-slate-100 p-1 px-1.5 rounded-md">
-                            <span className="font-mono text-[8.5px] font-black text-indigo-750 truncate select-all">{`${window.location.origin}/api/campay-webhook`}</span>
+                   	   <span className="font-mono text-[8.5px] font-black text-indigo-750 truncate select-all">{`${import.meta.env.VITE_API_URL || window.location.origin}/api/campay-webhook`}</span>
                             <button
                               onClick={() => {
-                                navigator.clipboard.writeText(`${window.location.origin}/api/campay-webhook`);
+                               navigator.clipboard.writeText(`${import.meta.env.VITE_API_URL || window.location.origin}/api/campay-webhook`);
                                 alert("Callback URL copiée dans le presse-papiers !");
                               }}
                               className="text-[8.5px] text-indigo-600 hover:text-indigo-800 font-bold shrink-0 uppercase cursor-pointer"
@@ -1220,7 +1220,7 @@ export default function ApeeFinancial({
                         </div>
                         <div className="flex justify-between items-center text-[8.5px] text-slate-500">
                           <span>Webhook Key:</span>
-                          <span className="font-mono font-bold text-slate-700">LpEvD_J1...wtObpw</span>
+                         <span className="font-mono font-bold text-slate-700">{(import.meta.env.VITE_CAMPAY_WEBHOOK_KEY || "").slice(0, 8)}...{(import.meta.env.VITE_CAMPAY_WEBHOOK_KEY || "").slice(-6)}</span> 
                         </div>
                       </div>
                     </div>
