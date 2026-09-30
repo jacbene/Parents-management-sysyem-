@@ -1518,7 +1518,7 @@ app.post("/api/campay-webhook", async (req, res) => {
     const reason = payload.reason || "";
 
     // 1. Retrieve the App webhook key from .env (fallback to user provided demo key)
-    const webhookKey = process.env.CAMPAY_WEBHOOK_KEY || "LpEvD_J1lf67b6QOJajBKmZHbeXL42GP0g2ItxEZBONyOnM8DCz6h3ktROPSM75sio2znlrRBEeoPu4JwtObpw";
+    const webhookKey = process.env.CAMPAY_WEBHOOK_KEY || "";
 
     // 2. Compute the expected HMAC-SHA256 signature
     // We compute signature on the string representation of the body
@@ -1660,7 +1660,7 @@ app.post("/api/campay/collect-portal-fee", async (req, res) => {
     formattedPhone = "237" + formattedPhone;
   }
 
-  const token = process.env.CAMPAY_TOKEN || "ee362ee2adb13fac3e434e0579241626670c9a2e";
+  const token = process.env.CAMPAY_TOKEN || "";
   const externalRef = `PRTL_${schoolId}_${Date.now().toString().slice(-6)}`;
   
   console.log(`🚀 [Campay Collect Portal Fee] Initiating collection for ${schoolName || schoolId}:`, {
