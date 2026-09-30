@@ -6,3 +6,13 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Environnement local proot / Termux
+dist-server/
+.agents/
+.claude/
+.firebase/
+.npmrc
+.swcrc
+agent/
+skills-lock.json
