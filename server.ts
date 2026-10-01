@@ -1,4 +1,5 @@
 import express from "express";
+import cors from "cors";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
@@ -206,9 +207,28 @@ async function sendSms(phoneNumber: string, message: string, config: any): Promi
 }
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
+
+// Enable CORS for frontend clients (Firebase hosting, Render custom domain, localhost)
+app.use(cors({
+  origin: true,
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
+}));
+app.options("*", cors());
 
 app.use(express.json());
+
+// Public healthcheck endpoint to monitor backend uptime & wake up Render instances
+app.get("/api/health", (req, res) => {
+  res.json({
+    status: "ok",
+    service: "pasma-sys-backend",
+    uptimeSeconds: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString()
+  });
+});
 
 // Lazy initialiser for GoogleGenAI to prevent crash on startup if key is missing
 let aiClient: GoogleGenAI | null = null;

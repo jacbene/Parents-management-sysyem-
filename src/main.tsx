@@ -4,23 +4,36 @@ import App from './App.tsx';
 import './index.css';
 import { LanguageProvider } from './utils/TranslationContext';
 
-// Redirection automatique des appels /api/* vers le backend en production
-const API_BASE = import.meta.env.VITE_API_URL || '';
-
-if (API_BASE) {
+// Redirection automatique des appels /api/* vers le backend en production (Render, Cloud Run, etc.)
+const rawApiBase = (import.meta.env.VITE_API_URL || '').trim();
+if (rawApiBase) {
+  const API_BASE = rawApiBase.replace(/\/+$/, '');
   const originalFetch = window.fetch.bind(window);
   window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
-    // Cas 1 : URL string commençant par /api/
-    if (typeof input === 'string' && input.startsWith('/api/')) {
-      return originalFetch(API_BASE + input, init);
-    }
-    // Cas 2 : Request object dont l'URL commence par /api/
-    if (input instanceof Request && input.url.startsWith('/api/')) {
-      return originalFetch(API_BASE + input.url, init);
+    try {
+      if (typeof input === 'string') {
+        if (input.startsWith('/api/')) {
+          return originalFetch(API_BASE + input, init);
+        }
+        if (typeof window !== 'undefined' && input.startsWith(window.location.origin + '/api/')) {
+          return originalFetch(input.replace(window.location.origin, API_BASE), init);
+        }
+      } else if (input instanceof URL) {
+        if (input.pathname.startsWith('/api/')) {
+          return originalFetch(`${API_BASE}${input.pathname}${input.search}`, init);
+        }
+      } else if (typeof Request !== 'undefined' && input instanceof Request) {
+        const reqUrl = new URL(input.url, window.location.origin);
+        if (reqUrl.pathname.startsWith('/api/')) {
+          return originalFetch(new Request(`${API_BASE}${reqUrl.pathname}${reqUrl.search}`, input), init);
+        }
+      }
+    } catch {
+      // Fallback to standard fetch in case of URL parse errors
     }
     return originalFetch(input, init);
   };
-  console.log(`📡 API_BASE configuré : ${API_BASE}`);
+  console.log(`📡 API_BASE configuré vers le backend : ${API_BASE}`);
 }
 
 // De-escalate and suppress expected Firestore network warnings in local sandbox environment
