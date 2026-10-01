@@ -519,11 +519,29 @@ export default function App() {
     return true; // Require login screen by default
   });
 
+  // Twilio SMS & Regulatory Compliance Legal Modal State
+  const [showLegalModal, setShowLegalModal] = useState<boolean>(false);
+  const [legalInitialTab, setLegalInitialTab] = useState<'policy' | 'terms' | 'rgpd' | 'cookies'>('policy');
+
   // 0. Listen for email verification URL params (?verified=true&email=...) and window focus
   useEffect(() => {
     const checkVerificationFromUrlAndFocus = async () => {
       try {
         const params = new URLSearchParams(window.location.search);
+        
+        // Listen for direct compliance verification links (e.g. for Twilio reviewers)
+        const tabParam = params.get('tab');
+        if (tabParam === 'privacy' || tabParam === 'policy') {
+          setShowLegalModal(true);
+          setLegalInitialTab('policy');
+        } else if (tabParam === 'terms' || tabParam === 'cgu') {
+          setShowLegalModal(true);
+          setLegalInitialTab('terms');
+        } else if (tabParam === 'legal' || tabParam === 'rgpd') {
+          setShowLegalModal(true);
+          setLegalInitialTab('rgpd');
+        }
+
         const verified = params.get('verified') === 'true';
         const emailParam = params.get('email');
         const mode = params.get('mode');
@@ -2920,7 +2938,17 @@ export default function App() {
       if (guestUser) {
         setUser(guestUser as any);
       }
-      setShowMainLogin(false);
+      // If no school is currently selected, automatically select the demo school to directly showcase the full dashboard
+      const savedSchool = localStorage.getItem('portal_selected_school_id');
+      if (!savedSchool || isSchoolDeleted(savedSchool)) {
+        handleSelectSchool('lycee_bilingue_ekali', 'manager', {
+          name: 'Directeur Académique',
+          phone: '+237 690 00 00 00',
+          email: 'directeur.ekali@gmail.com'
+        });
+      } else {
+        setShowMainLogin(false);
+      }
     } catch (e: any) {
       console.info("Notice during guest authentication, using local simulation fallback:", e?.message || e);
       setUser({
@@ -2930,7 +2958,16 @@ export default function App() {
         photoURL: '',
         isAnonymous: true
       } as any);
-      setShowMainLogin(false);
+      const savedSchool = localStorage.getItem('portal_selected_school_id');
+      if (!savedSchool || isSchoolDeleted(savedSchool)) {
+        handleSelectSchool('lycee_bilingue_ekali', 'manager', {
+          name: 'Directeur Académique',
+          phone: '+237 690 00 00 00',
+          email: 'directeur.ekali@gmail.com'
+        });
+      } else {
+        setShowMainLogin(false);
+      }
     }
   };
 
@@ -3068,23 +3105,54 @@ export default function App() {
             exit={{ opacity: 0, y: -15 }}
             className="flex-grow flex items-center justify-center p-4 min-h-screen bg-slate-100/40 dark:bg-slate-950/40"
           >
-            <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl border border-gray-150 dark:border-slate-805 shadow-2xl overflow-hidden flex flex-col justify-between animate-fade-in">
-              <div className="p-8 space-y-2 text-center bg-slate-950 dark:bg-slate-950 text-white flex flex-col items-center">
-                <img
-                  src="/icon-512.png"
-                  alt="Logo"
-                  className="h-14 w-14 object-contain rounded-2xl mb-1 bg-white p-1 border border-slate-700 shadow-sm animate-pulse"
-                />
-                <h1 className="text-xl font-extrabold tracking-tight">{t('app.name')}</h1>
-                <p className="text-[10px] text-indigo-200 font-bold">Système de Gestion Parents-Écoles / Parents-Schools Management System</p>
+            <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col justify-between animate-fade-in">
+              <div 
+                className="p-8 space-y-3 text-center flex flex-col items-center border-b border-slate-800/40"
+                style={{ background: 'linear-gradient(135deg, #0b0f19 0%, #1e1b4b 100%)', color: '#ffffff' }}
+              >
+                <div className="p-2.5 bg-slate-900/90 rounded-2xl border border-indigo-500/30 shadow-lg">
+                  <img
+                    src="/icon-512.png"
+                    alt="Logo Pasma-sys"
+                    className="h-14 w-14 object-contain rounded-xl"
+                  />
+                </div>
+                <h1 style={{ color: '#ffffff' }} className="text-xl font-extrabold tracking-tight text-white drop-shadow-xs">
+                  {t('app.name')}
+                </h1>
+                <p style={{ color: '#c7d2fe' }} className="text-xs font-semibold text-indigo-200 max-w-sm leading-relaxed">
+                  Système de Gestion Parents-Écoles & Portail APEE
+                </p>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-900/60 border border-indigo-400/30 rounded-full text-[11px] font-bold text-indigo-200">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  Prêt pour la production — v1.0.0
+                </div>
               </div>
 
               <div className="p-8 space-y-6">
                 <div>
-                  <h3 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider mb-3">Connexion rapide & Démo</h3>
+                  <h3 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-wider mb-3">
+                    Accès Rapide & Démonstration
+                  </h3>
                   
                   {/* Google Login Trigger & Guest Access */}
                   <div className="space-y-3">
+                    <button
+                      onClick={handleGuestLogin}
+                      className="w-full py-3.5 px-4 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white font-black text-xs rounded-xl flex items-center justify-between transition shadow-md cursor-pointer group"
+                    >
+                      <span className="flex items-center gap-2 font-bold text-left">
+                        <svg className="h-4 w-4 text-amber-300 animate-pulse shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        <span>
+                          <span className="block text-[13px] font-black leading-tight">Accéder au Mode Démo (Sans compte)</span>
+                          <span className="block text-[10px] text-indigo-200 font-normal">Ouvre directement le Tableau de Bord complet du Lycée</span>
+                        </span>
+                      </span>
+                      <span className="text-xs font-extrabold text-indigo-200 group-hover:translate-x-1 transition-transform">→</span>
+                    </button>
+
                     <button
                       onClick={handleLogin}
                       className="w-full py-3 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-750 dark:text-slate-100 font-bold text-xs rounded-xl flex items-center justify-center gap-2.5 transition active:scale-98 shadow-2xs cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-750 hover:border-indigo-400"
@@ -3096,18 +3164,6 @@ export default function App() {
                         <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
                       </svg>
                       <span>Continuer avec Google</span>
-                    </button>
-                    
-                    <button
-                      onClick={handleGuestLogin}
-                      className="w-full py-2.5 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/80 text-indigo-700 dark:text-indigo-300 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition active:scale-98 shadow-2xs cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900/60"
-                    >
-                      <span className="flex items-center gap-1.5 font-bold">
-                        <svg className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                        </svg>
-                        Accéder au Mode Démo (Sans compte)
-                      </span>
                     </button>
                   </div>
                 </div>
@@ -3237,6 +3293,33 @@ export default function App() {
                     </p>
                   )}
                 </form>
+
+                {/* Direct Legal, Privacy & Twilio SMS carrier compliance links */}
+                <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  <button
+                    type="button"
+                    onClick={() => { setLegalInitialTab('policy'); setShowLegalModal(true); }}
+                    className="hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline cursor-pointer transition"
+                  >
+                    Confidentialité & Données SMS
+                  </button>
+                  <span>•</span>
+                  <button
+                    type="button"
+                    onClick={() => { setLegalInitialTab('terms'); setShowLegalModal(true); }}
+                    className="hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline cursor-pointer transition"
+                  >
+                    Conditions (CGU)
+                  </button>
+                  <span>•</span>
+                  <button
+                    type="button"
+                    onClick={() => { setLegalInitialTab('rgpd'); setShowLegalModal(true); }}
+                    className="hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline cursor-pointer transition"
+                  >
+                    RGPD
+                  </button>
+                </div>
               </div>
             </div>
           </motion.div>
@@ -5117,6 +5200,35 @@ export default function App() {
           setShowForgotPasswordModal(false);
         }}
       />
+
+      {/* Twilio SMS Carrier & Regulatory Compliance Modal */}
+      {showLegalModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5 z-[999999] font-sans">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 w-full max-w-4xl max-h-[92vh] overflow-y-auto p-5 sm:p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <span className="p-2 bg-indigo-50 dark:bg-indigo-950/50 rounded-xl text-indigo-600 dark:text-indigo-400 text-lg">🛡️</span>
+                <div>
+                  <h3 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white">
+                    Conformité Télécom, Politique SMS & Mentions Légales
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Parents-Schools Management System (Pasma-sys)
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLegalModal(false)}
+                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl transition cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <ApeeLegal initialTab={legalInitialTab} />
+          </div>
+        </div>
+      )}
 
       {/* Dynamic Sync Toast Notification System */}
       <SyncToastContainer />

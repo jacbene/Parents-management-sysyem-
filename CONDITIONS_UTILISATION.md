@@ -32,7 +32,16 @@ En accédant au portail, l’utilisateur s’engage à :
 ## 6. Propriété Intellectuelle
 L'ensemble de la charte graphique, de l'interface logicielle de trésorerie, du logo Pasma-sys ENT et des codes applicatifs constitutifs de ce portail sont la propriété intellectuelle exclusive de l'administrateur et de ses concepteurs techniques. Toute exploitation ou extraction non autorisée est interdite.
 
-## 7. Modifications des Conditions
+## 7. Modalités du Programme de Messagerie et Notifications par SMS (Conformité Twilio / Opérateurs Télécom)
+En transmettant votre numéro de téléphone portable lors de l'enregistrement de l'élève ou dans votre compte parent, vous consentez à recevoir des alertes par messagerie SMS dans le cadre de la vie scolaire :
+* **Nature et finalité des SMS :** Alertes d'absences et de retards imprévus, notifications de devoirs et dates d'évaluations, convocations aux réunions statutaires de l'APEE, et confirmations/rappels des tranches de cotisations scolaires.
+* **Consentement (Opt-in) :** Le consentement est recueilli lors du formulaire d'inscription officiel de l'élève à l'école ou lors de l'accès au portail.
+* **Fréquence des envois :** La fréquence dépend du calendrier académique de l'élève, généralement estimée entre 1 et 4 SMS par mois.
+* **Tarification :** Les messages sont envoyés sans surcoût par l'école ; néanmoins, les tarifs standards de messagerie et de données de votre opérateur mobile peuvent s'appliquer (*Message and data rates may apply*).
+* **Assistance (HELP) :** Pour toute demande d'assistance relative aux SMS, répondez **HELP** à un message reçu ou contactez l'assistance par e-mail à **jacquesbene301@gmail.com** ou par téléphone au **+237 656 454 053**.
+* **Désabonnement & Révocation (STOP) :** Vous pouvez interrompre la réception des SMS d'alerte à tout moment en répondant **STOP** au message reçu, ou en signalant votre souhait auprès du secrétariat de l'établissement scolaire.
+
+## 8. Modifications des Conditions
 Les présentes conditions peuvent être modifiées ou enrichies à tout moment pour correspondre aux évolutions du service scolaire. Les utilisateurs seront informés de toute révision majeure par notification sur l’Espace ENT.
 
 Pour toute réclamation, contestation ou pour obtenir une clarification, veuillez joindre l'adresse : **jacquesbene301@gmail.com** ou par téléphone au **+237 656 454 053**.

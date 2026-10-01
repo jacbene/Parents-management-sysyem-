@@ -40,10 +40,14 @@ Les données collectées sont utilisées pour :
 2. **La relance des insolvabilités :** Génération et envoi de SMS/WhatsApp ou courriels personnalisés de relance pour les comptes en retard ou partiels.
 3. **Le suivi pédagogique (ENT) :** Communication de bulletins, messagerie directe avec les enseignants et organisation des rendez-vous.
 
-## 5. Destinataires des Données
+## 5. Destinataires des Données et Clause de Non-Partage Mobile (Twilio & Opérateurs)
 Les données sont stockées au sein d'une infrastructure infonuagique sécurisée (Cloud Firestore) avec un contrôle d'accès strict (règles de sécurité Firestore). 
-* **Aucune donnée personnelle n'est vendue, louée ou partagée à des tiers.**
-* L'accès aux informations financières est restreint aux seuls membres légitimes de l'administration du bureau de l'APEE présidé par le Responsable du Traitement.
+* **Aucune donnée personnelle n'est vendue, louée, commercialisée ou partagée à des tiers.**
+* L'accès aux informations financières et académiques est restreint aux seuls membres légitimes de l'administration et enseignants de l'établissement.
+
+### Clause Spécifique pour la Téléphonie Mobile & Messagerie SMS :
+* **Français :** Aucune information relative à la téléphonie mobile ou donnée de consentement d'inscription SMS ne sera partagée avec des tiers ou des affiliés à des fins marketing ou promotionnelles. Toutes les catégories susmentionnées excluent formellement les données d'acceptation et de consentement des expéditeurs de SMS ; ces informations ne seront partagées avec aucun tiers.
+* **English (Twilio Carrier Compliance Mandatory Clause) :** "No mobile information will be shared with third parties/affiliates for marketing/promotional purposes. All the above categories exclude text messaging originator opt-in data and consent; this information will not be shared with any third parties."
 
 ## 6. Durée de Conservation des Données
 * Les fiches de cotisations APEE et fiches élèves sont conservées pendant toute la durée de l'année scolaire en cours (`2025/2026`).

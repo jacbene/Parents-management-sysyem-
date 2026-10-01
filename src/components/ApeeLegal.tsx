@@ -20,8 +20,18 @@ interface CookiePreferences {
   analytics: boolean;
 }
 
-export default function ApeeLegal() {
-  const [activeSubTab, setActiveSubTab] = useState<'policy' | 'terms' | 'rgpd' | 'cookies'>('policy');
+interface ApeeLegalProps {
+  initialTab?: 'policy' | 'terms' | 'rgpd' | 'cookies';
+}
+
+export default function ApeeLegal({ initialTab = 'policy' }: ApeeLegalProps = {}) {
+  const [activeSubTab, setActiveSubTab] = useState<'policy' | 'terms' | 'rgpd' | 'cookies'>(initialTab);
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveSubTab(initialTab);
+    }
+  }, [initialTab]);
   
   // State for cookie toggles
   const [cookiePrefs, setCookiePrefs] = useState<CookiePreferences>({
@@ -188,8 +198,19 @@ export default function ApeeLegal() {
               </div>
 
               <div>
-                <h4 className="font-bold text-slate-800">4. Sécurité et Hébergement</h4>
-                <p>Vos renseignements sont conservés dans un environnement cloud sécurisé par des verrous logiques stricts (Firestore rules). Nous ne vendons, louons ou prêtons aucun de vos profils à des partenaires tiers.</p>
+                <h4 className="font-bold text-slate-800">4. Sécurité, Hébergement et Non-Partage des Données Mobiles</h4>
+                <p>Vos renseignements sont conservés dans un environnement cloud sécurisé par des verrous logiques stricts (Firestore rules). Nous ne vendons, ne louons, ne commercialisons et ne prêtons aucune de vos données personnelles à des partenaires tiers.</p>
+                <div className="mt-2 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800/50 rounded-xl space-y-1">
+                  <p className="font-bold text-amber-900 dark:text-amber-200 text-[11.5px]">
+                    📱 Clause Spécifique de Confidentialité des Données Mobiles (Conformité Télécom & SMS / Twilio A2P) :
+                  </p>
+                  <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-normal">
+                    <strong>Français :</strong> Aucune information relative à la téléphonie mobile ou donnée de consentement d'inscription SMS ne sera partagée avec des tiers ou des affiliés à des fins marketing ou promotionnelles. Toutes les catégories susmentionnées excluent formellement les données d'acceptation et de consentement des expéditeurs de SMS ; ces informations ne seront partagées avec aucun tiers.
+                  </p>
+                  <p className="text-[10.5px] text-amber-750 dark:text-amber-350 italic leading-normal">
+                    <strong>English (Official Carrier Compliance Statement) :</strong> "No mobile information will be shared with third parties/affiliates for marketing/promotional purposes. All the above categories exclude text messaging originator opt-in data and consent; this information will not be shared with any third parties."
+                  </p>
+                </div>
               </div>
 
               <div className="bg-white border border-slate-200 p-3.5 rounded-xl flex items-start gap-2.5">
@@ -228,6 +249,22 @@ export default function ApeeLegal() {
               <div>
                 <h4 className="font-bold text-slate-800">4. Propriété intellectuelle</h4>
                 <p>L'ensemble de la charte graphique de l'APEE, les codes, les logos de Pasma-sys et l'agencement fonctionnel de l'E.N.T. sont la propriété exclusive de Jacques Bene Mbama et des équipes de conception.</p>
+              </div>
+
+              <div className="mt-3 p-3.5 bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/60 rounded-xl space-y-2">
+                <h4 className="font-bold text-indigo-950 dark:text-indigo-200 text-xs flex items-center gap-1.5">
+                  📲 5. Modalités du Service d'Alertes et Notifications SMS (Twilio Messaging Terms)
+                </h4>
+                <p className="text-[11px] text-slate-700 dark:text-slate-300">
+                  En communiquant votre numéro de téléphone lors de l'inscription scolaire ou dans l'espace APEE, vous consentez à recevoir des SMS informatifs et administratifs relatifs à la vie scolaire de votre enfant :
+                </p>
+                <ul className="list-disc pl-5 text-[10.5px] text-slate-600 dark:text-slate-400 space-y-1">
+                  <li><strong>Types de messages :</strong> Convocations aux assemblées APEE, rappels d'échéances de scolarité, alertes d'absences/retards et notifications de devoirs.</li>
+                  <li><strong>Fréquence :</strong> La fréquence des messages varie selon le calendrier scolaire (en moyenne 1 à 4 SMS par mois).</li>
+                  <li><strong>Frais applicables :</strong> Des frais standard de messagerie et de données de votre opérateur mobile peuvent s'appliquer (<em>Message and data rates may apply</em>).</li>
+                  <li><strong>Assistance & Aide :</strong> Pour toute question ou assistance relative aux SMS, répondez <strong>HELP</strong> au SMS reçu ou écrivez à <strong>jacquesbene301@gmail.com</strong> (Tél : +237 656 454 053).</li>
+                  <li><strong>Désabonnement & Retrait du consentement :</strong> Pour ne plus recevoir de messages SMS, répondez <strong>STOP</strong> à tout message ou contactez la direction de votre établissement pour mettre à jour vos préférences de communication.</li>
+                </ul>
               </div>
             </div>
           )}
