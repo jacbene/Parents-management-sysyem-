@@ -5,7 +5,10 @@ import './index.css';
 import { LanguageProvider } from './utils/TranslationContext';
 
 // Redirection automatique des appels /api/* vers le backend en production (Render, Cloud Run, etc.)
-const rawApiBase = (import.meta.env.VITE_API_URL || '').trim();
+const rawApiBase = (
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.PROD ? 'https://pasma-sys-backend.onrender.com' : '')
+).trim();
 if (rawApiBase) {
   const API_BASE = rawApiBase.replace(/\/+$/, '');
   const originalFetch = window.fetch.bind(window);

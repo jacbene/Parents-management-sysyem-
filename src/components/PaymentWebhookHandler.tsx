@@ -45,7 +45,8 @@ export default function PaymentWebhookHandler() {
     receivedResponse?: any;
   } | null>(null);
 
-  const webhookUrl = `${import.meta.env.VITE_API_URL || window.location.origin}/api/campay-webhook`;
+  const webhookBaseUrl = (import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://pasma-sys-backend.onrender.com' : window.location.origin)).replace(/\/+$/, '');
+  const webhookUrl = `${webhookBaseUrl}/api/campay-webhook`;
   const defaultWebhookKey = import.meta.env.VITE_CAMPAY_WEBHOOK_KEY || "";
 
   // Fetch logs on mount & refresh
