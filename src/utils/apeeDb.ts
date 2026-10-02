@@ -2,6 +2,7 @@ import { collection, doc, setDoc, updateDoc, deleteDoc, getDocs, query, where, w
 import { db, auth, handleFirestoreError, OperationType, isOffline, queuePendingAction } from '../firebase';
 import { ApeeParent, ApeeExpense, ApeeSettings, Invoice, ApeeActivityLog, ApeeOtherRevenue } from '../types';
 import { sanitizeFirestoreId } from './schoolSync';
+import { applyPendingActionsToNetworkList } from './networkCacheStrategy';
 
 // Base cache keys
 const CACHE_SETTINGS = 'apee_settings_cache';
@@ -56,6 +57,7 @@ export const DEFAULT_SETTINGS: ApeeSettings = {
   pedManagerName: '',
   pedManagerPhone: '',
   pedManagerPassword: '',
+  customSmsTemplate: 'Rappel {NOM_PARENT}: Solde APEE de {MONTANT_DU} a regler avant le {DATE_ECHEANCE}. Merci de regulariser. {ETABLISSEMENT}.',
   syncIntervalSeconds: 30
 };
 
@@ -424,6 +426,7 @@ export async function fetchApeeData(parentId: string) {
           financialObligations: obligations,
           paymentConfig: parsedPaymentConfig,
           smsConfig: parsedSmsConfig,
+          customSmsTemplate: data.customSmsTemplate || parsedSmsConfig?.customTemplate || DEFAULT_SETTINGS.customSmsTemplate,
           syncIntervalSeconds: data.syncIntervalSeconds || 30,
         };
       }
@@ -453,85 +456,17 @@ export async function fetchApeeData(parentId: string) {
     dbOtherRevenues.forEach(r => { if (r.id) uniqueOther.set(r.id, r); });
     const dedupedOtherRevenues = Array.from(uniqueOther.values());
 
-    // Smart 2-Way Merge: Combine DB items and cached items so local offline updates are never lost
-    const parentMap = new Map<string, ApeeParent>();
-    dbParents.forEach(p => { if (p && p.id) parentMap.set(p.id, p); });
-    cachedParents.forEach(cp => {
-      if (cp && cp.id) {
-        const existing = parentMap.get(cp.id);
-        if (!existing) {
-          parentMap.set(cp.id, cp);
-        } else {
-          const dbTime = new Date(existing.updatedAt || 0).getTime();
-          const cacheTime = new Date(cp.updatedAt || 0).getTime();
-          if (cacheTime > dbTime) {
-            parentMap.set(cp.id, { ...existing, ...cp });
-          }
-        }
-      }
-    });
-    const finalParents = Array.from(parentMap.values());
-
-    const expenseMap = new Map<string, ApeeExpense>();
-    dbExpenses.forEach(e => { if (e && e.id) expenseMap.set(e.id, e); });
-    cachedExpenses.forEach(ce => {
-      if (ce && ce.id) {
-        if (!expenseMap.has(ce.id)) expenseMap.set(ce.id, ce);
-      }
-    });
-    const finalExpenses = Array.from(expenseMap.values());
-
-    const logMap = new Map<string, ApeeActivityLog>();
-    dbLogs.forEach(l => { if (l && l.id) logMap.set(l.id, l); });
-    cachedLogs.forEach(cl => {
-      if (cl && cl.id) {
-        if (!logMap.has(cl.id)) logMap.set(cl.id, cl);
-      }
-    });
-    const finalLogs = Array.from(logMap.values());
+    // Network-First: The remote Firestore database is the authoritative real-time source.
+    // We only overlay un-synced offline actions (from pasma_pending_actions) that haven't been committed yet.
+    // Stale local cache items are not resurrected, but fresh network items refresh the local refuge.
+    const finalParents = applyPendingActionsToNetworkList(dedupedParents, 'invoices');
+    const finalExpenses = applyPendingActionsToNetworkList(dedupedExpenses, 'invoices');
+    const finalLogs = applyPendingActionsToNetworkList(dedupedLogs, 'invoices');
     finalLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-    const otherMap = new Map<string, ApeeOtherRevenue>();
-    dbOtherRevenues.forEach(r => { if (r && r.id) otherMap.set(r.id, r); });
-    cachedOtherRevenues.forEach(cr => {
-      if (cr && cr.id) {
-        if (!otherMap.has(cr.id)) otherMap.set(cr.id, cr);
-      }
-    });
-    const finalOtherRevenues = Array.from(otherMap.values());
-
+    const finalOtherRevenues = applyPendingActionsToNetworkList(dedupedOtherRevenues, 'invoices');
     const finalSettings = dbSettings || cachedSettings;
 
-    const currentUser = auth.currentUser;
-    const isParentRole = localStorage.getItem('portal_user_role') === 'parent';
-    const canSyncToWrite = currentUser && !isParentRole;
-
-    // Background self-healing: Push any local-only cache items to Firestore
-    if (canSyncToWrite && parentId) {
-      finalParents.forEach(async (p) => {
-        if (!dbParents.some(dp => dp.id === p.id)) {
-          try {
-            const invData = normalizeToInvoice(p, parentId);
-            await setDoc(doc(db, 'invoices', getScopedApeeDocId(p.id, parentId)), invData, { merge: true });
-          } catch (e) {
-            console.warn("Auto background sync failed for parent", p.name, e);
-          }
-        }
-      });
-
-      finalExpenses.forEach(async (exp) => {
-        if (!dbExpenses.some(de => de.id === exp.id)) {
-          try {
-            const invData = normalizeExpenseToInvoice(exp, parentId);
-            await setDoc(doc(db, 'invoices', getScopedApeeDocId(exp.id, parentId)), invData, { merge: true });
-          } catch (e) {
-            console.warn("Auto background sync failed for expense", exp.title, e);
-          }
-        }
-      });
-    }
-
-    // Persist again locally
+    // Refresh local storage refuge with authoritative network data
     localStorage.setItem(`${CACHE_SETTINGS}_${parentId}`, JSON.stringify(finalSettings));
     localStorage.setItem(`${CACHE_PARENTS}_${parentId}`, JSON.stringify(finalParents));
     localStorage.setItem(`${CACHE_EXPENSES}_${parentId}`, JSON.stringify(finalExpenses));
@@ -675,6 +610,7 @@ export async function saveApeeSettings(parentId: string, settings: ApeeSettings)
     paymentConfigList: JSON.stringify(settings.paymentConfig || {}),
     shortName: settings.shortName || '',
     smsConfigList: JSON.stringify(settings.smsConfig || {}),
+    customSmsTemplate: settings.customSmsTemplate || settings.smsConfig?.customTemplate || '',
     syncIntervalSeconds: settings.syncIntervalSeconds || 30,
   };
 
@@ -1032,7 +968,19 @@ export function generateApeeReminderMessage(
     ? parent.students.map(s => `${s.name} (${s.classRoom})`).join(', ')
     : "votre enfant";
 
-  const defaultSmsTemplate = "Chers parents. Rappel {short_name} {school_year} de {association_name} pour votre pupille ({student_names}). Le solde restant dû est de {remaining_amount} FCFA. Veuillez régulariser au plus vite par versement ou virement. Merci pour votre collaboration.";
+  // Calculate dynamic due date (from payment plan, parent createdAt/school calendar or +15 days)
+  let dueDateStr = "la fin du mois";
+  if (parent.createdAt) {
+    const d = new Date(parent.createdAt);
+    d.setDate(d.getDate() + 30);
+    dueDateStr = d.toLocaleDateString('fr-FR');
+  } else {
+    const now = new Date();
+    now.setDate(now.getDate() + 15);
+    dueDateStr = now.toLocaleDateString('fr-FR');
+  }
+
+  const defaultSmsTemplate = settings.customSmsTemplate || settings.smsConfig?.customTemplate || "Rappel {NOM_PARENT}: Solde APEE de {MONTANT_DU} a regler avant le {DATE_ECHEANCE}. Merci de regulariser. {ETABLISSEMENT}.";
   
   const defaultEmailSubject = "Rappel de Paiement Cotisation {short_name} - {association_name}";
 
@@ -1043,14 +991,29 @@ export function generateApeeReminderMessage(
   const emailSub = customTemplates?.emailSubject || defaultEmailSubject;
 
   const replacePlaceholders = (text: string) => {
+    const formattedAmount = `${(remaining || 0).toLocaleString()} ${settings?.currency || 'FCFA'}`;
+    const totalDueFormatted = `${(parent.totalDue || 0).toLocaleString()} ${settings?.currency || 'FCFA'}`;
+    const todayStr = new Date().toLocaleDateString('fr-FR');
+
     return text
+      // Dynamic variables in capital letters as specified
+      .replace(/{NOM_PARENT}/g, parent.name)
+      .replace(/{MONTANT_DU}/g, formattedAmount)
+      .replace(/{DATE_ECHEANCE}/g, dueDateStr)
+      .replace(/{ETABLISSEMENT}/g, shortName || associationName)
+      .replace(/{ELEVES}/g, kidsList)
+      .replace(/{DATE_JOUR}/g, todayStr)
+      .replace(/{ANNEE_SCOLAIRE}/g, schoolYear)
+      // Legacy lowercase placeholders for backward compatibility
       .replace(/{parent_name}/g, parent.name)
       .replace(/{association_name}/g, associationName)
       .replace(/{short_name}/g, shortName)
       .replace(/{school_year}/g, schoolYear)
       .replace(/{student_names}/g, kidsList)
       .replace(/{remaining_amount}/g, (remaining || 0).toLocaleString())
-      .replace(/{total_due_amount}/g, (parent.totalDue || 0).toLocaleString());
+      .replace(/{total_due_amount}/g, (parent.totalDue || 0).toLocaleString())
+      .replace(/{due_date}/g, dueDateStr)
+      .replace(/{current_date}/g, todayStr);
   };
 
   if (type === 'sms') {
@@ -1267,6 +1230,7 @@ export function subscribeApeeData(
             financialObligations: obligations,
             paymentConfig: parsedPaymentConfig,
             smsConfig: parsedSmsConfig,
+            customSmsTemplate: data.customSmsTemplate || parsedSmsConfig?.customTemplate || DEFAULT_SETTINGS.customSmsTemplate,
             syncIntervalSeconds: data.syncIntervalSeconds || 30,
           };
         }
@@ -1293,67 +1257,32 @@ export function subscribeApeeData(
         console.warn('LocalStorage read warning in subscription:', err);
       }
 
-      // Merge Parents
-      const parentMap = new Map<string, ApeeParent>();
-      dbParents.forEach(p => { if (p && p.id) parentMap.set(p.id, p); });
-      cachedParents.forEach(cp => {
-        if (cp && cp.id) {
-          const existing = parentMap.get(cp.id);
-          if (!existing) {
-            parentMap.set(cp.id, cp);
-          } else {
-            const dbTime = new Date(existing.updatedAt || 0).getTime();
-            const cacheTime = new Date(cp.updatedAt || 0).getTime();
-            if (cacheTime > dbTime) parentMap.set(cp.id, { ...existing, ...cp });
-          }
-        }
-      });
-      const mergedParents = Array.from(parentMap.values());
-
-      // Merge Expenses
-      const expenseMap = new Map<string, ApeeExpense>();
-      dbExpenses.forEach(e => { if (e && e.id) expenseMap.set(e.id, e); });
-      cachedExpenses.forEach(ce => {
-        if (ce && ce.id && !expenseMap.has(ce.id)) expenseMap.set(ce.id, ce);
-      });
-      const mergedExpenses = Array.from(expenseMap.values());
-
-      // Merge Logs
-      const logMap = new Map<string, ApeeActivityLog>();
-      dbLogs.forEach(l => { if (l && l.id) logMap.set(l.id, l); });
-      cachedLogs.forEach(cl => {
-        if (cl && cl.id && !logMap.has(cl.id)) logMap.set(cl.id, cl);
-      });
-      const mergedLogs = Array.from(logMap.values());
-      mergedLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-      // Merge Other Revenues
-      const otherMap = new Map<string, ApeeOtherRevenue>();
-      dbOtherRevenues.forEach(r => { if (r && r.id) otherMap.set(r.id, r); });
-      cachedOtherRevenues.forEach(cr => {
-        if (cr && cr.id && !otherMap.has(cr.id)) otherMap.set(cr.id, cr);
-      });
-      const mergedOtherRevenues = Array.from(otherMap.values());
-
+      // Network-First: The remote Firestore database snapshot is the authoritative real-time state.
+      // We only overlay un-synced offline actions (from pasma_pending_actions) that haven't been committed yet.
+      const finalParents = applyPendingActionsToNetworkList(dbParents, 'invoices');
+      const finalExpenses = applyPendingActionsToNetworkList(dbExpenses, 'invoices');
+      const finalLogs = applyPendingActionsToNetworkList(dbLogs, 'invoices');
+      finalLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      const finalOtherRevenues = applyPendingActionsToNetworkList(dbOtherRevenues, 'invoices');
       const mergedSettings = dbSettings || cachedSettings || DEFAULT_SETTINGS;
 
-      // Save merged collections to caches
+      // Update local storage refuge with authoritative network data
       try {
         localStorage.setItem(`${CACHE_SETTINGS}_${parentId}`, JSON.stringify(mergedSettings));
-        localStorage.setItem(`${CACHE_PARENTS}_${parentId}`, JSON.stringify(mergedParents));
-        localStorage.setItem(`${CACHE_EXPENSES}_${parentId}`, JSON.stringify(mergedExpenses));
-        localStorage.setItem(`${CACHE_LOGS}_${parentId}`, JSON.stringify(mergedLogs));
-        localStorage.setItem(`${CACHE_OTHER_REVENUES}_${parentId}`, JSON.stringify(mergedOtherRevenues));
+        localStorage.setItem(`${CACHE_PARENTS}_${parentId}`, JSON.stringify(finalParents));
+        localStorage.setItem(`${CACHE_EXPENSES}_${parentId}`, JSON.stringify(finalExpenses));
+        localStorage.setItem(`${CACHE_LOGS}_${parentId}`, JSON.stringify(finalLogs));
+        localStorage.setItem(`${CACHE_OTHER_REVENUES}_${parentId}`, JSON.stringify(finalOtherRevenues));
       } catch (err) {
-        console.error('LocalStorage write failed in subscription', err);
+        console.error('LocalStorage write failed in subscription refuge update', err);
       }
 
       onUpdate({
         settings: mergedSettings,
-        parents: mergedParents,
-        expenses: mergedExpenses,
-        logs: mergedLogs,
-        otherRevenues: mergedOtherRevenues,
+        parents: finalParents,
+        expenses: finalExpenses,
+        logs: finalLogs,
+        otherRevenues: finalOtherRevenues,
       });
     },
     (err) => {

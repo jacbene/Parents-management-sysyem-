@@ -30,6 +30,7 @@ import {
   syncAllApeeDataToFirestore
 } from './utils/apeeDb';
 import { syncLocalSchoolsToFirestore, cleanPayload, isSchoolDeleted, fetchAndSyncDeletedSchoolIds, sanitizeFirestoreId } from './utils/schoolSync';
+import { applyPendingActionsToNetworkList, saveToLocalRefuge, loadFromLocalRefuge } from './utils/networkCacheStrategy';
 
 import ApeeDashboard from './components/apee/ApeeDashboard';
 import ApeeForm from './components/apee/ApeeForm';
@@ -772,65 +773,135 @@ export default function App() {
 
       window.dispatchEvent(new CustomEvent('pasma_sync_started', { detail: { count: actions.length } }));
 
+      // Step A: Compact actions per document to prevent Firestore "Cannot modify a document multiple times in a single batch"
+      // and eliminate redundant operations across sequential offline edits.
+      const docActionMap = new Map<string, { latestAction: PendingAction; actionIds: string[] }>();
+      for (const action of actions) {
+        const key = `${action.collection}/${action.targetId}`;
+        const existing = docActionMap.get(key);
+        if (!existing) {
+          docActionMap.set(key, { latestAction: action, actionIds: [action.id] });
+        } else {
+          existing.actionIds.push(action.id);
+          if (action.type === 'DELETE') {
+            existing.latestAction = action;
+          } else if (existing.latestAction.type === 'DELETE') {
+            existing.latestAction = action;
+          } else {
+            existing.latestAction = {
+              ...action,
+              data: { ...(existing.latestAction.data || {}), ...(action.data || {}) }
+            };
+          }
+        }
+      }
+
+      const compactedList = Array.from(docActionMap.values());
+      const BATCH_SIZE = 50; // Max batch chunk size to keep write roundtrips minimal and well within Firestore limits (500)
       let successCount = 0;
       let networkErrorEncountered = false;
-      const remaining: PendingAction[] = [];
+      const succeededActionIds = new Set<string>();
+      const permanentErrorActionIds = new Set<string>();
 
-      for (const action of actions) {
-        try {
+      const isNetworkError = (err: any) => {
+        const errMsg = String(err?.message || err || '').toLowerCase();
+        const errCode = String(err?.code || '').toLowerCase();
+        return (
+          errCode === 'unavailable' ||
+          errCode === 'deadline-exceeded' ||
+          errMsg.includes('offline') ||
+          errMsg.includes('network') ||
+          errMsg.includes('failed to fetch') ||
+          errMsg.includes('internet') ||
+          errMsg.includes('failed to connect') ||
+          !navigator.onLine
+        );
+      };
+
+      const isPermanentError = (err: any) => {
+        const errMsg = String(err?.message || err || '').toLowerCase();
+        const errCode = String(err?.code || '').toLowerCase();
+        return (
+          errCode === 'permission-denied' ||
+          errCode === 'invalid-argument' ||
+          errMsg.includes('permission') ||
+          errMsg.includes('unauthenticated') ||
+          errMsg.includes('insufficient')
+        );
+      };
+
+      // Step B: Commit compacted actions using writeBatch to drastically reduce individual network requests
+      for (let i = 0; i < compactedList.length; i += BATCH_SIZE) {
+        if (networkErrorEncountered) break;
+
+        const chunk = compactedList.slice(i, i + BATCH_SIZE);
+        const batch = writeBatch(db);
+
+        for (const item of chunk) {
+          const action = item.latestAction;
+          const docRef = doc(db, action.collection, action.targetId);
           if (action.type === 'DELETE') {
-            await deleteDoc(doc(db, action.collection, action.targetId));
+            batch.delete(docRef);
           } else {
             const cleaned = cleanPayload(action.data || {});
-            await setDoc(doc(db, action.collection, action.targetId), cleaned, { merge: true });
+            batch.set(docRef, cleaned, { merge: true });
           }
-          successCount++;
-        } catch (err: any) {
-          console.warn("Notice syncing item:", action?.id, err?.message || err);
+        }
 
-          const errMsg = String(err?.message || err || '').toLowerCase();
-          const errCode = String(err?.code || '').toLowerCase();
-          
-          const isPermanentError = 
-            errCode === 'permission-denied' || 
-            errCode === 'invalid-argument' || 
-            errMsg.includes('permission') || 
-            errMsg.includes('unauthenticated') || 
-            errMsg.includes('insufficient');
+        try {
+          await batch.commit();
+          for (const item of chunk) {
+            item.actionIds.forEach(id => succeededActionIds.add(id));
+            successCount += item.actionIds.length;
+          }
+        } catch (batchErr: any) {
+          console.warn("[Pasma-sys Sync] Batch commit error, attempting graceful fallback:", batchErr);
 
-          if (isPermanentError) {
-            console.warn(`[Pasma-sys Sync] Discarding action ${action.id} due to permanent security or permission failure:`, errMsg);
-          } else {
-            remaining.push(action);
-            if (
-              errCode === 'unavailable' ||
-              errCode === 'deadline-exceeded' ||
-              errMsg.includes('offline') ||
-              errMsg.includes('network') ||
-              errMsg.includes('failed to fetch') ||
-              errMsg.includes('internet') ||
-              errMsg.includes('failed to connect') ||
-              !navigator.onLine
-            ) {
-              networkErrorEncountered = true;
+          if (isNetworkError(batchErr)) {
+            networkErrorEncountered = true;
+            break;
+          }
+
+          // Fallback: If a batch fails due to a document-level constraint (e.g. security rule on a single document),
+          // fallback to individual writes for this chunk so valid documents still succeed and invalid ones are isolated
+          for (const item of chunk) {
+            const action = item.latestAction;
+            const docRef = doc(db, action.collection, action.targetId);
+            try {
+              if (action.type === 'DELETE') {
+                await deleteDoc(docRef);
+              } else {
+                const cleaned = cleanPayload(action.data || {});
+                await setDoc(docRef, cleaned, { merge: true });
+              }
+              item.actionIds.forEach(id => succeededActionIds.add(id));
+              successCount += item.actionIds.length;
+            } catch (singleErr: any) {
+              console.warn("[Pasma-sys Sync] Individual fallback error:", action.collection, action.targetId, singleErr);
+              if (isPermanentError(singleErr)) {
+                item.actionIds.forEach(id => permanentErrorActionIds.add(id));
+              } else if (isNetworkError(singleErr)) {
+                networkErrorEncountered = true;
+                break;
+              }
             }
           }
         }
       }
+
+      // Step C: Retain only un-synced actions that did not permanently fail
+      const remaining = actions.filter(
+        a => !succeededActionIds.has(a.id) && !permanentErrorActionIds.has(a.id)
+      );
 
       localStorage.setItem('pasma_pending_actions', JSON.stringify(remaining));
       setPendingActions(remaining);
       window.dispatchEvent(new Event('pasma_actions_updated'));
 
       if (successCount > 0) {
-        console.log(`[Pasma-sys Sync] Synchronisé avec succès ${successCount} modification(s) !`);
+        console.log(`[Pasma-sys Sync] Batch synchronisé avec succès : ${successCount} action(s) traitée(s) !`);
         window.dispatchEvent(new CustomEvent('pasma_sync_success', { detail: { count: successCount } }));
-        // Also trigger full background sync of local schools and APEE cache to ensure complete sync
-        syncLocalSchoolsToFirestore().catch(e => console.warn('Sync schools failed:', e));
-        const activeId = selectedSchoolId || auth.currentUser?.uid || localStorage.getItem('portal_selected_school_id');
-        if (activeId) {
-          syncAllApeeDataToFirestore(activeId).catch(e => console.warn('Sync APEE failed:', e));
-        }
+        window.dispatchEvent(new Event('pasma_db_sync_update'));
       }
 
       if (remaining.length > 0) {
@@ -838,7 +909,7 @@ export default function App() {
           const currentDelay = syncBackoffDelayRef.current;
           const nextDelay = Math.min(currentDelay * 2, 30000);
           syncBackoffDelayRef.current = nextDelay;
-          console.warn(`[Pasma-sys Sync] Network error during sync. Backing off for ${currentDelay}ms before retry...`);
+          console.warn(`[Pasma-sys Sync] Network error during batch sync. Backing off for ${currentDelay}ms before retry...`);
 
           syncTimeoutRef.current = setTimeout(() => {
             syncPendingActions();
@@ -1601,189 +1672,149 @@ export default function App() {
         // C. Setup real-time listeners for all collections (Students, Grades, Attendance, Homework, Appointments, Messages, Announcements)
         if (!isOffline) {
           try {
+            // 1. Students: Network-First real-time listener (Cache as refuge)
             unsubscribers.push(
               onSnapshot(
                 query(collection(db, 'students'), where('parentId', '==', userId)),
                 (snapshot) => {
                   const dbList = snapshot.docs.map(doc => doc.data() as Student);
-                  let localList: Student[] = [];
-                  try {
-                    const c = localStorage.getItem(`pasma_students_${userId}`);
-                    if (c) localList = JSON.parse(c);
-                  } catch (e) {}
-                  const map = new Map<string, Student>();
-                  dbList.forEach(item => { if (item?.id) map.set(item.id, item); });
-                  localList.forEach(item => { if (item?.id && !map.has(item.id)) map.set(item.id, item); });
-                  const merged = Array.from(map.values());
-                  setStudents(merged);
-                  if (merged.length > 0) {
-                    setSelectedStudentId(prev => prev || merged[0]?.id || '');
+                  const finalList = applyPendingActionsToNetworkList(dbList, 'students');
+                  setStudents(finalList);
+                  if (finalList.length > 0) {
+                    setSelectedStudentId(prev => prev || finalList[0]?.id || '');
                   }
-                  localStorage.setItem(`pasma_students_${userId}`, JSON.stringify(merged));
+                  saveToLocalRefuge(`pasma_students_${userId}`, finalList);
                 },
                 (err) => {
-                  console.warn("Real-time students listener failed (offline fallback active):", err);
+                  console.warn("Real-time students listener failed (offline refuge active):", err);
                 }
               )
             );
 
+            // 2. Grades: Network-First real-time listener (Cache as refuge)
             unsubscribers.push(
               onSnapshot(
                 query(collection(db, 'grades'), where('parentId', '==', userId)),
                 (snapshot) => {
                   const dbList = snapshot.docs.map(doc => doc.data() as Grade);
-                  let localList: Grade[] = [];
-                  try {
-                    const c = localStorage.getItem(`pasma_grades_${userId}`);
-                    if (c) localList = JSON.parse(c);
-                  } catch (e) {}
-                  const map = new Map<string, Grade>();
-                  dbList.forEach(item => { if (item?.id) map.set(item.id, item); });
-                  localList.forEach(item => { if (item?.id && !map.has(item.id)) map.set(item.id, item); });
-                  const merged = Array.from(map.values());
-                  setGrades(merged);
-                  localStorage.setItem(`pasma_grades_${userId}`, JSON.stringify(merged));
+                  const finalList = applyPendingActionsToNetworkList(dbList, 'grades');
+                  setGrades(finalList);
+                  saveToLocalRefuge(`pasma_grades_${userId}`, finalList);
                 },
                 (err) => {
-                  console.warn("Real-time grades listener failed:", err);
+                  console.warn("Real-time grades listener failed (offline refuge active):", err);
                 }
               )
             );
 
+            // 3. Attendance: Network-First real-time listener (Cache as refuge)
             unsubscribers.push(
               onSnapshot(
                 query(collection(db, 'attendance'), where('parentId', '==', userId)),
                 (snapshot) => {
                   const dbList = snapshot.docs.map(doc => doc.data() as Attendance);
-                  let localList: Attendance[] = [];
-                  try {
-                    const c = localStorage.getItem(`pasma_attendance_${userId}`);
-                    if (c) localList = JSON.parse(c);
-                  } catch (e) {}
-                  const map = new Map<string, Attendance>();
-                  dbList.forEach(item => { if (item?.id) map.set(item.id, item); });
-                  localList.forEach(item => { if (item?.id && !map.has(item.id)) map.set(item.id, item); });
-                  const merged = Array.from(map.values());
-                  setAttendanceLogs(merged);
-                  localStorage.setItem(`pasma_attendance_${userId}`, JSON.stringify(merged));
+                  const finalList = applyPendingActionsToNetworkList(dbList, 'attendance');
+                  setAttendanceLogs(finalList);
+                  saveToLocalRefuge(`pasma_attendance_${userId}`, finalList);
                 },
                 (err) => {
-                  console.warn("Real-time attendance listener failed:", err);
+                  console.warn("Real-time attendance listener failed (offline refuge active):", err);
                 }
               )
             );
 
+            // 4. Homeworks: Network-First real-time listener (Cache as refuge)
             unsubscribers.push(
               onSnapshot(
                 query(collection(db, 'homeworks'), where('parentId', '==', userId)),
                 (snapshot) => {
                   const dbList = snapshot.docs.map(doc => doc.data() as Homework);
-                  let localList: Homework[] = [];
-                  try {
-                    const c = localStorage.getItem(`pasma_homeworks_${userId}`);
-                    if (c) localList = JSON.parse(c);
-                  } catch (e) {}
-                  const map = new Map<string, Homework>();
-                  dbList.forEach(item => { if (item?.id) map.set(item.id, item); });
-                  localList.forEach(item => { if (item?.id && !map.has(item.id)) map.set(item.id, item); });
-                  const merged = Array.from(map.values());
-                  setHomeworks(merged);
-                  localStorage.setItem(`pasma_homeworks_${userId}`, JSON.stringify(merged));
+                  const finalList = applyPendingActionsToNetworkList(dbList, 'homeworks');
+                  setHomeworks(finalList);
+                  saveToLocalRefuge(`pasma_homeworks_${userId}`, finalList);
                 },
                 (err) => {
-                  console.warn("Real-time homeworks listener failed:", err);
+                  console.warn("Real-time homeworks listener failed (offline refuge active):", err);
                 }
               )
             );
 
+            // 5. Appointments: Network-First real-time listener (Cache as refuge)
             unsubscribers.push(
               onSnapshot(
                 query(collection(db, 'appointments'), where('parentId', '==', userId)),
                 (snapshot) => {
                   const dbList = snapshot.docs.map(doc => doc.data() as Appointment);
-                  let localList: Appointment[] = [];
-                  try {
-                    const c = localStorage.getItem(`pasma_appointments_${userId}`);
-                    if (c) localList = JSON.parse(c);
-                  } catch (e) {}
-                  const map = new Map<string, Appointment>();
-                  dbList.forEach(item => { if (item?.id) map.set(item.id, item); });
-                  localList.forEach(item => { if (item?.id && !map.has(item.id)) map.set(item.id, item); });
-                  const merged = Array.from(map.values());
-                  setAppointments(merged);
-                  localStorage.setItem(`pasma_appointments_${userId}`, JSON.stringify(merged));
+                  const finalList = applyPendingActionsToNetworkList(dbList, 'appointments');
+                  setAppointments(finalList);
+                  saveToLocalRefuge(`pasma_appointments_${userId}`, finalList);
                 },
                 (err) => {
-                  console.warn("Real-time appointments listener failed:", err);
+                  console.warn("Real-time appointments listener failed (offline refuge active):", err);
                 }
               )
             );
 
+            // 6. Messages: Network-First real-time listener (Cache as refuge)
             unsubscribers.push(
               onSnapshot(
                 query(collection(db, 'messages'), where('parentId', '==', userId)),
                 (snapshot) => {
                   const dbList = snapshot.docs.map(doc => doc.data() as Message);
-                  let localList: Message[] = [];
-                  try {
-                    const c = localStorage.getItem(`pasma_messages_${userId}`);
-                    if (c) localList = JSON.parse(c);
-                  } catch (e) {}
-                  const map = new Map<string, Message>();
-                  dbList.forEach(item => { if (item?.id) map.set(item.id, item); });
-                  localList.forEach(item => { if (item?.id && !map.has(item.id)) map.set(item.id, item); });
-                  const merged = Array.from(map.values());
-                  setMessages(merged);
-                  localStorage.setItem(`pasma_messages_${userId}`, JSON.stringify(merged));
+                  const finalList = applyPendingActionsToNetworkList(dbList, 'messages');
+                  setMessages(finalList);
+                  saveToLocalRefuge(`pasma_messages_${userId}`, finalList);
                 },
                 (err) => {
-                  console.warn("Real-time messages listener failed:", err);
+                  console.warn("Real-time messages listener failed (offline refuge active):", err);
                 }
               )
             );
 
+            // 7. Announcements: Network-First real-time listener (Cache as refuge)
             unsubscribers.push(
               onSnapshot(
                 query(collection(db, 'announcements'), where('parentId', '==', userId)),
                 (snapshot) => {
                   const dbList = snapshot.docs.map(doc => doc.data() as Announcement);
-                  let localList: Announcement[] = [];
-                  try {
-                    const c = localStorage.getItem(`pasma_announcements_${userId}`);
-                    if (c) localList = JSON.parse(c);
-                  } catch (e) {}
-                  const map = new Map<string, Announcement>();
-                  dbList.forEach(item => { if (item?.id) map.set(item.id, item); });
-                  localList.forEach(item => { if (item?.id && !map.has(item.id)) map.set(item.id, item); });
-                  const merged = Array.from(map.values());
-                  setAnnouncements(merged);
-                  localStorage.setItem(`pasma_announcements_${userId}`, JSON.stringify(merged));
+                  const finalList = applyPendingActionsToNetworkList(dbList, 'announcements');
+                  setAnnouncements(finalList);
+                  saveToLocalRefuge(`pasma_announcements_${userId}`, finalList);
                 },
                 (err) => {
-                  console.warn("Real-time announcements listener failed:", err);
+                  console.warn("Real-time announcements listener failed (offline refuge active):", err);
                 }
               )
             );
 
+            // 8. Lessons: Network-First real-time listener (Cache as refuge)
             unsubscribers.push(
               onSnapshot(
                 query(collection(db, 'lessons'), where('parentId', '==', userId)),
                 (snapshot) => {
                   const dbList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Lesson);
-                  let localList: Lesson[] = [];
-                  try {
-                    const c = localStorage.getItem(`pasma_lessons_${userId}`);
-                    if (c) localList = JSON.parse(c);
-                  } catch (e) {}
-                  const map = new Map<string, Lesson>();
-                  dbList.forEach(item => { if (item?.id) map.set(item.id, item); });
-                  localList.forEach(item => { if (item?.id && !map.has(item.id)) map.set(item.id, item); });
-                  const merged = Array.from(map.values());
-                  setLessons(merged);
-                  localStorage.setItem(`pasma_lessons_${userId}`, JSON.stringify(merged));
+                  const finalList = applyPendingActionsToNetworkList(dbList, 'lessons');
+                  setLessons(finalList);
+                  saveToLocalRefuge(`pasma_lessons_${userId}`, finalList);
                 },
                 (err) => {
-                  console.warn("Real-time lessons listener failed:", err);
+                  console.warn("Real-time lessons listener failed (offline refuge active):", err);
+                }
+              )
+            );
+
+            // 9. Invoices: Network-First real-time listener (Cache as refuge for parents & finance)
+            unsubscribers.push(
+              onSnapshot(
+                query(collection(db, 'invoices'), where('parentId', '==', userId)),
+                (snapshot) => {
+                  const dbList = snapshot.docs.map(doc => doc.data() as Invoice);
+                  const finalList = applyPendingActionsToNetworkList(dbList, 'invoices');
+                  setInvoices(finalList);
+                  saveToLocalRefuge(`pasma_invoices_${userId}`, finalList);
+                },
+                (err) => {
+                  console.warn("Real-time invoices listener failed (offline refuge active):", err);
                 }
               )
             );

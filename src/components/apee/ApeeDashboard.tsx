@@ -1,8 +1,9 @@
 import React from 'react';
-import { Landmark, TrendingUp, Users, GraduationCap, Percent, AlertCircle, Coins, ArrowRight, Sparkles, Search, Activity, History, Plus, Wallet2 } from 'lucide-react';
+import { Landmark, TrendingUp, Users, GraduationCap, Percent, AlertCircle, Coins, ArrowRight, Sparkles, Search, Activity, History, Plus, Wallet2, Scale, ArrowUpRight, ArrowDownRight, CheckCircle2, TrendingDown } from 'lucide-react';
 import { ComposedChart, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend, Cell, Line, ReferenceLine, PieChart, Pie } from 'recharts';
 import { ApeeParent, ApeeExpense, ApeeSettings, ApeeActivityLog, ApeeOtherRevenue } from '../../types';
 import ApeeFinancialOverview from './ApeeFinancialOverview';
+import ApeeBackendDiagnostics from './ApeeBackendDiagnostics';
 import { useLanguage } from '../../utils/TranslationContext';
 
 interface ApeeDashboardProps {
@@ -20,6 +21,8 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate,
   const [searchLogQuery, setSearchLogQuery] = React.useState('');
   const [selectedActionFilter, setSelectedActionFilter] = React.useState('all');
   const [visibleLogsCount, setVisibleLogsCount] = React.useState(10);
+  const [fiscalTimeRange, setFiscalTimeRange] = React.useState<'6m' | 'all'>('6m');
+  const [showNetMarginLine, setShowNetMarginLine] = React.useState<boolean>(true);
   
   React.useEffect(() => {
     setIsMounted(true);
@@ -140,6 +143,99 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate,
     { name: 'Avr 2026', Montant: 0 },
     { name: 'Mai 2026', Montant: 0 },
   ];
+
+  // -----------------------------------------------------------------
+  // Fiscal Health: Monthly Revenue vs. Expenses Data Aggregation
+  // -----------------------------------------------------------------
+  const allFiscalMonthsSet = new Set<string>();
+
+  // Collect months from parents payments
+  parents.forEach(p => {
+    (p.payments || []).forEach(pay => {
+      if (pay.date && pay.date.length >= 7) {
+        allFiscalMonthsSet.add(pay.date.slice(0, 7)); // "YYYY-MM"
+      }
+    });
+  });
+
+  // Collect months from other revenues (sponsorships, donations, grants)
+  (otherRevenues || []).forEach(r => {
+    if (r.date && r.date.length >= 7) {
+      allFiscalMonthsSet.add(r.date.slice(0, 7));
+    }
+  });
+
+  // Collect months from expenses
+  (expenses || []).forEach(e => {
+    if (e.date && e.date.length >= 7 && e.status === 'Executed') {
+      allFiscalMonthsSet.add(e.date.slice(0, 7));
+    }
+  });
+
+  let sortedFiscalMonths = Array.from(allFiscalMonthsSet).sort();
+
+  // If database has very few records, populate academic school year default months
+  if (sortedFiscalMonths.length < 6) {
+    const defaultAcademicMonths = ['2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05'];
+    defaultAcademicMonths.forEach(m => allFiscalMonthsSet.add(m));
+    sortedFiscalMonths = Array.from(allFiscalMonthsSet).sort();
+  }
+
+  const selectedFiscalMonths = fiscalTimeRange === '6m' 
+    ? sortedFiscalMonths.slice(-6) 
+    : sortedFiscalMonths;
+
+  const monthlyFiscalHealthData = selectedFiscalMonths.map(mKey => {
+    const parts = mKey.split('-');
+    const monthLabel = parts.length === 2 ? `${monthNames[parts[1]] || parts[1]} ${parts[0]}` : mKey;
+
+    let parentRev = 0;
+    parents.forEach(p => {
+      (p.payments || []).forEach(pay => {
+        if (pay.date && pay.date.startsWith(mKey)) {
+          parentRev += pay.amount || 0;
+        }
+      });
+    });
+
+    let extraRev = 0;
+    (otherRevenues || []).forEach(r => {
+      if (r.date && r.date.startsWith(mKey)) {
+        extraRev += r.amount || 0;
+      }
+    });
+
+    const totalRev = parentRev + extraRev;
+
+    let totalExp = 0;
+    (expenses || []).forEach(e => {
+      if (e.date && e.date.startsWith(mKey) && e.status === 'Executed') {
+        totalExp += e.amount || 0;
+      }
+    });
+
+    const netSolde = totalRev - totalExp;
+
+    return {
+      monthKey: mKey,
+      name: monthLabel,
+      "Recettes Totales": totalRev,
+      "Cotisations Parents": parentRev,
+      "Autres Recettes": extraRev,
+      "Dépenses Exécutées": totalExp,
+      "Solde Net": netSolde,
+      isSurplus: netSolde >= 0
+    };
+  });
+
+  const periodTotalRevenue = monthlyFiscalHealthData.reduce((sum, d) => sum + d["Recettes Totales"], 0);
+  const periodTotalExpenses = monthlyFiscalHealthData.reduce((sum, d) => sum + d["Dépenses Exécutées"], 0);
+  const periodNetCashFlow = periodTotalRevenue - periodTotalExpenses;
+  const periodCoverageRatio = periodTotalExpenses > 0 
+    ? Math.round((periodTotalRevenue / periodTotalExpenses) * 100) 
+    : (periodTotalRevenue > 0 ? 100 : 0);
+  const surplusMonthsCount = monthlyFiscalHealthData.filter(d => d.isSurplus).length;
+  const deficitMonthsCount = monthlyFiscalHealthData.filter(d => !d.isSurplus).length;
 
   // Progressive monthly-level calculations for goal visualization
   const sortedMonths = Object.keys(monthlyDataMap).sort();
@@ -285,6 +381,9 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate,
           </div>
         </div>
       </div>
+
+      {/* Real-time Render Backend Diagnostics & Connection Verifier */}
+      <ApeeBackendDiagnostics />
 
       {/* Grid of Key Numerical Metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
@@ -639,6 +738,293 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate,
       {/* Visual Analytics Block (Charts) */}
       <h3 className="text-xs font-bold text-slate-700 tracking-wider uppercase pt-2">Graphiques et Indicateurs de Collecte</h3>
       
+      {/* ------------------------------------------------------------- */}
+      {/* Monthly Revenue vs. Expenses Bar Chart (Santé Fiscale)       */}
+      {/* ------------------------------------------------------------- */}
+      <div id="monthly_revenue_vs_expenses_chart" className="bg-white p-5 rounded-2xl border border-slate-150 space-y-5 shadow-3xs">
+        {/* Header with Title, Badges and Controls */}
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 border-b border-slate-100 pb-4">
+          <div className="space-y-1">
+            <div className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider border border-emerald-200/80">
+              <Scale className="h-3 w-3 text-emerald-600" />
+              {language === 'en' ? 'Fiscal Health & Budget Balance' : 'Santé Fiscale & Équilibre Budgétaire'}
+            </div>
+            <h3 className="text-sm md:text-base font-bold text-slate-900 flex items-center gap-2">
+              📊 {language === 'en' ? 'Monthly Revenue vs. Expenses' : 'Comparatif Mensuel : Recettes vs Dépenses'}
+            </h3>
+            <p className="text-[11px] text-slate-500 font-sans">
+              {language === 'en' 
+                ? 'Consolidated cash inflow (parent contributions + other revenues) versus executed expenses to evaluate operating margin.'
+                : 'Consolidation des encaissements (cotisations parents + autres recettes) face aux dépenses engagées pour évaluer la marge opérationnelle.'}
+            </p>
+          </div>
+
+          {/* Interactive Controls */}
+          <div className="flex flex-wrap items-center gap-2.5 self-stretch lg:self-auto justify-start lg:justify-end">
+            {/* Net Margin Curve Toggle */}
+            <button
+              type="button"
+              onClick={() => setShowNetMarginLine(prev => !prev)}
+              className={`text-[10px] font-bold px-3 py-1.5 rounded-xl border transition flex items-center gap-1.5 cursor-pointer ${
+                showNetMarginLine 
+                  ? 'bg-indigo-50 border-indigo-200 text-indigo-700 shadow-2xs' 
+                  : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+              }`}
+            >
+              <TrendingUp className="h-3 w-3" />
+              {showNetMarginLine ? (language === 'en' ? 'Net Line: On' : 'Courbe Marge : Active') : (language === 'en' ? 'Net Line: Off' : 'Courbe Marge : Masquée')}
+            </button>
+
+            {/* Range Toggle */}
+            <div className="inline-flex p-0.5 bg-slate-100 rounded-xl border border-slate-200 text-[10px] font-bold text-slate-600">
+              <button
+                type="button"
+                onClick={() => setFiscalTimeRange('6m')}
+                className={`px-3 py-1 rounded-lg transition cursor-pointer ${
+                  fiscalTimeRange === '6m' 
+                    ? 'bg-white text-slate-900 shadow-xs' 
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                {language === 'en' ? 'Last 6 Months' : '6 derniers mois'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setFiscalTimeRange('all')}
+                className={`px-3 py-1 rounded-lg transition cursor-pointer ${
+                  fiscalTimeRange === 'all' 
+                    ? 'bg-white text-slate-900 shadow-xs' 
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                {language === 'en' ? 'All Months' : 'Tous les mois'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* 4 KPI Summary Pill Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {/* Total Revenues */}
+          <div className="p-3 bg-emerald-50/50 border border-emerald-150 rounded-xl space-y-1">
+            <span className="text-[10px] font-mono uppercase font-bold text-emerald-700 flex items-center gap-1">
+              <ArrowUpRight className="h-3 w-3" />
+              {language === 'en' ? 'Total Period Revenue' : 'Recettes Période'}
+            </span>
+            <div className="text-sm md:text-base font-bold font-mono text-emerald-950">
+              {periodTotalRevenue.toLocaleString()} {settings.currency || 'FCFA'}
+            </div>
+            <div className="text-[9.5px] text-emerald-700 font-medium">
+              {language === 'en' ? 'Parents + Sponsors/Grants' : 'Cotisations + Dons/Aides'}
+            </div>
+          </div>
+
+          {/* Total Expenses */}
+          <div className="p-3 bg-rose-50/50 border border-rose-150 rounded-xl space-y-1">
+            <span className="text-[10px] font-mono uppercase font-bold text-rose-700 flex items-center gap-1">
+              <ArrowDownRight className="h-3 w-3" />
+              {language === 'en' ? 'Total Period Expenses' : 'Dépenses Période'}
+            </span>
+            <div className="text-sm md:text-base font-bold font-mono text-rose-950">
+              {periodTotalExpenses.toLocaleString()} {settings.currency || 'FCFA'}
+            </div>
+            <div className="text-[9.5px] text-rose-700 font-medium">
+              {language === 'en' ? 'Executed school disbursements' : 'Engagements décaissés'}
+            </div>
+          </div>
+
+          {/* Net Cash Flow / Balance */}
+          <div className={`p-3 border rounded-xl space-y-1 ${
+            periodNetCashFlow >= 0 
+              ? 'bg-indigo-50/50 border-indigo-150' 
+              : 'bg-amber-50/50 border-amber-200'
+          }`}>
+            <span className={`text-[10px] font-mono uppercase font-bold flex items-center gap-1 ${
+              periodNetCashFlow >= 0 ? 'text-indigo-700' : 'text-amber-800'
+            }`}>
+              <Coins className="h-3 w-3" />
+              {language === 'en' ? 'Net Operating Margin' : 'Marge de Trésorerie'}
+            </span>
+            <div className={`text-sm md:text-base font-bold font-mono ${
+              periodNetCashFlow >= 0 ? 'text-indigo-950' : 'text-amber-950'
+            }`}>
+              {periodNetCashFlow >= 0 ? '+' : ''}{periodNetCashFlow.toLocaleString()} {settings.currency || 'FCFA'}
+            </div>
+            <div className="text-[9.5px] font-semibold flex items-center gap-1">
+              {periodNetCashFlow >= 0 ? (
+                <span className="text-emerald-700 flex items-center gap-0.5">
+                  <CheckCircle2 className="h-3 w-3" /> {language === 'en' ? 'Fiscal Surplus' : 'Excédent Budgétaire'}
+                </span>
+              ) : (
+                <span className="text-rose-700 flex items-center gap-0.5">
+                  <AlertCircle className="h-3 w-3" /> {language === 'en' ? 'Deficit / Needs Recovery' : 'Déficit / Recouvrement requis'}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Coverage Ratio */}
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+            <span className="text-[10px] font-mono uppercase font-bold text-slate-600 flex items-center gap-1">
+              <Percent className="h-3 w-3 text-slate-500" />
+              {language === 'en' ? 'Expense Coverage' : 'Taux de Couverture'}
+            </span>
+            <div className="text-sm md:text-base font-bold font-mono text-slate-900">
+              {periodCoverageRatio}%
+            </div>
+            <div className="text-[9.5px] text-slate-600 font-medium">
+              {periodCoverageRatio >= 100 
+                ? (language === 'en' ? 'Fully funded' : 'Dépenses 100% couvertes') 
+                : (language === 'en' ? 'Partial coverage' : 'Couverture partielle')}
+            </div>
+          </div>
+        </div>
+
+        {/* The Bar Chart */}
+        <div className="h-72 md:h-80 w-full pt-2">
+          {isMounted ? (
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+              <ComposedChart 
+                data={monthlyFiscalHealthData} 
+                margin={{ top: 15, right: 15, left: -10, bottom: 5 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis 
+                  dataKey="name" 
+                  stroke="#64748b" 
+                  fontSize={10.5} 
+                  tickLine={false} 
+                />
+                <YAxis 
+                  stroke="#64748b" 
+                  fontSize={10} 
+                  tickLine={false} 
+                  tickFormatter={(val) => {
+                    if (Math.abs(val) >= 1000000) return `${(val / 1000000).toFixed(1)}M`;
+                    if (Math.abs(val) >= 1000) return `${(val / 1000).toFixed(0)}k`;
+                    return `${val}`;
+                  }}
+                />
+                <Tooltip 
+                  content={({ active, payload, label }) => {
+                    if (!active || !payload || !payload.length) return null;
+                    const item = payload[0]?.payload;
+                    if (!item) return null;
+                    const rev = item["Recettes Totales"] || 0;
+                    const exp = item["Dépenses Exécutées"] || 0;
+                    const solde = item["Solde Net"] || 0;
+                    const pRev = item["Cotisations Parents"] || 0;
+                    const oRev = item["Autres Recettes"] || 0;
+
+                    return (
+                      <div className="bg-slate-900 text-white p-3 rounded-xl shadow-xl text-xs font-sans space-y-2 border border-slate-700 min-w-56">
+                        <div className="border-b border-slate-700 pb-1.5 flex justify-between items-center">
+                          <span className="font-bold text-slate-100">{label}</span>
+                          <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold ${
+                            solde >= 0 ? 'bg-emerald-900/80 text-emerald-300' : 'bg-rose-900/80 text-rose-300'
+                          }`}>
+                            {solde >= 0 ? 'EXCÉDENT' : 'DÉFICIT'}
+                          </span>
+                        </div>
+                        <div className="space-y-1 font-mono text-[11px]">
+                          <div className="flex justify-between items-center text-emerald-400">
+                            <span className="flex items-center gap-1 font-sans">
+                              <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>
+                              Recettes Totales:
+                            </span>
+                            <span className="font-bold">{rev.toLocaleString()} F</span>
+                          </div>
+                          <div className="text-[9.5px] text-slate-400 pl-3 flex justify-between font-sans">
+                            <span>• Cotisations parents:</span>
+                            <span className="font-mono">{pRev.toLocaleString()} F</span>
+                          </div>
+                          {oRev > 0 && (
+                            <div className="text-[9.5px] text-slate-400 pl-3 flex justify-between font-sans">
+                              <span>• Autres recettes:</span>
+                              <span className="font-mono">{oRev.toLocaleString()} F</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between items-center text-rose-400 pt-1 border-t border-slate-800">
+                            <span className="flex items-center gap-1 font-sans">
+                              <span className="w-2 h-2 rounded-full bg-rose-400 inline-block"></span>
+                              Dépenses Exécutées:
+                            </span>
+                            <span className="font-bold">{exp.toLocaleString()} F</span>
+                          </div>
+                          <div className="flex justify-between items-center pt-1.5 border-t border-slate-700 text-slate-200">
+                            <span className="font-bold font-sans">Marge de Trésorerie:</span>
+                            <span className={`font-black ${solde >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {solde >= 0 ? '+' : ''}{solde.toLocaleString()} F
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }}
+                />
+                <Legend 
+                  verticalAlign="top" 
+                  align="right"
+                  iconSize={9} 
+                  iconType="circle" 
+                  wrapperStyle={{ fontSize: 11, paddingBottom: 10 }} 
+                />
+                <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="3 3" />
+                <Bar 
+                  dataKey="Recettes Totales" 
+                  name={language === 'en' ? 'Revenues (Parents + Other)' : 'Recettes (Cotisations + Autres)'} 
+                  fill="#10b981" 
+                  radius={[4, 4, 0, 0]} 
+                  maxBarSize={36} 
+                />
+                <Bar 
+                  dataKey="Dépenses Exécutées" 
+                  name={language === 'en' ? 'Executed Expenses' : 'Dépenses Exécutées'} 
+                  fill="#f43f5e" 
+                  radius={[4, 4, 0, 0]} 
+                  maxBarSize={36} 
+                />
+                {showNetMarginLine && (
+                  <Line 
+                    type="monotone" 
+                    dataKey="Solde Net" 
+                    name={language === 'en' ? 'Net Cash Margin' : 'Solde Net Mensuel'} 
+                    stroke="#6366f1" 
+                    strokeWidth={2.5} 
+                    dot={{ r: 4, fill: '#6366f1', strokeWidth: 1.5, stroke: '#fff' }} 
+                    activeDot={{ r: 6 }} 
+                  />
+                )}
+              </ComposedChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-full w-full bg-slate-50 rounded-2xl animate-pulse flex items-center justify-center text-xs text-slate-400 font-medium">
+              Chargement du graphique comparatif...
+            </div>
+          )}
+        </div>
+
+        {/* Footer Analytical Takeaway */}
+        <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-[10px] text-slate-500 font-sans">
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1 text-emerald-700 font-semibold">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              {surplusMonthsCount} {language === 'en' ? 'surplus month(s)' : 'mois en excédent'}
+            </span>
+            <span className="text-slate-300">|</span>
+            <span className="flex items-center gap-1 text-rose-700 font-semibold">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+              {deficitMonthsCount} {language === 'en' ? 'deficit month(s)' : 'mois en déficit'}
+            </span>
+          </div>
+          <div className="text-slate-400 font-mono">
+            {language === 'en' 
+              ? 'Data grounded on real-time ApeeExpense & ApeeOtherRevenue collections.'
+              : 'Données fondées sur les versements réels, autres recettes et dépenses exécutées.'}
+          </div>
+        </div>
+      </div>
+
       {/* Full-width cumulative vs target composed chart */}
       <div className="bg-white p-5 rounded-2xl border border-slate-150 space-y-4">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">

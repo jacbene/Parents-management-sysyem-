@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pasma-sys-cache-v2';
+const CACHE_NAME = 'pasma-sys-cache-v3';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -45,11 +45,16 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch Event
+// Fetch Event: Network-First with Cache as Safe Refuge
 self.addEventListener('fetch', (event) => {
   // In dev environment, bypass caching to avoid white pages or stale code
   if (isDevEnv()) {
     return; // Leaving request to be handled natively by browser
+  }
+
+  // Bypass dynamic backend API endpoints so real-time calls always hit the network
+  if (event.request.url.includes('/api/')) {
+    return;
   }
 
   // Only handle GET requests and local domains
@@ -57,16 +62,20 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Network-First strategy: Always prioritize fresh real-time data from network.
+  // The local cache serves as an instant refuge when offline or disconnected.
   event.respondWith(
     fetch(event.request).then((networkResponse) => {
       if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
         return networkResponse;
       }
 
+      // Update cache refuge with fresh response
       return caches.open(CACHE_NAME).then((cache) => {
         return cache.put(event.request, networkResponse.clone()).catch(() => undefined);
       }).then(() => networkResponse).catch(() => networkResponse);
     }).catch((error) => {
+      // Network failed: Graceful refuge fallback to local cache
       return caches.match(event.request).then((cachedResponse) => {
         if (cachedResponse) {
           return cachedResponse;

@@ -303,6 +303,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
           campayWebhookKey: settings.paymentConfig?.campayWebhookKey,
         },
         smsConfig: settings.smsConfig,
+        customSmsTemplate: settings.customSmsTemplate,
         ...extra
       });
 

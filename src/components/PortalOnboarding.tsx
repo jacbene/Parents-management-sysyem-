@@ -146,18 +146,23 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
             }
           });
 
-          const fallbackList = buildFallbackSchoolsList(deletedSet);
-          const merged = [...list];
-          fallbackList.forEach(fb => {
-            if (!merged.some(m => m.id === fb.id)) {
-              merged.push(fb);
-            }
-          });
+          // Network-First: The Firestore collection is the authoritative list of establishments.
+          // Fallback list is only used if Firestore returns no schools at all (initial setup) or for demo presets.
+          const finalList = list.length > 0 
+            ? list 
+            : buildFallbackSchoolsList(deletedSet);
 
-          setSchools(merged);
+          // Update local cache refuge with fresh network establishments
+          try {
+            localStorage.setItem('pasma_local_establishments', JSON.stringify(finalList));
+          } catch (e) {
+            console.warn('[PortalOnboarding] Failed to update local establishments refuge:', e);
+          }
+
+          setSchools(finalList);
           setLoadingSchools(false);
         }, (err) => {
-          console.warn("[PortalOnboarding] Real-time establishments listener error (using static local fallback):", err);
+          console.warn("[PortalOnboarding] Real-time establishments listener error (using local refuge fallback):", err);
           if (isMounted) {
             setSchools(buildFallbackSchoolsList(getDeletedSchoolIds()));
             setLoadingSchools(false);

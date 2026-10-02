@@ -17,10 +17,12 @@ import {
   HelpCircle,
   Clock,
   Settings,
-  X
+  X,
+  Sparkles
 } from 'lucide-react';
 import { ApeeParent, ApeeSettings } from '../../types';
 import { getApeeShortName, generateApeeReminderMessage } from '../../utils/apeeDb';
+import { analyzeSms, optimizeToGsm7 } from '../../utils/smsEncoding';
 
 interface ApeeRemindersProps {
   parents: ApeeParent[];
@@ -53,10 +55,10 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
   const overdue15Count = overdue15Parents.length;
   const overdue15Amount = overdue15Parents.reduce((sum, p) => sum + Math.max(0, p.totalDue - p.totalPaid), 0);
   
-  // Custom templates
-  const [smsTemplate, setSmsTemplate] = useState<string>(
-    "Chers parents. Rappel {short_name} {school_year} de {association_name} pour votre pupille ({student_names}). Le solde restant dû est de {remaining_amount} FCFA. Veuillez régulariser au plus vite par versement ou virement. Merci pour votre collaboration."
-  );
+  // Custom templates (defaults to customized APEE settings template if configured)
+  const defaultSmsFromSettings = settings?.customSmsTemplate || settings?.smsConfig?.customTemplate || "Rappel {NOM_PARENT}: Solde APEE de {MONTANT_DU} a regler avant le {DATE_ECHEANCE}. Merci de regulariser. {ETABLISSEMENT}.";
+
+  const [smsTemplate, setSmsTemplate] = useState<string>(defaultSmsFromSettings);
   
   const [emailSubject, setEmailSubject] = useState<string>(
     "Rappel de Paiement Cotisation {short_name} - {association_name}"
@@ -243,11 +245,24 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
     // Fallback if balance is not > 0 but we still want to display preview
     const remaining = Math.max(0, parent.totalDue - parent.totalPaid);
     const kidsList = parent.students.map(s => `${s.name} (${s.classRoom})`).join(', ');
+    const shortName = getApeeShortName(settings);
+    const associationName = settings?.associationName || "Établissement";
+    const currencyStr = settings?.currency || "FCFA";
+    const formattedAmount = `${remaining.toLocaleString()} ${currencyStr}`;
     
     return text
+      // Dynamic uppercase tags
+      .replace(/{NOM_PARENT}/g, parent.name)
+      .replace(/{MONTANT_DU}/g, formattedAmount)
+      .replace(/{DATE_ECHEANCE}/g, "la fin du mois")
+      .replace(/{ETABLISSEMENT}/g, shortName || associationName)
+      .replace(/{ELEVES}/g, kidsList)
+      .replace(/{DATE_JOUR}/g, new Date().toLocaleDateString('fr-FR'))
+      .replace(/{ANNEE_SCOLAIRE}/g, settings?.schoolYear || "")
+      // Legacy tags
       .replace(/{parent_name}/g, parent.name)
-      .replace(/{association_name}/g, settings?.associationName || "Établissement")
-      .replace(/{short_name}/g, getApeeShortName(settings))
+      .replace(/{association_name}/g, associationName)
+      .replace(/{short_name}/g, shortName)
       .replace(/{school_year}/g, settings?.schoolYear || "")
       .replace(/{student_names}/g, kidsList)
       .replace(/{remaining_amount}/g, remaining.toLocaleString())
@@ -472,6 +487,7 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
 
   // Financial statistics
   const totalDueRecoverable = overdueParents.reduce((sum, p) => sum + (p.totalDue - p.totalPaid), 0);
+  const smsAnalysis = analyzeSms(smsTemplate);
 
   return (
     <div id="content_apee_reminders" className="space-y-6">
@@ -1056,11 +1072,22 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <div className="flex justify-between items-center">
+                <div className="flex flex-wrap justify-between items-center gap-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
                     <Smartphone className="h-3 w-3" /> Template SMS / WhatsApp
                   </label>
-                  <span className="text-[9px] text-indigo-500 font-semibold">160 car./SMS</span>
+                  <div className="flex items-center gap-1.5">
+                    <span 
+                      className={`text-[9px] font-mono px-1.5 py-0.5 rounded-md font-bold ${
+                        smsAnalysis.isGsm7 
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                          : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                      }`}
+                      title={smsAnalysis.isGsm7 ? 'GSM-7 Standard (160 car./SMS)' : 'Unicode UCS-2 : Tous les accents français sont transmis intégralement'}
+                    >
+                      {smsAnalysis.isGsm7 ? 'GSM-7' : 'UCS-2 (Accents français)'} • {smsAnalysis.length} car. ({smsAnalysis.segments} SMS)
+                    </span>
+                  </div>
                 </div>
                 <textarea
                   rows={4}
@@ -1069,6 +1096,22 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
                   className="w-full text-xs font-sans p-2.5 border border-slate-200 rounded-xl focus:outline-indigo-500"
                   placeholder="Texte du SMS de relance..."
                 />
+                {!smsAnalysis.isGsm7 && (
+                  <div className="flex items-center justify-between gap-1.5 p-1.5 px-2 bg-slate-50 border border-slate-200 rounded-lg text-[9.5px] text-slate-600">
+                    <span className="truncate">
+                      Accents étendus préservés : <strong className="text-indigo-600 font-mono">{smsAnalysis.nonGsmCharacters.join(' ')}</strong> (70 car./SMS)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSmsTemplate(optimizeToGsm7(smsTemplate))}
+                      className="shrink-0 text-[9px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-md border border-indigo-200 flex items-center gap-1 transition cursor-pointer"
+                      title="Convertit les caractères non-GSM7 (ex: ç, ê) en équivalents économiques sans perte de sens pour envoyer en 160 car./SMS"
+                    >
+                      <Sparkles className="h-3 w-3 text-indigo-600" />
+                      Optimiser pour 160 car./SMS
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1.5">

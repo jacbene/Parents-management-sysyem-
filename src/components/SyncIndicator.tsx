@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Database } from 'lucide-react';
+import { RefreshCw, ShieldCheck, Wifi, WifiOff } from 'lucide-react';
+import { isOffline as isOfflineCheck } from '../firebase';
 
 interface SyncIndicatorProps {
   language?: 'fr' | 'en';
@@ -12,6 +13,9 @@ export default function SyncIndicator({ language = 'fr' }: SyncIndicatorProps) {
   });
   const [now, setNow] = useState<Date>(new Date());
   const [isSyncingAnimate, setIsSyncingAnimate] = useState(false);
+  const [isOfflineMode, setIsOfflineMode] = useState<boolean>(() => {
+    return isOfflineCheck();
+  });
 
   useEffect(() => {
     const handleSyncEvent = () => {
@@ -25,15 +29,27 @@ export default function SyncIndicator({ language = 'fr' }: SyncIndicatorProps) {
       return () => clearTimeout(timer);
     };
 
+    const handleConnectionChange = () => {
+      setIsOfflineMode(isOfflineCheck());
+    };
+
     // Listen to database snapshot pushes and successful write events
     window.addEventListener('pasma_save_success', handleSyncEvent);
     window.addEventListener('pasma_sync_success', handleSyncEvent);
     window.addEventListener('pasma_db_sync_update', handleSyncEvent);
+    window.addEventListener('pasma_refuge_saved', handleSyncEvent);
+    window.addEventListener('pasma_connection_changed', handleConnectionChange);
+    window.addEventListener('online', handleConnectionChange);
+    window.addEventListener('offline', handleConnectionChange);
 
     return () => {
       window.removeEventListener('pasma_save_success', handleSyncEvent);
       window.removeEventListener('pasma_sync_success', handleSyncEvent);
       window.removeEventListener('pasma_db_sync_update', handleSyncEvent);
+      window.removeEventListener('pasma_refuge_saved', handleSyncEvent);
+      window.removeEventListener('pasma_connection_changed', handleConnectionChange);
+      window.removeEventListener('online', handleConnectionChange);
+      window.removeEventListener('offline', handleConnectionChange);
     };
   }, []);
 
@@ -93,22 +109,40 @@ export default function SyncIndicator({ language = 'fr' }: SyncIndicatorProps) {
   return (
     <div
       id="firestore-sync-indicator"
-      className="text-[8px] md:text-[9.5px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/40 border border-slate-200/50 dark:border-slate-700/50 font-bold px-2.5 py-0.5 md:py-1 rounded-lg flex items-center gap-1.5 transition-all hover:bg-slate-100 dark:hover:bg-slate-850 cursor-help shrink-0"
-      title={`${language === 'en' ? 'Last successful Firestore sync:' : 'Dernière synchronisation Firestore réussie :'} ${getAbsoluteTimeString()}`}
+      className={`text-[8px] md:text-[9.5px] border font-bold px-2.5 py-0.5 md:py-1 rounded-lg flex items-center gap-1.5 transition-all cursor-help shrink-0 ${
+        isOfflineMode
+          ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700/60 text-amber-800 dark:text-amber-300'
+          : 'text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/40 border-slate-200/60 dark:border-slate-700/50 hover:bg-slate-100 dark:hover:bg-slate-850'
+      }`}
+      title={
+        isOfflineMode
+          ? language === 'en'
+            ? 'Refuge Mode Active: Consulting local cache safely until network reconnects.'
+            : 'Mode Refuge Actif : Données lues depuis le cache local sécurisé en attente de reconnexion réseau.'
+          : `${language === 'en' ? 'Network-First Real-time Sync Active. Last sync:' : 'Synchronisation Réseau en temps réel active. Dernière synchro :'} ${getAbsoluteTimeString()}`
+      }
     >
       <div className="relative flex items-center justify-center">
-        <RefreshCw 
-          className={`h-2.5 w-2.5 text-indigo-500 dark:text-amber-400 shrink-0 ${
-            isSyncingAnimate ? 'animate-spin text-emerald-500 dark:text-emerald-400' : 'animate-pulse'
-          }`} 
-        />
+        {isOfflineMode ? (
+          <ShieldCheck className="h-2.5 w-2.5 text-amber-600 dark:text-amber-400 shrink-0" />
+        ) : (
+          <RefreshCw 
+            className={`h-2.5 w-2.5 text-emerald-600 dark:text-emerald-400 shrink-0 ${
+              isSyncingAnimate ? 'animate-spin text-indigo-500 dark:text-indigo-400' : 'animate-pulse'
+            }`} 
+          />
+        )}
       </div>
       <div className="flex items-center gap-1">
-        <span className="hidden sm:inline opacity-70 font-medium">
-          {language === 'en' ? 'Cloud Sync:' : 'Sync Firestore :'}
+        <span className="hidden sm:inline opacity-80 font-medium">
+          {isOfflineMode 
+            ? (language === 'en' ? 'Cache Refuge:' : 'Refuge Local :')
+            : (language === 'en' ? 'Live Cloud:' : 'Réseau Direct :')}
         </span>
-        <span className="font-mono text-slate-700 dark:text-slate-200">
-          {getRelativeTimeString()}
+        <span className="font-mono font-semibold">
+          {isOfflineMode
+            ? (language === 'en' ? 'Safe Offline' : 'Actif hors-ligne')
+            : getRelativeTimeString()}
         </span>
       </div>
     </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Save, 
@@ -17,10 +17,28 @@ import {
   RefreshCw,
   Send,
   MessageSquare,
-  Activity
+  Activity,
+  FileText,
+  Sparkles,
+  Copy,
+  Check,
+  Wand2,
+  Calendar,
+  User,
+  DollarSign,
+  School,
+  Users
 } from 'lucide-react';
 import { ApeeSettings, ApeeSmsConfig } from '../../types';
 import { useLanguage } from '../../utils/TranslationContext';
+import { 
+  analyzeSms, 
+  optimizeToGsm7, 
+  simulateSmsMessage, 
+  validateSmsTemplate, 
+  SMS_DYNAMIC_VARIABLES, 
+  SMS_PRESET_TEMPLATES 
+} from '../../utils/smsEncoding';
 
 interface SmsConfigurationFormProps {
   settings: ApeeSettings;
@@ -43,6 +61,15 @@ export default function SmsConfigurationForm({
   const [smsSenderId, setSmsSenderId] = useState(smsConfig.smsSenderId || 'APEE');
   const [smsUsername, setSmsUsername] = useState(smsConfig.smsUsername || '');
   const [smsPassword, setSmsPassword] = useState(smsConfig.smsPassword || '');
+
+  // Custom SMS template with dynamic variables and GSM-160 validation
+  const [customSmsTemplate, setCustomSmsTemplate] = useState<string>(
+    settings.customSmsTemplate || 
+    smsConfig.customTemplate || 
+    SMS_PRESET_TEMPLATES[0].template
+  );
+  const templateTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const [copiedPreview, setCopiedPreview] = useState(false);
 
   // Hide/Show secrets
   const [showApiKey, setShowApiKey] = useState(false);
@@ -71,6 +98,12 @@ export default function SmsConfigurationForm({
       setSmsSenderId(cfg.smsSenderId || 'APEE');
       setSmsUsername(cfg.smsUsername || '');
       setSmsPassword(cfg.smsPassword || '');
+      if (cfg.customTemplate) {
+        setCustomSmsTemplate(cfg.customTemplate);
+      }
+    }
+    if (settings.customSmsTemplate) {
+      setCustomSmsTemplate(settings.customSmsTemplate);
     }
     // Set default test phone number to Director's or Fin Manager's phone if available
     if (settings.finManagerPhone) {
@@ -80,14 +113,90 @@ export default function SmsConfigurationForm({
     }
   }, [settings]);
 
+  const schoolName = settings.shortName || settings.associationName || 'CES Ekali 1';
+
+  // Live simulation of dynamic variables with standard sample data
+  const simulation = simulateSmsMessage(customSmsTemplate, {
+    '{ETABLISSEMENT}': schoolName,
+    '{association_name}': schoolName,
+    '{short_name}': schoolName,
+    '{MONTANT_DU}': `25 000 ${settings.currency || 'FCFA'}`
+  });
+
+  const templateValidation = validateSmsTemplate(customSmsTemplate, {
+    '{ETABLISSEMENT}': schoolName,
+    '{association_name}': schoolName,
+    '{short_name}': schoolName,
+    '{MONTANT_DU}': `25 000 ${settings.currency || 'FCFA'}`
+  });
+
+  // Dynamic variable insertion handler (inserts at cursor position)
+  const handleInsertVariable = (tag: string) => {
+    const textarea = templateTextareaRef.current;
+    if (!textarea) {
+      setCustomSmsTemplate(prev => prev ? `${prev} ${tag}` : tag);
+      return;
+    }
+
+    const start = textarea.selectionStart ?? customSmsTemplate.length;
+    const end = textarea.selectionEnd ?? customSmsTemplate.length;
+    const current = customSmsTemplate;
+    const next = current.slice(0, start) + tag + current.slice(end);
+    setCustomSmsTemplate(next);
+
+    setTimeout(() => {
+      textarea.focus();
+      const cursor = start + tag.length;
+      textarea.setSelectionRange(cursor, cursor);
+    }, 20);
+  };
+
+  const handleLoadPreset = (tpl: string) => {
+    setCustomSmsTemplate(tpl);
+  };
+
+  const handleOptimizeGsm = () => {
+    setCustomSmsTemplate(prev => optimizeToGsm7(prev));
+  };
+
+  const handleCopyPreviewText = (text: string) => {
+    if (navigator?.clipboard) {
+      navigator.clipboard.writeText(text);
+      setCopiedPreview(true);
+      setTimeout(() => setCopiedPreview(false), 2000);
+    }
+  };
+
+  const handleUseAsTestMessage = (text: string) => {
+    setTestMessage(text);
+    const terminalEl = document.getElementById('sms_test_terminal_card');
+    if (terminalEl) {
+      terminalEl.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   // Handle Validation
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
     setGeneralError('');
 
+    // Custom SMS template validation (must comply with GSM limit of 160 characters)
+    if (customSmsTemplate && customSmsTemplate.trim()) {
+      const val = validateSmsTemplate(customSmsTemplate, {
+        '{ETABLISSEMENT}': schoolName,
+        '{MONTANT_DU}': `25 000 ${settings.currency || 'FCFA'}`
+      });
+
+      if (!val.isValid) {
+        newErrors.customSmsTemplate = val.error || (language === 'en' 
+          ? 'Template exceeds the single GSM SMS limit (160 chars).'
+          : 'Le modèle dépasse la limite de 160 caractères GSM.');
+      }
+    }
+
     if (!smsEnabled) {
-      setErrors({});
-      return true;
+      setErrors(newErrors);
+      return Object.keys(newErrors).length === 0;
     }
 
     if (provider === 'generic' && !smsGatewayUrl.trim()) {
@@ -118,8 +227,8 @@ export default function SmsConfigurationForm({
     
     if (!validateForm()) {
       setGeneralError(language === 'en'
-        ? 'Please fix the errors in the form before saving.'
-        : "Veuillez corriger les erreurs dans le formulaire avant de l'enregistrer."
+        ? 'Please fix the validation errors (e.g. GSM 160 character limit) before saving.'
+        : "Veuillez corriger les erreurs de validation (notamment la limite de 160 caractères GSM) avant d'enregistrer."
       );
       return;
     }
@@ -135,11 +244,13 @@ export default function SmsConfigurationForm({
         smsApiKey: smsApiKey.trim(),
         smsSenderId: smsSenderId.trim(),
         smsUsername: smsUsername.trim(),
-        smsPassword: smsPassword.trim()
+        smsPassword: smsPassword.trim(),
+        customTemplate: customSmsTemplate.trim()
       };
 
       const updatedSettings: ApeeSettings = {
         ...settings,
+        customSmsTemplate: customSmsTemplate.trim(),
         smsConfig: updatedSmsConfig
       };
 
@@ -464,6 +575,296 @@ export default function SmsConfigurationForm({
               </div>
             </div>
           )}
+
+        </div>
+
+        {/* ========================================================================= */}
+        {/* SECTION: Custom SMS Template with Dynamic Variables & GSM-160 Validation */}
+        {/* ========================================================================= */}
+        <div className="pt-4 border-t border-slate-200/80 space-y-4" id="custom_sms_template_card">
+          
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-150">
+                  <FileText className="h-4 w-4" />
+                </span>
+                <h3 className="text-xs md:text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                  {language === 'en' ? 'Custom SMS Message Template' : 'Modèle de Message SMS Personnalisé'}
+                </h3>
+              </div>
+              <p className="text-[11px] text-slate-500 leading-tight">
+                {language === 'en'
+                  ? 'Define the notification message template with dynamic variables. The message must strictly respect the 160 GSM character limit for a single standard SMS.'
+                  : 'Définissez le modèle de notification SMS avec variables dynamiques. Le texte doit respecter rigoureusement la norme de 160 caractères GSM pour un SMS unique.'}
+              </p>
+            </div>
+
+            {/* GSM Status Pill Badge */}
+            <div className="flex items-center gap-1.5 self-start sm:self-auto">
+              <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold tracking-tight border ${
+                !simulation.simulatedAnalysis.isGsm7
+                  ? 'bg-amber-50 text-amber-800 border-amber-200'
+                  : simulation.simulatedAnalysis.gsmLength <= 140
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                    : simulation.simulatedAnalysis.gsmLength <= 160
+                      ? 'bg-indigo-50 text-indigo-800 border-indigo-200'
+                      : 'bg-rose-50 text-rose-800 border-rose-200'
+              }`}>
+                {!simulation.simulatedAnalysis.isGsm7 ? (
+                  <>
+                    <AlertTriangle className="h-3 w-3 text-amber-600" />
+                    <span>UCS-2 Unicode (70 car. max)</span>
+                  </>
+                ) : simulation.simulatedAnalysis.gsmLength <= 160 ? (
+                  <>
+                    <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                    <span>GSM-7 (160 car. max)</span>
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle className="h-3 w-3 text-rose-600" />
+                    <span>Dépassement ({simulation.simulatedAnalysis.segments} SMS)</span>
+                  </>
+                )}
+              </span>
+            </div>
+          </div>
+
+          {/* Presets Quick-Load Buttons */}
+          <div className="p-3 bg-slate-50/80 rounded-2xl border border-slate-150 space-y-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+              <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1">
+                <Sparkles className="h-3 w-3 text-amber-500" />
+                {language === 'en' ? 'Pre-validated GSM-160 Presets :' : 'Modèles types pré-validés (100% conformes GSM-160) :'}
+              </span>
+              <span className="text-[10px] text-slate-400 font-medium">Cliquez pour appliquer</span>
+            </div>
+            
+            <div className="flex flex-wrap gap-2">
+              {SMS_PRESET_TEMPLATES.map(preset => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => handleLoadPreset(preset.template)}
+                  title={language === 'en' ? preset.descriptionEn : preset.descriptionFr}
+                  className="px-2.5 py-1.5 bg-white hover:bg-indigo-50 hover:border-indigo-200 border border-slate-200 rounded-xl text-[11px] font-semibold text-slate-700 hover:text-indigo-700 transition flex items-center gap-1.5 shadow-3xs cursor-pointer"
+                >
+                  <Wand2 className="h-3 w-3 text-indigo-500" />
+                  <span>{language === 'en' ? preset.nameEn : preset.nameFr}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Dynamic Variables Toolbar */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">
+                {language === 'en' 
+                  ? 'Dynamic Variables (Click tag to insert at cursor position) :' 
+                  : 'Variables Dynamiques (Cliquez pour insérer au curseur) :'}
+              </label>
+              <span className="text-[10px] text-indigo-600 font-bold">
+                {simulation.usedVariables.length} variable(s) active(s)
+              </span>
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              {SMS_DYNAMIC_VARIABLES.map(v => {
+                const isUsed = customSmsTemplate.includes(v.tag);
+                return (
+                  <button
+                    key={v.tag}
+                    type="button"
+                    onClick={() => handleInsertVariable(v.tag)}
+                    title={`${language === 'en' ? v.descriptionEn : v.descriptionFr} — Exemple : "${v.sampleValue}"`}
+                    className={`group px-2.5 py-1 rounded-xl text-[10.5px] font-mono font-bold transition flex items-center gap-1 border shadow-3xs cursor-pointer ${
+                      isUsed 
+                        ? 'bg-indigo-600 text-white border-indigo-700' 
+                        : 'bg-white hover:bg-indigo-50/80 text-indigo-700 hover:text-indigo-900 border-indigo-200/80'
+                    }`}
+                  >
+                    <span>+</span>
+                    <span>{v.tag}</span>
+                    <span className={`text-[9px] font-sans font-medium px-1 rounded ${
+                      isUsed ? 'bg-indigo-700/60 text-indigo-100' : 'bg-slate-100 text-slate-500 group-hover:bg-indigo-100/70 group-hover:text-indigo-800'
+                    }`}>
+                      {language === 'en' ? v.labelEn : v.labelFr}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Template Textarea */}
+          <div className="space-y-1">
+            <div className="relative">
+              <textarea
+                ref={templateTextareaRef}
+                rows={3}
+                value={customSmsTemplate}
+                onChange={(e) => setCustomSmsTemplate(e.target.value)}
+                placeholder="Rappel {NOM_PARENT}: Solde APEE de {MONTANT_DU} a regler avant le {DATE_ECHEANCE}. Merci. {ETABLISSEMENT}."
+                className={`w-full p-3 text-xs bg-white border rounded-2xl focus:outline-indigo-500 font-sans text-slate-800 leading-relaxed shadow-inner ${
+                  !simulation.simulatedAnalysis.isGsm7 || simulation.simulatedAnalysis.gsmLength > 160
+                    ? 'border-rose-300 focus:ring-rose-400'
+                    : simulation.simulatedAnalysis.gsmLength > 140
+                      ? 'border-amber-300 focus:ring-amber-400'
+                      : 'border-slate-200 focus:ring-indigo-400'
+                }`}
+              />
+            </div>
+            {errors.customSmsTemplate && (
+              <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1 mt-1">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                {errors.customSmsTemplate}
+              </p>
+            )}
+          </div>
+
+          {/* GSM Length Metric Gauge & Progress Bar */}
+          <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-150 space-y-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px]">
+              <div className="flex items-center gap-3">
+                <span className="font-medium text-slate-500">
+                  {language === 'en' ? 'Template raw length :' : 'Longueur brute modèle :'} <strong className="text-slate-800 font-mono">{customSmsTemplate.length}</strong> car.
+                </span>
+                <span className="text-slate-300">|</span>
+                <span className="font-medium text-slate-500">
+                  {language === 'en' ? 'Estimated real SMS length :' : 'Longueur estimée après injection :'} 
+                  <strong className={`font-mono font-bold ml-1 text-xs ${
+                    simulation.simulatedAnalysis.gsmLength > 160 ? 'text-rose-600' : simulation.simulatedAnalysis.gsmLength > 140 ? 'text-amber-600' : 'text-emerald-700'
+                  }`}>
+                    {simulation.simulatedAnalysis.gsmLength} / 160 car. GSM
+                  </strong>
+                </span>
+              </div>
+
+              <div className="text-[10.5px] font-mono font-bold">
+                {simulation.simulatedAnalysis.gsmLength <= 160 ? (
+                  <span className="text-emerald-700">
+                    +{160 - simulation.simulatedAnalysis.gsmLength} {language === 'en' ? 'chars remaining' : 'caractères de marge'}
+                  </span>
+                ) : (
+                  <span className="text-rose-600">
+                    +{simulation.simulatedAnalysis.gsmLength - 160} {language === 'en' ? 'chars over limit' : 'caractères en trop'}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Visual Progress Bar */}
+            <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+              <div 
+                className={`h-full transition-all duration-300 rounded-full ${
+                  !simulation.simulatedAnalysis.isGsm7 || simulation.simulatedAnalysis.gsmLength > 160
+                    ? 'bg-rose-500'
+                    : simulation.simulatedAnalysis.gsmLength > 140
+                      ? 'bg-amber-500'
+                      : 'bg-emerald-500'
+                }`}
+                style={{ width: `${Math.min(100, (simulation.simulatedAnalysis.gsmLength / 160) * 100)}%` }}
+              />
+            </div>
+
+            {/* Diagnostic Message & Quick Fix */}
+            <div className="pt-1 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              {!simulation.simulatedAnalysis.isGsm7 ? (
+                <div className="text-[11px] text-amber-800 flex items-center gap-1.5 font-medium">
+                  <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                  <span>
+                    {language === 'en' 
+                      ? `Non-GSM characters detected: ${simulation.simulatedAnalysis.nonGsmCharacters.join(', ')}. Forces UCS-2 (70 chars limit).`
+                      : `Caractères hors GSM-7 : ${simulation.simulatedAnalysis.nonGsmCharacters.join(', ')}. Force UCS-2 (limite 70 car.).`}
+                  </span>
+                </div>
+              ) : simulation.simulatedAnalysis.gsmLength > 160 ? (
+                <div className="text-[11px] text-rose-800 flex items-center gap-1.5 font-medium">
+                  <AlertTriangle className="h-3.5 w-3.5 text-rose-600 shrink-0" />
+                  <span>
+                    {language === 'en'
+                      ? `Length exceeds 160 chars (${simulation.simulatedAnalysis.segments} SMS will be billed). Shorten text to maintain 1 SMS.`
+                      : `Dépassement de 160 car. (${simulation.simulatedAnalysis.segments} SMS seront facturés). Raccourcissez le texte pour conserver 1 seul SMS.`}
+                  </span>
+                </div>
+              ) : (
+                <div className="text-[11px] text-emerald-800 flex items-center gap-1.5 font-medium">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                  <span>
+                    {language === 'en'
+                      ? '100% GSM compliant. Guaranteed 1 single SMS billed per parent.'
+                      : '100% conforme GSM-7. Garanti 1 seul SMS facturé par parent.'}
+                  </span>
+                </div>
+              )}
+
+              {/* 1-Click GSM Optimization Action Button */}
+              {(!simulation.simulatedAnalysis.isGsm7 || simulation.simulatedAnalysis.gsmLength > 160) && (
+                <button
+                  type="button"
+                  onClick={handleOptimizeGsm}
+                  className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white text-[10.5px] font-bold rounded-lg transition flex items-center gap-1 self-start sm:self-auto cursor-pointer shadow-3xs shrink-0"
+                >
+                  <Sparkles className="h-3 w-3" />
+                  <span>{language === 'en' ? 'Optimize for GSM-7 (160 chars)' : 'Optimiser pour GSM-7 (160 car.)'}</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Live Mobile SMS Simulation Box */}
+          <div className="p-4 bg-slate-900 text-slate-100 rounded-2xl space-y-2.5 shadow-sm border border-slate-800">
+            <div className="flex items-center justify-between text-[10px] text-slate-400 border-b border-slate-800 pb-2">
+              <span className="font-mono uppercase font-bold tracking-wider flex items-center gap-1.5 text-indigo-300">
+                <Smartphone className="h-3.5 w-3.5 text-indigo-400" />
+                {language === 'en' ? 'Live Mobile SMS Simulation (Parent Phone)' : 'Aperçu Réel sur le Téléphone du Parent'}
+              </span>
+              <span className="font-mono text-slate-400">
+                De : <strong className="text-white">{smsSenderId || 'APEE'}</strong>
+              </span>
+            </div>
+
+            {/* Bubble Message */}
+            <div className="bg-slate-800/90 text-slate-100 p-3.5 rounded-2xl rounded-tl-xs border border-slate-700/80 max-w-lg text-xs leading-relaxed font-sans shadow-inner">
+              <p className="whitespace-pre-wrap">{simulation.simulatedText || "(Message vide)"}</p>
+              <div className="mt-2 flex items-center justify-between text-[9px] text-slate-400 font-mono pt-1 border-t border-slate-700/50">
+                <span>{language === 'en' ? 'Delivered via Gateway' : 'Délivré via Passerelle GSM'}</span>
+                <span>{simulation.simulatedAnalysis.gsmLength} car. • 12:45 ✓✓</span>
+              </div>
+            </div>
+
+            {/* Actions on simulated preview */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px]">
+              <div className="text-[10px] text-slate-400 font-sans">
+                {language === 'en' 
+                  ? 'Simulated with: NOM_PARENT = "M. Martin BENE", MONTANT_DU = "25 000 FCFA", DATE_ECHEANCE = "15/10/2026"'
+                  : 'Injecté avec : NOM_PARENT = "M. Martin BENE", MONTANT_DU = "25 000 FCFA", DATE_ECHEANCE = "15/10/2026"'}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleCopyPreviewText(simulation.simulatedText)}
+                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer"
+                >
+                  {copiedPreview ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                  <span>{copiedPreview ? (language === 'en' ? 'Copied!' : 'Copié !') : (language === 'en' ? 'Copy Text' : 'Copier')}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleUseAsTestMessage(simulation.simulatedText)}
+                  className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer"
+                >
+                  <Send className="h-3 w-3 text-indigo-200" />
+                  <span>{language === 'en' ? 'Inject into Test Terminal' : 'Tester dans le Banc d\'Essai'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
 
         </div>
 

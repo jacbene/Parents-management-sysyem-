@@ -211,6 +211,7 @@ export interface Invoice {
   paymentConfigList?: string;
   shortName?: string;
   smsConfigList?: string;
+  customSmsTemplate?: string;
   syncIntervalSeconds?: number;
 }
 
@@ -340,6 +341,7 @@ export interface ApeeSmsConfig {
   smsUsername?: string;
   smsPassword?: string;
   smsEnabled?: boolean;
+  customTemplate?: string;
 }
 
 export interface ClassSubject {
@@ -384,6 +386,7 @@ export interface ApeeSettings {
   classSubjects?: ClassSubject[];
   paymentConfig?: ApeePaymentConfig;
   smsConfig?: ApeeSmsConfig;
+  customSmsTemplate?: string;
   syncIntervalSeconds?: number;
 }
 

@@ -147,7 +147,7 @@ async function sendSms(phoneNumber: string, message: string, config: any): Promi
         method: "POST",
         headers: {
           "Authorization": authHeader,
-          "Content-Type": "application/x-www-form-urlencoded"
+          "Content-Type": "application/x-www-form-urlencoded; charset=utf-8"
         },
         body: bodyParams.toString()
       });
@@ -931,16 +931,42 @@ app.post("/api/apee/send-bulk-reminders", async (req, res) => {
       ? parentObj.students.map((s: any) => `${s.name} (${s.classRoom})`).join(', ')
       : "votre enfant";
 
+    // Compute dynamic due date
+    let dueDateStr = "la fin du mois";
+    if (parentObj.createdAt) {
+      const d = new Date(parentObj.createdAt);
+      d.setDate(d.getDate() + 30);
+      dueDateStr = d.toLocaleDateString('fr-FR');
+    } else {
+      const now = new Date();
+      now.setDate(now.getDate() + 15);
+      dueDateStr = now.toLocaleDateString('fr-FR');
+    }
+    const todayStr = new Date().toLocaleDateString('fr-FR');
+    const currencyStr = settings?.currency || "FCFA";
+    const formattedAmount = `${remaining.toLocaleString()} ${currencyStr}`;
+
     const replacePlaceholders = (text: string) => {
       if (!text) return "";
       return text
+        // Dynamic variables as specified
+        .replace(/{NOM_PARENT}/g, parentObj.name)
+        .replace(/{MONTANT_DU}/g, formattedAmount)
+        .replace(/{DATE_ECHEANCE}/g, dueDateStr)
+        .replace(/{ETABLISSEMENT}/g, shortName || associationName)
+        .replace(/{ELEVES}/g, kidsList)
+        .replace(/{DATE_JOUR}/g, todayStr)
+        .replace(/{ANNEE_SCOLAIRE}/g, schoolYear)
+        // Legacy lowercase placeholders
         .replace(/{parent_name}/g, parentObj.name)
         .replace(/{association_name}/g, associationName)
         .replace(/{short_name}/g, shortName)
         .replace(/{school_year}/g, schoolYear)
         .replace(/{student_names}/g, kidsList)
         .replace(/{remaining_amount}/g, remaining.toLocaleString())
-        .replace(/{total_due_amount}/g, parentObj.totalDue.toLocaleString());
+        .replace(/{total_due_amount}/g, parentObj.totalDue.toLocaleString())
+        .replace(/{due_date}/g, dueDateStr)
+        .replace(/{current_date}/g, todayStr);
     };
 
     if (channel === 'email') {
@@ -958,12 +984,14 @@ app.post("/api/apee/send-bulk-reminders", async (req, res) => {
         const fromAddress = process.env.SMTP_FROM || (etherealAccount ? `"APEE Portal" <${etherealAccount.user}>` : '"APEE Support" <no-reply@apee-portal.org>');
         
         if (mailer) {
+          const htmlBody = `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8" /><meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /></head><body style="font-family: Arial, sans-serif; line-height: 1.6; color: #1e293b;">${parsedBody.replace(/\n/g, '<br>')}</body></html>`;
           const info = await mailer.sendMail({
             from: fromAddress,
             to: parentObj.email,
             subject: parsedSubject,
             text: parsedBody,
-            html: parsedBody.replace(/\n/g, '<br>')
+            html: htmlBody,
+            headers: { 'Content-Type': 'text/html; charset=UTF-8' }
           });
 
           const testUrl = nodemailer.getTestMessageUrl(info);
@@ -989,7 +1017,8 @@ app.post("/api/apee/send-bulk-reminders", async (req, res) => {
         continue;
       }
 
-      const parsedBody = replacePlaceholders(smsTemplate);
+      const effectiveTemplate = smsTemplate || settings?.customSmsTemplate || settings?.smsConfig?.customTemplate || "Rappel {NOM_PARENT}: Solde APEE de {MONTANT_DU} a regler avant le {DATE_ECHEANCE}. Merci. {ETABLISSEMENT}.";
+      const parsedBody = replacePlaceholders(effectiveTemplate);
       let smsConfig = settings?.smsConfig || settings || {};
       if (req.body.forceProvider) {
         smsConfig = { ...smsConfig, provider: req.body.forceProvider };
@@ -1057,12 +1086,14 @@ app.post("/api/apee/send-bulk-announcements", async (req, res) => {
         const fromAddress = process.env.SMTP_FROM || (etherealAccount ? `"APEE Portal" <${etherealAccount.user}>` : '"APEE Support" <no-reply@apee-portal.org>');
         
         if (mailer) {
+          const htmlBody = `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8" /><meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /></head><body style="font-family: Arial, sans-serif; line-height: 1.6; color: #1e293b;">${content.replace(/\n/g, '<br>')}</body></html>`;
           const info = await mailer.sendMail({
             from: fromAddress,
             to: parentEmail,
             subject: subject,
             text: content,
-            html: content.replace(/\n/g, '<br>')
+            html: htmlBody,
+            headers: { 'Content-Type': 'text/html; charset=UTF-8' }
           });
 
           const testUrl = nodemailer.getTestMessageUrl(info);
