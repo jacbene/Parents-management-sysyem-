@@ -1629,7 +1629,7 @@ app.post("/api/campay/simulate-webhook-post", async (req, res) => {
     const computedSignature = hmac.digest("hex");
 
     // Make an HTTP POST call to our own local webhook endpoint
-    const webhookUrl = `http://localhost:3000/api/campay-webhook`;
+    const webhookUrl = `http://127.0.0.1:${PORT}/api/campay-webhook`;
     
     console.log(`📡 [Campay Simulator] Self-posting payload to local webhook: ${webhookUrl}`);
     
