@@ -1,4 +1,4 @@
-const CACHE_NAME = 'apee-portal-cache-v1';
+const CACHE_NAME = 'pasma-sys-cache-v2';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -58,25 +58,25 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith(
-    caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-      return fetch(event.request).then((networkResponse) => {
-        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
-          return networkResponse;
-        }
-        const responseToCache = networkResponse.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, responseToCache);
-        });
+    fetch(event.request).then((networkResponse) => {
+      if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
         return networkResponse;
-      }).catch((err) => {
-        // Fallback uniquement pour les requêtes de navigation HTML
-        if (event.request.mode === 'navigate' || (event.request.headers.get('accept') && event.request.headers.get('accept').includes('text/html'))) {
-          return caches.match('/', { ignoreSearch: true });
+      }
+
+      return caches.open(CACHE_NAME).then((cache) => {
+        return cache.put(event.request, networkResponse.clone()).catch(() => undefined);
+      }).then(() => networkResponse).catch(() => networkResponse);
+    }).catch((error) => {
+      return caches.match(event.request).then((cachedResponse) => {
+        if (cachedResponse) {
+          return cachedResponse;
         }
-        throw err;
+
+        if (event.request.mode === 'navigate' || (event.request.headers.get('accept') && event.request.headers.get('accept').includes('text/html'))) {
+          return caches.match('/');
+        }
+
+        throw error;
       });
     })
   );
