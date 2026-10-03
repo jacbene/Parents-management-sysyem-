@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../firebase';
-import { collection, query, getDocs, doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
+import { auth, db } from '../firebase';
+import { collection, query, getDocs } from 'firebase/firestore';
 import { 
   Activity, CheckCircle, AlertCircle, Info, Copy, ShieldCheck, 
   RefreshCw, Trash2, Terminal, Settings, Key, Globe, Check, Lock, AlertTriangle
@@ -14,6 +14,7 @@ interface WebhookLog {
   phone: string;
   operator: string;
   verified: boolean;
+  financialVerified: boolean;
   timestamp: string;
   payloadJson: string;
   synced?: boolean;
@@ -45,7 +46,7 @@ export default function PaymentWebhookHandler() {
 
   const fetchServerStatus = async () => {
     try {
-      const res = await fetch('/api/campay/status');
+      const res = await fetch(`${webhookBaseUrl}/api/campay/status`);
       if (res.ok) {
         const data = await res.json();
         setServerStatus(data);
@@ -59,8 +60,13 @@ export default function PaymentWebhookHandler() {
     setLoading(true);
     let freshInMemory: any[] = [];
     try {
+      const idToken = await auth.currentUser?.getIdToken();
       // 1. Fetch verified in-memory logs from the backend
-      const memResponse = await fetch('/api/campay/webhooks').catch(() => null);
+      const memResponse = idToken
+        ? await fetch(`${webhookBaseUrl}/api/campay/webhooks`, {
+            headers: { "Authorization": `Bearer ${idToken}` }
+          }).catch(() => null)
+        : null;
       if (memResponse && memResponse.ok) {
         const data = await memResponse.json();
         if (data.success) {
@@ -87,6 +93,7 @@ export default function PaymentWebhookHandler() {
               phone: data.phone || '',
               operator: data.operator || '',
               verified: data.verified === true,
+              financialVerified: data.financialVerified === true,
               timestamp: data.timestamp || new Date().toISOString(),
               payloadJson: data.payloadJson || '{}',
               synced: data.synced === true
@@ -108,6 +115,7 @@ export default function PaymentWebhookHandler() {
           phone: m.body?.phone || '',
           operator: m.body?.operator || '',
           verified: m.isValid === true,
+          financialVerified: m.financialVerified === true,
           timestamp: m.timestamp || new Date().toISOString(),
           payloadJson: JSON.stringify(m.body || {}),
           synced: false
@@ -129,7 +137,13 @@ export default function PaymentWebhookHandler() {
 
   const handleClearInMemory = async () => {
     try {
-      await fetch('/api/campay/webhooks/clear', { method: 'POST' });
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) throw new Error("Authentification super-administrateur requise.");
+      const response = await fetch(`${webhookBaseUrl}/api/campay/webhooks/clear`, {
+        method: 'POST',
+        headers: { "Authorization": `Bearer ${idToken}` }
+      });
+      if (!response.ok) throw new Error(`Échec de l'effacement du journal (${response.status}).`);
       setInMemoryLogs([]);
       fetchLogs();
     } catch (err) {
@@ -137,149 +151,13 @@ export default function PaymentWebhookHandler() {
     }
   };
 
-  // Synchronise strictly verified webhook payments into schools' portal fees or parent invoices
+  // Payment records are reconciled exclusively by the server after signature, reference, and amount checks.
   const handleSynchronizeDb = async () => {
     setSyncing(true);
-    setSyncStatus("Démarrage de la synchronisation sécurisée...");
-    let syncedCount = 0;
-    let localFallbackUsed = false;
-
-    try {
-      // STRICT FILTER: Only SUCCESSFUL, cryptographically verified, non-simulated records are processed
-      const successfulLogs = webhookLogs.filter(log => 
-        log.status === 'SUCCESSFUL' && 
-        log.verified === true && 
-        !log.synced &&
-        !log.reference.startsWith('SIM_') &&
-        !log.reference.startsWith('PRTL_demo_') &&
-        !log.reference.startsWith('INV_demo_')
-      );
-      
-      if (successfulLogs.length === 0) {
-        setSyncStatus("Tous les versements certifiés sont déjà à jour. Aucun nouveau versement vérifié à synchroniser.");
-        setSyncing(false);
-        return;
-      }
-
-      for (const log of successfulLogs) {
-        setSyncStatus(`Traitement de la référence ${log.reference}...`);
-
-        try {
-          if (log.reference.startsWith('PRTL_')) {
-            const parts = log.reference.split('_');
-            const schoolId = parts.slice(1, -1).join('_') || parts[1];
-            const amountNum = Number(log.amount) || 0;
-
-            if (schoolId) {
-              let schoolSnapData: any = null;
-              try {
-                const schoolRef = doc(db, 'establishments', schoolId);
-                const schoolSnap = await getDoc(schoolRef);
-                if (schoolSnap.exists()) {
-                  schoolSnapData = schoolSnap.data();
-                  const currentPaid = schoolSnapData.portalFeesPaid || 0;
-                  await updateDoc(schoolRef, {
-                    portalFeesPaid: currentPaid + amountNum,
-                    lastPortalPaymentDate: new Date().toISOString()
-                  });
-                }
-              } catch (writeErr: any) {
-                console.warn(`Firestore update for school ${schoolId} restricted. Applying local cache:`, writeErr);
-                localFallbackUsed = true;
-                const existingEstsStr = localStorage.getItem('pasma_local_establishments');
-                const existingEsts = existingEstsStr ? JSON.parse(existingEstsStr) : [];
-                let found = false;
-                for (const est of existingEsts) {
-                  if (est.id === schoolId) {
-                    est.portalFeesPaid = (est.portalFeesPaid || 0) + amountNum;
-                    found = true;
-                  }
-                }
-                if (!found) {
-                  existingEsts.push({
-                    id: schoolId,
-                    portalFeesPaid: amountNum,
-                    updatedAt: new Date().toISOString()
-                  });
-                }
-                localStorage.setItem('pasma_local_establishments', JSON.stringify(existingEsts));
-              }
-
-              // Mark webhook log as synced in Firestore
-              try {
-                const logDocRef = doc(db, 'invoices', log.id);
-                await updateDoc(logDocRef, { synced: true });
-              } catch (logErr: any) {
-                console.warn(`Firestore sync status update for log ${log.id}:`, logErr);
-              }
-              syncedCount++;
-            }
-          } else if (log.reference.startsWith('INV_')) {
-            const parts = log.reference.split('_');
-            const invoiceId = parts.slice(1, -1).join('_') || parts[1];
-            const amountNum = Number(log.amount) || 0;
-
-            if (invoiceId) {
-              try {
-                const invoiceRef = doc(db, 'invoices', invoiceId);
-                const invoiceSnap = await getDoc(invoiceRef);
-
-                if (invoiceSnap.exists()) {
-                  await updateDoc(invoiceRef, {
-                    status: 'Paid',
-                    amountPaid: amountNum,
-                    paymentMethod: 'momo_campay',
-                    paidAt: new Date().toISOString()
-                  });
-                }
-              } catch (writeErr: any) {
-                console.warn(`Firestore update for invoice ${invoiceId} restricted. Local cache:`, writeErr);
-                localFallbackUsed = true;
-                const existingInvoicesStr = localStorage.getItem('pasma_local_invoices');
-                const existingInvoices = existingInvoicesStr ? JSON.parse(existingInvoicesStr) : [];
-                let found = false;
-                for (const inv of existingInvoices) {
-                  if (inv.id === invoiceId) {
-                    inv.status = 'Paid';
-                    inv.amountPaid = amountNum;
-                    inv.paymentMethod = 'momo_campay';
-                    inv.paidAt = new Date().toISOString();
-                    found = true;
-                  }
-                }
-                if (!found) {
-                  existingInvoices.push({
-                    id: invoiceId,
-                    status: 'Paid',
-                    amountPaid: amountNum,
-                    paymentMethod: 'momo_campay',
-                    paidAt: new Date().toISOString()
-                  });
-                }
-                localStorage.setItem('pasma_local_invoices', JSON.stringify(existingInvoices));
-              }
-
-              try {
-                const logDocRef = doc(db, 'invoices', log.id);
-                await updateDoc(logDocRef, { synced: true });
-              } catch (logErr: any) {
-                console.warn(`Firestore sync status update for log ${log.id}:`, logErr);
-              }
-              syncedCount++;
-            }
-          }
-        } catch (itemErr: any) {
-          console.error("Error processing sync item:", itemErr);
-        }
-      }
-
-      setSyncStatus(`Synchronisation terminée avec succès ! ${syncedCount} transaction(s) certifiée(s) synchronisée(s).${localFallbackUsed ? " (Cache local de sécurité synchronisé)" : ""}`);
-      fetchLogs();
-    } catch (err: any) {
-      setSyncStatus(`Erreur de synchronisation: ${err.message}`);
-    } finally {
-      setSyncing(false);
-    }
+    setSyncStatus("Actualisation des événements Campay...");
+    await Promise.all([fetchLogs(), fetchServerStatus()]);
+    setSyncStatus("Les règlements portail sont rapprochés et comptabilisés par le backend ; aucune écriture financière n'est effectuée depuis le navigateur.");
+    setSyncing(false);
   };
 
   return (
@@ -420,7 +298,7 @@ export default function PaymentWebhookHandler() {
             </div>
 
             <p className="text-xs text-slate-500 leading-normal">
-              Appliquez uniquement les transactions certifiées avec succès par signature HMAC aux établissements correspondants (redevances de portail) et aux parents d'élèves (cotisations scolaires).
+              La signature HMAC seule ne suffit pas : le backend rapproche la référence et le montant d'une demande créée par le serveur, puis comptabilise les redevances portail une seule fois.
             </p>
 
             <button
@@ -429,7 +307,7 @@ export default function PaymentWebhookHandler() {
               className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-55"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} />
-              {syncing ? "Synchronisation en cours..." : "Synchroniser les règlements vérifiés"}
+              {syncing ? "Vérification en cours..." : "Vérifier les règlements confirmés"}
             </button>
 
             {syncStatus && (
@@ -525,6 +403,15 @@ export default function PaymentWebhookHandler() {
                             {log.verified ? <Check className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
                             {log.verified ? 'Signature HMAC Valide' : 'Non Vérifiée'}
                           </span>
+                            {log.verified && (
+                              <span className={`px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-wider border ${
+                                log.financialVerified
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : 'bg-amber-50 text-amber-700 border-amber-200'
+                              }`}>
+                                {log.financialVerified ? 'Demande rapprochée' : 'Non rapprochée'}
+                              </span>
+                            )}
                         </div>
                       </div>
 

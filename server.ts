@@ -5,6 +5,9 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
+import { applicationDefault, cert, getApps, initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
+import { FieldValue, getFirestore } from "firebase-admin/firestore";
 
 // Load fallback environmental variables if any
 import dotenv from "dotenv";
@@ -1614,45 +1617,197 @@ interface WebhookEvent {
   signature: string;
   computedSignature: string;
   isValid: boolean;
+  financialVerified: boolean;
+  synced: boolean;
   reference: string;
   status: string;
 }
 const receivedWebhooks: WebhookEvent[] = [];
 
-// Helper to write webhook documents to Firestore REST API (using open 'log_...' invoice bypass rules)
-async function saveWebhookLogToFirestore(reference: string, payload: any, isValid: boolean) {
-  try {
-    const projectId = "pasma-sys";
-    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/invoices/log_webhook_${reference}`;
-    
-    const body = {
-      name: `projects/${projectId}/databases/(default)/documents/invoices/log_webhook_${reference}`,
-      fields: {
-        id: { stringValue: `log_webhook_${reference}` },
-        reference: { stringValue: reference },
-        status: { stringValue: payload.status || "PENDING" },
-        amount: { stringValue: String(payload.amount || "0") },
-        phone: { stringValue: String(payload.phone || "") },
-        operator: { stringValue: String(payload.operator || "") },
-        verified: { booleanValue: isValid },
-        timestamp: { stringValue: new Date().toISOString() },
-        payloadJson: { stringValue: JSON.stringify(payload) },
-        synced: { booleanValue: false }
-      }
-    };
+function getFirebaseAdminApp() {
+  const existingApp = getApps().find(app => app.name === "pasma-admin");
+  if (existingApp) return existingApp;
 
-    const response = await fetch(firestoreUrl, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(body)
-    });
-    
-    console.log(`📡 [Campay Webhook] Saved to Firestore REST API: Status ${response.status}`);
-  } catch (err) {
-    console.error("❌ [Campay Webhook] Failed to persist log in Firestore:", err);
+  const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  let credential;
+  if (serviceAccountJson) {
+    let serviceAccount;
+    try {
+      serviceAccount = JSON.parse(serviceAccountJson);
+    } catch {
+      throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON must contain valid service-account JSON.");
+    }
+    credential = cert(serviceAccount);
+  } else {
+    credential = applicationDefault();
   }
+
+  return initializeApp({
+    credential,
+    projectId: process.env.FIREBASE_PROJECT_ID || "pasma-sys"
+  }, "pasma-admin");
+}
+
+function getAdminDb() {
+  return getFirestore(getFirebaseAdminApp());
+}
+
+async function getVerifiedFirebaseUser(req: express.Request) {
+  const authorization = req.headers.authorization;
+  if (!authorization?.startsWith("Bearer ")) return null;
+
+  try {
+    return await getAuth(getFirebaseAdminApp()).verifyIdToken(authorization.slice(7).trim());
+  } catch {
+    return null;
+  }
+}
+
+async function isFirebaseSuperAdmin(uid: string, email?: string) {
+  if (email?.toLowerCase() === "jacquesbene301@gmail.com") return true;
+  const db = getAdminDb();
+  const adminIds = [uid, email].filter((value): value is string => Boolean(value));
+  const adminDocs = await Promise.all(adminIds.map(id => db.collection("super_admins").doc(id).get()));
+  return adminDocs.some(adminDoc => adminDoc.exists);
+}
+
+async function canManageSchool(uid: string, email: string | undefined, schoolId: string) {
+  if (await isFirebaseSuperAdmin(uid, email)) return true;
+  const school = await getAdminDb().collection("establishments").doc(schoolId).get();
+  return school.exists && school.get("ownerId") === uid;
+}
+
+async function requireFirebaseSuperAdmin(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+) {
+  const firebaseUser = await getVerifiedFirebaseUser(req);
+  if (!firebaseUser) {
+    return res.status(401).json({ success: false, error: "Authentification Firebase requise." });
+  }
+
+  try {
+    if (!await isFirebaseSuperAdmin(firebaseUser.uid, firebaseUser.email)) {
+      return res.status(403).json({ success: false, error: "Accès réservé aux super-administrateurs." });
+    }
+  } catch (err) {
+    console.error("[Campay Audit] Could not verify administrator permissions:", err);
+    return res.status(503).json({ success: false, error: "Vérification des autorisations indisponible." });
+  }
+
+  return next();
+}
+
+function referenceDocumentId(reference: string) {
+  return crypto.createHash("sha256").update(reference).digest("hex");
+}
+
+async function saveWebhookLogToFirestore(
+  reference: string,
+  payload: any,
+  signatureVerified: boolean,
+  financialVerified: boolean,
+  synced: boolean
+) {
+  const id = `log_webhook_${referenceDocumentId(reference)}`;
+  await getAdminDb().collection("invoices").doc(id).set({
+    id,
+    reference,
+    status: String(payload.status || "PENDING"),
+    amount: String(payload.amount ?? "0"),
+    phone: String(payload.phone || ""),
+    operator: String(payload.operator || ""),
+    verified: signatureVerified,
+    financialVerified,
+    timestamp: new Date().toISOString(),
+    payloadJson: JSON.stringify(payload),
+    synced
+  }, { merge: true });
+}
+
+async function reconcilePortalFeeWebhook(payload: any) {
+  const db = getAdminDb();
+  const externalReference = String(payload.external_reference || payload.externalReference || "");
+  const campayReference = String(payload.reference || "");
+  const externalReferenceIsSafe = /^PRTL_[a-zA-Z0-9_-]{1,180}$/.test(externalReference);
+  let intentRef = externalReferenceIsSafe
+    ? db.collection("portal_payment_intents").doc(externalReference)
+    : null;
+  let intentSnap = intentRef ? await intentRef.get() : null;
+
+  if (!intentSnap?.exists && campayReference) {
+    const matches = await db.collection("portal_payment_intents")
+      .where("campayReference", "==", campayReference)
+      .limit(1)
+      .get();
+    if (!matches.empty) {
+      intentRef = matches.docs[0].ref;
+      intentSnap = matches.docs[0];
+    }
+  }
+
+  if (!intentRef || !intentSnap?.exists) {
+    return { financialVerified: false, synced: false };
+  }
+
+  const intent = intentSnap.data()!;
+  const amount = Number(payload.amount);
+  const currency = String(payload.currency || "XAF").toUpperCase();
+  const expectedAmount = Number(intent.amount);
+  const storedCampayReference = String(intent.campayReference || "");
+  if (
+    !Number.isFinite(amount) ||
+    amount !== expectedAmount ||
+    currency !== "XAF" ||
+    (storedCampayReference && campayReference !== storedCampayReference)
+  ) {
+    return { financialVerified: false, synced: false };
+  }
+
+  const status = String(payload.status || "").toUpperCase();
+  if (status !== "SUCCESSFUL") {
+    if (status === "FAILED") {
+      await db.runTransaction(async transaction => {
+        const currentIntent = await transaction.get(intentRef!);
+        if (currentIntent.exists && currentIntent.get("status") !== "SUCCESSFUL") {
+          transaction.update(intentRef!, { status: "FAILED", updatedAt: new Date().toISOString() });
+        }
+      });
+    }
+    return { financialVerified: true, synced: false };
+  }
+
+  const reconciledAt = new Date().toISOString();
+  const synced = await db.runTransaction(async transaction => {
+    const currentIntent = await transaction.get(intentRef!);
+    if (!currentIntent.exists) return false;
+    if (currentIntent.get("status") === "SUCCESSFUL") return true;
+    if (
+      Number(currentIntent.get("amount")) !== amount ||
+      currentIntent.get("schoolId") !== intent.schoolId
+    ) {
+      return false;
+    }
+
+    const schoolRef = db.collection("establishments").doc(String(currentIntent.get("schoolId")));
+    const school = await transaction.get(schoolRef);
+    if (!school.exists) return false;
+
+    transaction.update(schoolRef, {
+      portalFeesPaid: FieldValue.increment(amount),
+      lastPortalPaymentDate: reconciledAt
+    });
+    transaction.update(intentRef!, {
+      status: "SUCCESSFUL",
+      verifiedAt: reconciledAt,
+      updatedAt: reconciledAt,
+      synced: true
+    });
+    return true;
+  });
+
+  return { financialVerified: synced, synced };
 }
 
 // API: Campay Webhook Endpoint for school payment notification synchronisation
@@ -1722,7 +1877,10 @@ app.post("/api/campay-webhook", async (req, res) => {
       });
     }
 
-    // 4. Stash in-memory for live dashboard visualization (verified only)
+    // 4. Reconcile only a previously-created payment intent and apply it idempotently.
+    const reconciliation = await reconcilePortalFeeWebhook(payload);
+
+    // 5. Stash the event for live dashboard visualization.
     const event: WebhookEvent = {
       timestamp: new Date().toISOString(),
       headers: req.headers,
@@ -1730,6 +1888,8 @@ app.post("/api/campay-webhook", async (req, res) => {
       signature: rawSignature,
       computedSignature,
       isValid: true,
+      financialVerified: reconciliation.financialVerified,
+      synced: reconciliation.synced,
       reference,
       status
     };
@@ -1738,8 +1898,14 @@ app.post("/api/campay-webhook", async (req, res) => {
       receivedWebhooks.shift();
     }
 
-    // 5. Save to Firestore REST API for durable trace log and client-side database reconciliation
-    await saveWebhookLogToFirestore(reference, payload, true);
+    // 6. Persist the signed event and whether it was reconciled against a trusted payment intent.
+    await saveWebhookLogToFirestore(
+      reference,
+      payload,
+      true,
+      reconciliation.financialVerified,
+      reconciliation.synced
+    );
 
     // Status can be: 'SUCCESSFUL', 'FAILED', 'PENDING'
     if (status === 'SUCCESSFUL') {
@@ -1762,12 +1928,12 @@ app.post("/api/campay-webhook", async (req, res) => {
 });
 
 // API: Get received webhook logs (In-Memory)
-app.get("/api/campay/webhooks", (req, res) => {
+app.get("/api/campay/webhooks", requireFirebaseSuperAdmin, (req, res) => {
   return res.json({ success: true, webhooks: receivedWebhooks });
 });
 
 // API: Clear received webhook logs (In-Memory)
-app.post("/api/campay/webhooks/clear", (req, res) => {
+app.post("/api/campay/webhooks/clear", requireFirebaseSuperAdmin, (req, res) => {
   receivedWebhooks.length = 0;
   return res.json({ success: true });
 });
@@ -1778,6 +1944,7 @@ app.get("/api/campay/status", (req, res) => {
     success: true,
     isWebhookKeyConfigured: Boolean(process.env.CAMPAY_WEBHOOK_KEY),
     isTokenConfigured: Boolean(process.env.CAMPAY_TOKEN),
+    isPaymentLedgerConfigured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_APPLICATION_CREDENTIALS),
     environment: process.env.NODE_ENV || "production"
   });
 });
@@ -1793,18 +1960,43 @@ app.post("/api/campay/simulate-webhook-post", (req, res) => {
 // API: Campay Portal Fee Collection secure endpoint
 app.post("/api/campay/collect-portal-fee", async (req, res) => {
   const { amount, phone, schoolId, schoolName } = req.body;
-  if (!amount || !phone || !schoolId) {
-    return res.status(400).json({ success: false, error: "Champs requis manquants (montant, téléphone, établissement)." });
+  if (!Number.isSafeInteger(Number(amount)) || Number(amount) <= 0 ||
+      typeof phone !== "string" || !phone.trim() ||
+      typeof schoolId !== "string" || !schoolId.trim()) {
+    return res.status(400).json({ success: false, error: "Montant entier positif, téléphone et établissement requis." });
+  }
+
+  const firebaseUser = await getVerifiedFirebaseUser(req);
+  if (!firebaseUser) {
+    return res.status(401).json({ success: false, error: "Authentification Firebase requise." });
+  }
+
+  let schoolNameForPayment = schoolName;
+  try {
+    const school = await getAdminDb().collection("establishments").doc(schoolId).get();
+    if (!school.exists) {
+      return res.status(404).json({ success: false, error: "Établissement introuvable." });
+    }
+    if (!await canManageSchool(firebaseUser.uid, firebaseUser.email, schoolId)) {
+      return res.status(403).json({ success: false, error: "Vous n'êtes pas autorisé à payer pour cet établissement." });
+    }
+    schoolNameForPayment = school.get("name") || schoolName || schoolId;
+  } catch (err) {
+    console.error("[Campay Portal Fee] Firebase authorization or ledger setup failed:", err);
+    return res.status(503).json({
+      success: false,
+      error: "Le registre de paiement Firebase n'est pas configuré ou disponible."
+    });
   }
 
   // 1. Format the phone number to start with 237 (Cameroon country code)
   let formattedPhone = phone.trim().replace(/\D/g, "");
-  if (formattedPhone.length === 9) {
-    formattedPhone = "237" + formattedPhone;
-  } else if (formattedPhone.length === 8) {
+  if (formattedPhone.length === 8) {
     formattedPhone = "2376" + formattedPhone;
-  } else if (!formattedPhone.startsWith("237") && formattedPhone.length > 0) {
+  } else if (formattedPhone.length === 9) {
     formattedPhone = "237" + formattedPhone;
+  } else if (!(formattedPhone.startsWith("237") && formattedPhone.length === 12)) {
+    return res.status(400).json({ success: false, error: "Numéro de téléphone invalide." });
   }
 
   const token = process.env.CAMPAY_TOKEN || "";
@@ -1816,14 +2008,28 @@ app.post("/api/campay/collect-portal-fee", async (req, res) => {
     });
   }
 
-  const externalRef = `PRTL_${schoolId}_${Date.now().toString().slice(-6)}`;
-  
-  console.log(`🚀 [Campay Collect Portal Fee] Initiating collection for ${schoolName || schoolId}:`, {
-    amount,
-    phone: formattedPhone,
-    externalRef,
-    tokenConfigured: Boolean(token)
-  });
+  const roundedAmount = Math.round(Number(amount));
+  const externalRef = `PRTL_${schoolId}_${crypto.randomUUID().replace(/-/g, "")}`;
+  const intentRef = getAdminDb().collection("portal_payment_intents").doc(externalRef);
+  try {
+    await intentRef.create({
+      externalReference: externalRef,
+      schoolId,
+      requestedBy: firebaseUser.uid,
+      amount: roundedAmount,
+      currency: "XAF",
+      phone: formattedPhone,
+      status: "INITIATING",
+      createdAt: new Date().toISOString(),
+      synced: false
+    });
+  } catch (err) {
+    console.error("[Campay Portal Fee] Could not create payment intent:", err);
+    return res.status(503).json({
+      success: false,
+      error: "Impossible d'enregistrer la demande de paiement de manière sécurisée."
+    });
+  }
 
   try {
     const campayUrl = "https://www.campay.net/api/collect/";
@@ -1834,29 +2040,44 @@ app.post("/api/campay/collect-portal-fee", async (req, res) => {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        amount: Math.round(Number(amount)).toString(),
+        amount: roundedAmount.toString(),
         currency: "XAF",
         from: formattedPhone,
-        description: `Pasma-sys Portal Fee - ${schoolName || schoolId}`,
+        description: `Pasma-sys Portal Fee - ${schoolNameForPayment || schoolId}`,
         external_reference: externalRef
       })
     });
 
     const data = await response.json().catch(() => ({}));
-    console.log("📥 [Campay API Response]:", { status: response.status, data });
 
     if (response.ok && data.reference) {
+      try {
+        await intentRef.update({
+          campayReference: String(data.reference),
+          status: "PENDING",
+          updatedAt: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error("[Campay Portal Fee] Campay accepted a payment but the intent update failed:", err);
+        return res.status(202).json({
+          success: true,
+          status: "PENDING",
+          reference: String(data.reference),
+          externalRef,
+          error: "Campay a accepté la demande, mais son suivi est temporairement indisponible. Ne relancez pas le paiement."
+        });
+      }
       return res.status(200).json({
         success: true,
-        reference: data.reference,
-        status: data.status || "PENDING",
-        operator_reference: data.operator_reference || null,
-        message: "Ordre de prélèvement transmis à Campay. Veuillez composer votre code secret sur le téléphone.",
+        reference: String(data.reference),
+        status: "PENDING",
+        message: "Demande transmise à Campay. Le paiement sera confirmé après notification vérifiée.",
         externalRef
       });
-    } else {
+    } else if (!response.ok) {
       const apiErrorMsg = data.detail || data.message || (typeof data === 'string' ? data : JSON.stringify(data)) || "Requête refusée par Campay";
       console.warn("❌ [Campay API Rejected]:", apiErrorMsg);
+      await intentRef.update({ status: "FAILED", updatedAt: new Date().toISOString() });
       
       return res.status(400).json({
         success: false,
@@ -1864,11 +2085,66 @@ app.post("/api/campay/collect-portal-fee", async (req, res) => {
         details: data
       });
     }
+
+    await intentRef.update({ status: "UNKNOWN", updatedAt: new Date().toISOString() });
+    return res.status(202).json({
+      success: true,
+      status: "UNKNOWN",
+      reference: externalRef,
+      externalRef,
+      message: "Campay n'a pas fourni de référence. Vérifiez le statut avant de renouveler l'opération."
+    });
   } catch (err: any) {
     console.error("❌ [Campay Connection Error]:", err);
-    return res.status(502).json({
+    await intentRef.update({
+      status: "UNKNOWN",
+      updatedAt: new Date().toISOString()
+    }).catch(updateError => {
+      console.error("[Campay Portal Fee] Could not update uncertain payment intent:", updateError);
+    });
+    return res.status(202).json({
+      success: true,
+      status: "UNKNOWN",
+      reference: externalRef,
+      externalRef,
+      error: "Résultat de la demande Campay incertain. Vérifiez le statut avant de renouveler l'opération."
+    });
+  }
+});
+
+app.get("/api/campay/portal-fees/:externalRef", async (req, res) => {
+  const firebaseUser = await getVerifiedFirebaseUser(req);
+  if (!firebaseUser) {
+    return res.status(401).json({ success: false, error: "Authentification Firebase requise." });
+  }
+
+  const externalRef = req.params.externalRef;
+  if (!/^PRTL_[a-zA-Z0-9_-]{1,180}$/.test(externalRef)) {
+    return res.status(400).json({ success: false, error: "Référence de paiement invalide." });
+  }
+
+  try {
+    const intent = await getAdminDb().collection("portal_payment_intents").doc(externalRef).get();
+    if (!intent.exists) {
+      return res.status(404).json({ success: false, error: "Paiement introuvable." });
+    }
+    if (!await canManageSchool(firebaseUser.uid, firebaseUser.email, String(intent.get("schoolId")))) {
+      return res.status(403).json({ success: false, error: "Accès refusé à ce paiement." });
+    }
+
+    return res.json({
+      success: true,
+      status: intent.get("status"),
+      reference: intent.get("campayReference") || externalRef,
+      externalRef,
+      amount: intent.get("amount"),
+      paidAt: intent.get("verifiedAt") || null
+    });
+  } catch (err) {
+    console.error("[Campay Portal Fee] Could not read payment status:", err);
+    return res.status(503).json({
       success: false,
-      error: `Erreur de connexion à la passerelle Campay : ${err.message || err}`
+      error: "Impossible de vérifier le statut du paiement pour le moment."
     });
   }
 });

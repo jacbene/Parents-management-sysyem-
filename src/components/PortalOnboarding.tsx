@@ -126,6 +126,10 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
             console.warn('[PortalOnboarding] Anonymous auth notice during school fetch:', authErr);
           }
         }
+        const authenticatedUid = auth.currentUser?.uid;
+        if (!authenticatedUid) {
+          throw new Error("Une session Firebase est requise pour consulter les établissements.");
+        }
 
         // 1. First sync deleted school IDs from Firestore central registry
         const deletedSet = await fetchAndSyncDeletedSchoolIds();
@@ -134,7 +138,10 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
         await syncLocalSchoolsToFirestore();
 
         // 3. Real-time subscription to establishments collection
-        const q = query(collection(db, 'establishments'));
+        const q = query(
+          collection(db, 'establishments'),
+          where('ownerId', '==', authenticatedUid)
+        );
         unsubscribe = onSnapshot(q, (snapshot) => {
           if (!isMounted) return;
           const list: Establishment[] = [];
@@ -830,7 +837,10 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
       // Check account quotas: Query fresh list of schools to see if they reached the limit of 3 establishments per user
       let freshSchools = schools;
       try {
-        const qEst = query(collection(db, 'establishments'));
+        const qEst = query(
+          collection(db, 'establishments'),
+          where('ownerId', '==', firestoreOwnerId)
+        );
         const snapshotEst = await getDocs(qEst);
         const listEst: Establishment[] = [];
         snapshotEst.forEach(docSnap => {

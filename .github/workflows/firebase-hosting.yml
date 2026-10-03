@@ -26,13 +26,18 @@ jobs:
         run: npm run build
 
       - name: Déployer les règles de sécurité Firestore
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_PASMA_SYS }}
         run: |
-          if [ -n "${{ secrets.FIREBASE_SERVICE_ACCOUNT_PASMA_SYS }}" ]; then
-            echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_PASMA_SYS }}' > /tmp/service-account.json
-            export GOOGLE_APPLICATION_CREDENTIALS=/tmp/service-account.json
-            npx firebase-tools deploy --only firestore:rules --project pasma-sys --non-interactive || echo "⚠️ Notice: Firestore rules deployment step via CLI completed."
-            rm -f /tmp/service-account.json
+          set -euo pipefail
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "FIREBASE_SERVICE_ACCOUNT_PASMA_SYS is required to deploy Firestore rules." >&2
+            exit 1
           fi
+          account_file="$RUNNER_TEMP/firebase-service-account.json"
+          trap 'rm -f "$account_file"' EXIT
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$account_file"
+          GOOGLE_APPLICATION_CREDENTIALS="$account_file" npx firebase-tools deploy --only firestore:rules --project pasma-sys --non-interactive
 
       - name: Déployer sur Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0

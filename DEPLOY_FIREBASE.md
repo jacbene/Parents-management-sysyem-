@@ -4,16 +4,23 @@ Ce guide détaille les étapes pour mettre en ligne votre application **PASMA** 
 
 ---
 
-## 1. Préparation effectuée automatiquement
+## 1. Configuration requise avant déploiement
 
-- **Configuration Firebase Hosting** : `firebase.json` a été configuré avec le dossier cible `dist/` et les règles de redirection SPA (`rewrites: [ { "source": "**", "destination": "/index.html" } ]`).
+- Les règles Firestore n'autorisent désormais les données d'un établissement qu'à son propriétaire Firebase Auth (`ownerId == uid`) et aux super-administrateurs. Les accès parent/enseignant et les établissements partagés sont bloqués jusqu'à la mise en place d'identités et d'autorisations fiables par rôle.
+- Le backend Campay utilise Firebase Admin pour créer des intentions de paiement et ne comptabiliser un paiement qu'après un webhook HMAC rapproché de la référence et du montant attendus. Configurez sur Render `FIREBASE_SERVICE_ACCOUNT_JSON` (JSON du compte de service Firebase avec le rôle IAM minimal `Cloud Datastore User` sur `pasma-sys`), `CAMPAY_TOKEN` et `CAMPAY_WEBHOOK_KEY`. Sans accès Admin Firestore, la collecte est refusée et aucun paiement ne doit être déclaré acquitté.
+- Configurez `VITE_API_URL` pour que le frontend appelle l'URL du backend Render.
+- Le workflow GitHub exige le secret `FIREBASE_SERVICE_ACCOUNT_PASMA_SYS` ; il échoue explicitement si le secret manque ou si le déploiement des règles échoue.
+
+## 2. Préparation du projet
+
+- **Configuration Firebase Hosting** : `firebase.json` utilise le dossier cible `dist/` et les règles de redirection SPA.
 - **Projet par défaut** : `.firebaserc` est associé au projet `pasma-sys`.
-- **Règles Firestore** : Déployées et synchronisées sur votre base de données avec `firestore.rules`.
-- **Build de production** : Le bundle optimisé a été généré dans le dossier `/dist`.
+- **Règles Firestore** : `firestore.rules` est la source déployée par le workflow.
+- **Build de production** : `npm run build` génère le frontend dans `dist/` et le backend dans `dist-server/`.
 
 ---
 
-## 2. Déploiement du Frontend sur Firebase Hosting
+## 3. Déploiement du Frontend sur Firebase Hosting
 
 Votre application sera accessible publiquement aux adresses :
 - 🔗 **https://pasma-sys.web.app**
@@ -34,7 +41,7 @@ firebase deploy --only hosting,firestore:rules
 
 ---
 
-## 3. Résolution de la connexion Chrome (Domaines Autorisés Firebase Auth)
+## 4. Résolution de la connexion Chrome (Domaines Autorisés Firebase Auth)
 
 Si vos utilisateurs ou vous-même rencontrez un blocage lors de la connexion Google ou par identifiant dans Google Chrome :
 
@@ -48,7 +55,7 @@ Si vos utilisateurs ou vous-même rencontrez un blocage lors de la connexion Goo
 
 ---
 
-## 4. Déploiement du Backend Express (Optionnel pour SMS / Emails / Webhooks)
+## 5. Déploiement du Backend Express (SMS / Emails / Webhooks / Paiements)
 
 L'application contient un serveur d'API (`server.ts`) gérant :
 - L'envoi des SMS réels (Twilio, Orange, Campay)

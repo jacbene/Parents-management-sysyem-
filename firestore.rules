@@ -1,134 +1,192 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Helper functions
     function isSignedIn() {
       return request.auth != null;
     }
 
     function isSuperAdmin() {
       return isSignedIn() && (
-        (request.auth.token != null && request.auth.token.email == 'jacquesbene301@gmail.com') ||
+        request.auth.token.get('email', '') == 'jacquesbene301@gmail.com' ||
         exists(/databases/$(database)/documents/super_admins/$(request.auth.uid)) ||
-        (request.auth.token != null && exists(/databases/$(database)/documents/super_admins/$(request.auth.token.email)))
+        (request.auth.token.get('email', '') != '' &&
+          exists(/databases/$(database)/documents/super_admins/$(request.auth.token.get('email', ''))))
       );
     }
 
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+    function isSchoolOwner(schoolId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/establishments/$(schoolId)) &&
+        get(/databases/$(database)/documents/establishments/$(schoolId)).data.ownerId == request.auth.uid;
     }
 
-    // Super Admin Directory (Modification strictly reserved to Super Admins)
+    function canAccessParentRecord(data) {
+      return isSuperAdmin() ||
+        (data.keys().hasAny(['parentId']) && isSchoolOwner(data.parentId));
+    }
+
+    function canAccessSchoolRecord(data) {
+      return isSuperAdmin() ||
+        (data.keys().hasAny(['schoolId']) && isSchoolOwner(data.schoolId));
+    }
+
+    function hasPrivilegedUserFields(data) {
+      return data.keys().hasAny([
+        'role', 'roles', 'permissions', 'admin', 'isAdmin',
+        'superAdmin', 'isSuperAdmin', 'schoolId', 'establishmentId', 'ownerId'
+      ]);
+    }
+
     match /super_admins/{adminId} {
-      allow read: if isSignedIn();
+      allow read: if isSuperAdmin();
+      allow create, update, delete: if isSuperAdmin();
+    }
+
+    match /users/{userId} {
+      allow read: if isSuperAdmin() ||
+        (isSignedIn() &&
+          (userId == request.auth.uid || userId == request.auth.token.get('email', '')));
+      allow create: if isSuperAdmin() ||
+        (isSignedIn() &&
+          (userId == request.auth.uid || userId == request.auth.token.get('email', '')) &&
+          !hasPrivilegedUserFields(request.resource.data));
+      allow update: if isSuperAdmin() ||
+        (isSignedIn() &&
+          (userId == request.auth.uid || userId == request.auth.token.get('email', '')) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'role', 'roles', 'permissions', 'admin', 'isAdmin',
+            'superAdmin', 'isSuperAdmin', 'schoolId', 'establishmentId', 'ownerId'
+          ]));
+      allow delete: if isSuperAdmin();
+    }
+
+    match /active_sessions/{sessionId} {
+      allow read, write: if isSuperAdmin() ||
+        (isSignedIn() && sessionId == request.auth.uid);
+    }
+
+    match /establishments/{schoolId} {
+      allow read: if isSuperAdmin() ||
+        (isSignedIn() && resource.data.ownerId == request.auth.uid);
+      allow create: if isSuperAdmin() ||
+        (isSignedIn() &&
+          request.resource.data.ownerId == request.auth.uid &&
+          (!request.resource.data.keys().hasAny(['portalFeesPaid']) ||
+            request.resource.data.portalFeesPaid == 0) &&
+          !request.resource.data.keys().hasAny(['lastPortalPaymentDate']));
+      allow update: if isSuperAdmin() ||
+        (isSchoolOwner(schoolId) &&
+          request.resource.data.ownerId == request.auth.uid &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'portalFeesPaid', 'lastPortalPaymentDate'
+          ]));
+      allow delete: if isSuperAdmin();
+    }
+
+    match /students/{recordId} {
+      allow read: if canAccessParentRecord(resource.data);
+      allow create: if canAccessParentRecord(request.resource.data);
+      allow update: if canAccessParentRecord(resource.data) &&
+        (isSuperAdmin() || request.resource.data.parentId == resource.data.parentId);
+      allow delete: if canAccessParentRecord(resource.data);
+    }
+
+    match /grades/{recordId} {
+      allow read: if canAccessParentRecord(resource.data);
+      allow create: if canAccessParentRecord(request.resource.data);
+      allow update: if canAccessParentRecord(resource.data) &&
+        (isSuperAdmin() || request.resource.data.parentId == resource.data.parentId);
+      allow delete: if canAccessParentRecord(resource.data);
+    }
+
+    match /attendance/{recordId} {
+      allow read: if canAccessParentRecord(resource.data);
+      allow create: if canAccessParentRecord(request.resource.data);
+      allow update: if canAccessParentRecord(resource.data) &&
+        (isSuperAdmin() || request.resource.data.parentId == resource.data.parentId);
+      allow delete: if canAccessParentRecord(resource.data);
+    }
+
+    match /homeworks/{recordId} {
+      allow read: if canAccessParentRecord(resource.data);
+      allow create: if canAccessParentRecord(request.resource.data);
+      allow update: if canAccessParentRecord(resource.data) &&
+        (isSuperAdmin() || request.resource.data.parentId == resource.data.parentId);
+      allow delete: if canAccessParentRecord(resource.data);
+    }
+
+    match /lessons/{recordId} {
+      allow read: if canAccessParentRecord(resource.data);
+      allow create: if canAccessParentRecord(request.resource.data);
+      allow update: if canAccessParentRecord(resource.data) &&
+        (isSuperAdmin() || request.resource.data.parentId == resource.data.parentId);
+      allow delete: if canAccessParentRecord(resource.data);
+    }
+
+    match /reading_logs/{recordId} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    match /announcements/{announcementId} {
+      allow read: if true;
       allow write: if isSuperAdmin();
     }
 
-    // User Accounts
-    match /users/{userId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && (isOwner(userId) || isSuperAdmin());
-      allow update, delete: if isSignedIn() && (isOwner(userId) || isSuperAdmin());
+    match /academic_calendar/{recordId} {
+      allow read: if canAccessSchoolRecord(resource.data);
+      allow create: if canAccessSchoolRecord(request.resource.data);
+      allow update: if canAccessSchoolRecord(resource.data) &&
+        (isSuperAdmin() || request.resource.data.schoolId == resource.data.schoolId);
+      allow delete: if canAccessSchoolRecord(resource.data);
     }
 
-    // Active User Sessions
-    match /active_sessions/{sessionId} {
-      allow read, write: if isSignedIn() && (sessionId == request.auth.uid || isSuperAdmin());
+    match /appointments/{recordId} {
+      allow read: if canAccessParentRecord(resource.data);
+      allow create: if canAccessParentRecord(request.resource.data);
+      allow update: if canAccessParentRecord(resource.data) &&
+        (isSuperAdmin() || request.resource.data.parentId == resource.data.parentId);
+      allow delete: if canAccessParentRecord(resource.data);
     }
 
-    // School Establishments
-    match /establishments/{schoolId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
+    match /messages/{recordId} {
+      allow read: if canAccessParentRecord(resource.data);
+      allow create: if canAccessParentRecord(request.resource.data);
+      allow update: if canAccessParentRecord(resource.data) &&
+        (isSuperAdmin() || request.resource.data.parentId == resource.data.parentId);
+      allow delete: if canAccessParentRecord(resource.data);
     }
 
-    // Student Profiles (Strictly authenticated)
-    match /students/{studentId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
+    match /invoices/{recordId} {
+      allow read: if canAccessParentRecord(resource.data);
+      allow create: if canAccessParentRecord(request.resource.data);
+      allow update: if canAccessParentRecord(resource.data) &&
+        (isSuperAdmin() || request.resource.data.parentId == resource.data.parentId);
+      allow delete: if canAccessParentRecord(resource.data);
     }
 
-    // Grades (Strictly authenticated)
-    match /grades/{gradeId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
+    match /help_requests/{recordId} {
+      allow read, write: if isSuperAdmin();
     }
 
-    // Attendance Records (Strictly authenticated)
-    match /attendance/{attendanceId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
+    match /roadmap_suggestions/{recordId} {
+      allow read, write: if isSuperAdmin();
     }
 
-    // Homework Assignments
-    match /homeworks/{homeworkId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
-    }
-
-    // Classroom Lessons
-    match /lessons/{lessonId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
-    }
-
-    // Library Reading Logs
-    match /reading_logs/{logId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
-    }
-
-    // Announcements (Readable for school portal communication, write restricted to staff)
-    match /announcements/{announcementId} {
-      allow read: if true;
-      allow write: if isSignedIn();
-    }
-
-    // Academic Calendar Events
-    match /academic_calendar/{eventId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
-    }
-
-    // Parent-Teacher Appointments
-    match /appointments/{appointmentId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
-    }
-
-    // Messages
-    match /messages/{messageId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
-    }
-
-    // Invoices & Financial Records (Strictly authenticated)
-    match /invoices/{invoiceId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
-    }
-
-    // Support Help Requests
-    match /help_requests/{requestId} {
-      allow read, write: if isSignedIn();
-    }
-
-    // Roadmap & Feature Suggestions
-    match /roadmap_suggestions/{suggestionId} {
-      allow read, write: if isSignedIn();
-    }
-
-    // System Audit Logs (Append-only for users, read/manage strictly by Super Admin)
-    match /logs_auth/{logId} {
+    match /logs_auth/{recordId} {
       allow create: if isSignedIn();
       allow read, update, delete: if isSuperAdmin();
     }
 
-    // System Configurations (Strictly Super Admin)
-    match /system/{docId} {
-      allow read: if isSignedIn();
-      allow write: if isSuperAdmin();
+    match /system/{recordId} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    match /portal_payment_intents/{recordId} {
+      allow read, write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

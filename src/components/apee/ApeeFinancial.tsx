@@ -6,8 +6,8 @@ import { getApeeShortName } from '../../utils/apeeDb';
 import ApeeBlankForms from './ApeeBlankForms';
 import ApeeBudgetAnalysis from './ApeeBudgetAnalysis';
 import { useLanguage } from '../../utils/TranslationContext';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../../firebase';
 
 interface ApeeFinancialProps {
   expenses: ApeeExpense[];
@@ -85,7 +85,7 @@ export default function ApeeFinancial({
   const [portalCardExpiry, setPortalCardExpiry] = useState('');
   const [portalCardCvv, setPortalCardCvv] = useState('');
   const [portalCardHolder, setPortalCardHolder] = useState('');
-  const [portalPayStep, setPortalPayStep] = useState<'form' | 'processing' | 'success'>('form');
+  const [portalPayStep, setPortalPayStep] = useState<'form' | 'processing' | 'pending' | 'success'>('form');
   const [portalTxnId, setPortalTxnId] = useState('');
   const [portalTxnDate, setPortalTxnDate] = useState('');
   const [portalPayLogs, setPortalPayLogs] = useState<string[]>([]);
@@ -96,7 +96,7 @@ export default function ApeeFinancial({
     setPortalPayError(null);
 
     const numericAmount = Number(portalPayAmount);
-    if (isNaN(numericAmount) || numericAmount <= 0) {
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
       setPortalPayError(isEn ? "Please enter a valid amount." : "Veuillez saisir un montant valide.");
       return;
     }
@@ -122,6 +122,12 @@ export default function ApeeFinancial({
     };
 
     try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        throw new Error(isEn ? "Please sign in before paying." : "Veuillez vous connecter avant d'effectuer le paiement.");
+      }
+      const idToken = await currentUser.getIdToken();
+
       logStep(isEn ? "Initiating secure portal payment gateway..." : "Initialisation de la passerelle de paiement sécurisée...");
       await new Promise(resolve => setTimeout(resolve, 800));
 
@@ -138,10 +144,11 @@ export default function ApeeFinancial({
       }
 
       // 1. Make call to server API route
-      const response = await fetch("/api/campay/collect-portal-fee", {
+      const response = await fetch(`${webhookBaseUrl}/api/campay/collect-portal-fee`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${idToken}`
         },
         body: JSON.stringify({
           amount: numericAmount,
@@ -166,31 +173,40 @@ export default function ApeeFinancial({
       }
 
       logStep(isEn ? `✅ Campay request accepted! Ref: ${resData.reference}` : `✅ Requête acceptée par Campay ! Réf : ${resData.reference}`);
-      await new Promise(resolve => setTimeout(resolve, 800));
+      setPortalTxnId(resData.reference);
+      setPortalPayStep('pending');
 
-      logStep(isEn ? "Synchronizing ledger with Pasma-sys database..." : "Mise à jour et synchronisation des registres de Pasma-sys...");
-      await new Promise(resolve => setTimeout(resolve, 700));
+      for (let attempt = 0; attempt < 12; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        try {
+          const statusResponse = await fetch(
+            `${webhookBaseUrl}/api/campay/portal-fees/${encodeURIComponent(resData.externalRef)}`,
+            { headers: { "Authorization": `Bearer ${idToken}` } }
+          );
+          if (!statusResponse.ok) {
+            console.warn("Campay payment status could not be checked:", statusResponse.status);
+            continue;
+          }
 
-      const todayString = new Date().toISOString();
-
-      if (selectedSchoolId) {
-        const docRef = doc(db, 'establishments', selectedSchoolId);
-        const currentPaid = establishment?.portalFeesPaid || 0;
-        await setDoc(docRef, { 
-          portalFeesPaid: currentPaid + numericAmount,
-          lastPortalPaymentDate: todayString
-        }, { merge: true });
+          const paymentStatus = await statusResponse.json();
+          if (paymentStatus.status === 'SUCCESSFUL') {
+            const paidAt = paymentStatus.paidAt || new Date().toISOString();
+            setPortalTxnId(paymentStatus.reference || resData.reference);
+            setPortalTxnDate(new Date(paidAt).toISOString().slice(0, 10));
+            setPortalPayStep('success');
+            await fetchEstablishment();
+            return;
+          }
+          if (paymentStatus.status === 'FAILED') {
+            throw new Error(isEn ? "Campay declined the payment." : "Campay a refusé le paiement.");
+          }
+        } catch (statusErr: any) {
+          if (statusErr.message?.includes('declined') || statusErr.message?.includes('refusé')) {
+            throw statusErr;
+          }
+          console.warn("Campay payment confirmation is still pending:", statusErr);
+        }
       }
-
-      logStep(isEn ? "Finalizing payment receipt..." : "Finalisation de la transaction et enregistrement de l'acquittement...");
-      await new Promise(resolve => setTimeout(resolve, 600));
-
-      setPortalTxnId(resData.reference || "TXN_PRTL_" + Math.floor(100000 + Math.random() * 900000));
-      setPortalTxnDate(todayString.split('T')[0]);
-      setPortalPayStep('success');
-      
-      // Reload establishment data to update metrics instantly
-      await fetchEstablishment();
     } catch (err: any) {
       console.error("Campay submit error:", err);
       setPortalPayStep('form');
@@ -1429,6 +1445,26 @@ export default function ApeeFinancial({
                             ))}
                             <div className="text-indigo-300 animate-pulse">■ Connexion active...</div>
                           </div>
+                        </div>
+                      )}
+
+                      {portalPayStep === 'pending' && (
+                        <div className="text-center py-8 space-y-5">
+                          <Loader2 className="h-12 w-12 text-amber-500 animate-spin mx-auto" />
+                          <div className="space-y-2">
+                            <h4 className="font-extrabold text-slate-900 text-sm">Confirmation Campay en attente</h4>
+                            <p className="text-xs text-slate-500 max-w-md mx-auto">
+                              La demande a été transmise. Aucun reçu ni montant acquitté ne sera enregistré avant la confirmation sécurisée de Campay.
+                            </p>
+                            <p className="font-mono text-[11px] text-slate-600">Référence : {portalTxnId}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowPortalPay(false)}
+                            className="px-4 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50"
+                          >
+                            Fermer
+                          </button>
                         </div>
                       )}
 
