@@ -114,7 +114,7 @@ async function sendSms(phoneNumber: string, message: string, config: any): Promi
       logs.push("ℹ️ [Twilio Config] Jeton Twilio Auth Token configuré.");
     }
     if (!from) {
-      from = (process.env.TWILIO_FROM || "+18559091234").trim();
+      from = (process.env.TWILIO_FROM || "+237687463313").trim();
       logs.push(`ℹ️ [Twilio Config] Expéditeur Twilio certifié : ${from}`);
     }
 
