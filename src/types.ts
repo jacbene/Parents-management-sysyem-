@@ -226,6 +226,7 @@ export interface ApeePaymentItem {
   id: string;
   amount: number;
   date: string;
+  paymentDate?: string;
   note?: string;
   method?: string;
   transactionId?: string;
@@ -240,6 +241,7 @@ export interface ApeeParent {
   address: string;
   email?: string;
   lastReminded?: string;
+  lastPaymentDate?: string;
   students: ApeeStudentLink[];
   totalDue: number;
   totalPaid: number;

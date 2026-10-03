@@ -967,6 +967,9 @@ export function generateApeeReminderMessage(
   const kidsList = parent.students && parent.students.length > 0 
     ? parent.students.map(s => `${s.name} (${s.classRoom})`).join(', ')
     : "votre enfant";
+  const studentSingleName = parent.students && parent.students.length > 0
+    ? parent.students[0].name
+    : ((parent as any).studentName || "votre enfant");
 
   // Calculate dynamic due date (from payment plan, parent createdAt/school calendar or +15 days)
   let dueDateStr = "la fin du mois";
@@ -978,6 +981,21 @@ export function generateApeeReminderMessage(
     const now = new Date();
     now.setDate(now.getDate() + 15);
     dueDateStr = now.toLocaleDateString('fr-FR');
+  }
+
+  // Calculate dynamic payment date (last recorded payment or registration)
+  let lastPaymentDateStr = "Aucun versement";
+  if (parent.payments && Array.isArray(parent.payments) && parent.payments.length > 0) {
+    const validPayments = [...parent.payments].filter(p => p && (p.date || p.paymentDate));
+    if (validPayments.length > 0) {
+      const lastP = validPayments[validPayments.length - 1];
+      const rawDate = lastP.date || lastP.paymentDate;
+      lastPaymentDateStr = rawDate.includes('-') ? new Date(rawDate).toLocaleDateString('fr-FR') : rawDate;
+    }
+  } else if (parent.lastPaymentDate) {
+    lastPaymentDateStr = parent.lastPaymentDate.includes('-')
+      ? new Date(parent.lastPaymentDate).toLocaleDateString('fr-FR')
+      : parent.lastPaymentDate;
   }
 
   const defaultSmsTemplate = settings.customSmsTemplate || settings.smsConfig?.customTemplate || "Rappel {NOM_PARENT}: Solde APEE de {MONTANT_DU} a regler avant le {DATE_ECHEANCE}. Merci de regulariser. {ETABLISSEMENT}.";
@@ -997,23 +1015,31 @@ export function generateApeeReminderMessage(
 
     return text
       // Dynamic variables in capital letters as specified
-      .replace(/{NOM_PARENT}/g, parent.name)
-      .replace(/{MONTANT_DU}/g, formattedAmount)
-      .replace(/{DATE_ECHEANCE}/g, dueDateStr)
-      .replace(/{ETABLISSEMENT}/g, shortName || associationName)
-      .replace(/{ELEVES}/g, kidsList)
-      .replace(/{DATE_JOUR}/g, todayStr)
-      .replace(/{ANNEE_SCOLAIRE}/g, schoolYear)
+      .replace(/{NOM_PARENT}/gi, parent.name)
+      .replace(/{NOM_ELEVE}/gi, studentSingleName)
+      .replace(/{nom_eleve}/gi, studentSingleName)
+      .replace(/{student_name}/gi, studentSingleName)
+      .replace(/{eleve}/gi, studentSingleName)
+      .replace(/{MONTANT_DU}/gi, formattedAmount)
+      .replace(/{DATE_ECHEANCE}/gi, dueDateStr)
+      .replace(/{DATE_PAIEMENT}/gi, lastPaymentDateStr)
+      .replace(/{ETABLISSEMENT}/gi, shortName || associationName)
+      .replace(/{ELEVES}/gi, kidsList)
+      .replace(/{DATE_JOUR}/gi, todayStr)
+      .replace(/{ANNEE_SCOLAIRE}/gi, schoolYear)
       // Legacy lowercase placeholders for backward compatibility
-      .replace(/{parent_name}/g, parent.name)
-      .replace(/{association_name}/g, associationName)
-      .replace(/{short_name}/g, shortName)
-      .replace(/{school_year}/g, schoolYear)
-      .replace(/{student_names}/g, kidsList)
-      .replace(/{remaining_amount}/g, (remaining || 0).toLocaleString())
-      .replace(/{total_due_amount}/g, (parent.totalDue || 0).toLocaleString())
-      .replace(/{due_date}/g, dueDateStr)
-      .replace(/{current_date}/g, todayStr);
+      .replace(/{parent_name}/gi, parent.name)
+      .replace(/{association_name}/gi, associationName)
+      .replace(/{short_name}/gi, shortName)
+      .replace(/{school_year}/gi, schoolYear)
+      .replace(/{student_names}/gi, kidsList)
+      .replace(/{remaining_amount}/gi, (remaining || 0).toLocaleString())
+      .replace(/{total_due_amount}/gi, (parent.totalDue || 0).toLocaleString())
+      .replace(/{due_date}/gi, dueDateStr)
+      .replace(/{date_echeance}/gi, dueDateStr)
+      .replace(/{payment_date}/gi, lastPaymentDateStr)
+      .replace(/{date_paiement}/gi, lastPaymentDateStr)
+      .replace(/{current_date}/gi, todayStr);
   };
 
   if (type === 'sms') {

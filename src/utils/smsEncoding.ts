@@ -45,6 +45,15 @@ export const SMS_DYNAMIC_VARIABLES: SmsTemplateVariable[] = [
     descriptionEn: 'Full recipient parent name'
   },
   {
+    tag: '{NOM_ELEVE}',
+    aliases: ['{student_name}', '{nom_eleve}', '{eleve}'],
+    labelFr: 'Nom Élève',
+    labelEn: 'Student Name',
+    sampleValue: 'Paul',
+    descriptionFr: 'Nom ou prénom de l\'élève concerné',
+    descriptionEn: 'Full name or first name of the student'
+  },
+  {
     tag: '{MONTANT_DU}',
     aliases: ['{remaining_amount}', '{total_due_amount}'],
     labelFr: 'Montant Dû',
@@ -55,12 +64,21 @@ export const SMS_DYNAMIC_VARIABLES: SmsTemplateVariable[] = [
   },
   {
     tag: '{DATE_ECHEANCE}',
-    aliases: ['{due_date}'],
+    aliases: ['{due_date}', '{date_echeance}'],
     labelFr: 'Date Échéance',
     labelEn: 'Due Date',
     sampleValue: '15/10/2026',
     descriptionFr: 'Date limite de paiement',
     descriptionEn: 'Payment deadline date'
+  },
+  {
+    tag: '{DATE_PAIEMENT}',
+    aliases: ['{payment_date}', '{date_paiement}'],
+    labelFr: 'Date Paiement',
+    labelEn: 'Payment Date',
+    sampleValue: '28/09/2026',
+    descriptionFr: 'Date du dernier paiement ou versement enregistré',
+    descriptionEn: 'Recorded last payment date'
   },
   {
     tag: '{ETABLISSEMENT}',
@@ -117,6 +135,14 @@ export const SMS_PRESET_TEMPLATES: SmsPresetTemplate[] = [
     template: 'Rappel {NOM_PARENT}: Solde APEE de {MONTANT_DU} a regler avant le {DATE_ECHEANCE}. Merci de regulariser. {ETABLISSEMENT}.',
     descriptionFr: 'Idéal pour les rappels périodiques respectant strictement 160 caractères GSM.',
     descriptionEn: 'Ideal for periodic fee reminders strictly under 160 GSM characters.'
+  },
+  {
+    id: 'eleve_personnalise',
+    nameFr: 'Personnalisé avec Élève',
+    nameEn: 'Personalized with Student Name',
+    template: 'Rappel {NOM_PARENT}: Solde APEE de {NOM_ELEVE} ({MONTANT_DU}) a regler avant le {DATE_ECHEANCE}. Merci. {ETABLISSEMENT}.',
+    descriptionFr: 'Intègre directement le nom de l\'élève dans la relance tout en garantissant un seul SMS GSM.',
+    descriptionEn: 'Directly includes student\'s name in reminder while guaranteeing a single GSM SMS.'
   },
   {
     id: 'court',
@@ -250,11 +276,19 @@ export function simulateSmsMessage(
   const defaultValues: Record<string, string> = {
     '{NOM_PARENT}': 'M. Martin BENE',
     '{parent_name}': 'M. Martin BENE',
+    '{NOM_ELEVE}': 'Paul',
+    '{student_name}': 'Paul',
+    '{nom_eleve}': 'Paul',
+    '{eleve}': 'Paul',
     '{MONTANT_DU}': '25 000 FCFA',
     '{remaining_amount}': '25 000 FCFA',
     '{total_due_amount}': '50 000 FCFA',
     '{DATE_ECHEANCE}': '15/10/2026',
     '{due_date}': '15/10/2026',
+    '{date_echeance}': '15/10/2026',
+    '{DATE_PAIEMENT}': '28/09/2026',
+    '{payment_date}': '28/09/2026',
+    '{date_paiement}': '28/09/2026',
     '{ETABLISSEMENT}': 'CES Ekali 1',
     '{association_name}': 'CES Ekali 1',
     '{short_name}': 'CES Ekali 1',
@@ -281,8 +315,13 @@ export function simulateSmsMessage(
   // Supporte également les balises écrites en minuscules ou majuscules ({nom_parent}, {montant_du}, etc.)
   simulatedText = simulatedText
     .replace(/{nom_parent}/gi, defaultValues['{NOM_PARENT}'])
+    .replace(/{nom_eleve}/gi, defaultValues['{NOM_ELEVE}'])
+    .replace(/{student_name}/gi, defaultValues['{NOM_ELEVE}'])
+    .replace(/{eleve}/gi, defaultValues['{NOM_ELEVE}'])
     .replace(/{montant_du}/gi, defaultValues['{MONTANT_DU}'])
     .replace(/{date_echeance}/gi, defaultValues['{DATE_ECHEANCE}'])
+    .replace(/{date_paiement}/gi, defaultValues['{DATE_PAIEMENT}'])
+    .replace(/{payment_date}/gi, defaultValues['{DATE_PAIEMENT}'])
     .replace(/{etablissement}/gi, defaultValues['{ETABLISSEMENT}'])
     .replace(/{eleves}/gi, defaultValues['{ELEVES}'])
     .replace(/{date_jour}/gi, defaultValues['{DATE_JOUR}'])

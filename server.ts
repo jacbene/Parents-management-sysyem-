@@ -930,10 +930,17 @@ app.post("/api/apee/send-bulk-reminders", async (req, res) => {
     const kidsList = parentObj.students && parentObj.students.length > 0
       ? parentObj.students.map((s: any) => `${s.name} (${s.classRoom})`).join(', ')
       : "votre enfant";
+    const studentSingleName = parentObj.students && parentObj.students.length > 0
+      ? parentObj.students[0].name
+      : (parentObj.studentName || "votre enfant");
 
     // Compute dynamic due date
     let dueDateStr = "la fin du mois";
-    if (parentObj.createdAt) {
+    if (parentObj.dueDate) {
+      dueDateStr = parentObj.dueDate.includes('-')
+        ? new Date(parentObj.dueDate).toLocaleDateString('fr-FR')
+        : parentObj.dueDate;
+    } else if (parentObj.createdAt) {
       const d = new Date(parentObj.createdAt);
       d.setDate(d.getDate() + 30);
       dueDateStr = d.toLocaleDateString('fr-FR');
@@ -942,6 +949,28 @@ app.post("/api/apee/send-bulk-reminders", async (req, res) => {
       now.setDate(now.getDate() + 15);
       dueDateStr = now.toLocaleDateString('fr-FR');
     }
+
+    // Compute dynamic payment date (last recorded payment or registration)
+    let lastPaymentDateStr = "Aucun versement";
+    if (parentObj.lastPaymentDate) {
+      lastPaymentDateStr = parentObj.lastPaymentDate.includes('-') 
+        ? new Date(parentObj.lastPaymentDate).toLocaleDateString('fr-FR')
+        : parentObj.lastPaymentDate;
+    } else if (parentObj.payments && Array.isArray(parentObj.payments) && parentObj.payments.length > 0) {
+      const validPayments = [...parentObj.payments].filter((p: any) => p && (p.date || p.paymentDate));
+      if (validPayments.length > 0) {
+        const lastP = validPayments[validPayments.length - 1];
+        const rawDate = lastP.date || lastP.paymentDate;
+        lastPaymentDateStr = rawDate.includes('-') ? new Date(rawDate).toLocaleDateString('fr-FR') : rawDate;
+      }
+    } else if (parentObj.paymentDate) {
+      lastPaymentDateStr = parentObj.paymentDate.includes('-')
+        ? new Date(parentObj.paymentDate).toLocaleDateString('fr-FR')
+        : parentObj.paymentDate;
+    } else if (parentObj.totalPaid > 0 && parentObj.updatedAt) {
+      lastPaymentDateStr = new Date(parentObj.updatedAt).toLocaleDateString('fr-FR');
+    }
+
     const todayStr = new Date().toLocaleDateString('fr-FR');
     const currencyStr = settings?.currency || "FCFA";
     const formattedAmount = `${remaining.toLocaleString()} ${currencyStr}`;
@@ -949,24 +978,32 @@ app.post("/api/apee/send-bulk-reminders", async (req, res) => {
     const replacePlaceholders = (text: string) => {
       if (!text) return "";
       return text
-        // Dynamic variables as specified
-        .replace(/{NOM_PARENT}/g, parentObj.name)
-        .replace(/{MONTANT_DU}/g, formattedAmount)
-        .replace(/{DATE_ECHEANCE}/g, dueDateStr)
-        .replace(/{ETABLISSEMENT}/g, shortName || associationName)
-        .replace(/{ELEVES}/g, kidsList)
-        .replace(/{DATE_JOUR}/g, todayStr)
-        .replace(/{ANNEE_SCOLAIRE}/g, schoolYear)
+        // Dynamic variables (case-insensitive for robust matching)
+        .replace(/{NOM_PARENT}/gi, parentObj.name)
+        .replace(/{NOM_ELEVE}/gi, studentSingleName)
+        .replace(/{nom_eleve}/gi, studentSingleName)
+        .replace(/{student_name}/gi, studentSingleName)
+        .replace(/{eleve}/gi, studentSingleName)
+        .replace(/{MONTANT_DU}/gi, formattedAmount)
+        .replace(/{DATE_ECHEANCE}/gi, dueDateStr)
+        .replace(/{DATE_PAIEMENT}/gi, lastPaymentDateStr)
+        .replace(/{ETABLISSEMENT}/gi, shortName || associationName)
+        .replace(/{ELEVES}/gi, kidsList)
+        .replace(/{DATE_JOUR}/gi, todayStr)
+        .replace(/{ANNEE_SCOLAIRE}/gi, schoolYear)
         // Legacy lowercase placeholders
-        .replace(/{parent_name}/g, parentObj.name)
-        .replace(/{association_name}/g, associationName)
-        .replace(/{short_name}/g, shortName)
-        .replace(/{school_year}/g, schoolYear)
-        .replace(/{student_names}/g, kidsList)
-        .replace(/{remaining_amount}/g, remaining.toLocaleString())
-        .replace(/{total_due_amount}/g, parentObj.totalDue.toLocaleString())
-        .replace(/{due_date}/g, dueDateStr)
-        .replace(/{current_date}/g, todayStr);
+        .replace(/{parent_name}/gi, parentObj.name)
+        .replace(/{association_name}/gi, associationName)
+        .replace(/{short_name}/gi, shortName)
+        .replace(/{school_year}/gi, schoolYear)
+        .replace(/{student_names}/gi, kidsList)
+        .replace(/{remaining_amount}/gi, remaining.toLocaleString())
+        .replace(/{total_due_amount}/gi, parentObj.totalDue.toLocaleString())
+        .replace(/{due_date}/gi, dueDateStr)
+        .replace(/{date_echeance}/gi, dueDateStr)
+        .replace(/{payment_date}/gi, lastPaymentDateStr)
+        .replace(/{date_paiement}/gi, lastPaymentDateStr)
+        .replace(/{current_date}/gi, todayStr);
     };
 
     if (channel === 'email') {

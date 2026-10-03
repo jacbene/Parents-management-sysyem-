@@ -27,7 +27,9 @@ import {
   User,
   DollarSign,
   School,
-  Users
+  Users,
+  X,
+  RotateCcw
 } from 'lucide-react';
 import { ApeeSettings, ApeeSmsConfig } from '../../types';
 import { useLanguage } from '../../utils/TranslationContext';
@@ -70,6 +72,22 @@ export default function SmsConfigurationForm({
   );
   const templateTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [copiedPreview, setCopiedPreview] = useState(false);
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+
+  // Editable test dataset for previewing the final rendered SMS
+  const defaultTestData = {
+    parentName: 'M. Martin BENE',
+    studentName: 'Paul',
+    amountDue: `25 000 ${settings.currency || 'FCFA'}`,
+    dueDate: '15/10/2026',
+    paymentDate: '28/09/2026',
+    schoolName: settings.shortName || settings.associationName || 'CES Ekali 1',
+    studentNames: 'Paul (4e)',
+    currentDate: new Date().toLocaleDateString('fr-FR'),
+    schoolYear: settings.schoolYear || '2025/2026'
+  };
+
+  const [previewTestData, setPreviewTestData] = useState(defaultTestData);
 
   // Hide/Show secrets
   const [showApiKey, setShowApiKey] = useState(false);
@@ -120,14 +138,67 @@ export default function SmsConfigurationForm({
     '{ETABLISSEMENT}': schoolName,
     '{association_name}': schoolName,
     '{short_name}': schoolName,
-    '{MONTANT_DU}': `25 000 ${settings.currency || 'FCFA'}`
+    '{NOM_ELEVE}': 'Paul',
+    '{student_name}': 'Paul',
+    '{nom_eleve}': 'Paul',
+    '{eleve}': 'Paul',
+    '{MONTANT_DU}': `25 000 ${settings.currency || 'FCFA'}`,
+    '{DATE_ECHEANCE}': '15/10/2026',
+    '{due_date}': '15/10/2026',
+    '{date_echeance}': '15/10/2026',
+    '{DATE_PAIEMENT}': '28/09/2026',
+    '{payment_date}': '28/09/2026',
+    '{date_paiement}': '28/09/2026'
   });
 
   const templateValidation = validateSmsTemplate(customSmsTemplate, {
     '{ETABLISSEMENT}': schoolName,
     '{association_name}': schoolName,
     '{short_name}': schoolName,
-    '{MONTANT_DU}': `25 000 ${settings.currency || 'FCFA'}`
+    '{NOM_ELEVE}': 'Paul',
+    '{student_name}': 'Paul',
+    '{nom_eleve}': 'Paul',
+    '{eleve}': 'Paul',
+    '{MONTANT_DU}': `25 000 ${settings.currency || 'FCFA'}`,
+    '{DATE_ECHEANCE}': '15/10/2026',
+    '{due_date}': '15/10/2026',
+    '{date_echeance}': '15/10/2026',
+    '{DATE_PAIEMENT}': '28/09/2026',
+    '{payment_date}': '28/09/2026',
+    '{date_paiement}': '28/09/2026'
+  });
+
+  // Dedicated preview simulation using custom test data inputs
+  const previewSimulation = simulateSmsMessage(customSmsTemplate, {
+    '{NOM_PARENT}': previewTestData.parentName,
+    '{parent_name}': previewTestData.parentName,
+    '{nom_parent}': previewTestData.parentName,
+    '{NOM_ELEVE}': previewTestData.studentName || 'Paul',
+    '{student_name}': previewTestData.studentName || 'Paul',
+    '{nom_eleve}': previewTestData.studentName || 'Paul',
+    '{eleve}': previewTestData.studentName || 'Paul',
+    '{MONTANT_DU}': previewTestData.amountDue,
+    '{remaining_amount}': previewTestData.amountDue,
+    '{montant_du}': previewTestData.amountDue,
+    '{DATE_ECHEANCE}': previewTestData.dueDate,
+    '{due_date}': previewTestData.dueDate,
+    '{date_echeance}': previewTestData.dueDate,
+    '{DATE_PAIEMENT}': previewTestData.paymentDate,
+    '{payment_date}': previewTestData.paymentDate,
+    '{date_paiement}': previewTestData.paymentDate,
+    '{ETABLISSEMENT}': previewTestData.schoolName,
+    '{association_name}': previewTestData.schoolName,
+    '{short_name}': previewTestData.schoolName,
+    '{etablissement}': previewTestData.schoolName,
+    '{ELEVES}': previewTestData.studentNames,
+    '{student_names}': previewTestData.studentNames,
+    '{eleves}': previewTestData.studentNames,
+    '{DATE_JOUR}': previewTestData.currentDate,
+    '{current_date}': previewTestData.currentDate,
+    '{date_jour}': previewTestData.currentDate,
+    '{ANNEE_SCOLAIRE}': previewTestData.schoolYear,
+    '{school_year}': previewTestData.schoolYear,
+    '{annee_scolaire}': previewTestData.schoolYear
   });
 
   // Dynamic variable insertion handler (inserts at cursor position)
@@ -184,7 +255,9 @@ export default function SmsConfigurationForm({
     if (customSmsTemplate && customSmsTemplate.trim()) {
       const val = validateSmsTemplate(customSmsTemplate, {
         '{ETABLISSEMENT}': schoolName,
-        '{MONTANT_DU}': `25 000 ${settings.currency || 'FCFA'}`
+        '{MONTANT_DU}': `25 000 ${settings.currency || 'FCFA'}`,
+        '{DATE_ECHEANCE}': '15/10/2026',
+        '{DATE_PAIEMENT}': '28/09/2026'
       });
 
       if (!val.isValid) {
@@ -601,8 +674,19 @@ export default function SmsConfigurationForm({
               </p>
             </div>
 
-            {/* GSM Status Pill Badge */}
-            <div className="flex items-center gap-1.5 self-start sm:self-auto">
+            {/* Preview Button & GSM Status Pill Badge */}
+            <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+              {/* Interactive Preview Button with Test Data */}
+              <button
+                type="button"
+                onClick={() => setIsPreviewModalOpen(true)}
+                title={language === 'en' ? 'Preview final rendered message with test data' : 'Prévisualiser le message final avec des données de test'}
+                className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 hover:text-indigo-800 border border-indigo-200/90 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-3xs cursor-pointer"
+              >
+                <Eye className="h-3.5 w-3.5 text-indigo-600" />
+                <span>{language === 'en' ? 'Preview with Test Data' : 'Prévisualiser le rendu'}</span>
+              </button>
+
               <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold tracking-tight border ${
                 !simulation.simulatedAnalysis.isGsm7
                   ? 'bg-amber-50 text-amber-800 border-amber-200'
@@ -840,8 +924,8 @@ export default function SmsConfigurationForm({
             <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px]">
               <div className="text-[10px] text-slate-400 font-sans">
                 {language === 'en' 
-                  ? 'Simulated with: NOM_PARENT = "M. Martin BENE", MONTANT_DU = "25 000 FCFA", DATE_ECHEANCE = "15/10/2026"'
-                  : 'Injecté avec : NOM_PARENT = "M. Martin BENE", MONTANT_DU = "25 000 FCFA", DATE_ECHEANCE = "15/10/2026"'}
+                  ? 'Simulated with: NOM_PARENT = "M. Martin BENE", NOM_ELEVE = "Paul", MONTANT_DU = "25 000 FCFA", DATE_ECHEANCE = "15/10/2026"'
+                  : 'Injecté avec : NOM_PARENT = "M. Martin BENE", NOM_ELEVE = "Paul", MONTANT_DU = "25 000 FCFA", DATE_ECHEANCE = "15/10/2026"'}
               </div>
 
               <div className="flex items-center gap-2">
@@ -991,6 +1075,260 @@ export default function SmsConfigurationForm({
           </AnimatePresence>
         </div>
       </div>
+
+      {/* ========================================================================= */}
+      {/* MODAL: Real-time SMS Final Render Preview with Test Data Customization   */}
+      {/* ========================================================================= */}
+      <AnimatePresence>
+        {isPreviewModalOpen && (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fade-in">
+            <div 
+              className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-2xl w-full overflow-hidden animate-scale-in my-auto max-h-[90vh] flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="border-b border-slate-100 px-6 py-4 flex items-center justify-between bg-slate-50/80 shrink-0">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 rounded-lg bg-indigo-100 text-indigo-700">
+                      <Eye className="h-4 w-4" />
+                    </span>
+                    <h3 className="text-sm md:text-base font-bold text-slate-900">
+                      {language === 'en' ? 'SMS Preview: Final Render' : 'Prévisualisation : Rendu Final du SMS'}
+                    </h3>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    {language === 'en'
+                      ? 'Simulate the message exactly as it will be received by parents, replacing all dynamic tags with test data.'
+                      : 'Simulation exacte du message tel qu\'il sera reçu par les parents après substitution des balises dynamiques.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsPreviewModalOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-xl transition cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Modal Content */}
+              <div className="p-6 overflow-y-auto space-y-6">
+                
+                {/* 1. Final Rendered Mobile SMS Bubble */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider flex items-center gap-1.5">
+                      <Smartphone className="h-3.5 w-3.5 text-indigo-600" />
+                      {language === 'en' ? 'Final Rendered Output (Simulated Parent Device)' : 'Rendu Final (Écran du Smartphone du Parent)'}
+                    </span>
+                    <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
+                      !previewSimulation.simulatedAnalysis.isGsm7
+                        ? 'bg-amber-50 text-amber-800 border-amber-200'
+                        : previewSimulation.simulatedAnalysis.gsmLength <= 140
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                          : previewSimulation.simulatedAnalysis.gsmLength <= 160
+                            ? 'bg-indigo-50 text-indigo-800 border-indigo-200'
+                            : 'bg-rose-50 text-rose-800 border-rose-200'
+                    }`}>
+                      {previewSimulation.simulatedAnalysis.gsmLength} / 160 car. GSM • {previewSimulation.simulatedAnalysis.encoding}
+                    </span>
+                  </div>
+
+                  <div className="p-4 bg-slate-950 text-slate-100 rounded-2xl space-y-3 shadow-inner border border-slate-800">
+                    <div className="flex items-center justify-between text-[10px] text-slate-400 border-b border-slate-800 pb-2">
+                      <span className="font-mono">De : <strong className="text-white">{smsSenderId || 'APEE'}</strong></span>
+                      <span className="font-mono">Destinataire : <strong className="text-white">{previewTestData.parentName}</strong></span>
+                    </div>
+
+                    <div className="bg-slate-800 text-slate-100 p-3.5 rounded-2xl rounded-tl-xs border border-slate-700/80 text-xs sm:text-sm leading-relaxed whitespace-pre-wrap font-sans">
+                      {previewSimulation.simulatedText || "(Message vide)"}
+                      <div className="mt-2.5 flex items-center justify-between text-[9px] text-slate-400 font-mono pt-1.5 border-t border-slate-700/50">
+                        <span>Passerelle SMS / Twilio</span>
+                        <span>{previewSimulation.simulatedAnalysis.gsmLength} car. • 12:45 ✓✓</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. GSM Status Evaluation Card */}
+                <div className={`p-4 rounded-2xl border space-y-2 text-xs ${
+                  !previewSimulation.simulatedAnalysis.isGsm7
+                    ? 'bg-amber-50/70 border-amber-200 text-amber-900'
+                    : previewSimulation.simulatedAnalysis.gsmLength <= 160
+                      ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                      : 'bg-rose-50/70 border-rose-200 text-rose-900'
+                }`}>
+                  <div className="flex items-center justify-between font-bold">
+                    <span className="flex items-center gap-1.5">
+                      {!previewSimulation.simulatedAnalysis.isGsm7 ? (
+                        <AlertTriangle className="h-4 w-4 text-amber-600" />
+                      ) : previewSimulation.simulatedAnalysis.gsmLength <= 160 ? (
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                      ) : (
+                        <AlertTriangle className="h-4 w-4 text-rose-600" />
+                      )}
+                      <span>
+                        {!previewSimulation.simulatedAnalysis.isGsm7
+                          ? 'Encodage UCS-2 Unicode forcé'
+                          : previewSimulation.simulatedAnalysis.gsmLength <= 160
+                            ? 'Parfaitement conforme GSM-160 (1 SMS facturé)'
+                            : `Dépassement de quota (${previewSimulation.simulatedAnalysis.segments} SMS facturés)`}
+                      </span>
+                    </span>
+                    <span className="font-mono text-xs">
+                      {previewSimulation.simulatedAnalysis.gsmLength <= 160
+                        ? `Marge restante : ${160 - previewSimulation.simulatedAnalysis.gsmLength} car.`
+                        : `Excédent : ${previewSimulation.simulatedAnalysis.gsmLength - 160} car.`}
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] leading-relaxed text-slate-600">
+                    {!previewSimulation.simulatedAnalysis.isGsm7
+                      ? `Le message contient des caractères spéciaux (${previewSimulation.simulatedAnalysis.nonGsmCharacters.join(', ')}). La limite maximale par SMS est de 70 caractères au lieu de 160.`
+                      : previewSimulation.simulatedAnalysis.gsmLength <= 160
+                        ? `Ce modèle s'envoie en un seul segment GSM-7 standard sans surcoût opérateur ni risque de coupure de texte pour les parents.`
+                        : `Attention : La longueur actuelle dépasse 160 caractères. Le SMS sera scindé en ${previewSimulation.simulatedAnalysis.segments} morceaux par l'opérateur mobile.`}
+                  </p>
+                </div>
+
+                {/* 3. Interactive Test Data Controls (Allows manager to test varying scenarios) */}
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase text-slate-600 tracking-wider flex items-center gap-1.5">
+                      <Sparkles className="h-3.5 w-3.5 text-indigo-600" />
+                      {language === 'en' ? 'Customize Test Values to simulate variations :' : 'Personnaliser les données de test de simulation :'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewTestData(defaultTestData)}
+                      className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 transition cursor-pointer"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      <span>{language === 'en' ? 'Reset defaults' : 'Réinitialiser'}</span>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    {/* Parent Name */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 font-mono">{'{NOM_PARENT}'}</label>
+                      <input
+                        type="text"
+                        value={previewTestData.parentName}
+                        onChange={(e) => setPreviewTestData(prev => ({ ...prev, parentName: e.target.value }))}
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-xl text-slate-800 font-medium"
+                      />
+                    </div>
+
+                    {/* Student Name */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 font-mono">{'{NOM_ELEVE}'}</label>
+                      <input
+                        type="text"
+                        value={previewTestData.studentName}
+                        onChange={(e) => setPreviewTestData(prev => ({ ...prev, studentName: e.target.value }))}
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-xl text-slate-800 font-medium"
+                        placeholder="Ex: Paul"
+                      />
+                    </div>
+
+                    {/* Amount Due */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 font-mono">{'{MONTANT_DU}'}</label>
+                      <input
+                        type="text"
+                        value={previewTestData.amountDue}
+                        onChange={(e) => setPreviewTestData(prev => ({ ...prev, amountDue: e.target.value }))}
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-xl text-slate-800 font-medium"
+                      />
+                    </div>
+
+                    {/* Payment Date */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 font-mono">{'{DATE_PAIEMENT}'}</label>
+                      <input
+                        type="text"
+                        value={previewTestData.paymentDate}
+                        onChange={(e) => setPreviewTestData(prev => ({ ...prev, paymentDate: e.target.value }))}
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-xl text-slate-800 font-medium"
+                      />
+                    </div>
+
+                    {/* Due Date */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 font-mono">{'{DATE_ECHEANCE}'}</label>
+                      <input
+                        type="text"
+                        value={previewTestData.dueDate}
+                        onChange={(e) => setPreviewTestData(prev => ({ ...prev, dueDate: e.target.value }))}
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-xl text-slate-800 font-medium"
+                      />
+                    </div>
+
+                    {/* School Name */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 font-mono">{'{ETABLISSEMENT}'}</label>
+                      <input
+                        type="text"
+                        value={previewTestData.schoolName}
+                        onChange={(e) => setPreviewTestData(prev => ({ ...prev, schoolName: e.target.value }))}
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-xl text-slate-800 font-medium"
+                      />
+                    </div>
+
+                    {/* Student Names */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-500 font-mono">{'{ELEVES}'}</label>
+                      <input
+                        type="text"
+                        value={previewTestData.studentNames}
+                        onChange={(e) => setPreviewTestData(prev => ({ ...prev, studentNames: e.target.value }))}
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-xl text-slate-800 font-medium"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Modal Footer */}
+              <div className="border-t border-slate-100 p-4 bg-slate-50 flex flex-wrap items-center justify-between gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleCopyPreviewText(previewSimulation.simulatedText)}
+                  className="px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-3xs cursor-pointer"
+                >
+                  {copiedPreview ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+                  <span>{copiedPreview ? (language === 'en' ? 'Copied!' : 'Copié !') : (language === 'en' ? 'Copy Rendered Text' : 'Copier le texte')}</span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleUseAsTestMessage(previewSimulation.simulatedText);
+                      setIsPreviewModalOpen(false);
+                    }}
+                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                  >
+                    <Send className="h-3.5 w-3.5 text-indigo-200" />
+                    <span>{language === 'en' ? 'Use in Test Terminal' : 'Injecter dans le banc d\'essai'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsPreviewModalOpen(false)}
+                    className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer"
+                  >
+                    {language === 'en' ? 'Close' : 'Fermer'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
 
     </div>
   );

@@ -245,28 +245,55 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
     // Fallback if balance is not > 0 but we still want to display preview
     const remaining = Math.max(0, parent.totalDue - parent.totalPaid);
     const kidsList = parent.students.map(s => `${s.name} (${s.classRoom})`).join(', ');
+    const studentSingleName = parent.students && parent.students.length > 0
+      ? parent.students[0].name
+      : ((parent as any).studentName || "votre enfant");
     const shortName = getApeeShortName(settings);
     const associationName = settings?.associationName || "Établissement";
     const currencyStr = settings?.currency || "FCFA";
     const formattedAmount = `${remaining.toLocaleString()} ${currencyStr}`;
     
+    // Dynamic last payment date
+    let lastPaymentDateStr = "Aucun versement";
+    if (parent.payments && Array.isArray(parent.payments) && parent.payments.length > 0) {
+      const validPayments = [...parent.payments].filter(p => p && (p.date || p.paymentDate));
+      if (validPayments.length > 0) {
+        const lastP = validPayments[validPayments.length - 1];
+        const rawDate = lastP.date || lastP.paymentDate;
+        lastPaymentDateStr = rawDate.includes('-') ? new Date(rawDate).toLocaleDateString('fr-FR') : rawDate;
+      }
+    } else if (parent.lastPaymentDate) {
+      lastPaymentDateStr = parent.lastPaymentDate.includes('-')
+        ? new Date(parent.lastPaymentDate).toLocaleDateString('fr-FR')
+        : parent.lastPaymentDate;
+    }
+    
     return text
       // Dynamic uppercase tags
-      .replace(/{NOM_PARENT}/g, parent.name)
-      .replace(/{MONTANT_DU}/g, formattedAmount)
-      .replace(/{DATE_ECHEANCE}/g, "la fin du mois")
-      .replace(/{ETABLISSEMENT}/g, shortName || associationName)
-      .replace(/{ELEVES}/g, kidsList)
-      .replace(/{DATE_JOUR}/g, new Date().toLocaleDateString('fr-FR'))
-      .replace(/{ANNEE_SCOLAIRE}/g, settings?.schoolYear || "")
+      .replace(/{NOM_PARENT}/gi, parent.name)
+      .replace(/{NOM_ELEVE}/gi, studentSingleName)
+      .replace(/{nom_eleve}/gi, studentSingleName)
+      .replace(/{student_name}/gi, studentSingleName)
+      .replace(/{eleve}/gi, studentSingleName)
+      .replace(/{MONTANT_DU}/gi, formattedAmount)
+      .replace(/{DATE_ECHEANCE}/gi, "la fin du mois")
+      .replace(/{DATE_PAIEMENT}/gi, lastPaymentDateStr)
+      .replace(/{ETABLISSEMENT}/gi, shortName || associationName)
+      .replace(/{ELEVES}/gi, kidsList)
+      .replace(/{DATE_JOUR}/gi, new Date().toLocaleDateString('fr-FR'))
+      .replace(/{ANNEE_SCOLAIRE}/gi, settings?.schoolYear || "")
       // Legacy tags
-      .replace(/{parent_name}/g, parent.name)
-      .replace(/{association_name}/g, associationName)
-      .replace(/{short_name}/g, shortName)
-      .replace(/{school_year}/g, settings?.schoolYear || "")
-      .replace(/{student_names}/g, kidsList)
-      .replace(/{remaining_amount}/g, remaining.toLocaleString())
-      .replace(/{total_due_amount}/g, parent.totalDue.toLocaleString());
+      .replace(/{parent_name}/gi, parent.name)
+      .replace(/{association_name}/gi, associationName)
+      .replace(/{short_name}/gi, shortName)
+      .replace(/{school_year}/gi, settings?.schoolYear || "")
+      .replace(/{student_names}/gi, kidsList)
+      .replace(/{remaining_amount}/gi, remaining.toLocaleString())
+      .replace(/{total_due_amount}/gi, parent.totalDue.toLocaleString())
+      .replace(/{due_date}/gi, "la fin du mois")
+      .replace(/{date_echeance}/gi, "la fin du mois")
+      .replace(/{payment_date}/gi, lastPaymentDateStr)
+      .replace(/{date_paiement}/gi, lastPaymentDateStr);
   };
 
   // Trigger copy
