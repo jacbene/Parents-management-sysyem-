@@ -162,12 +162,11 @@ export default function ApeeFinancial({
       }
 
       if (resData.simulated) {
-        logStep(isEn ? "⚠️ Campay Live failed/sandbox active. Falling back to High-Fidelity simulation." : "⚠️ Live Campay inactif/indisponible. Bascule sur la simulation haute-fidélité.");
-        await new Promise(resolve => setTimeout(resolve, 800));
-      } else {
-        logStep(isEn ? `✅ Campay request accepted! Ref: ${resData.reference}` : `✅ Requête acceptée par Campay ! Réf : ${resData.reference}`);
-        await new Promise(resolve => setTimeout(resolve, 800));
+        throw new Error(isEn ? "Simulated payments are rejected in production." : "Les paiements simulés sont rejetés pour garantir l'intégrité financière.");
       }
+
+      logStep(isEn ? `✅ Campay request accepted! Ref: ${resData.reference}` : `✅ Requête acceptée par Campay ! Réf : ${resData.reference}`);
+      await new Promise(resolve => setTimeout(resolve, 800));
 
       logStep(isEn ? "Synchronizing ledger with Pasma-sys database..." : "Mise à jour et synchronisation des registres de Pasma-sys...");
       await new Promise(resolve => setTimeout(resolve, 700));
@@ -1220,8 +1219,8 @@ export default function ApeeFinancial({
                           <span className="font-mono font-bold text-slate-700">Uahox680...t_XFJd</span>
                         </div>
                         <div className="flex justify-between items-center text-[8.5px] text-slate-500">
-                          <span>Webhook Key:</span>
-                         <span className="font-mono font-bold text-slate-700">{(import.meta.env.VITE_CAMPAY_WEBHOOK_KEY || "").slice(0, 8)}...{(import.meta.env.VITE_CAMPAY_WEBHOOK_KEY || "").slice(-6)}</span> 
+                          <span>Webhook Secret:</span>
+                          <span className="font-mono font-bold text-emerald-600">Protégé Serveur (HMAC Actif)</span> 
                         </div>
                       </div>
                     </div>

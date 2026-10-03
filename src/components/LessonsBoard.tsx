@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection, addDoc, doc, deleteDoc } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { db, handleFirestoreError, OperationType, getAuthHeader } from '../firebase';
 import { jsPDF } from 'jspdf';
 
 interface LessonsBoardProps {
@@ -166,9 +166,13 @@ export default function LessonsBoard({
     setCurrentHomeworkLesson(lesson);
 
     try {
+      const authHeader = await getAuthHeader();
       const response = await fetch('/api/gemini/generate-homework-from-lesson', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...authHeader
+        },
         body: JSON.stringify({
           lessonTitle: lesson.title,
           lessonContent: lesson.content,

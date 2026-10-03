@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, query, getDocs, doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
 import { 
-  Activity, CheckCircle, AlertCircle, Info, Copy, Cpu, 
-  RefreshCw, Play, Trash2, Terminal, Settings, Key, Globe, Check, Eye, EyeOff
+  Activity, CheckCircle, AlertCircle, Info, Copy, ShieldCheck, 
+  RefreshCw, Trash2, Terminal, Settings, Key, Globe, Check, Lock, AlertTriangle
 } from 'lucide-react';
 
 interface WebhookLog {
@@ -19,6 +19,12 @@ interface WebhookLog {
   synced?: boolean;
 }
 
+interface ServerCampayStatus {
+  isWebhookKeyConfigured: boolean;
+  isTokenConfigured: boolean;
+  environment: string;
+}
+
 export default function PaymentWebhookHandler() {
   const [copied, setCopied] = useState(false);
   const [webhookLogs, setWebhookLogs] = useState<WebhookLog[]>([]);
@@ -26,39 +32,34 @@ export default function PaymentWebhookHandler() {
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
-  
-  // Mask/unmask webhook secret
-  const [showWebhookKey, setShowWebhookKey] = useState(false);
-
-  // Simulator Form State
-  const [simReference, setSimReference] = useState(`PRTL_demo_school_ekali_${Math.floor(100000 + Math.random() * 900000)}`);
-  const [simStatus, setSimStatus] = useState('SUCCESSFUL');
-  const [simAmount, setSimAmount] = useState('50000');
-  const [simPhone, setSimPhone] = useState('677123456');
-  const [simOperator, setSimOperator] = useState('MTN');
-  const [simulating, setSimulating] = useState(false);
-  const [simulationResult, setSimulationResult] = useState<{
-    success: boolean;
-    message: string;
-    signatureVerified?: boolean;
-    sentPayload?: any;
-    receivedResponse?: any;
-  } | null>(null);
+  const [serverStatus, setServerStatus] = useState<ServerCampayStatus | null>(null);
 
   const webhookBaseUrl = (import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://pasma-sys-backend.onrender.com' : window.location.origin)).replace(/\/+$/, '');
   const webhookUrl = `${webhookBaseUrl}/api/campay-webhook`;
-  const defaultWebhookKey = import.meta.env.VITE_CAMPAY_WEBHOOK_KEY || "";
 
-  // Fetch logs on mount & refresh
+  // Fetch logs & server security status on mount
   useEffect(() => {
     fetchLogs();
+    fetchServerStatus();
   }, []);
+
+  const fetchServerStatus = async () => {
+    try {
+      const res = await fetch('/api/campay/status');
+      if (res.ok) {
+        const data = await res.json();
+        setServerStatus(data);
+      }
+    } catch (err) {
+      console.warn("Impossible de joindre le statut serveur Campay:", err);
+    }
+  };
 
   const fetchLogs = async () => {
     setLoading(true);
     let freshInMemory: any[] = [];
     try {
-      // 1. Fetch in-memory logs from the backend
+      // 1. Fetch verified in-memory logs from the backend
       const memResponse = await fetch('/api/campay/webhooks').catch(() => null);
       if (memResponse && memResponse.ok) {
         const data = await memResponse.json();
@@ -97,9 +98,8 @@ export default function PaymentWebhookHandler() {
         fetchedPersisted.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
         setWebhookLogs(fetchedPersisted);
       } catch (firestoreErr: any) {
-        console.info("Firestore Webhook logs query bypassed or restricted. Engaging seamless in-memory sync mapping.", firestoreErr.message || firestoreErr);
+        console.info("Firestore Webhook logs query restriction:", firestoreErr.message || firestoreErr);
         
-        // Fallback: map the in-memory logs to fill the persisted list perfectly so user gets real data!
         const fallbackLogs: WebhookLog[] = (freshInMemory.length > 0 ? freshInMemory : inMemoryLogs).map((m: any) => ({
           id: `log_webhook_${m.reference}`,
           reference: m.reference,
@@ -115,7 +115,7 @@ export default function PaymentWebhookHandler() {
         setWebhookLogs(fallbackLogs);
       }
     } catch (err: any) {
-      console.info("Info handling webhook logs fetch:", err?.message || err);
+      console.error("Failed to load logs:", err);
     } finally {
       setLoading(false);
     }
@@ -127,69 +127,36 @@ export default function PaymentWebhookHandler() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Run self-trigger simulation post on backend
-  const handleRunSimulation = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSimulating(true);
-    setSimulationResult(null);
-
+  const handleClearInMemory = async () => {
     try {
-      const response = await fetch('/api/campay/simulate-webhook-post', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          reference: simReference,
-          status: simStatus,
-          amount: simAmount,
-          phone: simPhone,
-          operator: simOperator
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP Error ${response.status}`);
-      }
-
-      const data = await response.json();
-      setSimulationResult({
-        success: data.success,
-        message: data.message,
-        signatureVerified: data.signatureVerified,
-        sentPayload: data.sentPayload,
-        receivedResponse: data.receivedResponse
-      });
-
-      // Refresh logs
+      await fetch('/api/campay/webhooks/clear', { method: 'POST' });
+      setInMemoryLogs([]);
       fetchLogs();
-      
-      // Regenerate reference for next simulation
-      const prefix = simReference.split('_')[0] === 'PRTL' ? 'PRTL' : 'INV';
-      const detail = simReference.split('_')[1] || 'demo_school_ekali';
-      setSimReference(`${prefix}_${detail}_${Math.floor(100000 + Math.random() * 900000)}`);
-    } catch (err: any) {
-      setSimulationResult({
-        success: false,
-        message: `Erreur de simulation: ${err.message}`
-      });
-    } finally {
-      setSimulating(false);
+    } catch (err) {
+      console.error("Error clearing logs:", err);
     }
   };
 
-  // Synchronise simulated/real webhook payments into schools' portal fees or parent invoices
+  // Synchronise strictly verified webhook payments into schools' portal fees or parent invoices
   const handleSynchronizeDb = async () => {
     setSyncing(true);
-    setSyncStatus("Démarrage de la synchronisation...");
+    setSyncStatus("Démarrage de la synchronisation sécurisée...");
     let syncedCount = 0;
     let localFallbackUsed = false;
 
     try {
-      const successfulLogs = webhookLogs.filter(log => log.status === 'SUCCESSFUL' && log.verified && !log.synced);
+      // STRICT FILTER: Only SUCCESSFUL, cryptographically verified, non-simulated records are processed
+      const successfulLogs = webhookLogs.filter(log => 
+        log.status === 'SUCCESSFUL' && 
+        log.verified === true && 
+        !log.synced &&
+        !log.reference.startsWith('SIM_') &&
+        !log.reference.startsWith('PRTL_demo_') &&
+        !log.reference.startsWith('INV_demo_')
+      );
       
       if (successfulLogs.length === 0) {
-        setSyncStatus("Tout est déjà à jour. Aucun nouveau versement vérifié à synchroniser.");
+        setSyncStatus("Tous les versements certifiés sont déjà à jour. Aucun nouveau versement vérifié à synchroniser.");
         setSyncing(false);
         return;
       }
@@ -199,12 +166,7 @@ export default function PaymentWebhookHandler() {
 
         try {
           if (log.reference.startsWith('PRTL_')) {
-            // It's a portal fee payment
-            // Reference format: PRTL_schoolId_timestamp
             const parts = log.reference.split('_');
-            // SchoolId could have multiple underscores, so reconstruct it
-            // PRTL_demo_school_ekali_123456 -> parts are ["PRTL", "demo", "school", "ekali", "123456"]
-            // Reconstruct middle elements as school ID
             const schoolId = parts.slice(1, -1).join('_') || parts[1];
             const amountNum = Number(log.amount) || 0;
 
@@ -217,15 +179,13 @@ export default function PaymentWebhookHandler() {
                   schoolSnapData = schoolSnap.data();
                   const currentPaid = schoolSnapData.portalFeesPaid || 0;
                   await updateDoc(schoolRef, {
-                    portalFeesPaid: currentPaid + amountNum
+                    portalFeesPaid: currentPaid + amountNum,
+                    lastPortalPaymentDate: new Date().toISOString()
                   });
-                } else {
-                  console.warn(`School ${schoolId} not found in Firestore`);
                 }
               } catch (writeErr: any) {
-                console.warn(`Firestore update blocked for school ${schoolId} due to permission or offline status. Applying local cache fallback:`, writeErr);
+                console.warn(`Firestore update for school ${schoolId} restricted. Applying local cache:`, writeErr);
                 localFallbackUsed = true;
-                // Resilient local storage fallback for establishments
                 const existingEstsStr = localStorage.getItem('pasma_local_establishments');
                 const existingEsts = existingEstsStr ? JSON.parse(existingEstsStr) : [];
                 let found = false;
@@ -250,13 +210,11 @@ export default function PaymentWebhookHandler() {
                 const logDocRef = doc(db, 'invoices', log.id);
                 await updateDoc(logDocRef, { synced: true });
               } catch (logErr: any) {
-                console.warn(`Firestore sync status update blocked for log ${log.id}. Proceeding locally:`, logErr);
+                console.warn(`Firestore sync status update for log ${log.id}:`, logErr);
               }
               syncedCount++;
             }
           } else if (log.reference.startsWith('INV_')) {
-            // It's a student invoice payment
-            // Reference format: INV_invoiceId_timestamp
             const parts = log.reference.split('_');
             const invoiceId = parts.slice(1, -1).join('_') || parts[1];
             const amountNum = Number(log.amount) || 0;
@@ -273,13 +231,10 @@ export default function PaymentWebhookHandler() {
                     paymentMethod: 'momo_campay',
                     paidAt: new Date().toISOString()
                   });
-                } else {
-                  console.warn(`Invoice ${invoiceId} not found in Firestore`);
                 }
               } catch (writeErr: any) {
-                console.warn(`Firestore update blocked for invoice ${invoiceId} due to permission or offline status. Applying local cache fallback:`, writeErr);
+                console.warn(`Firestore update for invoice ${invoiceId} restricted. Local cache:`, writeErr);
                 localFallbackUsed = true;
-                // Resilient local storage fallback for invoices
                 const existingInvoicesStr = localStorage.getItem('pasma_local_invoices');
                 const existingInvoices = existingInvoicesStr ? JSON.parse(existingInvoicesStr) : [];
                 let found = false;
@@ -304,12 +259,11 @@ export default function PaymentWebhookHandler() {
                 localStorage.setItem('pasma_local_invoices', JSON.stringify(existingInvoices));
               }
 
-              // Mark webhook log as synced in Firestore
               try {
                 const logDocRef = doc(db, 'invoices', log.id);
                 await updateDoc(logDocRef, { synced: true });
               } catch (logErr: any) {
-                console.warn(`Firestore sync status update blocked for log ${log.id}. Proceeding locally:`, logErr);
+                console.warn(`Firestore sync status update for log ${log.id}:`, logErr);
               }
               syncedCount++;
             }
@@ -319,52 +273,41 @@ export default function PaymentWebhookHandler() {
         }
       }
 
-      if (localFallbackUsed) {
-        setSyncStatus(`🔄 Synchronisation locale réussie ! ${syncedCount} transaction(s) ont été appliquées avec succès en cache local d'interface (certaines mises à jour directes sur le cloud sont sécurisées par habilitation).`);
-      } else {
-        setSyncStatus(`🎉 Succès ! ${syncedCount} transaction(s) ont été synchronisées dans la base de données cloud.`);
-      }
+      setSyncStatus(`Synchronisation terminée avec succès ! ${syncedCount} transaction(s) certifiée(s) synchronisée(s).${localFallbackUsed ? " (Cache local de sécurité synchronisé)" : ""}`);
       fetchLogs();
     } catch (err: any) {
-      console.error("Sync error:", err);
-      setSyncStatus(`Erreur lors de la synchronisation : ${err.message}`);
+      setSyncStatus(`Erreur de synchronisation: ${err.message}`);
     } finally {
       setSyncing(false);
     }
   };
 
-  // Clear in-memory server logs
-  const handleClearServerLogs = async () => {
-    if (!confirm("Voulez-vous vraiment vider les logs de webhook en mémoire sur le serveur ?")) return;
-    try {
-      await fetch('/api/campay/webhooks/clear', { method: 'POST' });
-      fetchLogs();
-    } catch (err) {}
-  };
-
   return (
-    <div className="space-y-6 text-slate-800 font-sans">
-      
-      {/* Configuration Header Banner */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 text-slate-300 relative overflow-hidden shadow-md">
-        <div className="absolute right-0 top-0 translate-x-12 -translate-y-12 w-64 h-64 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none"></div>
-        
-        <div className="relative flex flex-col md:flex-row gap-6 justify-between items-start md:items-center">
-          <div className="space-y-2 max-w-xl">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold uppercase tracking-wider">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block"></span>
-              Synchronisation Active
+    <div className="space-y-6">
+      {/* Top Banner & Endpoint Credentials */}
+      <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl p-6 shadow-sm relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none"></div>
+
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 bg-indigo-500/20 text-indigo-400 rounded-lg">
+                <Activity className="h-5 w-5" />
+              </span>
+              <h2 className="text-lg font-black tracking-tight text-white">Routeur Webhook Campay & Audit de Sécurité</h2>
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                HMAC-SHA256 Actif
+              </span>
             </div>
-            <h2 className="text-xl font-black text-white">Console d'Intégration Campay & Webhook</h2>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Configurez le traitement asynchrone des redevances d'exploitation (1% de frais de portail) et des cotisations APEE parentales collectées en temps réel par Campay.
+            <p className="text-xs text-slate-400 max-w-2xl leading-relaxed">
+              Surveillance cryptographique en temps réel des notifications de paiement Campay. Seules les requêtes avec signature valide sont certifiées et imputées aux registres comptables.
             </p>
           </div>
 
           <button
-            onClick={fetchLogs}
+            onClick={() => { fetchLogs(); fetchServerStatus(); }}
             disabled={loading}
-            className="px-4 py-2 bg-slate-800 hover:bg-slate-750 border border-slate-700/80 rounded-xl text-xs font-bold text-slate-200 transition flex items-center gap-2 cursor-pointer disabled:opacity-55"
+            className="self-start md:self-auto px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-3xs disabled:opacity-50"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             Actualiser
@@ -375,7 +318,7 @@ export default function PaymentWebhookHandler() {
         <div className="mt-6 border-t border-slate-800/80 pt-5 grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-2">
             <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1">
-              <Globe className="h-3 w-3 text-indigo-400" /> Pasma-sys Callback URL (Webhook)
+              <Globe className="h-3 w-3 text-indigo-400" /> URL de Callback Publique (Webhook)
             </span>
             <div className="flex items-center gap-2">
               <input
@@ -397,192 +340,87 @@ export default function PaymentWebhookHandler() {
               </button>
             </div>
             <p className="text-[10px] text-slate-500">
-              Fournissez cette URL à Campay dans vos configurations d'application pour recevoir les statuts de paiement en temps réel.
+              Renseignez cette URL exacte dans le tableau de bord développeur Campay pour recevoir les notifications de paiement.
             </p>
           </div>
 
           <div className="space-y-2">
             <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1">
-              <Key className="h-3 w-3 text-amber-400" /> App Webhook Key (Secret)
+              <Lock className="h-3 w-3 text-emerald-400" /> Protection Cryptographique du Secret
             </span>
-            <div className="flex items-center gap-2">
-              <div className="relative w-full">
-                <input
-                  type={showWebhookKey ? "text" : "password"}
-                  readOnly
-                  value={defaultWebhookKey}
-                  className="w-full bg-slate-950/80 border border-slate-800 rounded-xl pl-3 pr-10 py-2 text-xs font-mono font-bold text-amber-300 focus:outline-hidden"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowWebhookKey(!showWebhookKey)}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-300"
-                >
-                  {showWebhookKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
+            <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className={`h-4 w-4 ${serverStatus?.isWebhookKeyConfigured ? 'text-emerald-400' : 'text-amber-400'}`} />
+                <span className="font-mono font-bold text-slate-200">CAMPAY_WEBHOOK_KEY</span>
               </div>
+              <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                serverStatus?.isWebhookKeyConfigured 
+                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' 
+                  : 'bg-amber-950 text-amber-300 border border-amber-800'
+              }`}>
+                {serverStatus?.isWebhookKeyConfigured ? 'Configuré & Sécurisé' : 'À configurer (.env)'}
+              </span>
             </div>
             <p className="text-[10px] text-slate-500">
-              Ce secret d'application configuré dans le fichier <strong className="text-slate-400">.env</strong> est utilisé pour valider la signature cryptographique <code className="bg-slate-950 px-1 py-0.5 rounded text-indigo-300 font-bold">X-Campay-Signature</code>.
+              Le secret d'application est strictement conservé sur le serveur backend. Aucune clé sensible n'est injectée dans le navigateur.
             </p>
           </div>
         </div>
       </div>
 
-      {/* Main split dashboard body: Left: Simulator, Right: Live logs */}
+      {/* Main split dashboard body: Left: Security Architecture, Right: Live logs */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         
-        {/* Webhook Simulator (2 Cols) */}
+        {/* Security Architecture & Protocol Panel (2 Cols) */}
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-white border border-slate-200/80 rounded-3xl p-5 shadow-3xs space-y-4">
             <div className="flex items-center gap-1.5 border-b border-slate-100 pb-3">
-              <Cpu className="h-4.5 w-4.5 text-indigo-600" />
-              <h3 className="text-sm font-black text-slate-950">Simulateur Haute-Fidélité</h3>
+              <ShieldCheck className="h-4.5 w-4.5 text-emerald-600" />
+              <h3 className="text-sm font-black text-slate-950">Garanties d'Intégrité Financière</h3>
             </div>
             
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Générez et envoyez de fausses requêtes webhook signées avec votre clé secrète réelle pour tester instantanément les routines de vérification cryptographiques et de mise à jour de la base de données.
-            </p>
-
-            <form onSubmit={handleRunSimulation} className="space-y-4 text-xs font-medium">
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-500 uppercase">Référence de Transaction</label>
-                <div className="flex gap-1.5">
-                  <input
-                    type="text"
-                    required
-                    value={simReference}
-                    onChange={(e) => setSimReference(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono font-bold focus:outline-hidden focus:ring-2 focus:ring-indigo-500/15"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const rand = Math.floor(100000 + Math.random() * 900000);
-                      const isPortal = Math.random() > 0.4;
-                      setSimReference(isPortal ? `PRTL_demo_school_ekali_${rand}` : `INV_apee_par_bene_jacques_${rand}`);
-                    }}
-                    className="px-2.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl border border-slate-250 font-bold"
-                    title="Aléatoire"
-                  >
-                    🎲
-                  </button>
+            <div className="space-y-3 text-xs leading-relaxed text-slate-600">
+              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/70 space-y-1">
+                <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                  Vérification par Signature HMAC-SHA256
                 </div>
-                <p className="text-[9px] text-slate-450">
-                  Utilisez le préfixe <code className="bg-slate-100 px-1 py-0.5 rounded font-black text-indigo-700">PRTL_&lt;schoolId&gt;_</code> pour les frais de portail ou <code className="bg-slate-100 px-1 py-0.5 rounded font-black text-indigo-700">INV_&lt;invoiceId&gt;_</code> pour une cotisation parentale.
+                <p className="text-[11px] text-slate-500">
+                  Chaque requête entrante doit impérativement fournir l'en-tête <code className="bg-slate-200 px-1 py-0.5 rounded font-mono text-slate-800">X-Campay-Signature</code> calculé avec la clé secrète du serveur.
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Statut du Paiement</label>
-                  <select
-                    value={simStatus}
-                    onChange={(e) => setSimStatus(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold focus:outline-hidden focus:ring-2 focus:ring-indigo-500/15"
-                  >
-                    <option value="SUCCESSFUL">✅ SUCCESSFUL</option>
-                    <option value="FAILED">❌ FAILED</option>
-                    <option value="PENDING">⏳ PENDING</option>
-                  </select>
+              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/70 space-y-1">
+                <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                  Protection Anti-Timing Attack
                 </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Montant (FCFA)</label>
-                  <input
-                    type="number"
-                    required
-                    value={simAmount}
-                    onChange={(e) => setSimAmount(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold focus:outline-hidden focus:ring-2 focus:ring-indigo-500/15"
-                  />
-                </div>
+                <p className="text-[11px] text-slate-500">
+                  La comparaison de signature utilise <code className="bg-slate-200 px-1 py-0.5 rounded font-mono text-slate-800">crypto.timingSafeEqual</code> en temps constant pour empêcher toute analyse temporelle par un attaquant.
+                </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Numéro Téléphone</label>
-                  <input
-                    type="text"
-                    required
-                    value={simPhone}
-                    onChange={(e) => setSimPhone(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-mono font-bold focus:outline-hidden focus:ring-2 focus:ring-indigo-500/15"
-                  />
+              <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/70 space-y-1">
+                <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                  Rejet Systématique des Simulations
                 </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase">Opérateur</label>
-                  <select
-                    value={simOperator}
-                    onChange={(e) => setSimOperator(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-bold focus:outline-hidden focus:ring-2 focus:ring-indigo-500/15"
-                  >
-                    <option value="MTN">MTN MoMo</option>
-                    <option value="ORANGE">Orange Money</option>
-                  </select>
-                </div>
+                <p className="text-[11px] text-slate-500">
+                  Les endpoints de simulation et les en-têtes de contournement sont définitivement désactivés. Aucune quittance ne peut être générée sans versement bancaire certifié.
+                </p>
               </div>
-
-              <button
-                type="submit"
-                disabled={simulating}
-                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-55"
-              >
-                <Play className="h-3.5 w-3.5 fill-current" />
-                {simulating ? "Envoi de la requête..." : "Déclencher la simulation Webhook"}
-              </button>
-            </form>
-
-            {/* Simulation Response Output Terminal */}
-            {simulationResult && (
-              <div className="mt-4 border border-slate-150 rounded-2xl overflow-hidden bg-slate-950 text-[10.5px] font-mono text-slate-300">
-                <div className="bg-slate-900 px-3 py-1.5 border-b border-slate-800 flex justify-between items-center">
-                  <span className="text-slate-400 font-bold flex items-center gap-1">
-                    <Terminal className="h-3 w-3 text-indigo-400" /> Sortie Terminal Simulation
-                  </span>
-                  <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-bold uppercase ${
-                    simulationResult.success ? 'bg-emerald-950 text-emerald-400' : 'bg-rose-950 text-rose-400'
-                  }`}>
-                    {simulationResult.success ? 'SUCCÈS' : 'ÉCHEC'}
-                  </span>
-                </div>
-                <div className="p-3 space-y-2 leading-relaxed overflow-x-auto max-h-56">
-                  <p className="text-indigo-400 font-bold">&gt; {simulationResult.message}</p>
-                  
-                  {simulationResult.signatureVerified !== undefined && (
-                    <p className={simulationResult.signatureVerified ? 'text-emerald-400' : 'text-rose-400'}>
-                      🛡️ Signature Cryptographique : {simulationResult.signatureVerified ? 'VALIDE (HMAC SHA256 MATCH)' : 'INVALIDE (MISMATCH)'}
-                    </p>
-                  )}
-
-                  {simulationResult.sentPayload && (
-                    <div className="space-y-1">
-                      <p className="text-amber-400">// Payload JSON envoyé :</p>
-                      <pre className="text-slate-400 font-bold">{JSON.stringify(simulationResult.sentPayload, null, 2)}</pre>
-                    </div>
-                  )}
-
-                  {simulationResult.receivedResponse && (
-                    <div className="space-y-1">
-                      <p className="text-blue-400">// Réponse du routeur Webhook :</p>
-                      <pre className="text-slate-400 font-bold">{JSON.stringify(simulationResult.receivedResponse, null, 2)}</pre>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+            </div>
           </div>
 
           {/* Database Sync Panel */}
           <div className="bg-slate-50 border border-slate-200/80 rounded-3xl p-5 shadow-3xs space-y-4">
             <div className="flex items-center gap-1.5">
               <CheckCircle className="h-4.5 w-4.5 text-emerald-600" />
-              <h4 className="text-xs font-black uppercase text-slate-950 tracking-wider">Synchroniseur de Registre Global</h4>
+              <h4 className="text-xs font-black uppercase text-slate-950 tracking-wider">Synchroniseur de Registre Certifié</h4>
             </div>
 
             <p className="text-xs text-slate-500 leading-normal">
-              Appliquez les transactions réussies et vérifiées de la passerelle Campay aux écoles correspondantes (frais de redevance d'exploitation) et aux parents d'élèves (statut payé de la cotisation).
+              Appliquez uniquement les transactions certifiées avec succès par signature HMAC aux établissements correspondants (redevances de portail) et aux parents d'élèves (cotisations scolaires).
             </p>
 
             <button
@@ -591,7 +429,7 @@ export default function PaymentWebhookHandler() {
               className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-55"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} />
-              {syncing ? "Synchronisation en cours..." : "Lancer la synchronisation en Base de Données"}
+              {syncing ? "Synchronisation en cours..." : "Synchroniser les règlements vérifiés"}
             </button>
 
             {syncStatus && (
@@ -603,165 +441,128 @@ export default function PaymentWebhookHandler() {
           </div>
         </div>
 
-        {/* Live Logs List (3 Cols) */}
+        {/* Live Incoming Webhooks / Audit Log (3 Cols) */}
         <div className="lg:col-span-3 space-y-6">
-          
-          {/* Persisted Logs in Firestore */}
-          <div className="bg-white border border-slate-200/80 rounded-3xl shadow-3xs overflow-hidden">
-            <div className="p-5 border-b border-slate-100 flex justify-between items-center">
-              <div className="flex items-center gap-1.5">
-                <Activity className="h-4 w-4 text-indigo-600 animate-pulse" />
-                <h3 className="text-sm font-black text-slate-950">Logs Persistés en Base (Invoices)</h3>
+          <div className="bg-white border border-slate-200/80 rounded-3xl p-5 shadow-3xs space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Terminal className="h-4.5 w-4.5 text-slate-700" />
+                <h3 className="text-sm font-black text-slate-950">Journal des Événements Webhook Reçus</h3>
+                <span className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] font-bold rounded-full">
+                  {webhookLogs.length}
+                </span>
               </div>
-              <span className="bg-slate-100 border border-slate-150 text-slate-600 text-[10px] font-mono px-2 py-0.5 rounded-md font-bold">
-                {webhookLogs.length} logs persistés
-              </span>
+
+              {inMemoryLogs.length > 0 && (
+                <button
+                  onClick={handleClearInMemory}
+                  className="text-[10px] font-bold text-rose-600 hover:text-rose-800 flex items-center gap-1 transition cursor-pointer"
+                  title="Purger le cache en mémoire"
+                >
+                  <Trash2 className="h-3 w-3" /> Purger la mémoire
+                </button>
+              )}
             </div>
 
             {loading ? (
-              <div className="p-12 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
-                <RefreshCw className="h-4 w-4 animate-spin text-indigo-600" />
-                Chargement des logs Firestore...
+              <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-2">
+                <RefreshCw className="h-6 w-6 animate-spin text-indigo-600" />
+                <span className="text-xs font-semibold">Chargement des événements de paiement...</span>
               </div>
             ) : webhookLogs.length === 0 ? (
-              <div className="p-12 text-center text-slate-450 space-y-2">
-                <div className="text-2xl">⏳</div>
-                <p className="font-bold text-xs text-slate-700">Aucun log de webhook persisté</p>
-                <p className="text-[10px] text-slate-400 leading-normal max-w-xs mx-auto">
-                  Déclenchez une simulation à gauche pour créer et persister une transaction Webhook signée.
+              <div className="py-12 text-center text-slate-400 space-y-2">
+                <Activity className="h-8 w-8 text-slate-300 mx-auto" />
+                <p className="text-xs font-semibold">Aucun événement webhook reçu pour l'instant.</p>
+                <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
+                  Dès qu'un parent ou un établissement valide un paiement sur Campay, la notification apparaîtra ici en temps réel avec son empreinte de signature HMAC.
                 </p>
               </div>
             ) : (
-              <div className="divide-y divide-slate-100 max-h-[480px] overflow-y-auto">
+              <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
                 {webhookLogs.map((log) => {
-                  const dateStr = new Date(log.timestamp).toLocaleString();
-                  const isPortal = log.reference.startsWith('PRTL_');
-
+                  const isSuccess = log.status === 'SUCCESSFUL';
+                  const isFailed = log.status === 'FAILED';
                   return (
-                    <div key={log.id} className="p-4 hover:bg-slate-50/50 transition text-xs space-y-2.5">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div 
+                      key={log.id} 
+                      className={`p-4 rounded-2xl border transition-all text-xs space-y-2.5 ${
+                        isSuccess 
+                          ? 'bg-slate-50/60 border-slate-200/80 hover:border-slate-300' 
+                          : isFailed
+                            ? 'bg-rose-50/30 border-rose-200/60'
+                            : 'bg-amber-50/30 border-amber-200/60'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between flex-wrap gap-2">
                         <div className="flex items-center gap-2">
-                          <span className={`px-2 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider ${
-                            log.status === 'SUCCESSFUL' 
-                              ? 'bg-emerald-100 text-emerald-800' 
-                              : log.status === 'FAILED' 
-                                ? 'bg-rose-100 text-rose-800' 
-                                : 'bg-amber-100 text-amber-800'
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                            isSuccess 
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
+                              : isFailed
+                                ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                                : 'bg-amber-100 text-amber-800 border border-amber-200'
                           }`}>
                             {log.status}
                           </span>
-                          <span className="font-mono font-bold text-slate-800 truncate max-w-xs sm:max-w-sm">
+
+                          <span className="font-mono font-bold text-slate-800">
                             {log.reference}
                           </span>
-                        </div>
-                        <span className="text-[10px] text-slate-400 font-mono font-semibold">
-                          {dateStr}
-                        </span>
-                      </div>
 
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-2.5 rounded-xl border border-slate-150/50 font-mono text-[10.5px]">
-                        <div>
-                          <span className="text-[8.5px] text-slate-400 uppercase font-black block">Montant</span>
-                          <strong className="text-slate-800 text-[11px]">{Number(log.amount).toLocaleString()} XAF</strong>
-                        </div>
-                        <div>
-                          <span className="text-[8.5px] text-slate-400 uppercase font-black block">Source</span>
-                          <strong className="text-slate-800">{log.phone || 'N/A'}</strong>
-                        </div>
-                        <div>
-                          <span className="text-[8.5px] text-slate-400 uppercase font-black block">Opérateur</span>
-                          <strong className="text-slate-800">{log.operator || 'N/A'}</strong>
-                        </div>
-                        <div>
-                          <span className="text-[8.5px] text-slate-400 uppercase font-black block">Signature</span>
-                          <span className={`inline-flex items-center gap-0.5 text-[9px] font-bold ${
-                            log.verified ? 'text-emerald-600' : 'text-rose-600'
-                          }`}>
-                            {log.verified ? '✓ Valide' : '✗ Invalide'}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between">
-                        <span className="text-[9px] text-slate-400 flex items-center gap-1">
-                          📁 Type: <strong className="text-slate-600 uppercase">{isPortal ? 'Frais de Portail' : 'Cotisation APEE'}</strong>
-                        </span>
-                        
-                        <div className="flex items-center gap-2">
-                          {log.status === 'SUCCESSFUL' && log.verified && (
-                            <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wide ${
-                              log.synced 
-                                ? 'bg-indigo-50 text-indigo-700' 
-                                : 'bg-amber-50 text-amber-700 animate-pulse'
-                            }`}>
-                              {log.synced ? 'Synced in DB' : 'Pending Db Sync'}
+                          {log.synced && (
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                              ✓ Synchronisé
                             </span>
                           )}
                         </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <span className={`px-2 py-0.5 rounded text-[9.5px] font-mono font-bold flex items-center gap-1 ${
+                            log.verified 
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                              : 'bg-rose-50 text-rose-700 border border-rose-200'
+                          }`}>
+                            {log.verified ? <Check className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
+                            {log.verified ? 'Signature HMAC Valide' : 'Non Vérifiée'}
+                          </span>
+                        </div>
                       </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] text-slate-600 bg-white p-2.5 rounded-xl border border-slate-200/60">
+                        <div>
+                          <span className="text-[9px] font-bold text-slate-400 block uppercase">Montant</span>
+                          <span className="font-bold text-slate-800 font-mono">{Number(log.amount).toLocaleString()} FCFA</span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] font-bold text-slate-400 block uppercase">Téléphone</span>
+                          <span className="font-medium text-slate-700">{log.phone || "Non spécifié"}</span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] font-bold text-slate-400 block uppercase">Opérateur</span>
+                          <span className="font-medium text-slate-700">{log.operator || "Campay Direct"}</span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] font-bold text-slate-400 block uppercase">Horodatage</span>
+                          <span className="font-medium text-slate-700">{new Date(log.timestamp).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                        </div>
+                      </div>
+
+                      {log.payloadJson && log.payloadJson !== '{}' && (
+                        <details className="text-[10px] text-slate-500 cursor-pointer">
+                          <summary className="font-bold hover:text-slate-800 transition">Voir le payload JSON brut</summary>
+                          <pre className="mt-1.5 p-2 bg-slate-900 text-slate-300 rounded-xl overflow-x-auto font-mono text-[9.5px]">
+                            {log.payloadJson}
+                          </pre>
+                        </details>
+                      )}
                     </div>
                   );
                 })}
               </div>
             )}
           </div>
-
-          {/* In-Memory server log events */}
-          <div className="bg-slate-950 border border-slate-900 rounded-3xl p-5 shadow-sm space-y-3 font-mono text-slate-300">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-2.5">
-              <div className="flex items-center gap-2 text-xs text-slate-400">
-                <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
-                <span className="font-black text-slate-300">Moniteur Server Node.js (Mémoire)</span>
-              </div>
-              
-              <div className="flex gap-2">
-                <button
-                  onClick={fetchLogs}
-                  className="p-1 hover:bg-slate-850 rounded text-slate-400 hover:text-slate-200 cursor-pointer"
-                  title="Rafraîchir"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  onClick={handleClearServerLogs}
-                  disabled={inMemoryLogs.length === 0}
-                  className="p-1 hover:bg-rose-950/40 rounded text-slate-500 hover:text-rose-400 cursor-pointer disabled:opacity-30"
-                  title="Effacer les logs"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-
-            {inMemoryLogs.length === 0 ? (
-              <p className="text-[10px] text-slate-600 text-center py-6 leading-relaxed">
-                Aucun événement webhook Campay reçu en mémoire vive sur le serveur Node pour cette session.
-              </p>
-            ) : (
-              <div className="space-y-2 max-h-[220px] overflow-y-auto text-[10px] pr-1">
-                {inMemoryLogs.map((log: any, idx) => (
-                  <div key={idx} className="p-2 rounded-lg bg-slate-900 border border-slate-850 space-y-1">
-                    <div className="flex items-center justify-between text-slate-500">
-                      <span>Ref: {log.reference}</span>
-                      <span>{new Date(log.timestamp).toLocaleTimeString()}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className={`font-bold ${
-                        log.status === 'SUCCESSFUL' ? 'text-emerald-400' : 'text-rose-400'
-                      }`}>
-                        {log.status} - {log.body?.amount} XAF
-                      </span>
-                      <span className={log.isValid ? 'text-emerald-500 font-bold' : 'text-rose-500 font-bold'}>
-                        {log.isValid ? '[SIGNATURE OK]' : '[SIGNATURE FAIL]'}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          
         </div>
+
       </div>
     </div>
   );

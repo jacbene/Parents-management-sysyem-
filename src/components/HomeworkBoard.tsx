@@ -3,7 +3,7 @@ import { Homework, Student, HomeworkStatus, ApeeSettings, HomeworkFrequency } fr
 import { BookOpen, CheckCircle, Circle, Clock, CheckCircle2, AlertCircle, Plus, Trash2, Lock, Unlock, CheckSquare, X, RotateCw, AlertTriangle, Calendar, Sparkles, Repeat, CalendarDays, Layers, List, Loader2, Download, FileText, Printer, FileCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { doc, updateDoc } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { db, handleFirestoreError, OperationType, getAuthHeader } from '../firebase';
 import { useLanguage } from '../utils/TranslationContext';
 import HomeworkCalendarView from './HomeworkCalendarView';
 import HomeworkPdfPreviewModal from './HomeworkPdfPreviewModal';
@@ -101,9 +101,13 @@ export default function HomeworkBoard({
 
     try {
       const studentClass = activeStudent?.classRoom || activeStudent?.grade || 'Primaire/Secondaire';
+      const authHeader = await getAuthHeader();
       const response = await fetch('/api/gemini/generate-homework-topic', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...authHeader
+        },
         body: JSON.stringify({
           topic: aiTopic.trim(),
           subject: aiSubject,

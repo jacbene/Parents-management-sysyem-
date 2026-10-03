@@ -41,6 +41,7 @@ import {
   SMS_DYNAMIC_VARIABLES, 
   SMS_PRESET_TEMPLATES 
 } from '../../utils/smsEncoding';
+import { getAuthHeader } from '../../firebase';
 
 interface SmsConfigurationFormProps {
   settings: ApeeSettings;
@@ -357,10 +358,12 @@ export default function SmsConfigurationForm({
     setTestResult(null);
 
     try {
+      const authHeader = await getAuthHeader();
       const response = await fetch('/api/sms/send-test', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...authHeader
         },
         body: JSON.stringify({
           phoneNumber: testPhoneNumber.trim(),

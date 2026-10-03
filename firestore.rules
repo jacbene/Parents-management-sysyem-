@@ -2,13 +2,9 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Global helper functions
+    // Helper functions
     function isSignedIn() {
       return request.auth != null;
-    }
-
-    function isValidId(id) {
-      return id is string && id.size() > 0 && id.size() <= 128;
     }
 
     function isSuperAdmin() {
@@ -19,100 +15,120 @@ service cloud.firestore {
       );
     }
 
-    // School Establishments
-    match /establishments/{schoolId} {
-      allow read, write: if true;
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
     }
 
-    // Student Profiles
-    match /students/{studentId} {
-      allow read, write: if true;
-    }
-
-    // Grades
-    match /grades/{gradeId} {
-      allow read, write: if true;
-    }
-
-    // Attendance Records
-    match /attendance/{attendanceId} {
-      allow read, write: if true;
-    }
-
-    // Homework Assignments
-    match /homeworks/{homeworkId} {
-      allow read, write: if true;
-    }
-
-    // Announcements
-    match /announcements/{announcementId} {
-      allow read, write: if true;
-    }
-
-    // Parent-Teacher Appointments
-    match /appointments/{appointmentId} {
-      allow read, write: if true;
-    }
-
-    // Messages
-    match /messages/{messageId} {
-      allow read, write: if true;
-    }
-
-    // Invoices & Financial Settings & System Audit Logs
-    match /invoices/{invoiceId} {
-      allow read, write: if true;
-    }
-
-    // Classroom Lessons
-    match /lessons/{lessonId} {
-      allow read, write: if true;
-    }
-
-    // Library Reading Logs
-    match /reading_logs/{logId} {
-      allow read, write: if true;
-    }
-
-    // Academic Calendar Events
-    match /academic_calendar/{eventId} {
-      allow read, write: if true;
-    }
-
-    // Auth Logs (Audit Trail)
-    match /logs_auth/{logId} {
-      allow read, write: if true;
-    }
-
-    // Support Help Requests
-    match /help_requests/{requestId} {
-      allow read, write: if true;
-    }
-
-    // Roadmap & Feature Suggestions
-    match /roadmap_suggestions/{suggestionId} {
-      allow read, write: if true;
-    }
-
-    // Super Admin Directory
+    // Super Admin Directory (Modification strictly reserved to Super Admins)
     match /super_admins/{adminId} {
-      allow read, write: if true;
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
     }
 
-    // User Profiles
+    // User Accounts
     match /users/{userId} {
-      allow read, write: if true;
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && (isOwner(userId) || isSuperAdmin());
+      allow update, delete: if isSignedIn() && (isOwner(userId) || isSuperAdmin());
     }
 
     // Active User Sessions
     match /active_sessions/{sessionId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn() && (sessionId == request.auth.uid || isSuperAdmin());
     }
 
-    // System Documents (e.g., deleted_schools)
+    // School Establishments
+    match /establishments/{schoolId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // Student Profiles (Strictly authenticated)
+    match /students/{studentId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // Grades (Strictly authenticated)
+    match /grades/{gradeId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // Attendance Records (Strictly authenticated)
+    match /attendance/{attendanceId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // Homework Assignments
+    match /homeworks/{homeworkId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // Classroom Lessons
+    match /lessons/{lessonId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // Library Reading Logs
+    match /reading_logs/{logId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // Announcements (Readable for school portal communication, write restricted to staff)
+    match /announcements/{announcementId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // Academic Calendar Events
+    match /academic_calendar/{eventId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // Parent-Teacher Appointments
+    match /appointments/{appointmentId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // Messages
+    match /messages/{messageId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // Invoices & Financial Records (Strictly authenticated)
+    match /invoices/{invoiceId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // Support Help Requests
+    match /help_requests/{requestId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Roadmap & Feature Suggestions
+    match /roadmap_suggestions/{suggestionId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // System Audit Logs (Append-only for users, read/manage strictly by Super Admin)
+    match /logs_auth/{logId} {
+      allow create: if isSignedIn();
+      allow read, update, delete: if isSuperAdmin();
+    }
+
+    // System Configurations (Strictly Super Admin)
     match /system/{docId} {
-      allow read, write: if true;
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
     }
   }
 }
-

@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { doc, setDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, getAuthHeader } from '../firebase';
 import { Student, ApeeParent, Message, ApeeSettings } from '../types';
 
 interface BulkAnnouncementModalProps {
@@ -229,10 +229,12 @@ Le Surveillant Général / Censeur.`);
     // 1. Call real backend SMTP/email endpoint
     let apiLogs: string[] = [];
     try {
+      const authHeader = await getAuthHeader();
       const response = await fetch('/api/apee/send-bulk-announcements', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...authHeader
         },
         body: JSON.stringify({
           recipients: recipients.map(r => ({

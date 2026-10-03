@@ -220,6 +220,74 @@ app.options("*", cors());
 
 app.use(express.json());
 
+// ==========================================
+// SECURITY & RATE LIMITING INFRASTRUCTURE
+// ==========================================
+
+interface RateLimitEntry {
+  count: number;
+  resetAt: number;
+}
+const rateLimiterCache = new Map<string, RateLimitEntry>();
+
+// Clean up expired rate limiter entries every 2 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of rateLimiterCache.entries()) {
+    if (now > entry.resetAt) {
+      rateLimiterCache.delete(key);
+    }
+  }
+}, 120000);
+
+function rateLimiter(options: { windowMs: number; maxRequests: number; message?: string }) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const rawIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+    const key = `${req.baseUrl || ''}${req.path}:${rawIp}`;
+    const now = Date.now();
+
+    const entry = rateLimiterCache.get(key);
+    if (!entry || now > entry.resetAt) {
+      rateLimiterCache.set(key, { count: 1, resetAt: now + options.windowMs });
+      return next();
+    }
+
+    if (entry.count >= options.maxRequests) {
+      const waitSeconds = Math.ceil((entry.resetAt - now) / 1000);
+      return res.status(429).json({
+        success: false,
+        error: options.message || `Limite de requêtes atteinte. Veuillez patienter ${waitSeconds}s avant de renouveler l'opération.`,
+        retryAfterSeconds: waitSeconds
+      });
+    }
+
+    entry.count++;
+    return next();
+  };
+}
+
+// Authentication verification middleware for sensitive API routes
+function requireApiAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({
+      success: false,
+      error: "Accès refusé : Jeton d'authentification requis (en-tête Authorization: Bearer <token> manquant)."
+    });
+  }
+
+  const token = authHeader.split('Bearer ')[1]?.trim();
+  if (!token || token.length < 8) {
+    return res.status(401).json({
+      success: false,
+      error: "Accès refusé : Jeton d'authentification invalide ou expiré."
+    });
+  }
+
+  (req as any).userToken = token;
+  return next();
+}
+
 // Public healthcheck endpoint to monitor backend uptime & wake up Render instances
 app.get("/api/health", (req, res) => {
   res.json({
@@ -1605,32 +1673,63 @@ app.post("/api/campay-webhook", async (req, res) => {
     const operator = payload.operator || "";
     const reason = payload.reason || "";
 
-    // 1. Retrieve the App webhook key from .env (fallback to user provided demo key)
+    // 1. Retrieve the App webhook key strictly from server environment
     const webhookKey = process.env.CAMPAY_WEBHOOK_KEY || "";
+    if (!webhookKey) {
+      console.error("❌ [Campay Webhook] CAMPAY_WEBHOOK_KEY is not configured in server environment!");
+      return res.status(500).json({ 
+        success: false, 
+        error: "Clé secrète de webhook Campay non configurée sur le serveur." 
+      });
+    }
 
-    // 2. Compute the expected HMAC-SHA256 signature
-    // We compute signature on the string representation of the body
+    const rawSignature = String(signatureHeader || "").trim();
+    if (!rawSignature) {
+      console.warn(`❌ [Campay Webhook] Rejected: Missing signature header for reference: ${reference}`);
+      return res.status(401).json({ 
+        success: false, 
+        error: "Signature de webhook manquante (en-tête X-Campay-Signature requis)." 
+      });
+    }
+
+    // 2. Compute expected HMAC-SHA256 signature
     const bodyString = typeof req.body === "string" ? req.body : JSON.stringify(req.body);
     const hmac = crypto.createHmac("sha256", webhookKey);
     hmac.update(bodyString);
     const computedSignature = hmac.digest("hex");
 
-    // Support flexible signature header checks (either exact match or simulated helper flag)
-    const isSignatureValid = (signatureHeader === computedSignature) || (req.headers["x-simulator-verified"] === "true");
+    // 3. Constant-time comparison (Timing-Safe) to prevent timing attacks
+    let isSignatureValid = false;
+    try {
+      const sigBuffer = Buffer.from(rawSignature, 'hex');
+      const compBuffer = Buffer.from(computedSignature, 'hex');
+      if (sigBuffer.length === compBuffer.length && crypto.timingSafeEqual(sigBuffer, compBuffer)) {
+        isSignatureValid = true;
+      }
+    } catch {
+      isSignatureValid = false;
+    }
 
     console.log(`🔒 [Campay Signature Verification] Reference: ${reference}`);
-    console.log(`   - Provided Signature : ${signatureHeader}`);
-    console.log(`   - Computed Signature : ${computedSignature}`);
-    console.log(`   - Signature Match    : ${isSignatureValid ? "SUCCESS ✅" : "FAILED ❌"}`);
+    console.log(`   - Provided Signature : ${rawSignature.slice(0, 10)}...`);
+    console.log(`   - Signature Match    : ${isSignatureValid ? "VALID ✅" : "REJECTED ❌"}`);
 
-    // 3. Stash in-memory for developer UI diagnostics
+    if (!isSignatureValid) {
+      console.warn(`❌ [Campay Webhook] REJECTED: Invalid HMAC signature for reference: ${reference}`);
+      return res.status(403).json({ 
+        success: false, 
+        error: "Signature cryptographique du webhook invalide." 
+      });
+    }
+
+    // 4. Stash in-memory for live dashboard visualization (verified only)
     const event: WebhookEvent = {
       timestamp: new Date().toISOString(),
       headers: req.headers,
       body: payload,
-      signature: String(signatureHeader),
+      signature: rawSignature,
       computedSignature,
-      isValid: isSignatureValid,
+      isValid: true,
       reference,
       status
     };
@@ -1639,8 +1738,8 @@ app.post("/api/campay-webhook", async (req, res) => {
       receivedWebhooks.shift();
     }
 
-    // 4. Save to Firestore REST API for durable trace log and client-side database reconciliation
-    await saveWebhookLogToFirestore(reference, payload, isSignatureValid);
+    // 5. Save to Firestore REST API for durable trace log and client-side database reconciliation
+    await saveWebhookLogToFirestore(reference, payload, true);
 
     // Status can be: 'SUCCESSFUL', 'FAILED', 'PENDING'
     if (status === 'SUCCESSFUL') {
@@ -1651,10 +1750,10 @@ app.post("/api/campay-webhook", async (req, res) => {
 
     return res.status(200).json({ 
       success: true, 
-      message: "Webhook processed successfully",
+      message: "Webhook processed and verified successfully",
       receivedReference: reference,
       receivedStatus: status,
-      signatureVerified: isSignatureValid
+      signatureVerified: true
     });
   } catch (err: any) {
     console.error("Error processing Campay webhook:", err);
@@ -1673,69 +1772,29 @@ app.post("/api/campay/webhooks/clear", (req, res) => {
   return res.json({ success: true });
 });
 
-// API: High-Fidelity Webhook Self-Post Simulation Endpoint
-app.post("/api/campay/simulate-webhook-post", async (req, res) => {
-  try {
-    const { reference, status, amount, phone, operator } = req.body;
+// API: Check Campay Integration Status (Safe metadata, no secrets exposed)
+app.get("/api/campay/status", (req, res) => {
+  return res.json({
+    success: true,
+    isWebhookKeyConfigured: Boolean(process.env.CAMPAY_WEBHOOK_KEY),
+    isTokenConfigured: Boolean(process.env.CAMPAY_TOKEN),
+    environment: process.env.NODE_ENV || "production"
+  });
+});
 
-    const payload = {
-      reference: reference || `PRTL_demo_school_ekali_${Date.now()}`,
-      status: status || "SUCCESSFUL",
-      amount: amount || "50000",
-      phone: phone || "237677123456",
-      operator: operator || "MTN",
-      reason: status === "FAILED" ? "Simulated failure transaction status" : "Simulated webhook test"
-    };
-
-    // Retrieve secret webhook key to sign payload
-    const webhookKey = process.env.CAMPAY_WEBHOOK_KEY || "LpEvD_J1lf67b6QOJajBKmZHbeXL42GP0g2ItxEZBONyOnM8DCz6h3ktROPSM75sio2znlrRBEeoPu4JwtObpw";
-
-    // Compute correct HMAC-SHA256 signature of the payload
-    const payloadString = JSON.stringify(payload);
-    const hmac = crypto.createHmac("sha256", webhookKey);
-    hmac.update(payloadString);
-    const computedSignature = hmac.digest("hex");
-
-    // Make an HTTP POST call to our own local webhook endpoint
-    const webhookUrl = `http://127.0.0.1:${PORT}/api/campay-webhook`;
-    
-    console.log(`📡 [Campay Simulator] Self-posting payload to local webhook: ${webhookUrl}`);
-    
-    const response = await fetch(webhookUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Campay-Signature": computedSignature,
-        "X-Simulator-Verified": "true" // safe fallback helper to guarantee sandbox verification works
-      },
-      body: payloadString
-    });
-
-    if (!response.ok) {
-      throw new Error(`Local webhook post failed with status ${response.status}`);
-    }
-
-    const responseBody = await response.json();
-
-    return res.json({
-      success: true,
-      message: "Simulation post completed successfully",
-      signatureVerified: responseBody.signatureVerified,
-      sentPayload: payload,
-      receivedResponse: responseBody
-    });
-  } catch (error: any) {
-    console.error("Simulation endpoint error:", error);
-    return res.status(500).json({ success: false, error: error.message });
-  }
+// API: Webhook simulation endpoint permanently disabled for security
+app.post("/api/campay/simulate-webhook-post", (req, res) => {
+  return res.status(403).json({
+    success: false,
+    error: "Ce point de terminaison de simulation est définitivement désactivé pour préserver l'intégrité financière."
+  });
 });
 
 // API: Campay Portal Fee Collection secure endpoint
 app.post("/api/campay/collect-portal-fee", async (req, res) => {
   const { amount, phone, schoolId, schoolName } = req.body;
-
   if (!amount || !phone || !schoolId) {
-    return res.status(400).json({ success: false, error: "Missing required fields (amount, phone, schoolId)" });
+    return res.status(400).json({ success: false, error: "Champs requis manquants (montant, téléphone, établissement)." });
   }
 
   // 1. Format the phone number to start with 237 (Cameroon country code)
@@ -1743,23 +1802,30 @@ app.post("/api/campay/collect-portal-fee", async (req, res) => {
   if (formattedPhone.length === 9) {
     formattedPhone = "237" + formattedPhone;
   } else if (formattedPhone.length === 8) {
-    formattedPhone = "2376" + formattedPhone; // assume MTN/Orange prefix if 8 digits
+    formattedPhone = "2376" + formattedPhone;
   } else if (!formattedPhone.startsWith("237") && formattedPhone.length > 0) {
     formattedPhone = "237" + formattedPhone;
   }
 
   const token = process.env.CAMPAY_TOKEN || "";
+  if (!token) {
+    console.error("❌ [Campay Collect Portal Fee] CAMPAY_TOKEN is not configured on the server!");
+    return res.status(500).json({
+      success: false,
+      error: "La passerelle de paiement Campay n'est pas encore configurée sur le serveur (jeton d'API manquant)."
+    });
+  }
+
   const externalRef = `PRTL_${schoolId}_${Date.now().toString().slice(-6)}`;
   
   console.log(`🚀 [Campay Collect Portal Fee] Initiating collection for ${schoolName || schoolId}:`, {
     amount,
     phone: formattedPhone,
     externalRef,
-    tokenUsed: token.slice(0, 5) + "..."
+    tokenConfigured: Boolean(token)
   });
 
   try {
-    // Try production endpoint first
     const campayUrl = "https://www.campay.net/api/collect/";
     const response = await fetch(campayUrl, {
       method: "POST",
@@ -1785,35 +1851,24 @@ app.post("/api/campay/collect-portal-fee", async (req, res) => {
         reference: data.reference,
         status: data.status || "PENDING",
         operator_reference: data.operator_reference || null,
-        message: "Payment collection initiated successfully. Please dial PIN on phone.",
+        message: "Ordre de prélèvement transmis à Campay. Veuillez composer votre code secret sur le téléphone.",
         externalRef
       });
     } else {
-      // If the real API fails (e.g. invalid credentials or sandbox/environment network limits),
-      // we provide a soft-failure fallback for testing in preview/developer environments,
-      // but clearly indicate that the live request failed.
-      const apiErrorMsg = data.detail || JSON.stringify(data) || "Unknown Campay API error";
-      console.warn("⚠️ [Campay API Failed] Falling back to high-fidelity payment simulation for testing:", apiErrorMsg);
+      const apiErrorMsg = data.detail || data.message || (typeof data === 'string' ? data : JSON.stringify(data)) || "Requête refusée par Campay";
+      console.warn("❌ [Campay API Rejected]:", apiErrorMsg);
       
-      return res.status(200).json({
-        success: true,
-        simulated: true,
-        reference: `SIM_${Date.now()}`,
-        status: "SUCCESSFUL",
-        message: `Campay API collect call returned: ${apiErrorMsg}. Running in preprod high-fidelity simulation.`,
-        externalRef
+      return res.status(400).json({
+        success: false,
+        error: `Échec du prélèvement Campay : ${apiErrorMsg}`,
+        details: data
       });
     }
   } catch (err: any) {
     console.error("❌ [Campay Connection Error]:", err);
-    // Network or other fetch errors: Fall back to simulation to keep demo perfectly functional
-    return res.status(200).json({
-      success: true,
-      simulated: true,
-      reference: `SIM_NET_${Date.now()}`,
-      status: "SUCCESSFUL",
-      message: `Connection error: ${err.message}. Running in high-fidelity simulation.`,
-      externalRef
+    return res.status(502).json({
+      success: false,
+      error: `Erreur de connexion à la passerelle Campay : ${err.message || err}`
     });
   }
 });

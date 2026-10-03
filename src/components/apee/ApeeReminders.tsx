@@ -23,6 +23,7 @@ import {
 import { ApeeParent, ApeeSettings } from '../../types';
 import { getApeeShortName, generateApeeReminderMessage } from '../../utils/apeeDb';
 import { analyzeSms, optimizeToGsm7 } from '../../utils/smsEncoding';
+import { getAuthHeader } from '../../firebase';
 
 interface ApeeRemindersProps {
   parents: ApeeParent[];
@@ -174,10 +175,12 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
     ]);
 
     try {
+      const authHeader = await getAuthHeader();
       const response = await fetch('/api/apee/send-bulk-reminders', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...authHeader
         },
         body: JSON.stringify({
           parentIds: targets.map(p => p.id),
@@ -401,10 +404,12 @@ export default function ApeeReminders({ parents, settings, onSaveParent }: ApeeR
         });
       }, 500);
 
+      const authHeader = await getAuthHeader();
       const response = await fetch('/api/apee/send-bulk-reminders', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...authHeader
         },
         body: JSON.stringify({
           parentIds: idsToProcess,

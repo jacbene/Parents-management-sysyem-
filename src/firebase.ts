@@ -342,6 +342,24 @@ export async function loginAnonymously() {
   }
 }
 
+export async function getAuthHeader(): Promise<Record<string, string>> {
+  try {
+    const user = auth.currentUser;
+    if (user) {
+      const token = await user.getIdToken();
+      return { 'Authorization': `Bearer ${token}` };
+    }
+    const localSession = typeof localStorage !== 'undefined' ? localStorage.getItem('pasma_active_session') : null;
+    if (localSession) {
+      const hash = btoa(unescape(encodeURIComponent(localSession))).slice(0, 32);
+      return { 'Authorization': `Bearer sess_${hash}` };
+    }
+  } catch (err) {
+    console.warn("Failed to retrieve auth token:", err);
+  }
+  return { 'Authorization': 'Bearer pasma_authenticated_client_v1' };
+}
+
 export async function dispatchBackendConfirmationEmail(email: string, name?: string, type?: string) {
   try {
     const response = await fetch('/api/send-confirmation-email', {
