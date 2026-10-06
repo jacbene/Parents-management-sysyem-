@@ -7,6 +7,7 @@ import ApeeBlankForms from './ApeeBlankForms';
 import ApeeBudgetAnalysis from './ApeeBudgetAnalysis';
 import { useLanguage } from '../../utils/TranslationContext';
 import { doc, getDoc } from 'firebase/firestore';
+import { signInAnonymously } from 'firebase/auth';
 import { auth, db } from '../../firebase';
 
 interface ApeeFinancialProps {
@@ -122,7 +123,15 @@ export default function ApeeFinancial({
     };
 
     try {
-      const currentUser = auth.currentUser;
+      let currentUser = auth.currentUser;
+      if (!currentUser) {
+        try {
+          const cred = await signInAnonymously(auth);
+          currentUser = cred.user;
+        } catch (anonErr) {
+          console.warn("Could not sign in anonymously for portal fee:", anonErr);
+        }
+      }
       if (!currentUser) {
         throw new Error(isEn ? "Please sign in before paying." : "Veuillez vous connecter avant d'effectuer le paiement.");
       }

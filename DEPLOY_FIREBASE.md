@@ -55,13 +55,24 @@ Si vos utilisateurs ou vous-même rencontrez un blocage lors de la connexion Goo
 
 ---
 
-## 5. Déploiement du Backend Express (SMS / Emails / Webhooks / Paiements)
+## 5. Déploiement du Backend Express (SMS / Emails / Webhooks / Paiements Campay)
 
 L'application contient un serveur d'API (`server.ts`) gérant :
-- L'envoi des SMS réels (Twilio, Orange, Campay)
-- L'envoi des e-mails SMTP (Bulletins et factures aux parents)
-- Les webhooks Campay Mobile Money
-- La génération de devoirs assistée par Gemini
+- **Paiements Campay des Frais de site (Directeurs)** : initialisation sécurisée (`/api/campay/collect-portal-fee`), enregistrement d'intentions (`portal_payment_intents`), réconciliation webhook HMAC et incrément de la redevance sur l'établissement.
+- **Paiements Campay des Frais de scolarité (Parents)** : prélèvement USSD direct (`/api/campay/collect-tuition`), suivi en direct (`/api/campay/tuition/:externalRef`), enregistrement d'intentions (`tuition_payment_intents`), réconciliation webhook HMAC et acquittement automatique de la facture (`invoices/{id}`).
+- **Envoi des SMS réels** (Twilio, Orange, Campay) avec rate-limiting et validation des destinataires.
+- **Envoi des e-mails SMTP** (Bulletins et factures aux parents).
+- **Génération assistée par Gemini AI**.
+
+### Variables d'environnement requises sur Render ou Cloud Run :
+1. `CAMPAY_TOKEN` : Jeton d'API permanent délivré par Campay.
+2. `CAMPAY_WEBHOOK_KEY` : Clé secrète de signature HMAC configurée dans le compte marchand Campay.
+3. `FIREBASE_SERVICE_ACCOUNT_JSON` : Clé privée de compte de service Firebase (JSON complet) avec les permissions `Cloud Datastore User` et `Firebase Authentication Admin`.
+4. `FIREBASE_PROJECT_ID` : `pasma-sys`.
+
+### URL du Webhook à enregistrer sur la console Campay :
+- **URL Webhook** : `https://pasma-sys-backend.onrender.com/api/campay-webhook` (ou votre URL Cloud Run)
+- **Événements** : Paiement réussi (`SUCCESSFUL`), Paiement échoué (`FAILED`).
 
 Pour héberger ce serveur d'API en production avec Firebase / Google Cloud Run :
 ```bash

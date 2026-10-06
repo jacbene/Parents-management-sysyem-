@@ -23,9 +23,11 @@ import {
   Cloud, 
   Cpu, 
   FileCode,
-  Info
+  Info,
+  Activity
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import PaymentWebhookHandler from './PaymentWebhookHandler';
 
 interface FirebaseProject {
   name: string;
@@ -69,6 +71,7 @@ interface AppConfig {
 
 export default function FirebaseConsole() {
   const { language, t } = useLanguage();
+  const [consoleTab, setConsoleTab] = useState<'campay_webhooks' | 'cloud_projects'>('campay_webhooks');
   const [token, setToken] = useState<string | null>(googleAccessToken);
   const [projects, setProjects] = useState<FirebaseProject[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -304,8 +307,46 @@ export default function FirebaseConsole() {
         </div>
       </div>
 
-      {/* Main Console Layout */}
-      {token ? (
+      {/* Navigation Sub-Tabs */}
+      <div className="flex items-center gap-2 border-b border-slate-200/80 pb-2">
+        <button
+          onClick={() => setConsoleTab('campay_webhooks')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition cursor-pointer ${
+            consoleTab === 'campay_webhooks'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+          id="fc-tab-campay-webhooks"
+        >
+          <Activity className="h-4 w-4 text-emerald-400" />
+          <span>Monitoring Webhooks Campay</span>
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+            Temps Réel
+          </span>
+        </button>
+
+        <button
+          onClick={() => setConsoleTab('cloud_projects')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition cursor-pointer ${
+            consoleTab === 'cloud_projects'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+          id="fc-tab-cloud-projects"
+        >
+          <Database className="h-4 w-4 text-indigo-400" />
+          <span>Projets & Infrastructure Firebase</span>
+          {token && (
+            <span className="px-1.5 py-0.5 rounded-full text-[9px] bg-emerald-50 text-emerald-600 font-bold border border-emerald-200">
+              Connecté
+            </span>
+          )}
+        </button>
+      </div>
+
+      {consoleTab === 'campay_webhooks' ? (
+        <PaymentWebhookHandler />
+      ) : token ? (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6" id="fc-main-dashboard">
           {/* Projects List Sidebar (4 cols) */}
           <div className="lg:col-span-5 space-y-4">

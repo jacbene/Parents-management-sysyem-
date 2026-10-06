@@ -23,7 +23,8 @@ import {
 import { Invoice, Student } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { doc, updateDoc } from 'firebase/firestore';
-import { db, handleFirestoreError } from '../firebase';
+import { signInAnonymously } from 'firebase/auth';
+import { auth, db, handleFirestoreError } from '../firebase';
 import { useLanguage } from '../utils/TranslationContext';
 
 interface PaymentMethodSelectorProps {
@@ -120,6 +121,22 @@ export default function PaymentMethodSelector({
   const [error, setError] = useState<string | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
+  // Real Campay Integration States
+  const [campayRef, setCampayRef] = useState<string>('');
+  const [campayExternalRef, setCampayExternalRef] = useState<string>('');
+  const [campayPolling, setCampayPolling] = useState(false);
+  const [campayPollingAttempts, setCampayPollingAttempts] = useState(0);
+  const activePollIntervalRef = useRef<any>(null);
+
+  // Clean up polling interval on unmount
+  useEffect(() => {
+    return () => {
+      if (activePollIntervalRef.current) {
+        clearInterval(activePollIntervalRef.current);
+      }
+    };
+  }, []);
+
   // Refs for auto-scroll console
   const consoleBottomRef = useRef<HTMLDivElement>(null);
 
@@ -181,6 +198,8 @@ export default function PaymentMethodSelector({
         setError(isEn ? 'Please enter a valid Mobile Money phone number.' : 'Veuillez saisir un numéro de téléphone Mobile Money valide.');
         return;
       }
+      executeCampayMomoPayment();
+      return;
     } else if (paymentMethod === 'card') {
       if (!cardNumber || !expiry || !cvv || !cardholderName) {
         setError(isEn ? 'Please fill in all credit card fields.' : 'Veuillez remplir tous les champs de votre carte de crédit.');
@@ -191,7 +210,161 @@ export default function PaymentMethodSelector({
     setShowConfirmModal(true);
   };
 
-  // Main interactive execution
+  // Real Campay Mobile Money Payment Execution
+  const executeCampayMomoPayment = async () => {
+    setShowConfirmModal(false);
+    setProcessing(true);
+    setError(null);
+    setSimulationState('handshake');
+    addSandboxLog('info', `Initialisation du prélèvement Campay Mobile Money pour la facture ${invoice.id}...`);
+
+    try {
+      let currentUser = auth.currentUser;
+      if (!currentUser) {
+        try {
+          const cred = await signInAnonymously(auth);
+          currentUser = cred.user;
+        } catch (anonErr) {
+          console.warn("Could not sign in anonymously for payment:", anonErr);
+        }
+      }
+      const idToken = currentUser ? await currentUser.getIdToken() : '';
+      if (!idToken) {
+        throw new Error(isEn ? "Authentication required before initiating payment." : "Une session authentifiée est requise pour initialiser le paiement.");
+      }
+      const webhookBaseUrl = (import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://pasma-sys-backend.onrender.com' : window.location.origin)).replace(/\/+$/, '');
+
+      const remainingAmount = Math.max(0, (invoice.amount || 0) - (invoice.amountPaid || 0));
+
+      addSandboxLog('request', `POST /api/campay/collect-tuition`, {
+        invoiceId: invoice.id,
+        phone: momoPhone,
+        amount: remainingAmount
+      });
+
+      const response = await fetch(`${webhookBaseUrl}/api/campay/collect-tuition`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {})
+        },
+        body: JSON.stringify({
+          invoiceId: invoice.id,
+          phone: momoPhone.trim(),
+          amount: remainingAmount
+        })
+      });
+
+      const resData = await response.json().catch(() => ({}));
+
+      if (!response.ok || !resData.success) {
+        throw new Error(resData.error || `Erreur d'initialisation Campay (${response.status})`);
+      }
+
+      addSandboxLog('response', `Status 200 OK - Prélèvement accepté par Campay. Référence : ${resData.reference}`);
+      addSandboxLog('info', `Notification Push envoyée au mobile ${momoPhone}. En attente de la validation PIN...`);
+
+      setCampayRef(resData.reference || resData.externalRef);
+      setCampayExternalRef(resData.externalRef);
+      setSimulationState('challenge');
+      setCampayPolling(true);
+      setCampayPollingAttempts(0);
+
+      // Start status polling
+      pollCampayPaymentStatus(resData.externalRef, resData.reference, idToken, webhookBaseUrl);
+    } catch (err: any) {
+      console.error("[Campay Mobile Money Error]:", err);
+      addSandboxLog('error', `Erreur Campay: ${err.message || err}`);
+      setError(err.message || "Impossible de joindre la passerelle Campay.");
+      setSimulationState('idle');
+      setProcessing(false);
+    }
+  };
+
+  const pollCampayPaymentStatus = (
+    externalRef: string,
+    reference: string,
+    idToken: string,
+    webhookBaseUrl: string
+  ) => {
+    if (activePollIntervalRef.current) {
+      clearInterval(activePollIntervalRef.current);
+    }
+
+    let attempts = 0;
+    const maxAttempts = 15; // 15 x 4s = 60s
+
+    activePollIntervalRef.current = setInterval(async () => {
+      attempts++;
+      setCampayPollingAttempts(attempts);
+
+      try {
+        const checkRes = await fetch(`${webhookBaseUrl}/api/campay/tuition/${encodeURIComponent(externalRef)}`, {
+          headers: {
+            ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {})
+          }
+        });
+
+        if (checkRes.ok) {
+          const statusData = await checkRes.json();
+          if (statusData.status === 'SUCCESSFUL') {
+            if (activePollIntervalRef.current) {
+              clearInterval(activePollIntervalRef.current);
+            }
+            setCampayPolling(false);
+            setProcessing(false);
+            addSandboxLog('success', `Paiement Campay confirmé avec succès ! Réf : ${reference}`);
+
+            const paidDate = new Date().toISOString().split('T')[0];
+            const updatedInvoice: Invoice = {
+              ...invoice,
+              status: 'Paid',
+              amountPaid: invoice.amount,
+              paymentDate: paidDate,
+              transactionId: reference,
+              provider: provider === 'mtn' ? 'MTN MoMo' : 'Orange Money',
+              note: invoice.note ? `${invoice.note} | [Campay ${reference}]` : `[Campay ${reference}]`
+            };
+
+            setGeneratedToken(reference);
+            setSuccessInvoice(updatedInvoice);
+            setSimulationState('success');
+            setSuccess(true);
+            onPaymentSuccess(updatedInvoice);
+            return;
+          } else if (statusData.status === 'FAILED') {
+            if (activePollIntervalRef.current) {
+              clearInterval(activePollIntervalRef.current);
+            }
+            setCampayPolling(false);
+            setProcessing(false);
+            addSandboxLog('error', `Paiement rejeté ou annulé sur le téléphone mobile.`);
+            setError(isEn ? "Payment was rejected or cancelled on your phone." : "Le paiement a été rejeté ou annulé sur votre téléphone mobile.");
+            setSimulationState('idle');
+            return;
+          }
+        }
+      } catch (pollErr) {
+        console.warn("Polling Campay status check failed:", pollErr);
+      }
+
+      if (attempts >= maxAttempts) {
+        if (activePollIntervalRef.current) {
+          clearInterval(activePollIntervalRef.current);
+        }
+        setCampayPolling(false);
+        setProcessing(false);
+        addSandboxLog('info', `Délai d'attente de 60s atteint. La confirmation sera réconciliée dès réception du webhook.`);
+        setError(isEn 
+          ? "Payment pending operator confirmation. The invoice will update automatically once validated." 
+          : "Paiement en cours de traitement par votre opérateur. La facture sera automatiquement mise à jour dès confirmation du réseau."
+        );
+        setSimulationState('idle');
+      }
+    }, 4000);
+  };
+
+  // Execution for Card or QR
   const executePaymentSimulation = async () => {
     setShowConfirmModal(false);
     setProcessing(true);
@@ -206,7 +379,7 @@ export default function PaymentMethodSelector({
     // Get Provider Details
     const providerName = paymentMethod === 'card' 
       ? (cardNumber.startsWith('4') ? 'Visa Secure' : 'Mastercard ID Check')
-      : (provider === 'mtn' ? 'MTN MoMo API' : provider === 'orange' ? 'Orange Money API' : 'Wave Transfer API');
+      : 'Wave Transfer API';
 
     setSimulationState('handshake');
     setSandboxLogs([]); // Clear for new run
@@ -224,17 +397,7 @@ export default function PaymentMethodSelector({
 
     addSandboxLog('response', `Status 200 OK - Canal sécurisé établi avec ${providerName}`);
     
-    if (paymentMethod === 'momo') {
-      addSandboxLog('request', `POST /api/v1/momo/push-otp`, {
-        phoneNumber: momoPhone,
-        amount: invoice.amount,
-        callbackUrl: 'https://ais-pre-xjwa452a7g45f5oz5ftfxe.europe-west2.run.app/api/momo-webhook'
-      });
-      await new Promise(resolve => setTimeout(resolve, 1200));
-      addSandboxLog('response', `Status 202 Accepted - Requête Push OTP transmise au téléphone.`);
-      addSandboxLog('info', `Attente de l'authentification PIN de l'utilisateur sur le terminal virtuel...`);
-      setSimulationState('challenge');
-    } else if (paymentMethod === 'card') {
+    if (paymentMethod === 'card') {
       addSandboxLog('request', `POST /api/v1/card/3ds-enrollment`, {
         cardNumber: cardNumber.replace(/\s/g, ''),
         cardholder: cardholderName,
@@ -246,7 +409,7 @@ export default function PaymentMethodSelector({
       addSandboxLog('info', `Défi SMS 3D-Secure généré: Code [${mockOtp}] envoyé au porteur.`);
       setSimulationState('challenge');
     } else {
-      // QR Code simulation bypasses OTP/PIN challenge
+      // QR Code
       addSandboxLog('request', `POST /api/v1/qr/validate-scan`, {
         reference: momoPhone || 'APEE_STANDARD_REF',
         provider: provider.toUpperCase()
@@ -348,9 +511,13 @@ export default function PaymentMethodSelector({
   };
 
   const resetSimulator = () => {
+    if (activePollIntervalRef.current) {
+      clearInterval(activePollIntervalRef.current);
+    }
     setSimulationState('idle');
     setProcessing(false);
     setSuccess(false);
+    setCampayPolling(false);
     setError(null);
   };
 
@@ -599,9 +766,11 @@ export default function PaymentMethodSelector({
                       onChange={(e) => setMomoPhone(e.target.value)}
                       className="w-full px-3.5 py-2 border border-slate-200 bg-white rounded-xl text-xs font-mono focus:outline-hidden focus:border-indigo-500 transition-colors"
                     />
-                    <div className="flex items-start gap-1 text-[9.5px] text-slate-500 mt-1.5 leading-relaxed bg-indigo-50/50 border border-indigo-100/30 rounded-lg p-2 font-medium">
-                      <Info className="h-3.5 w-3.5 text-indigo-500 shrink-0 mt-0.5" />
-                      <span>{isEn ? "A simulated API validation request will test Mobile Money integration and generate a transactional token." : "Une requête simulée de validation d'API testera l'intégration Mobile Money et générera un jeton transactionnel."}</span>
+                    <div className="flex items-start gap-1.5 text-[10px] text-indigo-900 mt-1.5 leading-relaxed bg-indigo-50 border border-indigo-150 rounded-xl p-2.5 font-medium">
+                      <ShieldCheck className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                      <span>{isEn 
+                        ? "Real Campay Mobile Money Payment. A direct push authorization prompt will be sent to your phone to confirm the transaction." 
+                        : "Paiement direct sécurisé Campay. Un ordre de prélèvement USSD sera directement envoyé à votre téléphone pour validation par votre code secret."}</span>
                     </div>
                   </div>
                 </div>
@@ -694,7 +863,11 @@ export default function PaymentMethodSelector({
                   className="w-full py-2.5 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 disabled:opacity-50 hover:shadow-xs transition flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <ShieldCheck className="h-4 w-4 text-emerald-400" />
-                  {paymentMethod === 'qr' ? (isEn ? "Simulate Validation by QR Scan" : "Simuler validation par Scan QR") : (isEn ? `Pay ${invoice.amount.toLocaleString()} FCFA via Gateway` : `Payer ${invoice.amount.toLocaleString()} FCFA via API`)}
+                  {paymentMethod === 'momo' 
+                    ? (isEn ? `Pay ${invoice.amount.toLocaleString()} FCFA via Campay` : `Payer ${invoice.amount.toLocaleString()} FCFA via Campay Mobile Money`)
+                    : paymentMethod === 'qr' 
+                      ? (isEn ? "Validate by QR Scan" : "Valider par Scan QR") 
+                      : (isEn ? `Pay ${invoice.amount.toLocaleString()} FCFA via Card` : `Payer ${invoice.amount.toLocaleString()} FCFA par Carte`)}
                 </button>
               </div>
 
@@ -734,94 +907,71 @@ export default function PaymentMethodSelector({
               {simulationState === 'challenge' && (
                 <div className="space-y-4">
                   {paymentMethod === 'momo' ? (
-                    /* MOBILE PHONE INTERACTIVE MOCKUP FOR PIN INPUT */
-                    <div className="max-w-[280px] mx-auto bg-slate-900 text-white rounded-[32px] p-4.5 shadow-2xl border-4 border-slate-700 relative overflow-hidden">
+                    /* REAL CAMPAY MOBILE MONEY PENDING CHALLENGE VIEW */
+                    <div className="max-w-[320px] mx-auto bg-slate-900 text-white rounded-[32px] p-5 shadow-2xl border-4 border-slate-700 relative overflow-hidden">
                       {/* Notch */}
                       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-24 h-4 bg-slate-700 rounded-b-xl z-20" />
                       
                       {/* Screen Content */}
-                      <div className="bg-slate-950 rounded-[22px] p-3 pt-6 min-h-[340px] flex flex-col justify-between relative z-10 font-sans text-center">
-                        <div className="space-y-2 mt-2">
-                          <div className={`h-8 w-8 rounded-full flex items-center justify-center mx-auto text-white font-black text-xs ${provider === 'mtn' ? 'bg-amber-500' : provider === 'orange' ? 'bg-orange-500' : 'bg-sky-500'}`}>
-                            {provider === 'mtn' ? 'M' : provider === 'orange' ? 'O' : 'W'}
+                      <div className="bg-slate-950 rounded-[22px] p-4 pt-6 min-h-[350px] flex flex-col justify-between relative z-10 font-sans text-center">
+                        <div className="space-y-3 mt-1">
+                          <div className={`h-10 w-10 rounded-full flex items-center justify-center mx-auto text-white font-black text-sm shadow-md ${provider === 'mtn' ? 'bg-amber-500 ring-4 ring-amber-500/20' : 'bg-orange-500 ring-4 ring-orange-500/20'}`}>
+                            {provider === 'mtn' ? 'M' : 'O'}
                           </div>
                           
                           <div className="space-y-1">
-                            <p className="text-[10px] uppercase font-black text-slate-400 tracking-wider">
-                              {provider === 'mtn' ? 'MTN Mobile Money' : provider === 'orange' ? 'Orange Money' : 'Wave Pay'}
-                            </p>
-                            <p className="text-xs font-bold leading-tight">
-                              {isEn ? "Authorize Payment of:" : "Autoriser le versement de :"}
-                            </p>
-                            <p className="text-sm font-black text-emerald-400 font-mono">
+                            <span className="inline-block px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                              Campay Mobile Money
+                            </span>
+                            <h4 className="text-xs font-black text-white">
+                              {provider === 'mtn' ? 'MTN MoMo Cameroun' : 'Orange Money Cameroun'}
+                            </h4>
+                            <p className="text-lg font-black text-emerald-400 font-mono pt-1">
                               {invoice.amount.toLocaleString()} FCFA
                             </p>
-                            <p className="text-[8.5px] text-slate-500 truncate">
-                              Réf: {invoice.id.toUpperCase()}
+                            <p className="text-[10px] text-slate-400">
+                              Compte à débiter : <span className="font-mono text-slate-200 font-bold">{momoPhone}</span>
                             </p>
+                            {campayRef && (
+                              <p className="text-[9px] font-mono text-indigo-300 bg-indigo-950/60 rounded px-2 py-0.5 inline-block">
+                                Réf Campay : {campayRef}
+                              </p>
+                            )}
                           </div>
                         </div>
 
-                        {/* PIN dot entry display */}
-                        <div className="space-y-3 my-3">
-                          <p className="text-[9.5px] text-slate-400 font-medium">
-                            {isEn ? "Enter your 4-digit PIN Code:" : "Saisissez votre code PIN secret :"}
-                          </p>
-                          <div className="flex justify-center gap-3">
-                            {[0, 1, 2, 3].map((idx) => (
-                              <div 
-                                key={idx} 
-                                className={`h-3.5 w-3.5 rounded-full border-2 border-slate-500 transition-all ${
-                                  momoPin.length > idx ? 'bg-indigo-500 border-indigo-400 scale-110 shadow-[0_0_8px_rgba(99,102,241,0.6)]' : 'bg-slate-800'
-                                }`}
-                              />
-                            ))}
+                        {/* USSD Instruction Banner */}
+                        <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3 my-3 space-y-2 text-left">
+                          <div className="flex items-start gap-2">
+                            <Smartphone className="h-4 w-4 text-amber-400 shrink-0 mt-0.5 animate-bounce" />
+                            <div className="space-y-1 min-w-0">
+                              <p className="text-[10.5px] font-extrabold text-amber-300">
+                                Demande USSD transmise
+                              </p>
+                              <p className="text-[9.5px] text-slate-300 leading-relaxed font-sans">
+                                Veuillez regarder votre écran de téléphone et saisir votre <strong>code secret Mobile Money</strong> pour approuver le débit.
+                              </p>
+                            </div>
                           </div>
-                          {error && <p className="text-[8.5px] text-rose-400 font-bold leading-tight animate-shake">{error}</p>}
+                          <div className="flex items-center justify-between text-[9px] text-slate-400 font-mono pt-1 border-t border-slate-800">
+                            <span>Vérification opérateur...</span>
+                            <span className="text-emerald-400 font-bold animate-pulse">{campayPollingAttempts * 4}s / 60s</span>
+                          </div>
                         </div>
 
-                        {/* PIN keypad */}
-                        <div className="space-y-1.5">
-                          <div className="grid grid-cols-3 gap-1.5 max-w-[180px] mx-auto">
-                            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
-                              <button
-                                key={num}
-                                type="button"
-                                onClick={() => momoPin.length < 4 && setMomoPin(prev => prev + num)}
-                                className="h-8 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-white font-mono text-xs font-bold active:scale-95 transition-transform flex items-center justify-center cursor-pointer select-none"
-                              >
-                                {num}
-                              </button>
-                            ))}
-                            <button
-                              type="button"
-                              onClick={() => setMomoPin('')}
-                              className="h-8 rounded-lg bg-rose-950/60 hover:bg-rose-900 text-rose-300 font-bold text-[9.5px] flex items-center justify-center cursor-pointer select-none"
-                            >
-                              {isEn ? "Clear" : "Effacer"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => momoPin.length < 4 && setMomoPin(prev => prev + '0')}
-                              className="h-8 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-white font-mono text-xs font-bold active:scale-95 flex items-center justify-center cursor-pointer select-none"
-                            >
-                              0
-                            </button>
-                            <button
-                              type="button"
-                              onClick={submitMomoPinChallenge}
-                              className="h-8 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[9px] uppercase tracking-tighter flex items-center justify-center cursor-pointer select-none shadow-md"
-                            >
-                              {isEn ? "OK" : "Valider"}
-                            </button>
+                        {/* Action Buttons */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-center gap-2 text-[10px] text-slate-400">
+                            <RefreshCw className="h-3 w-3 animate-spin text-indigo-400" />
+                            <span>En attente de validation réseau</span>
                           </div>
                           
                           <button
                             type="button"
                             onClick={resetSimulator}
-                            className="text-[9px] text-slate-500 hover:text-slate-300 mt-2 block mx-auto underline cursor-pointer"
+                            className="w-full py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[10px] font-bold transition cursor-pointer"
                           >
-                            {isEn ? "Cancel transaction" : "Annuler l'opération"}
+                            Annuler l'attente
                           </button>
                         </div>
                       </div>

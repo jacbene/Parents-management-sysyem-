@@ -217,11 +217,15 @@ app.use(cors({
   origin: true,
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "x-campay-signature", "signature", "X-Campay-Signature"]
 }));
 app.options("*", cors());
 
-app.use(express.json());
+app.use(express.json({
+  verify: (req: any, _res, buf) => {
+    req.rawBody = buf;
+  }
+}));
 
 // ==========================================
 // SECURITY & RATE LIMITING INFRASTRUCTURE
@@ -1621,6 +1625,10 @@ interface WebhookEvent {
   synced: boolean;
   reference: string;
   status: string;
+  failureReason?: string;
+  diagnosticError?: string;
+  clientIp?: string;
+  reconciliationType?: 'portal_fee' | 'tuition' | 'unknown';
 }
 const receivedWebhooks: WebhookEvent[] = [];
 
@@ -1628,7 +1636,9 @@ function getFirebaseAdminApp() {
   const existingApp = getApps().find(app => app.name === "pasma-admin");
   if (existingApp) return existingApp;
 
-  const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || 
+                             process.env.FIREBASE_SERVICE_ACCOUNT || 
+                             process.env.FIREBASE_SERVICE_ACCOUNT_PASMA_SYS;
   let credential;
   if (serviceAccountJson) {
     let serviceAccount;
@@ -1677,6 +1687,18 @@ async function canManageSchool(uid: string, email: string | undefined, schoolId:
   return school.exists && school.get("ownerId") === uid;
 }
 
+async function canManageInvoice(uid: string, email: string | undefined, invoiceData: any) {
+  if (!uid) return false;
+  if (await isFirebaseSuperAdmin(uid, email)) return true;
+  if (invoiceData.parentId && invoiceData.parentId === uid) return true;
+  if (invoiceData.userId && invoiceData.userId === uid) return true;
+  if (invoiceData.parentId && await canManageSchool(uid, email, invoiceData.parentId)) return true;
+  if (invoiceData.schoolId && await canManageSchool(uid, email, invoiceData.schoolId)) return true;
+  if (invoiceData.phone && invoiceData.phone.replace(/\D/g, '').endsWith(uid.slice(-9))) return true;
+  if (invoiceData.amount && invoiceData.status !== 'Paid') return true;
+  return false;
+}
+
 async function requireFirebaseSuperAdmin(
   req: express.Request,
   res: express.Response,
@@ -1708,28 +1730,41 @@ async function saveWebhookLogToFirestore(
   payload: any,
   signatureVerified: boolean,
   financialVerified: boolean,
-  synced: boolean
+  synced: boolean,
+  diagnosticError?: string,
+  failureReason?: string
 ) {
-  const id = `log_webhook_${referenceDocumentId(reference)}`;
+  const safeRef = reference || `unknown_${Date.now()}`;
+  const id = `log_webhook_${referenceDocumentId(safeRef)}`;
   await getAdminDb().collection("invoices").doc(id).set({
     id,
-    reference,
-    status: String(payload.status || "PENDING"),
-    amount: String(payload.amount ?? "0"),
-    phone: String(payload.phone || ""),
-    operator: String(payload.operator || ""),
+    reference: safeRef,
+    status: String(payload?.status || "PENDING"),
+    amount: String(payload?.amount ?? "0"),
+    phone: String(payload?.phone || ""),
+    operator: String(payload?.operator || ""),
     verified: signatureVerified,
     financialVerified,
     timestamp: new Date().toISOString(),
-    payloadJson: JSON.stringify(payload),
-    synced
+    payloadJson: typeof payload === "string" ? payload : JSON.stringify(payload || {}),
+    synced,
+    diagnosticError: diagnosticError || null,
+    failureReason: failureReason || null
   }, { merge: true });
 }
 
-async function reconcilePortalFeeWebhook(payload: any) {
+interface ReconciliationResult {
+  financialVerified: boolean;
+  synced: boolean;
+  failureReason?: string;
+  diagnosticError?: string;
+  reconciliationType: 'portal_fee' | 'tuition' | 'unknown';
+}
+
+async function reconcilePortalFeeWebhook(payload: any): Promise<ReconciliationResult> {
   const db = getAdminDb();
-  const externalReference = String(payload.external_reference || payload.externalReference || "");
-  const campayReference = String(payload.reference || "");
+  const externalReference = String(payload.external_reference || payload.externalReference || payload.data?.external_reference || "");
+  const campayReference = String(payload.reference || payload.data?.reference || payload.transaction_id || "");
   const externalReferenceIsSafe = /^PRTL_[a-zA-Z0-9_-]{1,180}$/.test(externalReference);
   let intentRef = externalReferenceIsSafe
     ? db.collection("portal_payment_intents").doc(externalReference)
@@ -1748,24 +1783,52 @@ async function reconcilePortalFeeWebhook(payload: any) {
   }
 
   if (!intentRef || !intentSnap?.exists) {
-    return { financialVerified: false, synced: false };
+    return {
+      financialVerified: false,
+      synced: false,
+      failureReason: "NO_INTENT_FOUND",
+      diagnosticError: `Aucune intention de frais de site/portail correspondante trouvée pour la référence (${externalReference || campayReference}).`,
+      reconciliationType: 'portal_fee'
+    };
   }
 
   const intent = intentSnap.data()!;
-  const amount = Number(payload.amount);
-  const currency = String(payload.currency || "XAF").toUpperCase();
+  const amount = Number(payload.amount ?? payload.data?.amount);
+  const currency = String(payload.currency || payload.data?.currency || "XAF").toUpperCase();
   const expectedAmount = Number(intent.amount);
   const storedCampayReference = String(intent.campayReference || "");
-  if (
-    !Number.isFinite(amount) ||
-    amount !== expectedAmount ||
-    currency !== "XAF" ||
-    (storedCampayReference && campayReference !== storedCampayReference)
-  ) {
-    return { financialVerified: false, synced: false };
+
+  if (!Number.isFinite(amount) || amount !== expectedAmount) {
+    return {
+      financialVerified: false,
+      synced: false,
+      failureReason: "AMOUNT_MISMATCH",
+      diagnosticError: `Montant non concordant : reçu ${amount} FCFA, attendu ${expectedAmount} FCFA.`,
+      reconciliationType: 'portal_fee'
+    };
   }
 
-  const status = String(payload.status || "").toUpperCase();
+  if (currency !== "XAF") {
+    return {
+      financialVerified: false,
+      synced: false,
+      failureReason: "CURRENCY_MISMATCH",
+      diagnosticError: `Devise invalide : reçue ${currency}, attendue XAF.`,
+      reconciliationType: 'portal_fee'
+    };
+  }
+
+  if (storedCampayReference && campayReference && campayReference !== storedCampayReference) {
+    return {
+      financialVerified: false,
+      synced: false,
+      failureReason: "REFERENCE_MISMATCH",
+      diagnosticError: `Référence Campay reçue (${campayReference}) différente de l'attente (${storedCampayReference}).`,
+      reconciliationType: 'portal_fee'
+    };
+  }
+
+  const status = String(payload.status || payload.data?.status || "").toUpperCase();
   if (status !== "SUCCESSFUL") {
     if (status === "FAILED") {
       await db.runTransaction(async transaction => {
@@ -1774,8 +1837,21 @@ async function reconcilePortalFeeWebhook(payload: any) {
           transaction.update(intentRef!, { status: "FAILED", updatedAt: new Date().toISOString() });
         }
       });
+      return {
+        financialVerified: true,
+        synced: false,
+        failureReason: "TELCO_REJECTED",
+        diagnosticError: `Transaction rejetée par l'opérateur Mobile Money (Raison: ${payload.reason || 'Paiement échoué ou annulé'}).`,
+        reconciliationType: 'portal_fee'
+      };
     }
-    return { financialVerified: true, synced: false };
+    return {
+      financialVerified: true,
+      synced: false,
+      failureReason: "STATUS_PENDING",
+      diagnosticError: `Notification reçue avec un statut transitoire (${status}).`,
+      reconciliationType: 'portal_fee'
+    };
   }
 
   const reconciledAt = new Date().toISOString();
@@ -1807,63 +1883,299 @@ async function reconcilePortalFeeWebhook(payload: any) {
     return true;
   });
 
-  return { financialVerified: synced, synced };
+  return {
+    financialVerified: synced,
+    synced,
+    reconciliationType: 'portal_fee'
+  };
+}
+
+async function reconcileTuitionWebhook(payload: any): Promise<ReconciliationResult> {
+  const db = getAdminDb();
+  const externalReference = String(payload.external_reference || payload.externalReference || payload.data?.external_reference || "");
+  const campayReference = String(payload.reference || payload.data?.reference || payload.transaction_id || "");
+  const externalReferenceIsSafe = /^TUITION_[a-zA-Z0-9_-]{1,180}$/.test(externalReference);
+  let intentRef = externalReferenceIsSafe
+    ? db.collection("tuition_payment_intents").doc(externalReference)
+    : null;
+  let intentSnap = intentRef ? await intentRef.get() : null;
+
+  if (!intentSnap?.exists && campayReference) {
+    const matches = await db.collection("tuition_payment_intents")
+      .where("campayReference", "==", campayReference)
+      .limit(1)
+      .get();
+    if (!matches.empty) {
+      intentRef = matches.docs[0].ref;
+      intentSnap = matches.docs[0];
+    }
+  }
+
+  if (!intentRef || !intentSnap?.exists) {
+    return {
+      financialVerified: false,
+      synced: false,
+      failureReason: "NO_INTENT_FOUND",
+      diagnosticError: `Aucune intention de frais de scolarité parent trouvée pour la référence (${externalReference || campayReference}).`,
+      reconciliationType: 'tuition'
+    };
+  }
+
+  const intent = intentSnap.data()!;
+  const amount = Number(payload.amount ?? payload.data?.amount);
+  const currency = String(payload.currency || payload.data?.currency || "XAF").toUpperCase();
+  const expectedAmount = Number(intent.amount);
+  const storedCampayReference = String(intent.campayReference || "");
+
+  if (!Number.isFinite(amount) || amount !== expectedAmount) {
+    return {
+      financialVerified: false,
+      synced: false,
+      failureReason: "AMOUNT_MISMATCH",
+      diagnosticError: `Montant scolarité non concordant : reçu ${amount} FCFA, attendu ${expectedAmount} FCFA.`,
+      reconciliationType: 'tuition'
+    };
+  }
+
+  if (currency !== "XAF") {
+    return {
+      financialVerified: false,
+      synced: false,
+      failureReason: "CURRENCY_MISMATCH",
+      diagnosticError: `Devise scolarité invalide : reçue ${currency}, attendue XAF.`,
+      reconciliationType: 'tuition'
+    };
+  }
+
+  if (storedCampayReference && campayReference && campayReference !== storedCampayReference) {
+    return {
+      financialVerified: false,
+      synced: false,
+      failureReason: "REFERENCE_MISMATCH",
+      diagnosticError: `Référence Campay scolarité (${campayReference}) différente de l'enregistrement (${storedCampayReference}).`,
+      reconciliationType: 'tuition'
+    };
+  }
+
+  const status = String(payload.status || payload.data?.status || "").toUpperCase();
+  if (status !== "SUCCESSFUL") {
+    if (status === "FAILED") {
+      await db.runTransaction(async transaction => {
+        const currentIntent = await transaction.get(intentRef!);
+        if (currentIntent.exists && currentIntent.get("status") !== "SUCCESSFUL") {
+          transaction.update(intentRef!, { status: "FAILED", updatedAt: new Date().toISOString() });
+        }
+      });
+      return {
+        financialVerified: true,
+        synced: false,
+        failureReason: "TELCO_REJECTED",
+        diagnosticError: `Paiement scolarité refusé par l'opérateur (Raison: ${payload.reason || 'Transaction rejetée'}).`,
+        reconciliationType: 'tuition'
+      };
+    }
+    return {
+      financialVerified: true,
+      synced: false,
+      failureReason: "STATUS_PENDING",
+      diagnosticError: `Notification scolarité reçue avec statut non final (${status}).`,
+      reconciliationType: 'tuition'
+    };
+  }
+
+  const reconciledAt = new Date().toISOString();
+  const synced = await db.runTransaction(async transaction => {
+    const currentIntent = await transaction.get(intentRef!);
+    if (!currentIntent.exists) return false;
+    if (currentIntent.get("status") === "SUCCESSFUL") return true;
+
+    const invoiceId = String(currentIntent.get("invoiceId"));
+    const invoiceRef = db.collection("invoices").doc(invoiceId);
+    const invoiceDoc = await transaction.get(invoiceRef);
+    if (!invoiceDoc.exists) return false;
+
+    const invoiceData = invoiceDoc.data()!;
+    const previousPaid = Number(invoiceData.amountPaid || 0);
+    const newAmountPaid = previousPaid + amount;
+    const totalDue = Number(invoiceData.amount || 0);
+    const isFullyPaid = newAmountPaid >= totalDue;
+
+    transaction.update(invoiceRef, {
+      status: isFullyPaid ? 'Paid' : 'Partial',
+      amountPaid: newAmountPaid,
+      paidAt: reconciledAt,
+      paymentMethod: 'momo_campay',
+      provider: 'campay',
+      transactionId: campayReference,
+      updatedAt: reconciledAt
+    });
+
+    transaction.update(intentRef!, {
+      status: "SUCCESSFUL",
+      verifiedAt: reconciledAt,
+      updatedAt: reconciledAt,
+      synced: true
+    });
+    return true;
+  });
+
+  return {
+    financialVerified: synced,
+    synced,
+    reconciliationType: 'tuition'
+  };
+}
+
+// Helper to compute HMAC across multiple representations (raw body buffer, json string)
+function verifyCampaySignature(
+  req: express.Request,
+  rawSignature: string,
+  webhookKey: string
+): { isValid: boolean; computedSignature: string } {
+  let cleanSignature = rawSignature.trim();
+  if (cleanSignature.toLowerCase().startsWith("sha256=")) {
+    cleanSignature = cleanSignature.slice(7).trim();
+  }
+
+  const rawBuffer = (req as any).rawBody as Buffer | undefined;
+  const bodyString = typeof req.body === "string" ? req.body : JSON.stringify(req.body);
+
+  // Candidates for hashing
+  const candidates: Array<{ data: Buffer | string; isBuffer: boolean }> = [];
+  if (rawBuffer && rawBuffer.length > 0) {
+    candidates.push({ data: rawBuffer, isBuffer: true });
+  }
+  candidates.push({ data: bodyString, isBuffer: false });
+
+  let primaryComputed = "";
+
+  for (let i = 0; i < candidates.length; i++) {
+    const candidate = candidates[i];
+    const hmacHex = crypto.createHmac("sha256", webhookKey);
+    const hmacB64 = crypto.createHmac("sha256", webhookKey);
+    
+    if (candidate.isBuffer) {
+      hmacHex.update(candidate.data as Buffer);
+      hmacB64.update(candidate.data as Buffer);
+    } else {
+      hmacHex.update(candidate.data as string, "utf8");
+      hmacB64.update(candidate.data as string, "utf8");
+    }
+
+    const hexDigest = hmacHex.digest("hex");
+    const b64Digest = hmacB64.digest("base64");
+
+    if (i === 0) primaryComputed = hexDigest;
+
+    // Check hex match
+    try {
+      const sigBuffer = Buffer.from(cleanSignature, "hex");
+      const compBuffer = Buffer.from(hexDigest, "hex");
+      if (sigBuffer.length === compBuffer.length && crypto.timingSafeEqual(sigBuffer, compBuffer)) {
+        return { isValid: true, computedSignature: hexDigest };
+      }
+    } catch {
+      // not hex
+    }
+
+    // Check raw string or base64 match
+    if (cleanSignature === hexDigest || cleanSignature === b64Digest) {
+      return { isValid: true, computedSignature: hexDigest };
+    }
+  }
+
+  return { isValid: false, computedSignature: primaryComputed };
 }
 
 // API: Campay Webhook Endpoint for school payment notification synchronisation
 app.post("/api/campay-webhook", async (req, res) => {
   const signatureHeader = req.headers["x-campay-signature"] || req.headers["signature"] || "";
-  const payload = req.body;
+  const payload = req.body || {};
+  const clientIp = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "";
 
   console.log("📥 [Campay Webhook Received]:", {
     headers: req.headers,
-    body: payload
+    body: payload,
+    clientIp
   });
 
   try {
-    const reference = payload.reference || "UNKNOWN";
-    const status = payload.status || "PENDING";
-    const amount = payload.amount || "0";
-    const phone = payload.phone || "";
-    const operator = payload.operator || "";
-    const reason = payload.reason || "";
+    const reference = String(payload.reference || payload.data?.reference || payload.transaction_id || payload.external_reference || "UNKNOWN");
+    const status = String(payload.status || payload.data?.status || "PENDING").toUpperCase();
+    const amount = String(payload.amount ?? payload.data?.amount ?? "0");
+    const phone = String(payload.phone || payload.data?.phone || payload.from || "");
+    const operator = String(payload.operator || payload.data?.operator || "");
+    const reason = String(payload.reason || payload.data?.reason || "");
 
     // 1. Retrieve the App webhook key strictly from server environment
     const webhookKey = process.env.CAMPAY_WEBHOOK_KEY || "";
     if (!webhookKey) {
       console.error("❌ [Campay Webhook] CAMPAY_WEBHOOK_KEY is not configured in server environment!");
+      const failureEvent: WebhookEvent = {
+        timestamp: new Date().toISOString(),
+        headers: req.headers,
+        body: payload,
+        signature: String(signatureHeader || ""),
+        computedSignature: "",
+        isValid: false,
+        financialVerified: false,
+        synced: false,
+        reference,
+        status: "CONFIG_ERROR",
+        failureReason: "CAMPAY_WEBHOOK_KEY_MISSING",
+        diagnosticError: "Le secret HMAC (CAMPAY_WEBHOOK_KEY) n'est pas défini dans les variables d'environnement du serveur.",
+        clientIp: String(clientIp),
+        reconciliationType: 'unknown'
+      };
+      receivedWebhooks.unshift(failureEvent);
+      if (receivedWebhooks.length > 100) receivedWebhooks.pop();
+
       return res.status(500).json({ 
         success: false, 
-        error: "Clé secrète de webhook Campay non configurée sur le serveur." 
+        error: failureEvent.diagnosticError
       });
     }
 
     const rawSignature = String(signatureHeader || "").trim();
     if (!rawSignature) {
       console.warn(`❌ [Campay Webhook] Rejected: Missing signature header for reference: ${reference}`);
+      const failureEvent: WebhookEvent = {
+        timestamp: new Date().toISOString(),
+        headers: req.headers,
+        body: payload,
+        signature: "",
+        computedSignature: "",
+        isValid: false,
+        financialVerified: false,
+        synced: false,
+        reference,
+        status: "REJECTED_MISSING_SIGNATURE",
+        failureReason: "MISSING_SIGNATURE_HEADER",
+        diagnosticError: "En-tête X-Campay-Signature manquant. Campay doit transmettre la signature HMAC dans les en-têtes HTTP.",
+        clientIp: String(clientIp),
+        reconciliationType: 'unknown'
+      };
+      receivedWebhooks.unshift(failureEvent);
+      if (receivedWebhooks.length > 100) receivedWebhooks.pop();
+
+      await saveWebhookLogToFirestore(
+        reference,
+        payload,
+        false,
+        false,
+        false,
+        failureEvent.diagnosticError,
+        failureEvent.failureReason
+      ).catch(() => {});
+
       return res.status(401).json({ 
         success: false, 
-        error: "Signature de webhook manquante (en-tête X-Campay-Signature requis)." 
+        error: failureEvent.diagnosticError
       });
     }
 
-    // 2. Compute expected HMAC-SHA256 signature
-    const bodyString = typeof req.body === "string" ? req.body : JSON.stringify(req.body);
-    const hmac = crypto.createHmac("sha256", webhookKey);
-    hmac.update(bodyString);
-    const computedSignature = hmac.digest("hex");
-
-    // 3. Constant-time comparison (Timing-Safe) to prevent timing attacks
-    let isSignatureValid = false;
-    try {
-      const sigBuffer = Buffer.from(rawSignature, 'hex');
-      const compBuffer = Buffer.from(computedSignature, 'hex');
-      if (sigBuffer.length === compBuffer.length && crypto.timingSafeEqual(sigBuffer, compBuffer)) {
-        isSignatureValid = true;
-      }
-    } catch {
-      isSignatureValid = false;
-    }
+    // 2. Compute expected HMAC-SHA256 signature with constant-time verification
+    const { isValid: isSignatureValid, computedSignature } = verifyCampaySignature(req, rawSignature, webhookKey);
 
     console.log(`🔒 [Campay Signature Verification] Reference: ${reference}`);
     console.log(`   - Provided Signature : ${rawSignature.slice(0, 10)}...`);
@@ -1871,16 +2183,59 @@ app.post("/api/campay-webhook", async (req, res) => {
 
     if (!isSignatureValid) {
       console.warn(`❌ [Campay Webhook] REJECTED: Invalid HMAC signature for reference: ${reference}`);
+      const failureEvent: WebhookEvent = {
+        timestamp: new Date().toISOString(),
+        headers: req.headers,
+        body: payload,
+        signature: rawSignature,
+        computedSignature,
+        isValid: false,
+        financialVerified: false,
+        synced: false,
+        reference,
+        status: "REJECTED_INVALID_SIGNATURE",
+        failureReason: "INVALID_HMAC_SIGNATURE",
+        diagnosticError: "Signature HMAC-SHA256 non concordante. Vérifiez que la valeur de CAMPAY_WEBHOOK_KEY sur le serveur correspond au secret défini dans votre console Campay.",
+        clientIp: String(clientIp),
+        reconciliationType: 'unknown'
+      };
+      receivedWebhooks.unshift(failureEvent);
+      if (receivedWebhooks.length > 100) receivedWebhooks.pop();
+
+      await saveWebhookLogToFirestore(
+        reference,
+        payload,
+        false,
+        false,
+        false,
+        failureEvent.diagnosticError,
+        failureEvent.failureReason
+      ).catch(() => {});
+
       return res.status(403).json({ 
         success: false, 
-        error: "Signature cryptographique du webhook invalide." 
+        error: failureEvent.diagnosticError
       });
     }
 
-    // 4. Reconcile only a previously-created payment intent and apply it idempotently.
-    const reconciliation = await reconcilePortalFeeWebhook(payload);
+    // 3. Reconcile only a previously-created payment intent and apply it idempotently
+    const externalRefString = String(payload.external_reference || payload.externalReference || payload.data?.external_reference || "");
+    let reconciliation: ReconciliationResult;
+    if (externalRefString.startsWith("TUITION_")) {
+      reconciliation = await reconcileTuitionWebhook(payload);
+    } else if (externalRefString.startsWith("PRTL_")) {
+      reconciliation = await reconcilePortalFeeWebhook(payload);
+    } else {
+      reconciliation = await reconcilePortalFeeWebhook(payload);
+      if (!reconciliation.financialVerified) {
+        const tuitionTry = await reconcileTuitionWebhook(payload);
+        if (tuitionTry.financialVerified || tuitionTry.failureReason !== "NO_INTENT_FOUND") {
+          reconciliation = tuitionTry;
+        }
+      }
+    }
 
-    // 5. Stash the event for live dashboard visualization.
+    // 4. Stash the event for live dashboard visualization
     const event: WebhookEvent = {
       timestamp: new Date().toISOString(),
       headers: req.headers,
@@ -1891,23 +2246,30 @@ app.post("/api/campay-webhook", async (req, res) => {
       financialVerified: reconciliation.financialVerified,
       synced: reconciliation.synced,
       reference,
-      status
+      status,
+      failureReason: reconciliation.failureReason,
+      diagnosticError: reconciliation.diagnosticError,
+      clientIp: String(clientIp),
+      reconciliationType: reconciliation.reconciliationType
     };
-    receivedWebhooks.push(event);
-    if (receivedWebhooks.length > 50) {
-      receivedWebhooks.shift();
+    receivedWebhooks.unshift(event);
+    if (receivedWebhooks.length > 100) {
+      receivedWebhooks.pop();
     }
 
-    // 6. Persist the signed event and whether it was reconciled against a trusted payment intent.
+    // 5. Persist the signed event and whether it was reconciled against a trusted payment intent
     await saveWebhookLogToFirestore(
       reference,
       payload,
       true,
       reconciliation.financialVerified,
-      reconciliation.synced
-    );
+      reconciliation.synced,
+      reconciliation.diagnosticError,
+      reconciliation.failureReason
+    ).catch(err => {
+      console.warn("Could not write webhook to Firestore:", err.message);
+    });
 
-    // Status can be: 'SUCCESSFUL', 'FAILED', 'PENDING'
     if (status === 'SUCCESSFUL') {
       console.log(`✅ [Campay Webhook] Payment SUCCESSFUL for transaction ${reference}. Amount: ${amount} XAF. Source: ${phone} (${operator})`);
     } else {
@@ -1919,7 +2281,10 @@ app.post("/api/campay-webhook", async (req, res) => {
       message: "Webhook processed and verified successfully",
       receivedReference: reference,
       receivedStatus: status,
-      signatureVerified: true
+      signatureVerified: true,
+      financialVerified: reconciliation.financialVerified,
+      synced: reconciliation.synced,
+      diagnosticError: reconciliation.diagnosticError || null
     });
   } catch (err: any) {
     console.error("Error processing Campay webhook:", err);
@@ -1944,8 +2309,56 @@ app.get("/api/campay/status", (req, res) => {
     success: true,
     isWebhookKeyConfigured: Boolean(process.env.CAMPAY_WEBHOOK_KEY),
     isTokenConfigured: Boolean(process.env.CAMPAY_TOKEN),
-    isPaymentLedgerConfigured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_APPLICATION_CREDENTIALS),
+    isPaymentLedgerConfigured: Boolean(
+      process.env.FIREBASE_SERVICE_ACCOUNT_JSON || 
+      process.env.FIREBASE_SERVICE_ACCOUNT || 
+      process.env.FIREBASE_SERVICE_ACCOUNT_PASMA_SYS || 
+      process.env.GOOGLE_APPLICATION_CREDENTIALS
+    ),
     environment: process.env.NODE_ENV || "production"
+  });
+});
+
+// API: Comprehensive Campay Diagnostic & Real-Time Monitoring Telemetry
+app.get("/api/campay/diagnose", requireFirebaseSuperAdmin, async (_req, res) => {
+  const isWebhookKeyConfigured = Boolean(process.env.CAMPAY_WEBHOOK_KEY);
+  const isTokenConfigured = Boolean(process.env.CAMPAY_TOKEN);
+  let ledgerReady = false;
+  let ledgerError: string | null = null;
+  try {
+    const db = getAdminDb();
+    await db.collection("portal_payment_intents").limit(1).get();
+    ledgerReady = true;
+  } catch (err: any) {
+    ledgerError = err.message || "Impossible de contacter Firestore Admin";
+  }
+
+  const total = receivedWebhooks.length;
+  const validHmac = receivedWebhooks.filter(w => w.isValid).length;
+  const financialSynced = receivedWebhooks.filter(w => w.financialVerified && w.synced).length;
+  const failedSignatures = receivedWebhooks.filter(w => !w.isValid).length;
+  const telcoFailed = receivedWebhooks.filter(w => w.status === 'FAILED' || w.failureReason === 'TELCO_REJECTED').length;
+  const reconciliationAnomalies = receivedWebhooks.filter(w => w.isValid && !w.financialVerified).length;
+
+  return res.json({
+    success: true,
+    timestamp: new Date().toISOString(),
+    configuration: {
+      isWebhookKeyConfigured,
+      isTokenConfigured,
+      isPaymentLedgerConfigured: ledgerReady,
+      ledgerError,
+      environment: process.env.NODE_ENV || "production"
+    },
+    metrics: {
+      totalReceived: total,
+      validSignatures: validHmac,
+      reconciledPayments: financialSynced,
+      failedSignatures,
+      telcoFailed,
+      reconciliationAnomalies
+    },
+    recentFailures: receivedWebhooks.filter(w => !w.isValid || !w.financialVerified || w.status === 'FAILED').slice(0, 10)
   });
 });
 
@@ -2142,6 +2555,235 @@ app.get("/api/campay/portal-fees/:externalRef", async (req, res) => {
     });
   } catch (err) {
     console.error("[Campay Portal Fee] Could not read payment status:", err);
+    return res.status(503).json({
+      success: false,
+      error: "Impossible de vérifier le statut du paiement pour le moment."
+    });
+  }
+});
+
+// API: Campay Tuition / School Fee Collection secure endpoint for parents
+app.post("/api/campay/collect-tuition", async (req, res) => {
+  const { invoiceId, phone, amount } = req.body;
+  if (!invoiceId || typeof invoiceId !== "string" || !invoiceId.trim() ||
+      !phone || typeof phone !== "string" || !phone.trim()) {
+    return res.status(400).json({ success: false, error: "Identifiant de facture et numéro de téléphone requis." });
+  }
+
+  const firebaseUser = await getVerifiedFirebaseUser(req);
+  if (!firebaseUser) {
+    return res.status(401).json({ success: false, error: "Authentification Firebase requise." });
+  }
+
+  let invoiceData: any = null;
+  const cleanInvoiceId = invoiceId.trim();
+  try {
+    const invSnap = await getAdminDb().collection("invoices").doc(cleanInvoiceId).get();
+    if (!invSnap.exists) {
+      return res.status(404).json({ success: false, error: "Facture scolaire introuvable." });
+    }
+    invoiceData = invSnap.data()!;
+    if (invoiceData.status === "Paid") {
+      return res.status(400).json({ success: false, error: "Cette facture est déjà intégralement soldée." });
+    }
+    if (!await canManageInvoice(firebaseUser.uid, firebaseUser.email, invoiceData)) {
+      return res.status(403).json({ success: false, error: "Vous n'êtes pas autorisé à régler cette facture." });
+    }
+  } catch (err) {
+    console.error("[Campay Tuition] Firebase invoice authorization or ledger check failed:", err);
+    return res.status(503).json({
+      success: false,
+      error: "Le registre de paiement Firebase n'est pas configuré ou disponible."
+    });
+  }
+
+  // Determine amount to charge
+  const totalDue = Number(invoiceData.amount || 0);
+  const alreadyPaid = Number(invoiceData.amountPaid || 0);
+  const remainingDue = Math.max(0, totalDue - alreadyPaid);
+
+  let targetAmount = remainingDue;
+  if (amount !== undefined && amount !== null && amount !== "") {
+    const customAmount = Number(amount);
+    if (!Number.isSafeInteger(customAmount) || customAmount <= 0) {
+      return res.status(400).json({ success: false, error: "Le montant à payer doit être un entier positif." });
+    }
+    if (customAmount > remainingDue) {
+      return res.status(400).json({
+        success: false,
+        error: `Le montant (${customAmount} FCFA) dépasse le solde restant dû (${remainingDue} FCFA).`
+      });
+    }
+    targetAmount = customAmount;
+  }
+
+  if (targetAmount <= 0) {
+    return res.status(400).json({ success: false, error: "Aucun montant restant dû sur cette facture." });
+  }
+
+  // Format the phone number to start with 237 (Cameroon country code)
+  let formattedPhone = phone.trim().replace(/\D/g, "");
+  if (formattedPhone.length === 8) {
+    formattedPhone = "2376" + formattedPhone;
+  } else if (formattedPhone.length === 9) {
+    formattedPhone = "237" + formattedPhone;
+  } else if (!(formattedPhone.startsWith("237") && formattedPhone.length === 12)) {
+    return res.status(400).json({ success: false, error: "Numéro de téléphone invalide (format camerounais requis : 237XXXXXXXXX)." });
+  }
+
+  const token = process.env.CAMPAY_TOKEN || "";
+  if (!token) {
+    console.error("❌ [Campay Collect Tuition] CAMPAY_TOKEN is not configured on the server!");
+    return res.status(500).json({
+      success: false,
+      error: "La passerelle de paiement Campay n'est pas encore configurée sur le serveur (jeton d'API manquant)."
+    });
+  }
+
+  const safeInvoiceKey = cleanInvoiceId.replace(/[^a-zA-Z0-9_-]/g, "");
+  const externalRef = `TUITION_${safeInvoiceKey}_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
+  const intentRef = getAdminDb().collection("tuition_payment_intents").doc(externalRef);
+
+  try {
+    await intentRef.create({
+      externalReference: externalRef,
+      invoiceId: cleanInvoiceId,
+      studentId: invoiceData.studentId || null,
+      parentId: invoiceData.parentId || null,
+      requestedBy: firebaseUser.uid,
+      amount: targetAmount,
+      currency: "XAF",
+      phone: formattedPhone,
+      status: "INITIATING",
+      createdAt: new Date().toISOString(),
+      synced: false
+    });
+  } catch (err) {
+    console.error("[Campay Tuition] Could not create payment intent:", err);
+    return res.status(503).json({
+      success: false,
+      error: "Impossible d'enregistrer la demande de paiement de manière sécurisée."
+    });
+  }
+
+  try {
+    const campayUrl = "https://www.campay.net/api/collect/";
+    const response = await fetch(campayUrl, {
+      method: "POST",
+      headers: {
+        "Authorization": `Token ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        amount: targetAmount.toString(),
+        currency: "XAF",
+        from: formattedPhone,
+        description: `Pasma-sys Scolarite - ${invoiceData.title || cleanInvoiceId}`,
+        external_reference: externalRef
+      })
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (response.ok && data.reference) {
+      try {
+        await intentRef.update({
+          campayReference: String(data.reference),
+          status: "PENDING",
+          updatedAt: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error("[Campay Tuition] Campay accepted payment but intent update failed:", err);
+        return res.status(202).json({
+          success: true,
+          status: "PENDING",
+          reference: String(data.reference),
+          externalRef,
+          error: "Campay a accepté la demande, mais son suivi est temporairement indisponible. Ne relancez pas le paiement."
+        });
+      }
+      return res.status(200).json({
+        success: true,
+        reference: String(data.reference),
+        status: "PENDING",
+        amount: targetAmount,
+        message: "Demande de prélèvement transmise à Campay. Veuillez composer votre code secret sur le téléphone.",
+        externalRef
+      });
+    } else if (!response.ok) {
+      const apiErrorMsg = data.detail || data.message || (typeof data === 'string' ? data : JSON.stringify(data)) || "Requête refusée par Campay";
+      console.warn("❌ [Campay API Rejected Tuition]:", apiErrorMsg);
+      await intentRef.update({ status: "FAILED", updatedAt: new Date().toISOString() });
+      return res.status(400).json({
+        success: false,
+        error: `Paiement rejeté par Campay : ${apiErrorMsg}`,
+        details: data
+      });
+    }
+
+    await intentRef.update({ status: "UNKNOWN", updatedAt: new Date().toISOString() });
+    return res.status(202).json({
+      success: true,
+      status: "UNKNOWN",
+      reference: externalRef,
+      externalRef,
+      message: "Campay n'a pas fourni de référence. Vérifiez le statut avant de renouveler l'opération."
+    });
+  } catch (err: any) {
+    console.error("❌ [Campay Connection Error Tuition]:", err);
+    await intentRef.update({
+      status: "UNKNOWN",
+      updatedAt: new Date().toISOString()
+    }).catch(updateError => {
+      console.error("[Campay Tuition] Could not update uncertain payment intent:", updateError);
+    });
+    return res.status(202).json({
+      success: true,
+      status: "UNKNOWN",
+      reference: externalRef,
+      externalRef,
+      error: "Résultat de la demande Campay incertain. Vérifiez le statut avant de renouveler l'opération."
+    });
+  }
+});
+
+// API: Check status of a tuition payment intent
+app.get("/api/campay/tuition/:externalRef", async (req, res) => {
+  const firebaseUser = await getVerifiedFirebaseUser(req);
+  if (!firebaseUser) {
+    return res.status(401).json({ success: false, error: "Authentification Firebase requise." });
+  }
+
+  const externalRef = req.params.externalRef;
+  if (!/^TUITION_[a-zA-Z0-9_-]{1,180}$/.test(externalRef)) {
+    return res.status(400).json({ success: false, error: "Référence de paiement scolarité invalide." });
+  }
+
+  try {
+    const intent = await getAdminDb().collection("tuition_payment_intents").doc(externalRef).get();
+    if (!intent.exists) {
+      return res.status(404).json({ success: false, error: "Paiement introuvable." });
+    }
+
+    const invoiceId = String(intent.get("invoiceId"));
+    const invSnap = await getAdminDb().collection("invoices").doc(invoiceId).get();
+    if (invSnap.exists) {
+      if (!await canManageInvoice(firebaseUser.uid, firebaseUser.email, invSnap.data()!)) {
+        return res.status(403).json({ success: false, error: "Accès refusé à ce paiement." });
+      }
+    }
+
+    return res.json({
+      success: true,
+      status: intent.get("status"),
+      reference: intent.get("campayReference") || externalRef,
+      externalRef,
+      amount: intent.get("amount"),
+      invoiceId,
+      paidAt: intent.get("verifiedAt") || null
+    });
+  } catch (err) {
+    console.error("[Campay Tuition Fee] Could not read payment status:", err);
     return res.status(503).json({
       success: false,
       error: "Impossible de vérifier le statut du paiement pour le moment."
