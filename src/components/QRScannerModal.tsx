@@ -289,6 +289,7 @@ export default function QRScannerModal({ isOpen, onClose, allStudents, onAddAtte
     try {
       const success = onAddAttendance ? await onAddAttendance(newLog) : true;
       if (success) {
+        playSuccessChime();
         // Keep in success history log
         const newSuccessLog = {
           id: newLog.id,
@@ -301,6 +302,8 @@ export default function QRScannerModal({ isOpen, onClose, allStudents, onAddAtte
         // Reset states to continue scanning
         setScannedStudent(null);
         setScanningActive(true);
+        setSelectedStatus('Present');
+        setRemarks('Présence enregistrée par émargement QR-ID');
       } else {
         playBuzzerChime();
       }
@@ -766,7 +769,7 @@ export default function QRScannerModal({ isOpen, onClose, allStudents, onAddAtte
                             ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
                             : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'
                         }`}>
-                          {log.status === 'Present' ? 'Présent' : log.status === 'Retard' ? 'Late' : log.status}
+                          {log.status === 'Present' ? 'Présent' : log.status === 'Late' ? 'Retard' : log.status === 'Absent' ? 'Absent' : log.status === 'Excused' ? 'Excusée' : log.status}
                         </span>
                       </motion.div>
                     ))
