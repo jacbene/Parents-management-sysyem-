@@ -122,7 +122,8 @@ import {
   Rows,
   LayoutList,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Smartphone
 } from 'lucide-react';
 
 type TabType = 
@@ -423,6 +424,7 @@ export default function App() {
   const [isCheckingVerification, setIsCheckingVerification] = useState(false);
   const [dismissedVerificationNotice, setDismissedVerificationNotice] = useState(false);
   const [emailVerificationNotice, setEmailVerificationNotice] = useState<string | null>(null);
+  const [apeeFinancialInitialView, setApeeFinancialInitialView] = useState<'journal' | 'generator' | 'analysis' | 'rentability'>('journal');
 
   const handleCheckVerificationStatus = async () => {
     setIsCheckingVerification(true);
@@ -4025,12 +4027,33 @@ export default function App() {
                         </button>
 
                         <button
-                          onClick={() => setActiveTab('apee_finance')}
+                          onClick={() => {
+                            setApeeFinancialInitialView('journal');
+                            setActiveTab('apee_finance');
+                          }}
                           className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
-                            activeTab === 'apee_finance' ? 'bg-indigo-600 text-white shadow-xs' : 'text-gray-650 hover:bg-slate-50'
+                            activeTab === 'apee_finance' && apeeFinancialInitialView !== 'rentability' ? 'bg-indigo-600 text-white shadow-xs' : 'text-gray-650 hover:bg-slate-50'
                           }`}
                         >
                           <span className="flex items-center gap-2"><Coins className="h-4 w-4" /> {t('tab.apee_finance')}</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setApeeFinancialInitialView('rentability');
+                            setActiveTab('apee_finance');
+                          }}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
+                            activeTab === 'apee_finance' && apeeFinancialInitialView === 'rentability'
+                              ? 'bg-indigo-600 text-white shadow-xs'
+                              : 'text-gray-650 hover:bg-slate-50'
+                          }`}
+                          id="btn-sidebar-system-fees-campay"
+                        >
+                          <span className="flex items-center gap-2">
+                            <Smartphone className="h-4 w-4 text-emerald-500" />
+                            {language === 'en' ? "System Fees (Campay 1%)" : "Frais de Système (Campay 1%)"}
+                          </span>
                         </button>
 
                         <button
@@ -4407,6 +4430,8 @@ export default function App() {
                           settings={apeeSettings}
                           parents={apeeParents}
                           otherRevenues={apeeOtherRevenues}
+                          initialView={apeeFinancialInitialView}
+                          defaultShowPortalPay={apeeFinancialInitialView === 'rentability'}
                         />
                       </motion.div>
                     )}

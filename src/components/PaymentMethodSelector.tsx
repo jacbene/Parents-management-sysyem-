@@ -61,8 +61,8 @@ export default function PaymentMethodSelector({
   const orangeEnabled = settings?.paymentConfig ? settings.paymentConfig.orangeEnabled !== false : true;
   const waveEnabled = settings?.paymentConfig ? settings.paymentConfig.waveEnabled === true : false;
 
-  // Core selector states
-  const [paymentMethod, setPaymentMethod] = useState<'card' | 'momo' | 'qr'>('card');
+  // Core selector states - Default to Campay Mobile Money for Cameroonian context
+  const [paymentMethod, setPaymentMethod] = useState<'card' | 'momo' | 'qr'>('momo');
   const [provider, setProvider] = useState<'mtn' | 'orange' | 'wave'>('mtn');
   const [momoPhone, setMomoPhone] = useState(parentPhone || invoice.phone || '');
 
@@ -547,6 +547,37 @@ export default function PaymentMethodSelector({
           </div>
           
           <div className={`grid grid-cols-1 ${[cardEnabled, (mtnEnabled || orangeEnabled || waveEnabled), true].filter(Boolean).length === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} gap-2.5`}>
+            {/* Momo SMS Push Button option - Highlighted as Primary for Campay */}
+            {(mtnEnabled || orangeEnabled || waveEnabled) && (
+              <button
+                type="button"
+                onClick={() => setPaymentMethod('momo')}
+                className={`p-3.5 border rounded-2xl text-left transition relative cursor-pointer flex flex-row sm:flex-col gap-3 items-center sm:items-start ${
+                  paymentMethod === 'momo'
+                    ? 'border-emerald-600 bg-emerald-50/50 text-emerald-950 ring-2 ring-emerald-300'
+                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-350'
+                }`}
+              >
+                <div className="flex items-center justify-between w-full">
+                  <div className={`p-2 rounded-xl transition-all ${paymentMethod === 'momo' ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500'}`}>
+                    <Smartphone className="h-4.5 w-4.5" />
+                  </div>
+                  <span className="px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-700 border border-emerald-500/30">
+                    Campay Direct
+                  </span>
+                </div>
+                <div className="space-y-0.5 min-w-0">
+                  <span className="text-xs font-black block leading-tight text-slate-900">Campay Mobile Money</span>
+                  <span className="text-[10px] text-slate-500 truncate block font-medium">
+                    MTN MoMo, Orange Money
+                  </span>
+                </div>
+                {paymentMethod === 'momo' && (
+                  <div className="absolute top-2 right-2 h-2 w-2 rounded-full bg-emerald-600 sm:block hidden" />
+                )}
+              </button>
+            )}
+
             {/* Card Button option */}
             {cardEnabled && (
               <button
@@ -566,32 +597,6 @@ export default function PaymentMethodSelector({
                   <span className="text-[10px] text-slate-505 truncate block">Visa, Mastercard</span>
                 </div>
                 {paymentMethod === 'card' && (
-                  <div className="absolute top-2 right-2 h-2 w-2 rounded-full bg-indigo-600 sm:block hidden" />
-                )}
-              </button>
-            )}
-
-            {/* Momo SMS Push Button option */}
-            {(mtnEnabled || orangeEnabled || waveEnabled) && (
-              <button
-                type="button"
-                onClick={() => setPaymentMethod('momo')}
-                className={`p-3.5 border rounded-2xl text-left transition relative cursor-pointer flex flex-row sm:flex-col gap-3 items-center sm:items-start ${
-                  paymentMethod === 'momo'
-                    ? 'border-indigo-600 bg-indigo-50/40 text-indigo-950 ring-1 ring-indigo-200'
-                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-350'
-                }`}
-              >
-                <div className={`p-2 rounded-xl transition-all ${paymentMethod === 'momo' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                  <Smartphone className="h-4.5 w-4.5" />
-                </div>
-                <div className="space-y-0.5 min-w-0">
-                  <span className="text-xs font-bold block leading-tight">Mobile Money</span>
-                  <span className="text-[10px] text-slate-505 truncate block">
-                    {[mtnEnabled && 'MTN', orangeEnabled && 'Orange', waveEnabled && 'Wave'].filter(Boolean).join(', ')}
-                  </span>
-                </div>
-                {paymentMethod === 'momo' && (
                   <div className="absolute top-2 right-2 h-2 w-2 rounded-full bg-indigo-600 sm:block hidden" />
                 )}
               </button>

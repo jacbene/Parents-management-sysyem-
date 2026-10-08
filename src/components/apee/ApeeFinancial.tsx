@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, CheckCircle2, DollarSign, Wallet2, FileText, ArrowDownLeft, ArrowUpRight, Check, AlertCircle, TrendingUp, Download, AlertTriangle, ClipboardList, Sparkles, Coins, Loader2, CreditCard, Smartphone, Edit2, Save, X } from 'lucide-react';
+import { Plus, Trash2, CheckCircle2, DollarSign, Wallet2, FileText, ArrowDownLeft, ArrowUpRight, Check, AlertCircle, TrendingUp, Download, AlertTriangle, ClipboardList, Sparkles, Coins, Loader2, CreditCard, Smartphone, Edit2, Save, X, Lock, ShieldCheck } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { ApeeExpense, ApeeSettings, ApeeParent, ApeeOtherRevenue } from '../../types';
 import { getApeeShortName } from '../../utils/apeeDb';
@@ -18,6 +18,8 @@ interface ApeeFinancialProps {
   settings: ApeeSettings;
   parents?: ApeeParent[];
   otherRevenues?: ApeeOtherRevenue[];
+  initialView?: 'journal' | 'generator' | 'analysis' | 'rentability';
+  defaultShowPortalPay?: boolean;
 }
 
 export default function ApeeFinancial({ 
@@ -27,7 +29,9 @@ export default function ApeeFinancial({
   totalRevenue, 
   settings,
   parents = [],
-  otherRevenues = []
+  otherRevenues = [],
+  initialView = 'journal',
+  defaultShowPortalPay = false
 }: ApeeFinancialProps) {
   const { language } = useLanguage();
   const isEn = language === 'en';
@@ -74,10 +78,19 @@ export default function ApeeFinancial({
 
   // Active filter tab
   const [activeFilter, setActiveFilter] = useState<string>('all'); // 'all' | 'command' | 'payment-order' | 'refund'
-  const [activeView, setActiveView] = useState<'journal' | 'generator' | 'analysis' | 'rentability'>('journal');
+  const [activeView, setActiveView] = useState<'journal' | 'generator' | 'analysis' | 'rentability'>(initialView);
 
   // Portal billing checkout states
-  const [showPortalPay, setShowPortalPay] = useState(false);
+  const [showPortalPay, setShowPortalPay] = useState(defaultShowPortalPay);
+
+  useEffect(() => {
+    if (initialView) {
+      setActiveView(initialView);
+    }
+    if (defaultShowPortalPay) {
+      setShowPortalPay(true);
+    }
+  }, [initialView, defaultShowPortalPay]);
   const [portalPayMethod, setPortalPayMethod] = useState<'momo' | 'card'>('momo');
   const [portalMomoProvider, setPortalMomoProvider] = useState<'mtn' | 'orange'>('mtn');
   const [portalPayAmount, setPortalPayAmount] = useState<string>('');
@@ -994,48 +1007,43 @@ export default function ApeeFinancial({
         </div>
       </div>
 
-      {/* Navigation subtabs for Caisse vs Blank Form Generator vs Budget Analysis */}
-      <div className="flex bg-slate-100 p-1 rounded-2xl max-w-xl border select-none">
+      {/* Top Banner: Frais de Système & Campay Direct */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-purple-950 border border-indigo-500/30 text-white rounded-3xl p-4.5 md:p-5 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4" id="banner-apee-system-fees">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-2xl bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 shrink-0">
+            <Coins className="h-5 w-5 text-amber-400" />
+          </div>
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-black uppercase tracking-wider text-white">
+                Frais de Système & Licence ENT (1% Campay)
+              </span>
+              <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                Passerelle Directe Active
+              </span>
+            </div>
+            <p className="text-xs text-slate-300">
+              Réglez en direct la redevance d'exploitation trimestrielle ou vos frais de système via Campay Mobile Money (MTN MoMo & Orange Money).
+            </p>
+          </div>
+        </div>
         <button
           type="button"
-          onClick={() => setActiveView('journal')}
-          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
-            activeView === 'journal'
-              ? 'bg-white text-slate-900 shadow-sm ring-1 ring-black/5'
-              : 'text-slate-500 hover:text-slate-800'
-          }`}
+          onClick={() => {
+            setActiveView('rentability');
+            setShowPortalPay(true);
+            setPortalPayStep('form');
+          }}
+          className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black rounded-xl shadow-md transition flex items-center justify-center gap-2 shrink-0 cursor-pointer active:scale-98"
+          id="btn-open-system-fees-campay"
         >
-          <Wallet2 className="h-4 w-4 text-indigo-605" />
-          {isEn ? "Ledger & Budget" : "Journal & Budget de Caisse"}
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveView('generator')}
-          className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
-            activeView === 'generator'
-              ? 'bg-white text-slate-900 shadow-sm ring-1 ring-black/5'
-              : 'text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <ClipboardList className="h-4 w-4 text-emerald-650" />
-          {isEn ? "Blank Forms" : "Formulaires Vierges"} <span className="bg-emerald-100 text-emerald-800 text-[9px] px-1.5 py-0.5 rounded-md font-black">{isEn ? "New" : "Nouveau"}</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveView('analysis')}
-          className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
-            activeView === 'analysis'
-              ? 'bg-white text-slate-900 shadow-sm ring-1 ring-black/5'
-              : 'text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <TrendingUp className="h-4 w-4 text-amber-600" />
-          {isEn ? "Budget Analysis" : "Analyse Budgétaire"}
+          <Smartphone className="h-4 w-4 text-emerald-400" />
+          <span>Formulaire de Paiement Campay (Frais de Système)</span>
         </button>
       </div>
 
       {/* Navigation subtabs for Caisse vs Blank Form Generator vs Budget Analysis vs Mixed Monetization Model */}
-      <div className="flex bg-slate-100 p-1 rounded-2xl max-w-3xl border select-none overflow-x-auto no-scrollbar">
+      <div className="flex bg-slate-100 p-1 rounded-2xl max-w-4xl border select-none overflow-x-auto no-scrollbar">
         <button
           type="button"
           onClick={() => setActiveView('journal')}
@@ -1074,15 +1082,19 @@ export default function ApeeFinancial({
         </button>
         <button
           type="button"
-          onClick={() => setActiveView('rentability')}
+          onClick={() => {
+            setActiveView('rentability');
+            setShowPortalPay(true);
+          }}
           className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${
             activeView === 'rentability'
               ? 'bg-white text-slate-900 shadow-sm ring-1 ring-black/5'
               : 'text-slate-500 hover:text-slate-800'
           }`}
+          id="tab-system-fees-campay"
         >
-          <Sparkles className="h-4 w-4 text-purple-600 animate-pulse" />
-          {isEn ? "Mixed Monetization Model" : "Modèle de Rentabilité (1%)"}
+          <Smartphone className="h-4 w-4 text-emerald-500" />
+          <span>{isEn ? "System Fees & Campay (1%)" : "💳 Frais de Système & Campay (1%)"}</span>
         </button>
       </div>
 
@@ -1188,18 +1200,19 @@ export default function ApeeFinancial({
                             )}
                           </div>
 
-                          {hasRemaining && !showPortalPay && (
-                            <button
-                              onClick={() => {
-                                setPortalPayAmount(remainingAmt.toString());
-                                setShowPortalPay(true);
-                                setPortalPayStep('form');
-                              }}
-                              className="w-full mt-2 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition shadow-sm cursor-pointer"
-                            >
-                              S'acquitter de la redevance
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPortalPayAmount(remainingAmt > 0 ? remainingAmt.toString() : '25000');
+                              setShowPortalPay(true);
+                              setPortalPayStep('form');
+                            }}
+                            className="w-full mt-2.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition shadow-sm cursor-pointer flex items-center justify-center gap-2 active:scale-98"
+                            id="btn-pay-portal-fee-left"
+                          >
+                            <Smartphone className="h-4 w-4" />
+                            <span>{hasRemaining ? "S'acquitter de la redevance via Campay" : "Payer les Frais de Système via Campay"}</span>
+                          </button>
                         </div>
                       );
                     })()}
@@ -1408,14 +1421,39 @@ export default function ApeeFinancial({
                           )}
 
                           {/* Amount Input */}
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-black text-slate-500 uppercase">Montant à régler (FCFA)</label>
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[10px] font-black text-slate-500 uppercase">
+                                Montant des Frais de Système (FCFA) <span className="text-red-500">*</span>
+                              </label>
+                            </div>
                             <input
                               type="number"
+                              min="100"
+                              required
                               value={portalPayAmount}
                               onChange={(e) => setPortalPayAmount(e.target.value)}
-                              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-extrabold font-mono focus:outline-indigo-500 text-slate-800"
+                              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black font-mono focus:outline-indigo-500 text-slate-800"
+                              placeholder="25000"
                             />
+                            {/* Preset chips */}
+                            <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                              <span className="text-[9.5px] font-bold text-slate-400">Montants suggérés :</span>
+                              {[10000, 25000, 50000, 100000].map((amt) => (
+                                <button
+                                  key={amt}
+                                  type="button"
+                                  onClick={() => setPortalPayAmount(amt.toString())}
+                                  className={`px-2 py-0.5 rounded-lg text-[10px] font-bold font-mono transition cursor-pointer ${
+                                    portalPayAmount === amt.toString()
+                                      ? 'bg-indigo-600 text-white shadow-xs'
+                                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
+                                  }`}
+                                >
+                                  {amt.toLocaleString()} F
+                                </button>
+                              ))}
+                            </div>
                           </div>
 
                           {portalPayError && (
