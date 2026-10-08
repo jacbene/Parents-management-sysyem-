@@ -3581,6 +3581,34 @@ export default function App() {
                   </div>
                 </div>
                 
+                {/* Direct quick action buttons for Campay Payment */}
+                {portalUserRole === 'parent' ? (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('billing')}
+                    className="p-1.5 md:px-3 md:py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[10.5px] font-black rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs shrink-0 active:scale-98"
+                    title="Payer les frais de scolarité via Campay Mobile Money"
+                    id="header-btn-parent-campay"
+                  >
+                    <Smartphone className="h-3.5 w-3.5 text-white" />
+                    <span className="hidden md:inline">Paiement Scolarité (Campay)</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setApeeFinancialInitialView('rentability');
+                      setActiveTab('apee_finance');
+                    }}
+                    className="p-1.5 md:px-3 md:py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[10.5px] font-black rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs shrink-0 active:scale-98"
+                    title="Formulaire de règlement des frais de système (Campay 1%)"
+                    id="header-btn-admin-campay"
+                  >
+                    <Smartphone className="h-3.5 w-3.5 text-white" />
+                    <span className="hidden md:inline">Frais Système Campay (1%)</span>
+                  </button>
+                )}
+
                 {showSuperAdminButton && (
                   <button
                     type="button"
@@ -4165,11 +4193,22 @@ export default function App() {
                         </h3>
                         <button
                           onClick={() => setActiveTab('billing')}
-                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
-                            activeTab === 'billing' ? 'bg-indigo-600 text-white shadow-xs' : 'text-gray-650 hover:bg-slate-50'
+                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-black cursor-pointer transition ${
+                            activeTab === 'billing'
+                              ? 'bg-emerald-600 text-white shadow-md'
+                              : 'text-emerald-950 bg-emerald-50/70 hover:bg-emerald-100/70 border border-emerald-200/80'
                           }`}
+                          id="btn-sidebar-parent-campay"
                         >
-                          <span className="flex items-center gap-2"><Landmark className="h-4 w-4" /> {t('tab.billing')}</span>
+                          <span className="flex items-center gap-2">
+                            <Smartphone className="h-4 w-4 text-emerald-500" />
+                            <span>Paiement Scolarité (Campay)</span>
+                          </span>
+                          <span className={`px-1.5 py-0.5 text-[8.5px] font-black uppercase rounded ${
+                            activeTab === 'billing' ? 'bg-white text-emerald-800' : 'bg-emerald-200 text-emerald-900'
+                          }`}>
+                            MoMo
+                          </span>
                         </button>
                       </>
                     )}
@@ -4277,11 +4316,14 @@ export default function App() {
                         onClick={() => setActiveTab('billing')}
                         className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
                           activeTab === 'billing'
-                            ? 'bg-slate-900 text-white'
+                            ? 'bg-emerald-700 text-white shadow-xs'
                             : 'text-gray-650 hover:bg-slate-50'
                         }`}
                       >
-                        <span className="flex items-center gap-2"><Landmark className="h-4 w-4" /> {t('tab.billing')}</span>
+                        <span className="flex items-center gap-2">
+                          <Smartphone className="h-4 w-4 text-emerald-500" />
+                          <span>Paiement Scolarité & Campay</span>
+                        </span>
                         {unpaidInvoiceCount > 0 && <span className="bg-red-100 text-red-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full">{unpaidInvoiceCount}</span>}
                       </button>
                     )}

@@ -1267,13 +1267,64 @@ export default function ApeeFinancial({
 
                 {/* Interactive calculator OR secure checkout gateway */}
                 <div className="lg:col-span-2 bg-white border border-slate-200 rounded-3xl p-5 space-y-4.5">
+                  {/* Panel Mode Switcher: Formulaire Campay vs Simulateur */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                    <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowPortalPay(true);
+                          setPortalPayStep('form');
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-black transition flex items-center gap-1.5 cursor-pointer ${
+                          showPortalPay
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                        id="btn-subtab-campay-form"
+                      >
+                        <Smartphone className="h-3.5 w-3.5" />
+                        <span>Formulaire Campay (Frais Système)</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowPortalPay(false)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                          !showPortalPay
+                            ? 'bg-slate-900 text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                        id="btn-subtab-simulator"
+                      >
+                        <TrendingUp className="h-3.5 w-3.5" />
+                        <span>Simulateur & Modèle 1%</span>
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-emerald-500/10 text-emerald-700 border border-emerald-500/20">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        Campay Direct
+                      </span>
+                    </div>
+                  </div>
+
                   {showPortalPay ? (
                     <div className="space-y-4">
                       {/* Secure Checkout Header */}
                       <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                        <div className="flex items-center gap-1.5">
-                          <Smartphone className="h-4 w-4 text-indigo-600" />
-                          <span className="text-slate-800 font-extrabold text-xs">Règlement Sécurisé de la Redevance</span>
+                        <div className="flex items-center gap-2">
+                          <div className="p-2 bg-emerald-100 text-emerald-800 rounded-xl">
+                            <Smartphone className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <span className="text-slate-900 font-black text-xs block">
+                              Formulaire de Paiement Campay — Frais de Système & Licence (1%)
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-medium">
+                              Règlement officiel via MTN Mobile Money & Orange Money Cameroun (+237)
+                            </span>
+                          </div>
                         </div>
                         {portalPayStep === 'form' && (
                           <button 
@@ -1281,9 +1332,9 @@ export default function ApeeFinancial({
                               setShowPortalPay(false);
                               setPortalPayError(null);
                             }} 
-                            className="text-[10px] text-slate-450 hover:text-slate-600 font-black flex items-center gap-0.5"
+                            className="text-[10px] text-slate-450 hover:text-slate-600 font-bold flex items-center gap-0.5"
                           >
-                            ← Annuler / Retour
+                            Simulateur →
                           </button>
                         )}
                       </div>
@@ -1471,9 +1522,11 @@ export default function ApeeFinancial({
 
                           <button
                             type="submit"
-                            className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl transition shadow cursor-pointer"
+                            className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl transition shadow-md cursor-pointer flex items-center justify-center gap-2 active:scale-98"
+                            id="btn-submit-campay-portal-fee"
                           >
-                            Procéder au règlement ({Number(portalPayAmount || 0).toLocaleString()} FCFA)
+                            <Smartphone className="h-4 w-4" />
+                            <span>Payer {Number(portalPayAmount || 0).toLocaleString()} FCFA via Campay Mobile Money</span>
                           </button>
                         </form>
                       )}
@@ -1678,6 +1731,31 @@ export default function ApeeFinancial({
                           <li><strong>Pour les petites structures :</strong> Si vous n'encaissez que 3M FCFA, vous ne payez que 30 000 FCFA à la plateforme sur toute l'année. Aucun risque financier, pas de barrière à la digitalisation.</li>
                           <li><strong>Pour les grandes structures :</strong> Pour un volume de 50M FCFA, les frais de 1% (500 000 FCFA) garantissent l'infrastructure multi-serveurs redondée de niveau entreprise pour supporter la charge d'accès et les rapports en continu.</li>
                         </ul>
+                      </div>
+
+                      {/* Prominent CTA to switch to Campay form */}
+                      <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-indigo-50 border border-emerald-200/80 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-2xs">
+                        <div>
+                          <div className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                            <Smartphone className="h-4 w-4 text-emerald-600" />
+                            <span>Paiement Direct de la Redevance Système</span>
+                          </div>
+                          <p className="text-[10.5px] text-slate-500 mt-0.5">
+                            Réglez en direct via MTN MoMo ou Orange Money (Passerelle Campay).
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowPortalPay(true);
+                            setPortalPayStep('form');
+                          }}
+                          className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition shadow-sm flex items-center gap-2 cursor-pointer shrink-0 active:scale-98"
+                          id="btn-simulator-open-campay"
+                        >
+                          <Smartphone className="h-4 w-4" />
+                          <span>Ouvrir Formulaire Campay</span>
+                        </button>
                       </div>
                     </>
                   )}
