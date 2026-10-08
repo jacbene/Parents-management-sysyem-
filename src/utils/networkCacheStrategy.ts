@@ -53,10 +53,20 @@ export function applyPendingActionsToNetworkList<T extends { id: string }>(
     }
   }
 
+  const isTargetDeleted = (id: string) => {
+    if (deleteIds.has(id)) return true;
+    for (const did of deleteIds) {
+      if (did === id || did.startsWith(`${id}_`) || id.startsWith(`${did}_`)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   // 1. Remove deleted items & apply updates to authoritative network list
   const result: T[] = [];
   for (const item of networkList) {
-    if (deleteIds.has(item.id)) continue;
+    if (isTargetDeleted(item.id)) continue;
     if (updateMap.has(item.id)) {
       result.push({ ...item, ...updateMap.get(item.id) });
     } else {

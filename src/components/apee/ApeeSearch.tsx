@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, UserCheck, MessageSquare, Edit2, Trash2, Printer, X, Phone, MapPin, Tag, Calendar, AlertTriangle, ChevronRight, Notebook, Download, Bell, Copy, Check, ExternalLink, Mail } from 'lucide-react';
+import { Search, UserCheck, MessageSquare, Edit2, Trash2, Printer, X, Phone, MapPin, Tag, Calendar, AlertTriangle, ChevronRight, Notebook, Download, Bell, Copy, Check, CheckCircle, ExternalLink, Mail } from 'lucide-react';
 import { ApeeParent, ApeeStudentLink } from '../../types';
 import { getApeeShortName, calculateParentDebtBreakdown } from '../../utils/apeeDb';
 import { jsPDF } from 'jspdf';
@@ -24,6 +24,7 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
   const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [parentToDeleteId, setParentToDeleteId] = useState<string | null>(null);
+  const [deleteSuccessMsg, setDeleteSuccessMsg] = useState<string | null>(null);
 
   // Reminder states & logic
   const [reminderParent, setReminderParent] = useState<ApeeParent | null>(null);
@@ -424,6 +425,22 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
         </p>
       </div>
 
+      {deleteSuccessMsg && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs px-4 py-3 rounded-2xl flex items-center justify-between shadow-xs animate-in fade-in">
+          <div className="flex items-center gap-2 font-semibold">
+            <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0" />
+            <span>{deleteSuccessMsg}</span>
+          </div>
+          <button 
+            type="button" 
+            onClick={() => setDeleteSuccessMsg(null)} 
+            className="text-emerald-700 hover:text-emerald-900 font-bold px-2 py-0.5 rounded cursor-pointer"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Filter and input controls */}
       <div className="bg-slate-50/50 border border-slate-100 rounded-2xl p-4 md:p-5 space-y-4">
         
@@ -570,6 +587,21 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
                         {settings?.currency || 'FCFA'}
                       </div>
                     </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteClick(parent.id);
+                      }}
+                      className={`p-1.5 rounded-lg border transition select-none cursor-pointer ${
+                        selectedParentId === parent.id
+                          ? 'bg-red-800 text-red-100 border-red-700 hover:bg-red-700'
+                          : 'text-slate-400 hover:text-red-600 hover:bg-red-50 border-transparent hover:border-red-200'
+                      }`}
+                      title="Supprimer définitivement ce dossier parent"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                     <ChevronRight className="h-4 w-4 text-gray-400" />
                   </div>
                 </div>
@@ -885,6 +917,8 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
                           setSelectedParentId(null);
                         }
                         setParentToDeleteId(null);
+                        setDeleteSuccessMsg("Le dossier du parent d'élève a été définitivement supprimé et effacé du système.");
+                        setTimeout(() => setDeleteSuccessMsg(null), 6000);
                       }
                     } catch (err) {
                       console.error("Erreur de suppression du parent d'élève:", err);

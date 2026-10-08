@@ -18,6 +18,9 @@ import {
   saveApeeSettings,
   saveApeeParent,
   deleteApeeParent,
+  markApeeParentDeleted,
+  isApeeParentDeleted,
+  getScopedApeeDocId,
   saveApeeExpense,
   deleteApeeExpense,
   saveApeeOtherRevenue,
@@ -1605,29 +1608,40 @@ export default function App() {
           window.location.hostname.includes('pasma-app')
         );
 
-        // Ensure Bene Jacques exists in Firestore under demo_school_ekali if not present
+        // Soft-seed initial demo record for Bene Jacques ONLY ONCE if not previously deleted by the user
         if (!isPreprod) {
           try {
-            const beneDocRef = doc(db, 'invoices', 'apee_par_bene_jacques');
-            const snap = await getDoc(beneDocRef);
-            if (!snap.exists()) {
-              await setDoc(beneDocRef, {
-                id: 'apee_par_bene_jacques',
-                studentId: 'apee_ces_ekali_1',
-                parentId: 'demo_school_ekali',
-                title: 'Bene Jacques',
-                phone: '687463313',
-                email: 'jacquesbene301@gmail.com',
-                amount: 25000,
-                dueDate: '2025/2026',
-                status: 'Unpaid',
-                paymentDate: new Date().toISOString(),
-                note: 'Règlement initial pour la rentrée scolaire de Marc et Elise',
-                amountPaid: 15000,
-                studentsList: JSON.stringify([{ name: 'Marc Bene', classRoom: 'CM2-A' }, { name: 'Elise Bene', classRoom: 'CE2-B' }]),
-                paymentsHistory: JSON.stringify([{ id: 'p_bene_1', amount: 15000, date: '2026-05-10', note: 'Versement initial par Mobile Money', method: 'Orange Money' }])
-              });
-              console.log("Successfully seeded Bene Jacques into Firestore invoices.");
+            const isBeneDeleted = 
+              isApeeParentDeleted('demo_school_ekali', 'apee_par_bene_jacques') ||
+              isApeeParentDeleted(userId, 'apee_par_bene_jacques') ||
+              localStorage.getItem('pasma_bene_jacques_deleted') === 'true';
+
+            if (!isBeneDeleted) {
+              const beneSeededFlag = localStorage.getItem('pasma_bene_jacques_seeded');
+              if (!beneSeededFlag) {
+                const beneDocRef = doc(db, 'invoices', 'apee_par_bene_jacques');
+                const snap = await getDoc(beneDocRef);
+                if (!snap.exists()) {
+                  await setDoc(beneDocRef, {
+                    id: 'apee_par_bene_jacques',
+                    studentId: 'apee_ces_ekali_1',
+                    parentId: 'demo_school_ekali',
+                    title: 'Bene Jacques',
+                    phone: '687463313',
+                    email: 'jacquesbene301@gmail.com',
+                    amount: 25000,
+                    dueDate: '2025/2026',
+                    status: 'Unpaid',
+                    paymentDate: new Date().toISOString(),
+                    note: 'Règlement initial pour la rentrée scolaire de Marc et Elise',
+                    amountPaid: 15000,
+                    studentsList: JSON.stringify([{ name: 'Marc Bene', classRoom: 'CM2-A' }, { name: 'Elise Bene', classRoom: 'CE2-B' }]),
+                    paymentsHistory: JSON.stringify([{ id: 'p_bene_1', amount: 15000, date: '2026-05-10', note: 'Versement initial par Mobile Money', method: 'Orange Money' }])
+                  });
+                  console.log("Successfully seeded Bene Jacques into Firestore invoices.");
+                }
+                localStorage.setItem('pasma_bene_jacques_seeded', 'true');
+              }
             }
           } catch (beneErr) {
             console.warn("Soft seeding of Bene Jacques on load skipped or offline:", beneErr);
@@ -1810,8 +1824,11 @@ export default function App() {
               onSnapshot(
                 query(collection(db, 'invoices'), where('parentId', '==', userId)),
                 (snapshot) => {
-                  const dbList = snapshot.docs.map(doc => doc.data() as Invoice);
-                  const finalList = applyPendingActionsToNetworkList(dbList, 'invoices');
+                  const dbList = snapshot.docs
+                    .map(doc => doc.data() as Invoice)
+                    .filter(inv => !isApeeParentDeleted(userId, inv.id));
+                  const finalList = applyPendingActionsToNetworkList(dbList, 'invoices')
+                    .filter(inv => !isApeeParentDeleted(userId, inv.id));
                   setInvoices(finalList);
                   saveToLocalRefuge(`pasma_invoices_${userId}`, finalList);
                 },
@@ -1932,7 +1949,10 @@ export default function App() {
       if (cachedHomeworks) setHomeworks(JSON.parse(cachedHomeworks));
       if (cachedAppointments) setAppointments(JSON.parse(cachedAppointments));
       if (cachedMessages) setMessages(JSON.parse(cachedMessages));
-      if (cachedInvoices) setInvoices(JSON.parse(cachedInvoices));
+      if (cachedInvoices) {
+        const parsedInvs: Invoice[] = JSON.parse(cachedInvoices);
+        setInvoices(parsedInvs.filter(inv => !isApeeParentDeleted(uid, inv.id)));
+      }
       if (cachedAnnouncements) setAnnouncements(JSON.parse(cachedAnnouncements));
       if (cachedLessons) setLessons(JSON.parse(cachedLessons));
     } catch (e) {
@@ -2014,7 +2034,9 @@ export default function App() {
         loadedAnyFromDb = true;
       }
       if (invoiceSnapshot !== null) {
-        const list = invoiceSnapshot.empty ? [] : invoiceSnapshot.docs.map(doc => doc.data() as Invoice);
+        const list = invoiceSnapshot.empty ? [] : invoiceSnapshot.docs
+          .map(doc => doc.data() as Invoice)
+          .filter(inv => !isApeeParentDeleted(uid, inv.id));
         setInvoices(list);
         localStorage.setItem(`pasma_invoices_${uid}`, JSON.stringify(list));
         loadedAnyFromDb = true;
@@ -2733,6 +2755,16 @@ export default function App() {
     if (activeParentToEdit?.id === id) {
       setActiveParentToEdit(null);
     }
+
+    // 1. Mark in permanent tombstone so it NEVER returns upon reload
+    if (userId) markApeeParentDeleted(userId, id);
+    if (selectedSchoolId) markApeeParentDeleted(selectedSchoolId, id);
+    markApeeParentDeleted('demo_school_ekali', id);
+    if (id.includes('bene_jacques') || id.includes('bene')) {
+      try {
+        localStorage.setItem('pasma_bene_jacques_deleted', 'true');
+      } catch (e) {}
+    }
     
     if (userId) {
       try {
@@ -2774,15 +2806,46 @@ export default function App() {
       
       try {
         await deleteApeeParent(userId, id);
+        if (selectedSchoolId && selectedSchoolId !== userId) {
+          await deleteApeeParent(selectedSchoolId, id);
+        }
       } catch (err) {
         console.warn("Failed to delete parent document from database:", err);
       }
     }
 
     // Always synchronize local state so the UI updates beautifully even on database sync quirks
-    setApeeParents(prev => prev.filter(p => p.id !== id));
+    setApeeParents(prev => prev.filter(p => p.id !== id && !p.id.startsWith(`${id}_`) && !id.startsWith(`${p.id}_`)));
     setStudents(prev => prev.filter(s => !s.id.startsWith(`stu_${id}_`)));
-    setInvoices(prev => prev.filter(inv => inv.id !== id));
+    setInvoices(prev => prev.filter(inv => inv.id !== id && !inv.id.startsWith(`${id}_`) && !id.startsWith(`${inv.id}_`)));
+
+    // Synchronize local storage caches across all potential school spaces
+    try {
+      const uids = Array.from(new Set([userId, selectedSchoolId, 'demo_school_ekali'].filter(Boolean) as string[]));
+      for (const u of uids) {
+        const invKey = `pasma_invoices_${u}`;
+        const rawInvs = localStorage.getItem(invKey);
+        if (rawInvs) {
+          const invList: Invoice[] = JSON.parse(rawInvs);
+          localStorage.setItem(invKey, JSON.stringify(invList.filter(inv => inv.id !== id && !inv.id.startsWith(`${id}_`) && !id.startsWith(`${inv.id}_`))));
+        }
+        const bKey = `backup_invoices_${u}`;
+        const rawB = localStorage.getItem(bKey);
+        if (rawB) {
+          const bList: Invoice[] = JSON.parse(rawB);
+          localStorage.setItem(bKey, JSON.stringify(bList.filter(inv => inv.id !== id && !inv.id.startsWith(`${id}_`) && !id.startsWith(`${inv.id}_`))));
+        }
+        const stuKey = `pasma_students_${u}`;
+        const rawStu = localStorage.getItem(stuKey);
+        if (rawStu) {
+          const sList: Student[] = JSON.parse(rawStu);
+          localStorage.setItem(stuKey, JSON.stringify(sList.filter(s => !s.id.startsWith(`stu_${id}_`))));
+        }
+      }
+    } catch (e) {
+      console.warn("Storage sync error on parent delete:", e);
+    }
+
     return true;
   };
 

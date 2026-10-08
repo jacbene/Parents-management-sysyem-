@@ -89,13 +89,71 @@ export function getApeeShortName(settings?: { associationName?: string; shortNam
 /**
  * Ensures document IDs are unique per parent/tenant to prevent Firestore permission and collision issues
  */
-function getScopedApeeDocId(id: string, parentId: string): string {
+export function getScopedApeeDocId(id: string, parentId: string): string {
   if (!id) return id;
   if (!parentId) return id;
   if (id.includes(parentId) || id === 'apee_settings' || id.startsWith(parentId)) {
     return id;
   }
   return `${id}_${parentId}`;
+}
+
+const DELETED_PARENTS_KEY = 'pasma_deleted_apee_parents';
+
+/**
+ * Marks a parent record as definitively deleted in tombstone storage
+ */
+export function markApeeParentDeleted(parentId: string, id: string): void {
+  try {
+    if (typeof localStorage === 'undefined' || !parentId || !id) return;
+    const key = `${DELETED_PARENTS_KEY}_${parentId}`;
+    const raw = localStorage.getItem(key);
+    const list: string[] = raw ? JSON.parse(raw) : [];
+    if (!list.includes(id)) list.push(id);
+    const scopedId = getScopedApeeDocId(id, parentId);
+    if (!list.includes(scopedId)) list.push(scopedId);
+    localStorage.setItem(key, JSON.stringify(list));
+  } catch (e) {
+    console.warn("Failed to mark parent as deleted:", e);
+  }
+}
+
+/**
+ * Checks whether a parent record has been definitively deleted
+ */
+export function isApeeParentDeleted(parentId: string, id: string): boolean {
+  try {
+    if (typeof localStorage === 'undefined' || !parentId || !id) return false;
+    const key = `${DELETED_PARENTS_KEY}_${parentId}`;
+    const raw = localStorage.getItem(key);
+    if (!raw) return false;
+    const list: string[] = JSON.parse(raw);
+    const scopedId = getScopedApeeDocId(id, parentId);
+    return list.some(delId => 
+      delId === id || 
+      delId === scopedId || 
+      id.startsWith(`${delId}_`) || 
+      delId.startsWith(`${id}_`)
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Unmarks a parent record from tombstone storage if re-created or re-registered
+ */
+export function unmarkApeeParentDeleted(parentId: string, id: string): void {
+  try {
+    if (typeof localStorage === 'undefined' || !parentId || !id) return;
+    const key = `${DELETED_PARENTS_KEY}_${parentId}`;
+    const raw = localStorage.getItem(key);
+    if (!raw) return;
+    let list: string[] = JSON.parse(raw);
+    const scopedId = getScopedApeeDocId(id, parentId);
+    list = list.filter(delId => delId !== id && delId !== scopedId);
+    localStorage.setItem(key, JSON.stringify(list));
+  } catch (e) {}
 }
 
 /**
@@ -298,7 +356,7 @@ export async function fetchApeeData(parentId: string) {
     if (s) cachedSettings = JSON.parse(s);
 
     const p = localStorage.getItem(`${CACHE_PARENTS}_${parentId}`);
-    if (p) cachedParents = JSON.parse(p);
+    if (p) cachedParents = JSON.parse(p).filter((item: ApeeParent) => !isApeeParentDeleted(parentId, item.id));
 
     const e = localStorage.getItem(`${CACHE_EXPENSES}_${parentId}`);
     if (e) cachedExpenses = JSON.parse(e);
@@ -457,9 +515,20 @@ export async function fetchApeeData(parentId: string) {
     const dedupedOtherRevenues = Array.from(uniqueOther.values());
 
     // Network-First: The remote Firestore database is the authoritative real-time source.
-    // We only overlay un-synced offline actions (from pasma_pending_actions) that haven't been committed yet.
-    // Stale local cache items are not resurrected, but fresh network items refresh the local refuge.
-    const finalParents = applyPendingActionsToNetworkList(dedupedParents, 'invoices');
+    // Filter out any parents definitively deleted by the user and purge lingering remote documents
+    dedupedParents.forEach(p => {
+      if (isApeeParentDeleted(parentId, p.id)) {
+        const scopedId = getScopedApeeDocId(p.id, parentId);
+        deleteDoc(doc(db, 'invoices', scopedId)).catch(() => {});
+        if (scopedId !== p.id) {
+          deleteDoc(doc(db, 'invoices', p.id)).catch(() => {});
+        }
+      }
+    });
+
+    const nonDeletedParents = dedupedParents.filter(p => !isApeeParentDeleted(parentId, p.id));
+    const finalParents = applyPendingActionsToNetworkList(nonDeletedParents, 'invoices')
+      .filter(p => !isApeeParentDeleted(parentId, p.id));
     const finalExpenses = applyPendingActionsToNetworkList(dedupedExpenses, 'invoices');
     const finalLogs = applyPendingActionsToNetworkList(dedupedLogs, 'invoices');
     finalLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
@@ -645,6 +714,11 @@ export async function saveApeeSettings(parentId: string, settings: ApeeSettings)
  * Save Apee Parent registration
  */
 export async function saveApeeParent(parentId: string, parent: ApeeParent) {
+  // Unmark from deleted tombstone if parent is re-saved
+  if (parentId && parent.id) {
+    unmarkApeeParentDeleted(parentId, parent.id);
+  }
+
   // Update local storage cache
   try {
     const s = localStorage.getItem(`${CACHE_PARENTS}_${parentId}`);
@@ -684,28 +758,109 @@ export async function saveApeeParent(parentId: string, parent: ApeeParent) {
  * Delete Parent Record
  */
 export async function deleteApeeParent(parentId: string, id: string) {
+  if (!id) return;
+
+  // 1. Mark in permanent tombstone so it can NEVER resurrect on reload
+  markApeeParentDeleted(parentId, id);
+  if (id.includes('bene_jacques') || id.includes('bene')) {
+    try {
+      localStorage.setItem('pasma_bene_jacques_deleted', 'true');
+    } catch (e) {}
+  }
+
+  // 2. Remove from local storage parents cache
   try {
     const s = localStorage.getItem(`${CACHE_PARENTS}_${parentId}`);
     if (s) {
       let parents: ApeeParent[] = JSON.parse(s);
-      parents = parents.filter((p) => p.id !== id);
+      parents = parents.filter((p) => p.id !== id && !p.id.startsWith(`${id}_`) && !id.startsWith(`${p.id}_`));
       localStorage.setItem(`${CACHE_PARENTS}_${parentId}`, JSON.stringify(parents));
     }
   } catch (e) {
     console.error(e);
   }
 
+  // 3. Remove from pasma_invoices and backup_invoices caches
+  try {
+    const invCacheKey = `pasma_invoices_${parentId}`;
+    const invRaw = localStorage.getItem(invCacheKey);
+    if (invRaw) {
+      let invs: Invoice[] = JSON.parse(invRaw);
+      invs = invs.filter(inv => inv.id !== id && !inv.id.startsWith(`${id}_`) && !id.startsWith(`${inv.id}_`));
+      localStorage.setItem(invCacheKey, JSON.stringify(invs));
+    }
+    const bKey = `backup_invoices_${parentId}`;
+    const bRaw = localStorage.getItem(bKey);
+    if (bRaw) {
+      let bInvs: Invoice[] = JSON.parse(bRaw);
+      bInvs = bInvs.filter(inv => inv.id !== id && !inv.id.startsWith(`${id}_`) && !id.startsWith(`${inv.id}_`));
+      localStorage.setItem(bKey, JSON.stringify(bInvs));
+    }
+  } catch (e) {
+    console.warn("Local storage cache purge failed:", e);
+  }
+
+  // 4. Remove any queued UPDATE or CREATE actions for this parent
+  try {
+    const actionsRaw = localStorage.getItem('pasma_pending_actions');
+    if (actionsRaw) {
+      const actions: any[] = JSON.parse(actionsRaw);
+      const filtered = actions.filter((item: any) => 
+        !(item.collection === 'invoices' && (item.targetId === id || item.targetId.startsWith(`${id}_`) || id.startsWith(`${item.targetId}_`)))
+      );
+      localStorage.setItem('pasma_pending_actions', JSON.stringify(filtered));
+    }
+  } catch (e) {}
+
   if (!parentId) return;
 
   const scopedId = getScopedApeeDocId(id, parentId);
 
+  // 5. Always queue pending action for offline or sync
   if (isOffline()) {
     queuePendingAction('DELETE', 'invoices', scopedId, `Supprimer le parent : ${id}`);
+    if (scopedId !== id) {
+      queuePendingAction('DELETE', 'invoices', id, `Supprimer le parent : ${id}`);
+    }
     return;
   }
 
+  // 6. Delete from Firestore directly
   try {
-    await deleteDoc(doc(db, 'invoices', scopedId));
+    // Delete scopedId
+    await deleteDoc(doc(db, 'invoices', scopedId)).catch(() => {});
+    // Delete raw id if different
+    if (scopedId !== id) {
+      await deleteDoc(doc(db, 'invoices', id)).catch(() => {});
+    }
+
+    // Query Firestore to find and delete any matching invoice docs by parentId
+    try {
+      const q = query(collection(db, 'invoices'), where('parentId', '==', parentId));
+      const snap = await getDocs(q);
+      const docsToDelete: string[] = [];
+      snap.forEach(d => {
+        const data = d.data() as Invoice;
+        if (
+          d.id === id || 
+          d.id === scopedId || 
+          data.id === id || 
+          (id.includes('bene') && (d.id.includes('bene') || data.title?.toLowerCase().includes('bene')))
+        ) {
+          docsToDelete.push(d.id);
+        }
+      });
+      if (docsToDelete.length > 0) {
+        const batch = writeBatch(db);
+        docsToDelete.forEach(docId => {
+          batch.delete(doc(db, 'invoices', docId));
+        });
+        await batch.commit();
+      }
+    } catch (qErr) {
+      console.warn("Deep Firestore query cleanup warning:", qErr);
+    }
+
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('pasma_save_success', { detail: { title: `Supprimer le parent : ${id}` } }));
     }
@@ -1284,8 +1439,20 @@ export function subscribeApeeData(
       }
 
       // Network-First: The remote Firestore database snapshot is the authoritative real-time state.
-      // We only overlay un-synced offline actions (from pasma_pending_actions) that haven't been committed yet.
-      const finalParents = applyPendingActionsToNetworkList(dbParents, 'invoices');
+      // Purge any lingering remote items that were definitively deleted by the user
+      dbParents.forEach(p => {
+        if (isApeeParentDeleted(parentId, p.id)) {
+          const scopedId = getScopedApeeDocId(p.id, parentId);
+          deleteDoc(doc(db, 'invoices', scopedId)).catch(() => {});
+          if (scopedId !== p.id) {
+            deleteDoc(doc(db, 'invoices', p.id)).catch(() => {});
+          }
+        }
+      });
+
+      const nonDeletedParents = dbParents.filter(p => !isApeeParentDeleted(parentId, p.id));
+      const finalParents = applyPendingActionsToNetworkList(nonDeletedParents, 'invoices')
+        .filter(p => !isApeeParentDeleted(parentId, p.id));
       const finalExpenses = applyPendingActionsToNetworkList(dbExpenses, 'invoices');
       const finalLogs = applyPendingActionsToNetworkList(dbLogs, 'invoices');
       finalLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
@@ -1325,7 +1492,7 @@ export function subscribeApeeData(
         if (s) cachedSettings = JSON.parse(s);
 
         const p = localStorage.getItem(`${CACHE_PARENTS}_${parentId}`);
-        if (p) cachedParents = JSON.parse(p);
+        if (p) cachedParents = JSON.parse(p).filter((item: ApeeParent) => !isApeeParentDeleted(parentId, item.id));
 
         const e = localStorage.getItem(`${CACHE_EXPENSES}_${parentId}`);
         if (e) cachedExpenses = JSON.parse(e);
