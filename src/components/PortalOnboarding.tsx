@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { collection, doc, getDoc, getDocs, query, setDoc, writeBatch, where, onSnapshot } from 'firebase/firestore';
+import { collection, doc, DocumentData, getDoc, getDocs, query, Query, setDoc, writeBatch, where, onSnapshot } from 'firebase/firestore';
 import { db, auth, loginAnonymously } from '../firebase';
 import { logAuthError } from '../utils/authLogger';
 import { Landmark, Plus, CheckCircle, AlertOctagon, UserCheck, Phone, ShieldCheck, ArrowRight, X, User, HelpCircle, Mail, Smartphone, Key, RotateCw, Bell, Share2, Eye, EyeOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ApeeSettings, ApeeParent, Student, Grade, Homework, Attendance, Invoice, Establishment } from '../types';
-import { syncLocalSchoolsToFirestore, saveAndSyncEstablishment, getDeletedSchoolIds, fetchAndSyncDeletedSchoolIds, sanitizeFirestoreId, cleanPayload, DEFAULT_FALLBACK_SCHOOLS } from '../utils/schoolSync';
+import { syncLocalSchoolsToFirestore, saveAndSyncEstablishment, getDeletedSchoolIds, fetchAndSyncDeletedSchoolIds, sanitizeFirestoreId, cleanPayload, isDemoEstablishment } from '../utils/schoolSync';
 import { useLanguage } from '../utils/TranslationContext';
 
 
@@ -84,21 +84,17 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
 
   const [creatingSchool, setCreatingSchool] = useState(false);
 
-  // Helper to build reliable fallback school list if Firestore fails or has partial entries
+  // Use only this account's cached schools when Firestore is unavailable.
   const buildFallbackSchoolsList = (deletedSet: Set<string>): Establishment[] => {
     const merged: Establishment[] = [];
-    DEFAULT_FALLBACK_SCHOOLS.forEach(fb => {
-      if (!deletedSet.has(fb.id) && !deletedSet.has(sanitizeFirestoreId(fb.id))) {
-        merged.push(fb);
-      }
-    });
     try {
       const localEstsStr = localStorage.getItem('pasma_local_establishments');
       if (localEstsStr) {
         const localEsts = JSON.parse(localEstsStr);
+        const currentOwnerId = auth.currentUser?.uid;
         if (Array.isArray(localEsts)) {
           localEsts.forEach((le: any) => {
-            if (le && le.id && !deletedSet.has(le.id) && !deletedSet.has(sanitizeFirestoreId(le.id)) && !merged.some(m => m.id === le.id)) {
+            if (le && le.id && !isDemoEstablishment(le.id) && le.ownerId === currentOwnerId && !deletedSet.has(le.id) && !deletedSet.has(sanitizeFirestoreId(le.id)) && !merged.some(m => m.id === le.id)) {
               merged.push(le);
             }
           });
@@ -112,11 +108,12 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
 
   // Fetch establishments or bind real-time subscription
   useEffect(() => {
-    let unsubscribe: (() => void) | null = null;
+    const unsubscribers: Array<() => void> = [];
     let isMounted = true;
 
     const setupSchoolListener = async () => {
       setLoadingSchools(true);
+      setErrorMessage(null);
       try {
         // Ensure user is signed in to pass Firestore Security Rules (allow read: if isSignedIn())
         if (!auth.currentUser) {
@@ -137,48 +134,153 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
         // 2. First sync any cached local schools into Firestore
         await syncLocalSchoolsToFirestore();
 
-        // 3. Real-time subscription to establishments collection
-        const q = query(
-          collection(db, 'establishments'),
-          where('ownerId', '==', authenticatedUid)
-        );
-        unsubscribe = onSnapshot(q, (snapshot) => {
+        const schoolLists = new Map<string, Establishment[]>();
+        const publishSchools = () => {
           if (!isMounted) return;
-          const list: Establishment[] = [];
-          snapshot.forEach(docSnap => {
-            const data = docSnap.data();
-            const sanId = sanitizeFirestoreId(docSnap.id);
-            if (!data.isDeleted && !deletedSet.has(docSnap.id) && !deletedSet.has(sanId)) {
-              list.push({ id: docSnap.id, ...data } as Establishment);
-            }
-          });
-
-          // Network-First: The Firestore collection is the authoritative list of establishments.
-          // Fallback list is only used if Firestore returns no schools at all (initial setup) or for demo presets.
-          const finalList = list.length > 0 
-            ? list 
+          const networkSchools = new Map<string, Establishment>();
+          schoolLists.forEach(list => list.forEach(school => {
+            const existing = networkSchools.get(school.id);
+            networkSchools.set(school.id, existing ? { ...school, ...existing } : school);
+          }));
+          const fullSchoolList = Array.from(networkSchools.values());
+          const finalList = fullSchoolList.length > 0
+            ? fullSchoolList
             : buildFallbackSchoolsList(deletedSet);
 
-          // Update local cache refuge with fresh network establishments
+          // Shared manager records should not persist on a device used by multiple accounts.
           try {
-            localStorage.setItem('pasma_local_establishments', JSON.stringify(finalList));
+            const trustedSchools = Array.from(
+              new Map(
+                (schoolLists.get('owner') || []).map(school => [school.id, school])
+              ).values()
+            );
+            localStorage.setItem('pasma_local_establishments', JSON.stringify(trustedSchools));
           } catch (e) {
             console.warn('[PortalOnboarding] Failed to update local establishments refuge:', e);
           }
 
           setSchools(finalList);
           setLoadingSchools(false);
-        }, (err) => {
-          console.warn("[PortalOnboarding] Real-time establishments listener error (using local refuge fallback):", err);
-          if (isMounted) {
-            setSchools(buildFallbackSchoolsList(getDeletedSchoolIds()));
-            setLoadingSchools(false);
+        };
+
+        const subscribeToSchools = (source: string, q: Query<DocumentData>) => {
+          unsubscribers.push(onSnapshot(q, (snapshot) => {
+            schoolLists.set(source, snapshot.docs
+              .filter(docSnap => {
+                const data = docSnap.data();
+                const sanId = sanitizeFirestoreId(docSnap.id);
+                return !isDemoEstablishment(docSnap.id) && !data.isDeleted && !deletedSet.has(docSnap.id) && !deletedSet.has(sanId);
+              })
+              .map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Establishment)));
+            publishSchools();
+          }, (err) => {
+            console.warn(`[PortalOnboarding] ${source} establishments listener failed:`, err);
+            schoolLists.set(source, []);
+            publishSchools();
+          }));
+        };
+
+        subscribeToSchools('owner', query(
+          collection(db, 'establishments'),
+          where('ownerId', '==', authenticatedUid)
+        ));
+
+        // Parents need a safe school directory; owner and staff queries alone omit their schools.
+        schoolLists.set('directory', []);
+        const activeEmail = auth.currentUser?.email?.trim().toLowerCase() || '';
+        if (activeEmail) {
+          const idToken = await auth.currentUser?.getIdToken();
+          if (idToken) {
+            try {
+              const directoryResponse = await fetch('/api/establishments/directory', {
+                headers: { Authorization: `Bearer ${idToken}` }
+              });
+              const directoryResult = await directoryResponse.json();
+              if (!directoryResponse.ok || !directoryResult.success || !Array.isArray(directoryResult.schools)) {
+                throw new Error(directoryResult.error || "Impossible de charger la liste des établissements.");
+              }
+              schoolLists.set('directory', directoryResult.schools
+                .filter((school: any) => school?.id && school?.name && !isDemoEstablishment(school.id) && !deletedSet.has(school.id))
+                .map((school: any) => ({
+                  id: school.id,
+                  name: school.name,
+                  logoUrl: school.logoUrl || '',
+                  cotisationAmount: 0,
+                  financialGoal: 0,
+                  finManagerName: '',
+                  finManagerPhone: '',
+                  schoolYear: '',
+                  ownerId: '',
+                } as Establishment)));
+              publishSchools();
+            } catch (directoryError) {
+              console.error('[PortalOnboarding] Could not load establishment directory:', directoryError);
+              if (isMounted) {
+                setErrorMessage(directoryError instanceof Error
+                  ? directoryError.message
+                  : "Impossible de charger la liste des établissements.");
+              }
+            }
+
+            try {
+              const managerResponse = await fetch('/api/establishments/available-for-manager', {
+                headers: { Authorization: `Bearer ${idToken}` }
+              });
+              const managerResult = await managerResponse.json();
+              if (!managerResponse.ok || !managerResult.success || !Array.isArray(managerResult.schools)) {
+                throw new Error(managerResult.error || "Impossible de charger les établissements administratifs.");
+              }
+              schoolLists.set('manager', managerResult.schools
+                .filter((school: any) => school?.id && !isDemoEstablishment(school.id) && !deletedSet.has(school.id))
+                .map((school: any) => school as Establishment));
+              publishSchools();
+            } catch (managerError) {
+              console.error('[PortalOnboarding] Could not load manager establishments:', managerError);
+              if (isMounted) {
+                setErrorMessage(managerError instanceof Error
+                  ? managerError.message
+                  : "Impossible de charger les établissements administratifs.");
+              }
+            }
+
+            try {
+              const response = await fetch('/api/establishments/available-for-teacher', {
+                headers: { Authorization: `Bearer ${idToken}` }
+              });
+              const result = await response.json();
+              if (!response.ok || !result.success || !Array.isArray(result.schools)) {
+                throw new Error(result.error || "Impossible de charger les établissements des enseignants.");
+              }
+              const teacherSchools: Establishment[] = result.schools
+                .filter((school: any) => school?.id && school?.name && !isDemoEstablishment(school.id) && !deletedSet.has(school.id))
+                .map((school: any) => ({
+                  id: school.id,
+                  name: school.name,
+                  logoUrl: school.logoUrl || '',
+                  cotisationAmount: 0,
+                  financialGoal: 0,
+                  finManagerName: '',
+                  finManagerPhone: '',
+                  schoolYear: '',
+                  ownerId: '',
+                }));
+              schoolLists.set('teacher', teacherSchools);
+              publishSchools();
+            } catch (teacherError) {
+              console.error('[PortalOnboarding] Could not load teacher establishments:', teacherError);
+              if (isMounted) {
+                setErrorMessage(teacherError instanceof Error
+                  ? teacherError.message
+                  : "Impossible de charger les établissements des enseignants.");
+              }
+            }
           }
-        });
+        }
 
       } catch (err) {
-        console.warn("Could not setup establishments listener from Firestore:", err);
+        console.error("Could not setup establishments listener from Firestore:", err);
         if (isMounted) {
+          setErrorMessage(err instanceof Error ? err.message : "Impossible de charger les établissements.");
           setSchools(buildFallbackSchoolsList(getDeletedSchoolIds()));
           setLoadingSchools(false);
         }
@@ -189,9 +291,9 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
 
     return () => {
       isMounted = false;
-      if (unsubscribe) unsubscribe();
+      unsubscribers.forEach(unsubscribe => unsubscribe());
     };
-  }, [currentUserUid]);
+  }, [currentUserUid, currentUserEmail]);
 
   // Dynamically load teachers list from the school settings
   useEffect(() => {
@@ -206,6 +308,22 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
       }
       try {
         const docRef = doc(db, 'invoices', `${selectedSchoolId}_settings`);
+        if (auth.currentUser?.email) {
+          const idToken = await auth.currentUser.getIdToken();
+          const response = await fetch('/api/establishments/available-for-teacher', {
+            headers: { Authorization: `Bearer ${idToken}` }
+          });
+            const result = await response.json();
+            if (!response.ok || !result.success || !Array.isArray(result.schools)) {
+              throw new Error(result.error || "Impossible de charger les enseignants enregistrés.");
+            }
+            const school = result.schools.find((entry: any) => entry.id === selectedSchoolId);
+            if (school && Array.isArray(school.teachers)) {
+              setAvailableTeachers(school.teachers);
+              return;
+            }
+          }
+
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
           const data = docSnap.data();
@@ -218,23 +336,14 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
           }
         }
         
-        // Fallback for default schools
-        setAvailableTeachers([
-          { teacherName: 'M. Jean Picard', classRoom: 'Classe CM2-A de M. Picard', teacherEmail: 'jean.picard@pasma.sys', teacherPhone: '654053000' },
-          { teacherName: 'Mme Sophie Laurent', classRoom: 'Classe CE2-B de Mme Laurent', teacherEmail: 'sophie.laurent@pasma.sys', teacherPhone: '654053001' },
-          { teacherName: 'M. Aliou Diallo', classRoom: 'Classe CM1-A de M. Diallo', teacherEmail: 'aliou.diallo@pasma.sys', teacherPhone: '654053002' }
-        ]);
-      } catch (e) {
-        console.warn("Could not load setting teachers", e);
-        setAvailableTeachers([
-          { teacherName: 'M. Jean Picard', classRoom: 'Classe CM2-A de M. Picard', teacherEmail: 'jean.picard@pasma.sys', teacherPhone: '654053000' },
-          { teacherName: 'Mme Sophie Laurent', classRoom: 'Classe CE2-B de Mme Laurent', teacherEmail: 'sophie.laurent@pasma.sys', teacherPhone: '654053001' },
-          { teacherName: 'M. Aliou Diallo', classRoom: 'Classe CM1-A de M. Diallo', teacherEmail: 'aliou.diallo@pasma.sys', teacherPhone: '654053002' }
-        ]);
+        setAvailableTeachers([]);
+      } catch (error) {
+        console.error("Could not load registered teachers for this establishment:", error);
+        setAvailableTeachers([]);
       }
     };
     loadTeachers();
-  }, [selectedSchoolId, currentUserUid]);
+  }, [selectedSchoolId, currentUserUid, currentUserEmail]);
 
   // Quick preset loader helper
   const handleQuickPreset = (option: 'demo_school_ekali' | 'custom') => {
@@ -282,16 +391,6 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
 
       setVerifyingParent(true);
       try {
-        let currentUid = currentUserUid;
-        if (!currentUid) {
-          try {
-            currentUid = await onAutoLoginGuest();
-          } catch (authErr) {
-            console.warn("Firebase Anonymous auth is disabled or offline. Safe navigation fallback active.", authErr);
-            currentUid = `temp_mgr_${Date.now()}`;
-          }
-        }
-
         const schoolObj = schools.find(s => s.id === selectedSchoolId);
         if (!schoolObj) {
           setErrorMessage("Établissement non trouvé.");
@@ -348,33 +447,12 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
         }
 
         // 2. Corps Administratif Scolaire (Directeur, Surveillant Général, Intendant, etc.)
-        let isRegisteredManagerInDb = false;
-        if (schoolObj) {
-          if (
-            (schoolObj.finManagerEmail && schoolObj.finManagerEmail.toLowerCase().trim() === activeEmail) ||
-            (schoolObj.pedManagerEmail && schoolObj.pedManagerEmail.toLowerCase().trim() === activeEmail) ||
-            (schoolObj.ownerId && schoolObj.ownerId.toLowerCase().trim() === activeEmail)
-          ) {
-            isRegisteredManagerInDb = true;
-          }
-        }
-        if (!isRegisteredManagerInDb) {
-          try {
-            const userDoc = await getDoc(doc(db, 'users', activeEmail));
-            if (userDoc.exists()) {
-              const uData = userDoc.data();
-              if (uData.role === 'manager' || uData.role === 'admin' || uData.role === 'super_admin' || uData.role === 'director' || uData.role === 'intendant') {
-                isRegisteredManagerInDb = true;
-              }
-            }
-          } catch (e) {
-            console.warn("Firestore admin check error:", e);
-          }
-        }
-
-        if (!isRegisteredManagerInDb && (activeEmail.includes('admin') || activeEmail.includes('manager') || activeEmail.includes('director') || activeEmail.includes('ecole') || activeEmail.includes('surveillant') || activeEmail.includes('intendant'))) {
-          isRegisteredManagerInDb = true;
-        }
+        const isRegisteredManagerInDb =
+          (auth.currentUser?.uid === schoolObj.ownerId) ||
+          (schoolObj.managerEmails || []).some(email => email.toLowerCase().trim() === activeEmail) ||
+          schoolObj.directorEmail?.toLowerCase().trim() === activeEmail ||
+          schoolObj.finManagerEmail?.toLowerCase().trim() === activeEmail ||
+          schoolObj.pedManagerEmail?.toLowerCase().trim() === activeEmail;
 
         if (!isRegisteredManagerInDb && !isPortalSuperAdminOrDeputy) {
           setErrorMessage(`🔴 Adresse e-mail non enregistrée : L'adresse e-mail (${activeEmail}) n'est pas répertoriée dans la base de données comme membre du corps administratif autorisé pour cet établissement (${schoolObj.name}).`);
@@ -384,7 +462,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
 
         const expectedPassword = schoolObj.finManagerPassword || "1234";
         const expectedPedPassword = schoolObj.pedManagerPassword || "1234";
-        if (managerPassword !== expectedPassword && managerPassword !== expectedPedPassword && managerPassword !== "1234") {
+        if (managerPassword !== expectedPassword && managerPassword !== expectedPedPassword) {
           setErrorMessage("🔴 Code secret d'administration incorrect pour cet établissement.");
           setVerifyingParent(false);
           return;
@@ -417,16 +495,6 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
 
       setVerifyingParent(true);
       try {
-        let currentUid = currentUserUid;
-        if (!currentUid) {
-          try {
-            currentUid = await onAutoLoginGuest();
-          } catch (authErr) {
-            console.warn("Firebase Anonymous auth is disabled or offline. Safe navigation fallback active.", authErr);
-            currentUid = `temp_tchr_${Date.now()}`;
-          }
-        }
-
         const foundTeacher = availableTeachers.find(t => t.teacherName === selectedTeacherName);
         if (!foundTeacher) {
           setErrorMessage("Enseignant non trouvé dans cet établissement.");
@@ -435,26 +503,8 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
         }
 
         // Database Registration Check for Teacher
-        let isTeacherRegisteredInDb = false;
-        if (foundTeacher.teacherEmail && foundTeacher.teacherEmail.toLowerCase().trim() === activeEmail) {
-          isTeacherRegisteredInDb = true;
-        } else if (availableTeachers.some(t => t.teacherEmail && t.teacherEmail.toLowerCase().trim() === activeEmail)) {
-          isTeacherRegisteredInDb = true;
-        } else if (activeEmail.includes('teacher') || activeEmail.includes('enseignant') || activeEmail.includes('pasma.sys') || activeEmail === 'jacquesbene301@gmail.com') {
-          isTeacherRegisteredInDb = true;
-        } else {
-          try {
-            const userDoc = await getDoc(doc(db, 'users', activeEmail));
-            if (userDoc.exists()) {
-              const uData = userDoc.data();
-              if (uData.role === 'teacher' || uData.role === 'enseignant') {
-                isTeacherRegisteredInDb = true;
-              }
-            }
-          } catch (e) {
-            console.warn("Firestore teacher check error:", e);
-          }
-        }
+        const isTeacherRegisteredInDb =
+          foundTeacher.teacherEmail?.toLowerCase().trim() === activeEmail;
 
         if (!isTeacherRegisteredInDb) {
           setErrorMessage(`🔴 Adresse e-mail non enregistrée : L'adresse e-mail (${activeEmail}) ne correspond à aucun profil d'enseignant enregistré dans la base de données de cet établissement.`);

@@ -1684,7 +1684,16 @@ async function isFirebaseSuperAdmin(uid: string, email?: string) {
 async function canManageSchool(uid: string, email: string | undefined, schoolId: string) {
   if (await isFirebaseSuperAdmin(uid, email)) return true;
   const school = await getAdminDb().collection("establishments").doc(schoolId).get();
-  return school.exists && school.get("ownerId") === uid;
+  if (!school.exists) return false;
+  const data = school.data() || {};
+  const activeEmail = email?.trim().toLowerCase();
+  const registeredManagerEmails = [
+    ...(Array.isArray(data.managerEmails) ? data.managerEmails : []),
+    data.directorEmail,
+    data.finManagerEmail,
+    data.pedManagerEmail,
+  ].map((value: unknown) => String(value || "").trim().toLowerCase());
+  return data.ownerId === uid || Boolean(activeEmail && registeredManagerEmails.includes(activeEmail));
 }
 
 async function canManageInvoice(uid: string, email: string | undefined, invoiceData: any) {
@@ -1720,6 +1729,147 @@ async function requireFirebaseSuperAdmin(
 
   return next();
 }
+
+app.get("/api/establishments/available-for-teacher", async (req, res) => {
+  const firebaseUser = await getVerifiedFirebaseUser(req);
+  const email = firebaseUser?.email?.trim().toLowerCase();
+  if (!firebaseUser || !email) {
+    return res.status(401).json({ success: false, error: "Connexion avec une adresse e-mail requise." });
+  }
+
+  try {
+    const establishments = await getAdminDb()
+      .collection("establishments")
+      .where("teacherEmails", "array-contains", email)
+      .get();
+    const schools = [];
+
+    for (const establishment of establishments.docs) {
+      const data = establishment.data();
+      const teacherEmails = Array.isArray(data.teacherEmails)
+        ? data.teacherEmails.map((value: unknown) => String(value).trim().toLowerCase())
+        : [];
+      if (data.isDeleted || !teacherEmails.includes(email)) continue;
+
+      const settings = await getAdminDb()
+        .collection("invoices")
+        .doc(`${establishment.id}_settings`)
+        .get();
+      const serializedTeachers = settings.get("classTeachersList");
+      if (typeof serializedTeachers !== "string") continue;
+
+      let teachers: Array<Record<string, unknown>>;
+      try {
+        const parsed: unknown = JSON.parse(serializedTeachers);
+        if (!Array.isArray(parsed)) continue;
+        teachers = parsed.filter((teacher): teacher is Record<string, unknown> =>
+          Boolean(teacher) && typeof teacher === "object" && !Array.isArray(teacher)
+        );
+      } catch (error) {
+        console.warn(`[Portal] Invalid teacher roster for establishment ${establishment.id}:`, error);
+        continue;
+      }
+
+      const matchingTeachers = teachers.filter(
+        teacher => String(teacher.teacherEmail || "").trim().toLowerCase() === email
+      );
+      if (matchingTeachers.length === 0) continue;
+
+      schools.push({
+        id: establishment.id,
+        name: data.name || "Établissement",
+        logoUrl: data.logoUrl || "",
+        teachers: matchingTeachers.map(teacher => ({
+          teacherName: String(teacher.teacherName || ""),
+          classRoom: String(teacher.classRoom || ""),
+          teacherPhone: String(teacher.teacherPhone || ""),
+          teacherEmail: email
+        }))
+      });
+    }
+
+    return res.json({ success: true, schools });
+  } catch (error) {
+    console.error("[Portal] Could not load teacher establishment directory:", error);
+    return res.status(503).json({
+      success: false,
+      error: "La liste des établissements collaborateurs est temporairement indisponible."
+    });
+  }
+});
+
+app.get("/api/establishments/directory", async (req, res) => {
+  const firebaseUser = await getVerifiedFirebaseUser(req);
+  if (!firebaseUser?.email) {
+    return res.status(401).json({ success: false, error: "Connexion avec une adresse e-mail requise." });
+  }
+
+  try {
+    const establishments = await getAdminDb().collection("establishments").get();
+    const demoEstablishmentIds = new Set([
+      "demo_school_ekali",
+      "demo_school_vogt",
+      "demo_school_bilingue",
+    ]);
+    const schools = establishments.docs
+      .filter(establishment => {
+        const data = establishment.data();
+        return !demoEstablishmentIds.has(establishment.id) &&
+          !data.isDeleted &&
+          typeof data.name === "string" &&
+          data.name.trim().length > 0;
+      })
+      .map(establishment => {
+        const data = establishment.data();
+        return {
+          id: establishment.id,
+          name: data.name,
+          logoUrl: typeof data.logoUrl === "string" ? data.logoUrl : "",
+        };
+      })
+      .sort((left, right) => left.name.localeCompare(right.name, "fr"));
+
+    return res.json({ success: true, schools });
+  } catch (error) {
+    console.error("[Portal] Could not load establishment directory:", error);
+    return res.status(503).json({
+      success: false,
+      error: "La liste des établissements est temporairement indisponible."
+    });
+  }
+});
+
+app.get("/api/establishments/available-for-manager", async (req, res) => {
+  const firebaseUser = await getVerifiedFirebaseUser(req);
+  const email = firebaseUser?.email?.trim().toLowerCase();
+  if (!firebaseUser || !email) {
+    return res.status(401).json({ success: false, error: "Connexion avec une adresse e-mail requise." });
+  }
+
+  try {
+    const establishments = await getAdminDb().collection("establishments").get();
+    const schools = establishments.docs
+      .filter(establishment => {
+        const data = establishment.data();
+        const managerEmails = Array.isArray(data.managerEmails)
+          ? data.managerEmails.map((value: unknown) => String(value).trim().toLowerCase())
+          : [];
+        return !data.isDeleted && (
+          managerEmails.includes(email) ||
+          [data.directorEmail, data.finManagerEmail, data.pedManagerEmail]
+            .some(value => String(value || "").trim().toLowerCase() === email)
+        );
+      })
+      .map(establishment => ({ id: establishment.id, ...establishment.data() }));
+    return res.json({ success: true, schools });
+  } catch (error) {
+    console.error("[Portal] Could not load manager establishment directory:", error);
+    return res.status(503).json({
+      success: false,
+      error: "La liste des établissements administratifs est temporairement indisponible."
+    });
+  }
+});
 
 function referenceDocumentId(reference: string) {
   return crypto.createHash("sha256").update(reference).digest("hex");

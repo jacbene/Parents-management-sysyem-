@@ -1,4 +1,4 @@
-import { collection, doc, setDoc, updateDoc, deleteDoc, getDocs, query, where, writeBatch, onSnapshot } from 'firebase/firestore';
+import { collection, doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, query, where, writeBatch, onSnapshot } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType, isOffline, queuePendingAction } from '../firebase';
 import { ApeeParent, ApeeExpense, ApeeSettings, Invoice, ApeeActivityLog, ApeeOtherRevenue } from '../types';
 import { sanitizeFirestoreId } from './schoolSync';
@@ -691,15 +691,28 @@ export async function saveApeeSettings(parentId: string, settings: ApeeSettings)
   try {
     await setDoc(doc(db, 'invoices', `${parentId}_settings`), settingsInvoice);
 
-    // Sync establishment document if present
-    try {
-      const estDocRef = doc(db, 'establishments', sanitizeFirestoreId(parentId));
+    const estDocRef = doc(db, 'establishments', sanitizeFirestoreId(parentId));
+    const existingEstablishment = await getDoc(estDocRef);
+    if (existingEstablishment.exists()) {
+      const existingData = existingEstablishment.data();
+      const managerEmails = [
+        settings.directorEmail || '',
+        existingData.finManagerEmail || '',
+        existingData.pedManagerEmail || '',
+      ]
+        .flatMap(email => email.trim() ? [email.trim(), email.trim().toLowerCase()] : []);
+      const teacherEmails = (settings.classTeachers || [])
+        .flatMap(teacher => {
+          const email = teacher.teacherEmail?.trim() || '';
+          return email ? [email, email.toLowerCase()] : [];
+        });
       await updateDoc(estDocRef, {
         cotisationAmount: Number(settings.cotisationAmount),
         financialGoal: Number(settings.financialGoal),
+        directorEmail: settings.directorEmail?.trim().toLowerCase() || '',
+        managerEmails: [...new Set(managerEmails)],
+        teacherEmails: [...new Set(teacherEmails)],
       });
-    } catch (e) {
-      // ignore non-existent establishment or permission restriction
     }
 
     if (typeof window !== 'undefined') {
@@ -1047,6 +1060,28 @@ export async function importFullBackup(
       smsConfigList: JSON.stringify(finalSettings.smsConfig || {}),
       syncIntervalSeconds: finalSettings.syncIntervalSeconds || 30,
     });
+
+    const establishmentRef = doc(db, 'establishments', sanitizeFirestoreId(parentId));
+    const establishmentSnapshot = await getDoc(establishmentRef);
+    if (establishmentSnapshot.exists()) {
+      const existingData = establishmentSnapshot.data();
+      const managerEmails = [
+        finalSettings.directorEmail || '',
+        existingData.finManagerEmail || '',
+        existingData.pedManagerEmail || '',
+      ]
+        .flatMap(email => email.trim() ? [email.trim(), email.trim().toLowerCase()] : []);
+      const teacherEmails = (finalSettings.classTeachers || [])
+        .flatMap(teacher => {
+          const email = teacher.teacherEmail?.trim() || '';
+          return email ? [email, email.toLowerCase()] : [];
+        });
+      batch.set(establishmentRef, {
+        directorEmail: finalSettings.directorEmail?.trim().toLowerCase() || '',
+        managerEmails: [...new Set(managerEmails)],
+        teacherEmails: [...new Set(teacherEmails)],
+      }, { merge: true });
+    }
 
     // Write parents
     finalParents.forEach((p) => {
@@ -1624,5 +1659,3 @@ export async function syncAllApeeDataToFirestore(parentId: string): Promise<{ sy
 
   return { synced, errors };
 }
-
-

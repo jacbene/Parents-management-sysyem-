@@ -1201,17 +1201,18 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
                     </div>
                   </div>
                   <div>
-                    <label className="text-[9px] font-bold text-slate-550 uppercase">Email / Contact</label>
+                    <label className="text-[9px] font-bold text-slate-550 uppercase">E-mail de connexion de la direction</label>
                     <div className="relative mt-0.5">
                       <Mail className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
                       <input
-                        type="text"
+                        type="email"
                         className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-indigo-500 bg-white"
                         placeholder="Ex: secretariat@ecole..."
                         value={directorEmail}
                         onChange={(e) => setDirectorEmail(e.target.value)}
                       />
                     </div>
+                    <p className="mt-1 text-[9px] text-slate-500">Cette adresse autorise le rôle administratif à accéder à cet établissement.</p>
                   </div>
                 </div>
               </div>
@@ -1375,9 +1376,9 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
                       />
                     </div>
                     <div>
-                      <label className="text-[9px] font-bold text-slate-400 uppercase">Email / Contact</label>
+                      <label className="text-[9px] font-bold text-slate-400 uppercase">E-mail de connexion de l’enseignant</label>
                       <input
-                        type="text"
+                        type="email"
                         className="w-full px-2.5 py-1 text-xs border border-slate-200 rounded-lg focus:outline-indigo-500 mt-0.5 text-slate-650"
                         placeholder="Ex: jean.picard@ecole..."
                         value={teach.teacherEmail || ''}
@@ -1388,6 +1389,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
                           setClassTeachers(updated);
                         }}
                       />
+                      <p className="mt-1 text-[9px] text-slate-500">Seule cette adresse pourra sélectionner le profil de cette classe.</p>
                     </div>
                   </div>
                 </div>

@@ -29,6 +29,7 @@ export default function BillingPortal({
 }: BillingPortalProps) {
   const { t, language } = useLanguage();
   const isEn = language === 'en';
+  const eligibleStudents = portalUserRole === 'parent' ? (filteredStudents || []) : (students || []);
   
   const schoolExtracted = settings?.associationName 
     ? settings.associationName.replace(/^(APEE|A\.P\.E\.E\.|Association des Parents d'élèves de l'|Association des Parents d'élèves du|Association des Parents d'élèves de|Association des Parents d'élèves|Association des Parents du|Association des Parents de|Association des Parents d'|Association des Parents)\s+/i, '').trim()
@@ -40,11 +41,14 @@ export default function BillingPortal({
 
   // States for Express Campay Tuition Payment Form
   const [showExpressTuitionModal, setShowExpressTuitionModal] = useState(false);
-  const [expressStudentId, setExpressStudentId] = useState<string>(students?.[0]?.id || '');
+  const [expressStudentId, setExpressStudentId] = useState<string>(eligibleStudents[0]?.id || '');
   const [expressFeeType, setExpressFeeType] = useState('1ère Tranche de Scolarité');
   const [expressAmount, setExpressAmount] = useState('25000');
   const [expressPhone, setExpressPhone] = useState(parentPhone || '');
   const [expressCustomStudentName, setExpressCustomStudentName] = useState('');
+  const selectedExpressStudentId = eligibleStudents.some(student => student.id === expressStudentId)
+    ? expressStudentId
+    : (eligibleStudents[0]?.id || '');
 
   // States for Receipt Retrieval
   const [searchRefId, setSearchRefId] = useState('');
@@ -1822,13 +1826,13 @@ export default function BillingPortal({
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
-                  const targetStudent = students?.find(s => s.id === expressStudentId);
+                  const targetStudent = eligibleStudents.find(s => s.id === selectedExpressStudentId);
                   const studentName = targetStudent ? targetStudent.name : (expressCustomStudentName || "Élève scolarisé");
                   const numAmt = Number(expressAmount) || 25000;
                   
                   const expressInvoiceObj: Invoice = {
                     id: `campay_scol_${Date.now().toString(36)}`,
-                    studentId: expressStudentId || (students?.[0]?.id || 'custom_student'),
+                    studentId: targetStudent?.id || 'custom_student',
                     parentId: targetStudent?.parentId || parentPhone || 'parent_direct',
                     title: `${expressFeeType} — ${studentName}`,
                     amount: numAmt,
@@ -1848,13 +1852,13 @@ export default function BillingPortal({
                   <label className="text-xs font-bold text-slate-700 block">
                     Élève concerné <span className="text-red-500">*</span>
                   </label>
-                  {students && students.length > 0 ? (
+                  {eligibleStudents.length > 0 ? (
                     <select
-                      value={expressStudentId}
+                      value={selectedExpressStudentId}
                       onChange={(e) => setExpressStudentId(e.target.value)}
                       className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-hidden focus:border-emerald-500"
                     >
-                      {students.map((st) => (
+                      {eligibleStudents.map((st) => (
                         <option key={st.id} value={st.id}>
                           {st.name} — {st.grade} {st.classRoom || ''} (ID: {st.id})
                         </option>

@@ -406,6 +406,11 @@ export interface Establishment {
   schoolYear: string;
   ownerId: string;
   logoUrl?: string;
+  directorEmail?: string;
+  finManagerEmail?: string;
+  pedManagerEmail?: string;
+  managerEmails?: string[];
+  teacherEmails?: string[];
   status?: 'active' | 'suspended';
   portalFeesPaid?: number;
   lastPortalPaymentDate?: string;
@@ -432,6 +437,4 @@ export interface PendingAction {
   timestamp: string;
   data?: any;
 }
-
-
 

@@ -2,50 +2,15 @@ import { doc, setDoc, getDoc, deleteDoc, arrayUnion } from 'firebase/firestore';
 import { db, auth, loginAnonymously, queuePendingAction } from '../firebase';
 import { Establishment } from '../types';
 
-export const DEFAULT_FALLBACK_SCHOOLS: Establishment[] = [
-  {
-    id: 'demo_school_ekali',
-    name: "CES d'Ekali 1 - MFOU",
-    cotisationAmount: 25000,
-    financialGoal: 5000000,
-    finManagerName: 'Marie Béné',
-    finManagerPhone: '677002233',
-    finManagerPassword: '1234',
-    pedManagerName: 'Marie Béné',
-    pedManagerPhone: '677002233',
-    pedManagerPassword: '1234',
-    schoolYear: '2025/2026',
-    ownerId: 'demo_admin'
-  },
-  {
-    id: 'demo_school_vogt',
-    name: "Collège Vogt - Yaoundé",
-    cotisationAmount: 35000,
-    financialGoal: 12000000,
-    finManagerName: 'Abbé Ondoa',
-    finManagerPhone: '699445522',
-    finManagerPassword: '1234',
-    pedManagerName: 'Abbé Ondoa',
-    pedManagerPhone: '699445522',
-    pedManagerPassword: '1234',
-    schoolYear: '2025/2026',
-    ownerId: 'demo_admin'
-  },
-  {
-    id: 'demo_school_bilingue',
-    name: "Lycée Bilingue d'Ekounou",
-    cotisationAmount: 25000,
-    financialGoal: 8000000,
-    finManagerName: 'M. Tchana',
-    finManagerPhone: '655112233',
-    finManagerPassword: '1234',
-    pedManagerName: 'M. Tchana',
-    pedManagerPhone: '655112233',
-    pedManagerPassword: '1234',
-    schoolYear: '2025/2026',
-    ownerId: 'demo_admin'
-  }
-];
+const DEMO_ESTABLISHMENT_IDS = new Set([
+  'demo_school_ekali',
+  'demo_school_vogt',
+  'demo_school_bilingue',
+]);
+
+export function isDemoEstablishment(id: string): boolean {
+  return DEMO_ESTABLISHMENT_IDS.has(id);
+}
 
 export function sanitizeFirestoreId(id: string): string {
   if (!id) return `sch_${Date.now()}`;
@@ -247,14 +212,6 @@ export async function syncLocalSchoolsToFirestore(): Promise<{ syncedCount: numb
     // 1. Gather local establishments from localStorage and sessionStorage
     const localEstsMap = new Map<string, any>();
 
-    // Seed default fallback schools first (only if NOT deleted)
-    DEFAULT_FALLBACK_SCHOOLS.forEach((est) => {
-      const sanitizedId = sanitizeFirestoreId(est.id);
-      if (!deletedSet.has(est.id) && !deletedSet.has(sanitizedId)) {
-        localEstsMap.set(est.id, est);
-      }
-    });
-
     const keysToTry = ['pasma_local_establishments'];
     for (const key of keysToTry) {
       try {
@@ -263,7 +220,7 @@ export async function syncLocalSchoolsToFirestore(): Promise<{ syncedCount: numb
           const parsed = JSON.parse(localStr);
           if (Array.isArray(parsed)) {
             parsed.forEach((est: any) => {
-              if (est && est.id) {
+              if (est && est.id && !isDemoEstablishment(est.id)) {
                 const sanitizedId = sanitizeFirestoreId(est.id);
                 if (!deletedSet.has(est.id) && !deletedSet.has(sanitizedId)) {
                   localEstsMap.set(est.id, est);
@@ -282,7 +239,7 @@ export async function syncLocalSchoolsToFirestore(): Promise<{ syncedCount: numb
           const parsed = JSON.parse(sessionStr);
           if (Array.isArray(parsed)) {
             parsed.forEach((est: any) => {
-              if (est && est.id) {
+              if (est && est.id && !isDemoEstablishment(est.id)) {
                 const sanitizedId = sanitizeFirestoreId(est.id);
                 if (!deletedSet.has(est.id) && !deletedSet.has(sanitizedId)) {
                   localEstsMap.set(est.id, est);
@@ -473,4 +430,3 @@ export async function saveAndSyncEstablishment(est: Establishment, isUserCreated
     return false;
   }
 }
-

@@ -32,7 +32,7 @@ import {
   DEFAULT_SETTINGS,
   syncAllApeeDataToFirestore
 } from './utils/apeeDb';
-import { syncLocalSchoolsToFirestore, cleanPayload, isSchoolDeleted, fetchAndSyncDeletedSchoolIds, sanitizeFirestoreId } from './utils/schoolSync';
+import { syncLocalSchoolsToFirestore, cleanPayload, isSchoolDeleted, fetchAndSyncDeletedSchoolIds, sanitizeFirestoreId, isDemoEstablishment } from './utils/schoolSync';
 import { applyPendingActionsToNetworkList, saveToLocalRefuge, loadFromLocalRefuge } from './utils/networkCacheStrategy';
 
 import ApeeDashboard from './components/apee/ApeeDashboard';
@@ -1046,6 +1046,12 @@ export default function App() {
       setPortalTeacherDetails(details as any);
       setPortalParentDetails(null);
       setPortalManagerDetails(null);
+      setInvoices([]);
+      setApeeSettings(DEFAULT_SETTINGS);
+      setApeeParents([]);
+      setApeeExpenses([]);
+      setApeeLogs([]);
+      setApeeOtherRevenues([]);
       localStorage.removeItem('portal_parent_details');
       localStorage.removeItem('portal_manager_details');
     } else if (role === 'manager' && details) {
@@ -1308,36 +1314,33 @@ export default function App() {
     setLessons(prev => prev.filter(l => l.id !== id));
   };
 
-  // Filter students based on Parent authorized subset for Visitor role
+  const isAnonymousDemoSession = isDemoEstablishment(selectedSchoolId || '') && user?.isAnonymous === true;
+  const normalizeStudentName = (name: string) =>
+    name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+
+  // Restrict parent views to linked children; demo fallbacks never apply to account sessions.
   const filteredStudents = students.filter(s => {
     if (!s) return false;
     if (portalUserRole === 'parent') {
-      let allowedNames: string[] = [];
       if (portalParentDetails?.studentSubsetNames && portalParentDetails.studentSubsetNames.length > 0) {
-        allowedNames = portalParentDetails.studentSubsetNames.map(name => (name || '').toLowerCase().trim()).filter(Boolean);
-      } else {
-        // Safe Fallbacks for demo presets
+        const allowedNames = portalParentDetails.studentSubsetNames.map(normalizeStudentName).filter(Boolean);
+        return allowedNames.includes(normalizeStudentName(s.name || ''));
+      }
+
+      if (isAnonymousDemoSession) {
         const parentNameLower = (portalParentDetails?.name || '').toLowerCase();
         const parentPhoneClean = (portalParentDetails?.phone || '').replace(/\D/g, '');
         if (parentNameLower.includes('martin') || parentPhoneClean.includes('677112233')) {
-          allowedNames = ['lucas martin', 'chloe martin', 'chloé martin'];
+          return ['lucas martin', 'chloe martin', 'chloé martin'].some(name =>
+            normalizeStudentName(name) === normalizeStudentName(s.name || '')
+          );
         } else if (parentNameLower.includes('diallo') || parentPhoneClean.includes('699445566')) {
-          allowedNames = ['amadou diallo'];
-        } else {
-          // If still no matches, we search if the student's name shares any common words with the parent's name (like last name)
-          const parentWords = parentNameLower.split(/\s+/).filter(w => w.length > 2);
-          const studentNameLower = (s.name || '').toLowerCase();
-          const hasCommonWord = parentWords.some(word => studentNameLower.includes(word));
-          if (hasCommonWord) return true;
-          
-          // Absolute fallback: if still empty list, allow all students in this custom space so they are never locked out
-          return true;
+          return normalizeStudentName(s.name || '') === 'amadou diallo';
         }
+        return true;
       }
-      
-      const sNameLower = (s.name || '').toLowerCase().trim();
-      return allowedNames.includes(sNameLower) || 
-             allowedNames.some(allowed => sNameLower.includes(allowed) || allowed.includes(sNameLower));
+
+      return false;
     }
     if (portalUserRole === 'teacher') {
       if (!portalTeacherDetails?.classRoom) return true;
@@ -1673,13 +1676,22 @@ export default function App() {
         // B. Fetch cache/local storage backup first for instant loading
         try {
           await fetchAllData(userId);
-          const cachedApee = await fetchApeeData(userId);
-          if (cachedApee) {
-            if (cachedApee.settings) setApeeSettings(cachedApee.settings);
-            if (cachedApee.parents) setApeeParents(cachedApee.parents);
-            if (cachedApee.expenses) setApeeExpenses(cachedApee.expenses);
-            if (cachedApee.logs) setApeeLogs(cachedApee.logs);
-            if (cachedApee.otherRevenues) setApeeOtherRevenues(cachedApee.otherRevenues);
+          if (portalUserRole === 'teacher') {
+            setInvoices([]);
+            setApeeSettings(DEFAULT_SETTINGS);
+            setApeeParents([]);
+            setApeeExpenses([]);
+            setApeeLogs([]);
+            setApeeOtherRevenues([]);
+          } else {
+            const cachedApee = await fetchApeeData(userId);
+            if (cachedApee) {
+              if (cachedApee.settings) setApeeSettings(cachedApee.settings);
+              if (cachedApee.parents) setApeeParents(cachedApee.parents);
+              if (cachedApee.expenses) setApeeExpenses(cachedApee.expenses);
+              if (cachedApee.logs) setApeeLogs(cachedApee.logs);
+              if (cachedApee.otherRevenues) setApeeOtherRevenues(cachedApee.otherRevenues);
+            }
           }
         } catch (e) {
           console.warn("Failure fetching initial backup or offline seed:", e);
@@ -1819,40 +1831,41 @@ export default function App() {
               )
             );
 
-            // 9. Invoices: Network-First real-time listener (Cache as refuge for parents & finance)
-            unsubscribers.push(
-              onSnapshot(
-                query(collection(db, 'invoices'), where('parentId', '==', userId)),
-                (snapshot) => {
-                  const dbList = snapshot.docs
-                    .map(doc => doc.data() as Invoice)
-                    .filter(inv => !isApeeParentDeleted(userId, inv.id));
-                  const finalList = applyPendingActionsToNetworkList(dbList, 'invoices')
-                    .filter(inv => !isApeeParentDeleted(userId, inv.id));
-                  setInvoices(finalList);
-                  saveToLocalRefuge(`pasma_invoices_${userId}`, finalList);
+            if (portalUserRole !== 'teacher') {
+              // 9. Invoices: Network-First listener for owners, managers, and parents.
+              unsubscribers.push(
+                onSnapshot(
+                  query(collection(db, 'invoices'), where('parentId', '==', userId)),
+                  (snapshot) => {
+                    const dbList = snapshot.docs
+                      .map(doc => doc.data() as Invoice)
+                      .filter(inv => !isApeeParentDeleted(userId, inv.id));
+                    const finalList = applyPendingActionsToNetworkList(dbList, 'invoices')
+                      .filter(inv => !isApeeParentDeleted(userId, inv.id));
+                    setInvoices(finalList);
+                    saveToLocalRefuge(`pasma_invoices_${userId}`, finalList);
+                  },
+                  (err) => {
+                    console.warn("Real-time invoices listener failed (offline refuge active):", err);
+                  }
+                )
+              );
+
+              const unsubApee = subscribeApeeData(
+                userId,
+                (apeeData) => {
+                  if (apeeData.settings) setApeeSettings(apeeData.settings);
+                  if (apeeData.parents) setApeeParents(apeeData.parents);
+                  if (apeeData.expenses) setApeeExpenses(apeeData.expenses);
+                  if (apeeData.logs) setApeeLogs(apeeData.logs);
+                  if (apeeData.otherRevenues) setApeeOtherRevenues(apeeData.otherRevenues);
                 },
                 (err) => {
-                  console.warn("Real-time invoices listener failed (offline refuge active):", err);
+                  console.warn("APEE real-time listener subscription failed (offline/permission fallback):", err);
                 }
-              )
-            );
-
-            // D. Setup real-time APEE subscription
-            const unsubApee = subscribeApeeData(
-              userId,
-              (apeeData) => {
-                if (apeeData.settings) setApeeSettings(apeeData.settings);
-                if (apeeData.parents) setApeeParents(apeeData.parents);
-                if (apeeData.expenses) setApeeExpenses(apeeData.expenses);
-                if (apeeData.logs) setApeeLogs(apeeData.logs);
-                if (apeeData.otherRevenues) setApeeOtherRevenues(apeeData.otherRevenues);
-              },
-              (err) => {
-                console.warn("APEE real-time listener subscription failed (offline/permission fallback):", err);
-              }
-            );
-            if (unsubApee) unsubscribers.push(unsubApee);
+              );
+              if (unsubApee) unsubscribers.push(unsubApee);
+            }
 
           } catch (syncErr) {
             console.warn("Could not bind real-time listeners. Using fetched snapshots.", syncErr);
@@ -1870,7 +1883,7 @@ export default function App() {
     return () => {
       unsubscribers.forEach(unsub => unsub());
     };
-  }, [userId, user?.uid, isOffline, loading]);
+  }, [userId, user?.uid, portalUserRole, isOffline, loading]);
 
   // 1.6 Monitor for Session Concurrency and Device mismatch (All roles)
   useEffect(() => {
@@ -1934,7 +1947,9 @@ export default function App() {
       const cachedHomeworks = localStorage.getItem(`pasma_homeworks_${uid}`);
       const cachedAppointments = localStorage.getItem(`pasma_appointments_${uid}`);
       const cachedMessages = localStorage.getItem(`pasma_messages_${uid}`);
-      const cachedInvoices = localStorage.getItem(`pasma_invoices_${uid}`);
+      const cachedInvoices = portalUserRole === 'teacher'
+        ? null
+        : localStorage.getItem(`pasma_invoices_${uid}`);
       const cachedAnnouncements = localStorage.getItem(`pasma_announcements_${uid}`);
       const cachedLessons = localStorage.getItem(`pasma_lessons_${uid}`);
 
@@ -1978,7 +1993,9 @@ export default function App() {
       const homeworkSnapshot = await getDocs(homeworkQuery).catch(err => { console.warn("Error fetching homeworks:", err); return null; });
       const appointmentSnapshot = await getDocs(appointmentQuery).catch(err => { console.warn("Error fetching appointments:", err); return null; });
       const messageSnapshot = await getDocs(messageQuery).catch(err => { console.warn("Error fetching messages:", err); return null; });
-      const invoiceSnapshot = await getDocs(invoiceQuery).catch(err => { console.warn("Error fetching invoices:", err); return null; });
+      const invoiceSnapshot = portalUserRole === 'teacher'
+        ? null
+        : await getDocs(invoiceQuery).catch(err => { console.warn("Error fetching invoices:", err); return null; });
       const announcementSnapshot = await getDocs(announcementQuery).catch(err => { console.warn("Error fetching announcements:", err); return null; });
       const lessonSnapshot = await getDocs(lessonQuery).catch(err => { console.warn("Error fetching lessons:", err); return null; });
 
@@ -4585,7 +4602,7 @@ export default function App() {
                         <DrivePortal 
                           parents={apeeParents}
                           invoices={invoices}
-                          students={students}
+                          students={portalUserRole === 'parent' ? filteredStudents : students}
                         />
                       </motion.div>
                     )}
