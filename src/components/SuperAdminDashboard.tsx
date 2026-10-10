@@ -8,8 +8,9 @@ import PaymentWebhookHandler from './PaymentWebhookHandler';
 import ApeeBackendDiagnostics from './apee/ApeeBackendDiagnostics';
 import { Establishment, Student, Invoice, SystemLog } from '../types';
 import { DEFAULT_SCHOOL_LOGO } from '../constants';
-import { syncLocalSchoolsToFirestore, saveAndSyncEstablishment, deleteAndPurgeSchool, getDeletedSchoolIds, fetchAndSyncDeletedSchoolIds, sanitizeFirestoreId, cleanPayload } from '../utils/schoolSync';
+import { syncLocalSchoolsToFirestore, saveAndSyncEstablishment, deleteAndPurgeSchool, getDeletedSchoolIds, fetchAndSyncDeletedSchoolIds, sanitizeFirestoreId, cleanPayload, isDemoEstablishment } from '../utils/schoolSync';
 import { syncAllApeeDataToFirestore } from '../utils/apeeDb';
+import { filterDemoSeedRecords } from '../seeder';
 import { 
   Building2, 
   Plus, 
@@ -95,11 +96,6 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
       const res = await syncLocalSchoolsToFirestore();
       const deletedSchoolSet = getDeletedSchoolIds();
       const schoolsMap = new Map<string, Establishment>();
-      fallbackSchools.forEach(s => {
-        if (!deletedSchoolSet.has(s.id) && !deletedSchoolSet.has(sanitizeFirestoreId(s.id))) {
-          schoolsMap.set(s.id, s);
-        }
-      });
       schools.forEach(s => {
         if (!deletedSchoolSet.has(s.id) && !deletedSchoolSet.has(sanitizeFirestoreId(s.id))) {
           schoolsMap.set(s.id, s);
@@ -150,37 +146,6 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
   // Impersonation state
   const [selectedSchoolForParentImpersonation, setSelectedSchoolForParentImpersonation] = useState<Establishment | null>(null);
 
-  const fallbackSchools: Establishment[] = [
-    {
-      id: 'demo_school_vogt',
-      name: "Collège Vogt - Yaoundé",
-      cotisationAmount: 35000,
-      financialGoal: 12000000,
-      finManagerName: 'Abbé Ondoa',
-      finManagerPhone: '699445522',
-      finManagerPassword: '1234',
-      pedManagerName: 'Abbé Ondoa',
-      pedManagerPhone: '699445522',
-      pedManagerPassword: '1234',
-      schoolYear: '2025/2026',
-      ownerId: 'demo_admin'
-    },
-    {
-      id: 'demo_school_bilingue',
-      name: "Lycée Bilingue d'Ekounou",
-      cotisationAmount: 25000,
-      financialGoal: 8000000,
-      finManagerName: 'M. Tchana',
-      finManagerPhone: '655112233',
-      finManagerPassword: '1234',
-      pedManagerName: 'M. Tchana',
-      pedManagerPhone: '655112233',
-      pedManagerPassword: '1234',
-      schoolYear: '2025/2026',
-      ownerId: 'demo_admin'
-    }
-  ];
-
   // Load all system state across database
   useEffect(() => {
     const loadSystemData = async () => {
@@ -211,7 +176,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
           schoolSnap.forEach((docSnap) => {
             const data = docSnap.data();
             const sanId = sanitizeFirestoreId(docSnap.id);
-            if (!data.isDeleted && !deletedSchoolSet.has(docSnap.id) && !deletedSchoolSet.has(sanId)) {
+            if (!isDemoEstablishment(docSnap.id) && !data.isDeleted && !deletedSchoolSet.has(docSnap.id) && !deletedSchoolSet.has(sanId)) {
               registeredDbIds.add(docSnap.id);
               schoolList.push({ id: docSnap.id, ...data } as Establishment);
             }
@@ -227,7 +192,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
           if (localEstsStr) {
             const localEsts = JSON.parse(localEstsStr);
             for (const le of localEsts) {
-              if (le && le.id && !deletedSchoolSet.has(le.id) && !deletedSchoolSet.has(sanitizeFirestoreId(le.id)) && !schoolList.some(m => m.id === le.id)) {
+              if (le && le.id && !isDemoEstablishment(le.id) && !deletedSchoolSet.has(le.id) && !deletedSchoolSet.has(sanitizeFirestoreId(le.id)) && !schoolList.some(m => m.id === le.id)) {
                 schoolList.push(le);
               }
             }
@@ -236,15 +201,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
           console.warn("Failed to parse local establishments:", e);
         }
 
-        // Ensure we merge defaults to display seamless test-bed variety
         const mergedSchools = [...schoolList];
-        if (!isPreprod) {
-          fallbackSchools.forEach(fb => {
-            if (!deletedSchoolSet.has(fb.id) && !deletedSchoolSet.has(sanitizeFirestoreId(fb.id)) && !mergedSchools.some(m => m.id === fb.id)) {
-              mergedSchools.push(fb);
-            }
-          });
-        }
         setSchools(mergedSchools);
 
         // Auto-persist and sync any school that isn't yet registered in BD
@@ -287,7 +244,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
           console.warn("Failed to parse local students:", e);
         }
 
-        setAllStudents(studentList);
+        setAllStudents(filterDemoSeedRecords(studentList, false));
 
         // 3. Fetch all invoices (parents, settings, and logs)
         const invoiceList: Invoice[] = [];
@@ -316,10 +273,11 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
           console.warn("Failed to parse local invoices:", e);
         }
 
-        setAllInvoices(invoiceList);
+        const visibleInvoices = filterDemoSeedRecords(invoiceList, false);
+        setAllInvoices(visibleInvoices);
 
         // 4. Extract logs stored with studentId === 'system_log'
-        const logs: SystemLog[] = invoiceList
+        const logs: SystemLog[] = visibleInvoices
           .filter(inv => inv.studentId === 'system_log')
           .map(inv => ({
             id: inv.id,
@@ -335,41 +293,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
         // Sort descending
         logs.sort((a, b) => b.paymentDate.localeCompare(a.paymentDate));
         
-        // Add default simulated log sequence if Firestore has few logs
-        const fallbackSystemLogs: SystemLog[] = [
-          {
-            id: 'log_seed_1',
-            parentId: 'demo_school_ekali',
-            title: "Amorçage du serveur de production Pasma-sys",
-            amount: 0,
-            dueDate: 'SYSTEM_STARTUP',
-            status: 'Paid',
-            paymentDate: new Date(Date.now() - 36 * 3600 * 1000).toISOString(),
-            provider: 'Système automatique'
-          },
-          {
-            id: 'log_seed_2',
-            parentId: 'demo_school_ekali',
-            title: "Configuration de sécurité SSL et cryptage des clés d'accès parentales",
-            amount: 0,
-            dueDate: 'SECURITY_HARDENING',
-            status: 'Paid',
-            paymentDate: new Date(Date.now() - 24 * 3600 * 1000).toISOString(),
-            provider: 'Jacques Bene Mbama'
-          },
-          {
-            id: 'log_seed_3',
-            parentId: 'demo_school_ekali',
-            title: "Enregistrement de l'établissement pré-configuré CES d'Ekali 1",
-            amount: 5000000,
-            dueDate: 'CREATE_SCHOOL',
-            status: 'Paid',
-            paymentDate: new Date(Date.now() - 12 * 3600 * 1000).toISOString(),
-            provider: 'Jacques Bene Mbama'
-          }
-        ];
-
-        setSystemLogs(isPreprod ? logs : [...logs, ...fallbackSystemLogs]);
+        setSystemLogs(logs);
 
         // 5. Fetch secondary super admins from Firestore & merge with local storage
         const adminsList: any[] = [];
@@ -749,40 +673,9 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
         pedManagerPassword: pedPassword.trim() || '1234'
       });
 
-      // 3. Seed 2 initial demo students
-      const student1Id = `stu_lucas_${newSchoolId.slice(4, 10)}`;
-      const student2Id = `stu_chloe_${newSchoolId.slice(4, 10)}`;
-
-      const s1: Student = {
-        id: student1Id,
-        parentId: newSchoolId,
-        name: 'Lucas Martin',
-        grade: 'CM2',
-        classRoom: 'Classe CM2-A de M. Picard',
-        avatar: '👦',
-        teacherName: 'M. Jean Picard',
-        teacherEmail: 'jean.picard@pasma.sys',
-        dob: '2016-04-12'
-      };
-
-      const s2: Student = {
-        id: student2Id,
-        parentId: newSchoolId,
-        name: 'Chloé Martin',
-        grade: 'CE2',
-        classRoom: 'Classe CE2-B de Mme Laurent',
-        avatar: '👧',
-        teacherName: 'Mme Sophie Laurent',
-        teacherEmail: 'sophie.laurent@pasma.sys',
-        dob: '2018-09-21'
-      };
-
-      batch.set(doc(db, 'students', student1Id), s1);
-      batch.set(doc(db, 'students', student2Id), s2);
-      
       // Pre-populate offline local cache in case of write permission or network restrictions
       try {
-        const studentList = [s1, s2];
+        const studentList: Student[] = [];
         const settingsInvoice = {
           id: 'apee_settings',
           studentId: 'apee_settings',
@@ -859,7 +752,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
       setPedPhone('');
       setPedPassword('');
       
-      setSuccessMessage(`L'établissement ${schoolName} a été créé avec succès avec ses élèves par défaut !`);
+      setSuccessMessage(`L'établissement ${schoolName} a été créé avec succès. Ajoutez les élèves réels depuis le tableau de bord.`);
       setIsCreateOpen(false);
       setRefreshTrigger(p => p + 1);
     } catch (err: any) {

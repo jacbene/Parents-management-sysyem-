@@ -347,13 +347,7 @@ export default function DrivePortal({ parents, invoices, students }: DrivePortal
             ? `Google Drive API notice: ${errDetail}. Click 'Activate Google Drive Sandbox Mode' below to proceed seamlessly.`
             : `Notice API Google Drive : ${errDetail}. Vous pouvez cliquer sur 'Activer le Mode Démo / Sandbox Google Drive' ci-dessous pour continuer sans restriction.`
         );
-
-        const savedDemoFiles = localStorage.getItem('pasma_demo_drive_files');
-        if (savedDemoFiles) {
-          try {
-            setFiles(JSON.parse(savedDemoFiles));
-          } catch (e) {}
-        }
+        setFiles([]);
         return;
       }
 
@@ -367,12 +361,7 @@ export default function DrivePortal({ parents, invoices, students }: DrivePortal
           ? "Unable to fetch files from Google Drive. Please re-authenticate or activate Sandbox Mode."
           : "Erreur de récupération des fichiers Drive. Veuillez vous reconnecter ou activer le Mode Sandbox."
       );
-      const savedDemoFiles = localStorage.getItem('pasma_demo_drive_files');
-      if (savedDemoFiles) {
-        try {
-          setFiles(JSON.parse(savedDemoFiles));
-        } catch (e) {}
-      }
+      setFiles([]);
     } finally {
       setIsLoading(false);
     }

@@ -6,6 +6,7 @@ const DEMO_ESTABLISHMENT_IDS = new Set([
   'demo_school_ekali',
   'demo_school_vogt',
   'demo_school_bilingue',
+  'lycee_bilingue_ekali',
 ]);
 
 export function isDemoEstablishment(id: string): boolean {

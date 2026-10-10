@@ -2,6 +2,16 @@ import { collection, doc, writeBatch, getDocs, query, where, getDoc } from 'fire
 import { db, handleFirestoreError, OperationType } from './firebase';
 import { Student, Grade, Attendance, Homework, Appointment, Message, Invoice } from './types';
 
+const DEMO_SEED_RECORD_IDS = /^(?:stu_(?:lucas|chloe|amadou|marc|elise)|grd_(?:lucas|chloe|amadou|marc|elise|luc1|chl1|mar1|eli1)|att_(?:lucas|chloe|amadou|marc|elise)|hw_(?:lucas|chloe|amadou|marc|elise|[1-4])|apt_(?:[12]|marc|elise|amadou)|msg_(?:[1-3]|marc|amadou)|les_[12])_/;
+const DEMO_SEED_APEE_RECORD_IDS = /^(?:apee_par_bene_jacques(?:_|$)|par_mock_[1-4]|exp_mock_[1-2])$/;
+
+export function filterDemoSeedRecords<T extends { id?: string }>(records: T[], isDemoMode: boolean): T[] {
+  if (isDemoMode) return records;
+  return records.filter(record =>
+    !record.id || (!DEMO_SEED_RECORD_IDS.test(record.id) && !DEMO_SEED_APEE_RECORD_IDS.test(record.id))
+  );
+}
+
 export async function isDatabaseSeeded(userId: string): Promise<boolean> {
   const q = query(collection(db, 'students'), where('parentId', '==', userId));
   try {

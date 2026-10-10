@@ -370,8 +370,10 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
     if (activeSubTab === 'labels') {
       if (token && !token.startsWith('demo-')) {
         fetchMessagesByLabel(token, selectedLabelId, searchQuery);
-      } else {
+      } else if (token?.startsWith('demo-')) {
         loadDemoMessages(selectedLabelId, searchQuery);
+      } else {
+        setMessages([]);
       }
     }
   }, [activeSubTab, selectedLabelId, token]);
@@ -435,7 +437,9 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
       }
     } catch (err: any) {
       console.warn("Error fetching Gmail labels:", err);
-      loadDemoLabels();
+      setLabels([]);
+      setSelectedLabelId('');
+      setAuthError(err.message || "Erreur de chargement des libellés Gmail.");
     } finally {
       setIsLoadingLabels(false);
     }
@@ -515,7 +519,8 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
       setMessages(fetchedItems);
     } catch (err: any) {
       console.warn("Error fetching Gmail messages:", err);
-      loadDemoMessages(labelId, query);
+      setMessages([]);
+      setAuthError(err.message || "Erreur de chargement des messages Gmail.");
     } finally {
       setIsLoadingMessages(false);
     }
@@ -1380,8 +1385,10 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
                   const activeToken = googleAccessToken || token;
                   if (activeToken && !activeToken.startsWith('demo-')) {
                     fetchMessagesByLabel(activeToken, selectedLabelId, searchQuery);
-                  } else {
+                  } else if (activeToken?.startsWith('demo-')) {
                     loadDemoMessages(selectedLabelId, searchQuery);
+                  } else {
+                    setMessages([]);
                   }
                 }}
                 className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-2xl transition cursor-pointer flex items-center gap-1.5"

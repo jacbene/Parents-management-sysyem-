@@ -6,6 +6,7 @@ import { Landmark, Plus, CheckCircle, AlertOctagon, UserCheck, Phone, ShieldChec
 import { motion, AnimatePresence } from 'motion/react';
 import { ApeeSettings, ApeeParent, Student, Grade, Homework, Attendance, Invoice, Establishment } from '../types';
 import { syncLocalSchoolsToFirestore, saveAndSyncEstablishment, getDeletedSchoolIds, fetchAndSyncDeletedSchoolIds, sanitizeFirestoreId, cleanPayload, isDemoEstablishment } from '../utils/schoolSync';
+import { filterDemoSeedRecords } from '../seeder';
 import { useLanguage } from '../utils/TranslationContext';
 
 
@@ -108,6 +109,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
 
   // Parent Login Form State
   const [selectedSchoolId, setSelectedSchoolId] = useState<string>('');
+  const isDemoMode = auth.currentUser?.isAnonymous === true && isDemoEstablishment(selectedSchoolId);
   const [parentName, setParentName] = useState('');
   const [parentPhone, setParentPhone] = useState('');
   const [verifyingParent, setVerifyingParent] = useState(false);
@@ -736,6 +738,8 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
             console.warn("Failed to load local parent login cache:", localErr);
           }
 
+          parentInvoices = filterDemoSeedRecords(parentInvoices, isDemoMode);
+
           const normalizeTextForLogin = (str: string | null | undefined) => {
             if (!str) return '';
             return String(str)
@@ -767,8 +771,8 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
             }
           });
 
-          // Fallback presets for demo accounts or offline environments
-          if (!matchedInvoice) {
+          // Fallback presets are only available in demo mode.
+          if (!matchedInvoice && isDemoMode) {
             if (searchNameNorm.includes('martin') || searchPhoneSan.includes('677112233') || searchPhoneSan.endsWith('112233')) {
               matchedInvoice = {
                 id: 'inv_martin_' + selectedSchoolId.slice(-6),
@@ -989,6 +993,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
       }
 
       const newSchoolId = `sch_${Date.now()}`;
+      const shouldSeedDemoData = isDemoMode && isDemoEstablishment(newSchoolId);
       
       // 2. Map establishment profile
       const estDoc: Establishment = {
@@ -1127,11 +1132,13 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
         dob: '2018-05-10'
       };
 
-      batch.set(doc(db, 'students', student1Id), s1);
-      batch.set(doc(db, 'students', student2Id), s2);
-      batch.set(doc(db, 'students', student3Id), s3);
-      batch.set(doc(db, 'students', student4Id), s4);
-      batch.set(doc(db, 'students', student5Id), s5);
+      if (shouldSeedDemoData) {
+        batch.set(doc(db, 'students', student1Id), s1);
+        batch.set(doc(db, 'students', student2Id), s2);
+        batch.set(doc(db, 'students', student3Id), s3);
+        batch.set(doc(db, 'students', student4Id), s4);
+        batch.set(doc(db, 'students', student5Id), s5);
+      }
 
       // 5. Seed standard grades (notes)
       const grade1: Grade = {
@@ -1182,10 +1189,12 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
         date: '2026-05-19'
       };
 
-      batch.set(doc(db, 'grades', grade1.id), grade1);
-      batch.set(doc(db, 'grades', grade2.id), grade2);
-      batch.set(doc(db, 'grades', grade3.id), grade3);
-      batch.set(doc(db, 'grades', grade4.id), grade4);
+      if (shouldSeedDemoData) {
+        batch.set(doc(db, 'grades', grade1.id), grade1);
+        batch.set(doc(db, 'grades', grade2.id), grade2);
+        batch.set(doc(db, 'grades', grade3.id), grade3);
+        batch.set(doc(db, 'grades', grade4.id), grade4);
+      }
 
       // 6. Seed homeworks
       const hw1: Homework = {
@@ -1232,10 +1241,12 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
         status: 'Pending'
       };
 
-      batch.set(doc(db, 'homeworks', hw1.id), hw1);
-      batch.set(doc(db, 'homeworks', hw2.id), hw2);
-      batch.set(doc(db, 'homeworks', hw3.id), hw3);
-      batch.set(doc(db, 'homeworks', hw4.id), hw4);
+      if (shouldSeedDemoData) {
+        batch.set(doc(db, 'homeworks', hw1.id), hw1);
+        batch.set(doc(db, 'homeworks', hw2.id), hw2);
+        batch.set(doc(db, 'homeworks', hw3.id), hw3);
+        batch.set(doc(db, 'homeworks', hw4.id), hw4);
+      }
 
       // 7. Write parent cotisations (invoices marked as apee_ces_ekali_1)
       const parentInvoice = {
@@ -1256,13 +1267,15 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
         paymentsHistory: JSON.stringify([{ id: 'p_bene_1', amount: 15000, date: '2026-05-10', note: 'Versement initial par Mobile Money', method: 'Orange Money' }])
       };
 
-      batch.set(doc(db, 'invoices', parentInvoice.id), parentInvoice);
+      if (shouldSeedDemoData) {
+        batch.set(doc(db, 'invoices', parentInvoice.id), parentInvoice);
+      }
 
       // Pre-populate offline local cache in case of write permission or network restrictions
       try {
-        const studentList = [s1, s2, s3, s4, s5];
-        const gradeList = [grade1, grade2, grade3, grade4];
-        const homeworkList = [hw1, hw2, hw3, hw4];
+        const studentList = shouldSeedDemoData ? [s1, s2, s3, s4, s5] : [];
+        const gradeList = shouldSeedDemoData ? [grade1, grade2, grade3, grade4] : [];
+        const homeworkList = shouldSeedDemoData ? [hw1, hw2, hw3, hw4] : [];
         const settingsInvoice = {
           id: 'apee_settings',
           studentId: 'apee_settings',
@@ -1281,7 +1294,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
           pedManagerPassword: pedPassword.trim() || '1234',
           logoUrl: schoolLogo
         };
-        const invoiceList = [settingsInvoice, parentInvoice];
+        const invoiceList = [settingsInvoice, ...(shouldSeedDemoData ? [parentInvoice] : [])];
 
         localStorage.setItem(`pasma_students_${newSchoolId}`, JSON.stringify(studentList));
         localStorage.setItem(`pasma_grades_${newSchoolId}`, JSON.stringify(gradeList));
@@ -1326,7 +1339,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
         }
       }
 
-      setSuccessMessage("✨ Établissement créé et configuré avec succès ! Seeding de démo rattaché.");
+      setSuccessMessage("✨ Établissement créé et configuré avec succès. Ajoutez maintenant vos élèves réels.");
 
       // Automatically log inside the new school as Administrator
       setTimeout(() => {
@@ -2217,7 +2230,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                 <HelpCircle className="h-3.5 w-3.5 shrink-0" /> Comment ça marche ?
               </span>
               <p className="text-[11px] leading-relaxed opacity-90">
-                La création d'un établissement enregistre le taux de cotisation (APEE), le budget prévisionnel de l'école dans Firestore, et pré-génère un jeu complet de données de démonstration de ses élèves pour tester instantanément.
+                Un nouvel établissement connecté démarre sans fiches fictives. Les données d'essai sont réservées aux sessions anonymes dans un espace de démonstration.
               </p>
             </div>
           </div>

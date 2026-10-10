@@ -3,7 +3,7 @@ import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, query, where, getDocs, doc, setDoc, deleteDoc, writeBatch, getDoc, onSnapshot } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, loginWithGoogle, checkRedirectResult, logout, db, handleFirestoreError, OperationType, loginAnonymously, goOffline, goOnline, isOffline as isOfflineCheck, queuePendingAction, signUpWithEmail, loginWithEmail, resetPassword, sendUserEmailVerification, markEmailAsVerifiedLocally, isEmailVerifiedLocally, isUserEmailVerified } from './firebase';
-import { isDatabaseSeeded, seedUserData, getOfflineMockData, purgeUserData } from './seeder';
+import { isDatabaseSeeded, seedUserData, getOfflineMockData, purgeUserData, filterDemoSeedRecords } from './seeder';
 import { DEFAULT_SCHOOL_LOGO } from './constants';
 import { Student, Grade, Attendance, Homework, Lesson, Appointment, Message, Invoice, ApeeParent, ApeeExpense, ApeeSettings, Announcement, AnnouncementCategory, ApeeActivityLog, ApeeOtherRevenue, PendingAction } from './types';
 
@@ -164,6 +164,7 @@ interface PushNotificationSyncerProps {
   userId: string | null;
   user: User | null;
   portalUserRole: 'parent' | 'manager' | 'teacher' | null;
+  isDemoMode: boolean;
   isOffline: boolean;
   setGrades: React.Dispatch<React.SetStateAction<Grade[]>>;
   setHomeworks: React.Dispatch<React.SetStateAction<Homework[]>>;
@@ -176,6 +177,7 @@ function PushNotificationSyncer({
   userId,
   user,
   portalUserRole,
+  isDemoMode,
   isOffline,
   setGrades,
   setHomeworks,
@@ -281,14 +283,15 @@ function PushNotificationSyncer({
         const gradesSnapshot = await getDocs(gradesQ);
         if (!active) return;
 
-        const currentGradesList: Grade[] = [];
+        const loadedGradesList: Grade[] = [];
         gradesSnapshot.forEach((doc) => {
           const g = { id: doc.id, ...doc.data() as Omit<Grade, 'id'> };
-          currentGradesList.push(g as any);
+          loadedGradesList.push(g as any);
         });
+        const currentGradesList = filterDemoSeedRecords(loadedGradesList, isDemoMode);
 
         setGrades(currentGradesList);
-        localStorage.setItem(`pasma_grades_${userId}`, JSON.stringify(currentGradesList));
+        localStorage.setItem(`pasma_grades_${userId}`, JSON.stringify(loadedGradesList));
 
         if (!isInitial) {
           currentGradesList.forEach(grade => {
@@ -327,14 +330,15 @@ function PushNotificationSyncer({
         const homeworksSnapshot = await getDocs(homeworksQ);
         if (!active) return;
 
-        const currentHomeworkList: Homework[] = [];
+        const loadedHomeworkList: Homework[] = [];
         homeworksSnapshot.forEach((doc) => {
           const h = { id: doc.id, ...doc.data() as Omit<Homework, 'id'> };
-          currentHomeworkList.push(h as any);
+          loadedHomeworkList.push(h as any);
         });
+        const currentHomeworkList = filterDemoSeedRecords(loadedHomeworkList, isDemoMode);
 
         setHomeworks(currentHomeworkList);
-        localStorage.setItem(`pasma_homeworks_${userId}`, JSON.stringify(currentHomeworkList));
+        localStorage.setItem(`pasma_homeworks_${userId}`, JSON.stringify(loadedHomeworkList));
 
         if (!isInitial) {
           currentHomeworkList.forEach(hw => {
@@ -392,7 +396,7 @@ function PushNotificationSyncer({
       active = false;
       clearInterval(intervalId);
     };
-  }, [userId, user, portalUserRole, syncIntervalSeconds]); // Extremely stable dependencies!
+  }, [userId, user, portalUserRole, isDemoMode, syncIntervalSeconds]); // Extremely stable dependencies!
 
   return null;
 }
@@ -1325,7 +1329,8 @@ export default function App() {
     setLessons(prev => prev.filter(l => l.id !== id));
   };
 
-  const isAnonymousDemoSession = isDemoEstablishment(selectedSchoolId || '') && user?.isAnonymous === true;
+  const isDemoAccount = user?.isAnonymous === true && isDemoEstablishment(selectedSchoolId || '');
+  const isAnonymousDemoSession = isDemoAccount;
   const normalizeStudentName = (name: string) =>
     name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
@@ -1429,6 +1434,22 @@ export default function App() {
       }
       
       if (currentUser && currentUser.email) {
+        const savedSchoolId = localStorage.getItem('portal_selected_school_id');
+        if (savedSchoolId && isDemoEstablishment(savedSchoolId)) {
+          localStorage.removeItem('portal_selected_school_id');
+          sessionStorage.removeItem('portal_selected_school_id');
+          localStorage.removeItem('portal_user_role');
+          localStorage.removeItem('portal_parent_details');
+          localStorage.removeItem('portal_teacher_details');
+          localStorage.removeItem('portal_manager_details');
+          localStorage.removeItem('portal_login_timestamp');
+          setSelectedSchoolId(null);
+          setPortalUserRole(null);
+          setPortalParentDetails(null);
+          setPortalTeacherDetails(null);
+          setPortalManagerDetails(null);
+        }
+
         try {
           await currentUser.reload();
         } catch (reloadErr) {
@@ -1647,7 +1668,7 @@ export default function App() {
         );
 
         // Soft-seed initial demo record for Bene Jacques ONLY ONCE if not previously deleted by the user
-        if (!isPreprod) {
+        if (isDemoAccount && !isPreprod && isDemoEstablishment(selectedSchoolId || '')) {
           try {
             const isBeneDeleted = 
               isApeeParentDeleted('demo_school_ekali', 'apee_par_bene_jacques') ||
@@ -1693,7 +1714,7 @@ export default function App() {
                                 portalUserRole === 'parent' || 
                                 portalUserRole === 'teacher';
 
-        if (!isSimulatedUser && !isPreprod) {
+        if (isDemoAccount && !isSimulatedUser && !isPreprod) {
           try {
             seeded = await isDatabaseSeeded(userId);
             if (!seeded) {
@@ -1727,8 +1748,8 @@ export default function App() {
             const cachedApee = await fetchApeeData(userId);
             if (cachedApee) {
               if (cachedApee.settings) setApeeSettings(cachedApee.settings);
-              if (cachedApee.parents) setApeeParents(cachedApee.parents);
-              if (cachedApee.expenses) setApeeExpenses(cachedApee.expenses);
+              if (cachedApee.parents) setApeeParents(filterDemoSeedRecords(cachedApee.parents, isDemoAccount));
+              if (cachedApee.expenses) setApeeExpenses(filterDemoSeedRecords(cachedApee.expenses, isDemoAccount));
               if (cachedApee.logs) setApeeLogs(cachedApee.logs);
               if (cachedApee.otherRevenues) setApeeOtherRevenues(cachedApee.otherRevenues);
             }
@@ -1746,7 +1767,7 @@ export default function App() {
                 query(collection(db, 'students'), where('parentId', '==', userId)),
                 (snapshot) => {
                   const dbList = snapshot.docs.map(doc => doc.data() as Student);
-                  const finalList = applyPendingActionsToNetworkList(dbList, 'students');
+                  const finalList = filterDemoSeedRecords(applyPendingActionsToNetworkList(dbList, 'students'), isDemoAccount);
                   setStudents(finalList);
                   if (finalList.length > 0) {
                     setSelectedStudentId(prev => prev || finalList[0]?.id || '');
@@ -1765,7 +1786,7 @@ export default function App() {
                 query(collection(db, 'grades'), where('parentId', '==', userId)),
                 (snapshot) => {
                   const dbList = snapshot.docs.map(doc => doc.data() as Grade);
-                  const finalList = applyPendingActionsToNetworkList(dbList, 'grades');
+                  const finalList = filterDemoSeedRecords(applyPendingActionsToNetworkList(dbList, 'grades'), isDemoAccount);
                   setGrades(finalList);
                   saveToLocalRefuge(`pasma_grades_${userId}`, finalList);
                 },
@@ -1781,7 +1802,7 @@ export default function App() {
                 query(collection(db, 'attendance'), where('parentId', '==', userId)),
                 (snapshot) => {
                   const dbList = snapshot.docs.map(doc => doc.data() as Attendance);
-                  const finalList = applyPendingActionsToNetworkList(dbList, 'attendance');
+                  const finalList = filterDemoSeedRecords(applyPendingActionsToNetworkList(dbList, 'attendance'), isDemoAccount);
                   setAttendanceLogs(finalList);
                   saveToLocalRefuge(`pasma_attendance_${userId}`, finalList);
                 },
@@ -1797,7 +1818,7 @@ export default function App() {
                 query(collection(db, 'homeworks'), where('parentId', '==', userId)),
                 (snapshot) => {
                   const dbList = snapshot.docs.map(doc => doc.data() as Homework);
-                  const finalList = applyPendingActionsToNetworkList(dbList, 'homeworks');
+                  const finalList = filterDemoSeedRecords(applyPendingActionsToNetworkList(dbList, 'homeworks'), isDemoAccount);
                   setHomeworks(finalList);
                   saveToLocalRefuge(`pasma_homeworks_${userId}`, finalList);
                 },
@@ -1813,7 +1834,7 @@ export default function App() {
                 query(collection(db, 'appointments'), where('parentId', '==', userId)),
                 (snapshot) => {
                   const dbList = snapshot.docs.map(doc => doc.data() as Appointment);
-                  const finalList = applyPendingActionsToNetworkList(dbList, 'appointments');
+                  const finalList = filterDemoSeedRecords(applyPendingActionsToNetworkList(dbList, 'appointments'), isDemoAccount);
                   setAppointments(finalList);
                   saveToLocalRefuge(`pasma_appointments_${userId}`, finalList);
                 },
@@ -1829,7 +1850,7 @@ export default function App() {
                 query(collection(db, 'messages'), where('parentId', '==', userId)),
                 (snapshot) => {
                   const dbList = snapshot.docs.map(doc => doc.data() as Message);
-                  const finalList = applyPendingActionsToNetworkList(dbList, 'messages');
+                  const finalList = filterDemoSeedRecords(applyPendingActionsToNetworkList(dbList, 'messages'), isDemoAccount);
                   setMessages(finalList);
                   saveToLocalRefuge(`pasma_messages_${userId}`, finalList);
                 },
@@ -1845,7 +1866,7 @@ export default function App() {
                 query(collection(db, 'announcements'), where('parentId', '==', userId)),
                 (snapshot) => {
                   const dbList = snapshot.docs.map(doc => doc.data() as Announcement);
-                  const finalList = applyPendingActionsToNetworkList(dbList, 'announcements');
+                  const finalList = filterDemoSeedRecords(applyPendingActionsToNetworkList(dbList, 'announcements'), isDemoAccount);
                   setAnnouncements(finalList);
                   saveToLocalRefuge(`pasma_announcements_${userId}`, finalList);
                 },
@@ -1861,7 +1882,7 @@ export default function App() {
                 query(collection(db, 'lessons'), where('parentId', '==', userId)),
                 (snapshot) => {
                   const dbList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Lesson);
-                  const finalList = applyPendingActionsToNetworkList(dbList, 'lessons');
+                  const finalList = filterDemoSeedRecords(applyPendingActionsToNetworkList(dbList, 'lessons'), isDemoAccount);
                   setLessons(finalList);
                   saveToLocalRefuge(`pasma_lessons_${userId}`, finalList);
                 },
@@ -1881,8 +1902,9 @@ export default function App() {
                       (docSnap) => {
                         if (docSnap.exists()) {
                           const myInvoice = { id: docSnap.id, ...docSnap.data() } as Invoice;
-                          setInvoices([myInvoice]);
-                          saveToLocalRefuge(`pasma_invoices_${userId}`, [myInvoice]);
+                          const visibleInvoices = filterDemoSeedRecords([myInvoice], isDemoAccount);
+                          setInvoices(visibleInvoices);
+                          saveToLocalRefuge(`pasma_invoices_${userId}`, visibleInvoices);
                         }
                       },
                       (err) => {
@@ -1902,8 +1924,9 @@ export default function App() {
                         .filter(inv => !isApeeParentDeleted(userId, inv.id));
                       const finalList = applyPendingActionsToNetworkList(dbList, 'invoices')
                         .filter(inv => !isApeeParentDeleted(userId, inv.id));
-                      setInvoices(finalList);
-                      saveToLocalRefuge(`pasma_invoices_${userId}`, finalList);
+                      const visibleList = filterDemoSeedRecords(finalList, isDemoAccount);
+                      setInvoices(visibleList);
+                      saveToLocalRefuge(`pasma_invoices_${userId}`, visibleList);
                     },
                     (err) => {
                       console.warn("Real-time invoices listener failed (offline refuge active):", err);
@@ -1915,8 +1938,8 @@ export default function App() {
                   userId,
                   (apeeData) => {
                     if (apeeData.settings) setApeeSettings(apeeData.settings);
-                    if (apeeData.parents) setApeeParents(apeeData.parents);
-                    if (apeeData.expenses) setApeeExpenses(apeeData.expenses);
+                    if (apeeData.parents) setApeeParents(filterDemoSeedRecords(apeeData.parents, isDemoAccount));
+                    if (apeeData.expenses) setApeeExpenses(filterDemoSeedRecords(apeeData.expenses, isDemoAccount));
                     if (apeeData.logs) setApeeLogs(apeeData.logs);
                     if (apeeData.otherRevenues) setApeeOtherRevenues(apeeData.otherRevenues);
                   },
@@ -1944,7 +1967,7 @@ export default function App() {
     return () => {
       unsubscribers.forEach(unsub => unsub());
     };
-  }, [userId, user?.uid, portalUserRole, isOffline, loading]);
+  }, [userId, user?.uid, portalUserRole, isDemoAccount, isOffline, loading]);
 
   // 1.6 Monitor for Session Concurrency and Device mismatch (All roles)
   useEffect(() => {
@@ -2025,22 +2048,22 @@ export default function App() {
       const cachedLessons = localStorage.getItem(`pasma_lessons_${uid}`);
 
       if (cachedStudents) {
-        const studentList = JSON.parse(cachedStudents);
+        const studentList = filterDemoSeedRecords(JSON.parse(cachedStudents), isDemoAccount);
         setStudents(studentList);
         setSelectedStudentId(studentList[0]?.id || '');
         localBackupFound = true;
       }
-      if (cachedGrades) setGrades(JSON.parse(cachedGrades));
-      if (cachedAttendance) setAttendanceLogs(JSON.parse(cachedAttendance));
-      if (cachedHomeworks) setHomeworks(JSON.parse(cachedHomeworks));
-      if (cachedAppointments) setAppointments(JSON.parse(cachedAppointments));
-      if (cachedMessages) setMessages(JSON.parse(cachedMessages));
+      if (cachedGrades) setGrades(filterDemoSeedRecords(JSON.parse(cachedGrades), isDemoAccount));
+      if (cachedAttendance) setAttendanceLogs(filterDemoSeedRecords(JSON.parse(cachedAttendance), isDemoAccount));
+      if (cachedHomeworks) setHomeworks(filterDemoSeedRecords(JSON.parse(cachedHomeworks), isDemoAccount));
+      if (cachedAppointments) setAppointments(filterDemoSeedRecords(JSON.parse(cachedAppointments), isDemoAccount));
+      if (cachedMessages) setMessages(filterDemoSeedRecords(JSON.parse(cachedMessages), isDemoAccount));
       if (cachedInvoices) {
         const parsedInvs: Invoice[] = JSON.parse(cachedInvoices);
-        setInvoices(parsedInvs.filter(inv => !isApeeParentDeleted(uid, inv.id)));
+        setInvoices(filterDemoSeedRecords(parsedInvs, isDemoAccount).filter(inv => !isApeeParentDeleted(uid, inv.id)));
       }
-      if (cachedAnnouncements) setAnnouncements(JSON.parse(cachedAnnouncements));
-      if (cachedLessons) setLessons(JSON.parse(cachedLessons));
+      if (cachedAnnouncements) setAnnouncements(filterDemoSeedRecords(JSON.parse(cachedAnnouncements), isDemoAccount));
+      if (cachedLessons) setLessons(filterDemoSeedRecords(JSON.parse(cachedLessons), isDemoAccount));
     } catch (e) {
       console.warn("Loading local storage cached pasma data failed:", e);
     }
@@ -2084,7 +2107,7 @@ export default function App() {
                              lessonSnapshot !== null;
 
       if (studentSnapshot !== null) {
-        const studentList = studentSnapshot.empty ? [] : studentSnapshot.docs.map(doc => doc.data() as Student);
+        const studentList = filterDemoSeedRecords(studentSnapshot.empty ? [] : studentSnapshot.docs.map(doc => doc.data() as Student), isDemoAccount);
         setStudents(studentList);
         setSelectedStudentId(studentList[0]?.id || '');
         localStorage.setItem(`pasma_students_${uid}`, JSON.stringify(studentList));
@@ -2092,31 +2115,31 @@ export default function App() {
         loadedAnyFromDb = true;
       }
       if (gradeSnapshot !== null) {
-        const list = gradeSnapshot.empty ? [] : gradeSnapshot.docs.map(doc => doc.data() as Grade);
+        const list = filterDemoSeedRecords(gradeSnapshot.empty ? [] : gradeSnapshot.docs.map(doc => doc.data() as Grade), isDemoAccount);
         setGrades(list);
         localStorage.setItem(`pasma_grades_${uid}`, JSON.stringify(list));
         loadedAnyFromDb = true;
       }
       if (attendanceSnapshot !== null) {
-        const list = attendanceSnapshot.empty ? [] : attendanceSnapshot.docs.map(doc => doc.data() as Attendance);
+        const list = filterDemoSeedRecords(attendanceSnapshot.empty ? [] : attendanceSnapshot.docs.map(doc => doc.data() as Attendance), isDemoAccount);
         setAttendanceLogs(list);
         localStorage.setItem(`pasma_attendance_${uid}`, JSON.stringify(list));
         loadedAnyFromDb = true;
       }
       if (homeworkSnapshot !== null) {
-        const list = homeworkSnapshot.empty ? [] : homeworkSnapshot.docs.map(doc => doc.data() as Homework);
+        const list = filterDemoSeedRecords(homeworkSnapshot.empty ? [] : homeworkSnapshot.docs.map(doc => doc.data() as Homework), isDemoAccount);
         setHomeworks(list);
         localStorage.setItem(`pasma_homeworks_${uid}`, JSON.stringify(list));
         loadedAnyFromDb = true;
       }
       if (appointmentSnapshot !== null) {
-        const list = appointmentSnapshot.empty ? [] : appointmentSnapshot.docs.map(doc => doc.data() as Appointment);
+        const list = filterDemoSeedRecords(appointmentSnapshot.empty ? [] : appointmentSnapshot.docs.map(doc => doc.data() as Appointment), isDemoAccount);
         setAppointments(list);
         localStorage.setItem(`pasma_appointments_${uid}`, JSON.stringify(list));
         loadedAnyFromDb = true;
       }
       if (messageSnapshot !== null) {
-        const list = messageSnapshot.empty ? [] : messageSnapshot.docs.map(doc => doc.data() as Message);
+        const list = filterDemoSeedRecords(messageSnapshot.empty ? [] : messageSnapshot.docs.map(doc => doc.data() as Message), isDemoAccount);
         setMessages(list);
         localStorage.setItem(`pasma_messages_${uid}`, JSON.stringify(list));
         loadedAnyFromDb = true;
@@ -2127,8 +2150,9 @@ export default function App() {
             const singleSnap = await getDoc(doc(db, 'invoices', portalParentDetails.invoiceId));
             if (singleSnap.exists()) {
               const myInv = { id: singleSnap.id, ...singleSnap.data() } as Invoice;
-              setInvoices([myInv]);
-              localStorage.setItem(`pasma_invoices_${uid}`, JSON.stringify([myInv]));
+              const visibleInvoices = filterDemoSeedRecords([myInv], isDemoAccount);
+              setInvoices(visibleInvoices);
+              localStorage.setItem(`pasma_invoices_${uid}`, JSON.stringify(visibleInvoices));
               loadedAnyFromDb = true;
             }
           } catch (e) {
@@ -2136,28 +2160,28 @@ export default function App() {
           }
         }
       } else if (invoiceSnapshot !== null) {
-        const list = invoiceSnapshot.empty ? [] : invoiceSnapshot.docs
+        const list = filterDemoSeedRecords(invoiceSnapshot.empty ? [] : invoiceSnapshot.docs
           .map(doc => doc.data() as Invoice)
-          .filter(inv => !isApeeParentDeleted(uid, inv.id));
+          .filter(inv => !isApeeParentDeleted(uid, inv.id)), isDemoAccount);
         setInvoices(list);
         localStorage.setItem(`pasma_invoices_${uid}`, JSON.stringify(list));
         loadedAnyFromDb = true;
       }
       if (announcementSnapshot !== null) {
-        const list = announcementSnapshot.empty ? [] : announcementSnapshot.docs.map(doc => doc.data() as Announcement);
+        const list = filterDemoSeedRecords(announcementSnapshot.empty ? [] : announcementSnapshot.docs.map(doc => doc.data() as Announcement), isDemoAccount);
         setAnnouncements(list);
         localStorage.setItem(`pasma_announcements_${uid}`, JSON.stringify(list));
         loadedAnyFromDb = true;
       }
       if (lessonSnapshot !== null) {
-        const list = lessonSnapshot.empty ? [] : lessonSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Lesson);
+        const list = filterDemoSeedRecords(lessonSnapshot.empty ? [] : lessonSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }) as Lesson), isDemoAccount);
         setLessons(list);
         localStorage.setItem(`pasma_lessons_${uid}`, JSON.stringify(list));
         loadedAnyFromDb = true;
       }
 
       // If we are completely offline and have nothing in local storage backup, load offline seed mockups!
-      if (!didConnectToDb && !localBackupFound) {
+      if (!didConnectToDb && !localBackupFound && isDemoAccount) {
         console.log("No DB connection and no local backup found. Triggering instant local preview seed...");
         const offlineData = getOfflineMockData(uid);
         if (offlineData.students.length > 0) {
@@ -3286,6 +3310,7 @@ export default function App() {
         userId={userId}
         user={user}
         portalUserRole={portalUserRole}
+        isDemoMode={isDemoAccount}
         isOffline={isOffline}
         setGrades={setGrades}
         setHomeworks={setHomeworks}
@@ -4682,6 +4707,7 @@ export default function App() {
                           parents={apeeParents}
                           expenses={apeeExpenses}
                           settings={apeeSettings}
+                          isDemoMode={isDemoAccount}
                           onImportBackup={handleImportApeeBackup}
                           onResetDatabase={handleResetApeeDatabase}
                           onPurgeFullDatabase={handlePurgeFullDatabase}

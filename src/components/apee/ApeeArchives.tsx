@@ -6,12 +6,13 @@ interface ApeeArchivesProps {
   parents: ApeeParent[];
   expenses: ApeeExpense[];
   settings: ApeeSettings;
+  isDemoMode: boolean;
   onImportBackup: (data: { parents?: ApeeParent[]; expenses?: ApeeExpense[]; settings?: ApeeSettings }) => void;
   onResetDatabase: () => void;
   onPurgeFullDatabase?: () => Promise<void>;
 }
 
-export default function ApeeArchives({ parents, expenses, settings, onImportBackup, onResetDatabase, onPurgeFullDatabase }: ApeeArchivesProps) {
+export default function ApeeArchives({ parents, expenses, settings, isDemoMode, onImportBackup, onResetDatabase, onPurgeFullDatabase }: ApeeArchivesProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // States
@@ -78,6 +79,7 @@ export default function ApeeArchives({ parents, expenses, settings, onImportBack
 
   // Seeding 4 beautifully designed Cameroonian parents with multi-pupils
   const handleSeedMockData = () => {
+    if (!isDemoMode) return;
     if (confirm("Voulez-vous injecter un jeu d'élèves et parents d'essai camerounais ? Les données actuelles de cotisations seront remplacées.")) {
       const mockParents: ApeeParent[] = [
         {
@@ -283,16 +285,20 @@ export default function ApeeArchives({ parents, expenses, settings, onImportBack
             <AlertTriangle className="h-4.5 w-4.5 text-amber-500 animate-pulse" /> Maintenance de la Base de Données
           </h3>
 
-          <p className="text-xs text-gray-500 leading-relaxed">
-            Pour tester de façon fluide et réaliste sans entrer manuellement des dizaines d'inscriptions, vous pouvez injecter nos fiches d'exemples camerounaises pré-configurées.
-          </p>
+          {isDemoMode && (
+            <>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                Pour tester de façon fluide et réaliste sans entrer manuellement des dizaines d'inscriptions, vous pouvez injecter nos fiches d'exemples camerounaises pré-configurées.
+              </p>
 
-          <button
-            onClick={handleSeedMockData}
-            className="w-full px-4 py-2.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-850 text-xs font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer transition select-none"
-          >
-            <Database className="h-4 w-4 text-indigo-600" /> Injecter Données de Démonstration APEE
-          </button>
+              <button
+                onClick={handleSeedMockData}
+                className="w-full px-4 py-2.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-850 text-xs font-bold rounded-xl flex items-center justify-center gap-2 cursor-pointer transition select-none"
+              >
+                <Database className="h-4 w-4 text-indigo-600" /> Injecter Données de Démonstration APEE
+              </button>
+            </>
+          )}
 
           <hr className="border-slate-200 my-4" />
 

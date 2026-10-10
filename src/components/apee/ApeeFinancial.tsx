@@ -1116,7 +1116,7 @@ export default function ApeeFinancial({
           const accumulatedServiceFees = globalCollected * (servicePercentage / 100);
 
           // Simulated metrics
-          const [simulatedTurnover, setSimulatedTurnover] = useState<number>(15000000);
+          const [simulatedTurnover, setSimulatedTurnover] = useState<number>(totalRevenue);
           
           return (
             <div className="space-y-6 select-none animate-in fade-in slide-in-from-bottom-3 duration-200">
