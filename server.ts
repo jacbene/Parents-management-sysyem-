@@ -1800,42 +1800,58 @@ app.get("/api/establishments/available-for-teacher", async (req, res) => {
 
 app.get("/api/establishments/directory", async (req, res) => {
   const firebaseUser = await getVerifiedFirebaseUser(req);
-  if (!firebaseUser?.email) {
-    return res.status(401).json({ success: false, error: "Connexion avec une adresse e-mail requise." });
+  if (!firebaseUser) {
+    return res.status(401).json({ success: false, error: "Authentification Firebase requise." });
   }
+
+  // Reserve demo establishments exclusively to users in demo mode without account (anonymous)
+  const isAnonymousGuest = !firebaseUser.email || (firebaseUser.firebase as any)?.sign_in_provider === 'anonymous';
+
+  const defaultDemoSchools = [
+    { id: "demo_school_ekali", name: "CES d'Ekali 1 - MFOU", logoUrl: "" },
+    { id: "demo_school_vogt", name: "Collège Vogt - Yaoundé", logoUrl: "" },
+    { id: "demo_school_bilingue", name: "Lycée Bilingue d'Essos", logoUrl: "" },
+  ];
 
   try {
     const establishments = await getAdminDb().collection("establishments").get();
-    const demoEstablishmentIds = new Set([
-      "demo_school_ekali",
-      "demo_school_vogt",
-      "demo_school_bilingue",
-    ]);
-    const schools = establishments.docs
-      .filter(establishment => {
-        const data = establishment.data();
-        return !demoEstablishmentIds.has(establishment.id) &&
-          !data.isDeleted &&
-          typeof data.name === "string" &&
-          data.name.trim().length > 0;
-      })
-      .map(establishment => {
-        const data = establishment.data();
-        return {
+    const schoolsMap = new Map<string, { id: string; name: string; logoUrl: string }>();
+
+    // Seed with standard demo schools ONLY if anonymous guest without account
+    if (isAnonymousGuest) {
+      defaultDemoSchools.forEach(sch => schoolsMap.set(sch.id, sch));
+    }
+
+    establishments.docs.forEach(establishment => {
+      const data = establishment.data();
+      const isDemo = establishment.id.startsWith("demo_school_") || ["demo_school_ekali", "demo_school_vogt", "demo_school_bilingue"].includes(establishment.id);
+      
+      // If user is regularly authenticated, DO NOT show demo establishments even if present in DB
+      if (!isAnonymousGuest && isDemo) {
+        return;
+      }
+
+      if (!data.isDeleted && typeof data.name === "string" && data.name.trim().length > 0) {
+        schoolsMap.set(establishment.id, {
           id: establishment.id,
           name: data.name,
           logoUrl: typeof data.logoUrl === "string" ? data.logoUrl : "",
-        };
-      })
-      .sort((left, right) => left.name.localeCompare(right.name, "fr"));
+        });
+      }
+    });
+
+    const schools = Array.from(schoolsMap.values()).sort((left, right) =>
+      left.name.localeCompare(right.name, "fr")
+    );
 
     return res.json({ success: true, schools });
   } catch (error) {
-    console.error("[Portal] Could not load establishment directory:", error);
-    return res.status(503).json({
-      success: false,
-      error: "La liste des établissements est temporairement indisponible."
-    });
+    console.error("[Portal] Could not load establishment directory from DB:", error);
+    // Never return demo schools to regularly authenticated users even on network/DB failure
+    if (!isAnonymousGuest) {
+      return res.json({ success: true, schools: [] });
+    }
+    return res.json({ success: true, schools: defaultDemoSchools });
   }
 });
 
@@ -1867,6 +1883,210 @@ app.get("/api/establishments/available-for-manager", async (req, res) => {
     return res.status(503).json({
       success: false,
       error: "La liste des établissements administratifs est temporairement indisponible."
+    });
+  }
+});
+
+app.post("/api/portal/verify-parent", async (req, res) => {
+  const firebaseUser = await getVerifiedFirebaseUser(req);
+  if (!firebaseUser) {
+    return res.status(401).json({ success: false, error: "Authentification Firebase requise pour accéder à l'espace parent." });
+  }
+
+  // Reserve demo establishments & demo parents exclusively to users in demo mode without account (anonymous)
+  const isAnonymousGuest = !firebaseUser.email || (firebaseUser.firebase as any)?.sign_in_provider === 'anonymous';
+
+  const email = (firebaseUser.email || req.body?.parentEmail || "").trim().toLowerCase();
+  const { schoolId, parentName, parentPhone } = req.body;
+  if (!schoolId || typeof schoolId !== "string" || !schoolId.trim() ||
+      !parentName || typeof parentName !== "string" || !parentName.trim() ||
+      !parentPhone || typeof parentPhone !== "string" || !parentPhone.trim()) {
+    return res.status(400).json({ success: false, error: "L'identifiant de l'établissement, le nom du parent et le numéro de téléphone sont requis." });
+  }
+
+  const isDemoSchool = [
+    "demo_school_ekali",
+    "demo_school_vogt",
+    "demo_school_bilingue",
+  ].includes(schoolId.trim()) || schoolId.trim().startsWith("demo_school_");
+
+  // Regularly authenticated users must NOT access demo schools
+  if (!isAnonymousGuest && isDemoSchool) {
+    return res.status(403).json({
+      success: false,
+      error: "Les établissements et données de démonstration sont exclusivement réservés aux utilisateurs connectés en mode démo sans compte."
+    });
+  }
+
+  try {
+    let establishmentDoc: FirebaseFirestore.DocumentSnapshot | null = null;
+    try {
+      establishmentDoc = await getAdminDb().collection("establishments").doc(schoolId.trim()).get();
+    } catch (e) {
+      console.warn("[Portal] Error getting establishment doc:", e);
+    }
+
+    if (!isDemoSchool && (!establishmentDoc || !establishmentDoc.exists || establishmentDoc.data()?.isDeleted)) {
+      return res.status(404).json({ success: false, error: "Établissement scolaire introuvable ou suspendu." });
+    }
+
+    const normalizeText = (str: unknown) =>
+      String(str || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .trim();
+
+    const sanitizePhone = (str: unknown) => {
+      const digits = String(str || "").replace(/\D/g, "");
+      return digits.length >= 9 ? digits.slice(-9) : digits;
+    };
+
+    const searchNameNorm = normalizeText(parentName);
+    const searchPhoneSan = sanitizePhone(parentPhone);
+
+    let matchedDoc: FirebaseFirestore.DocumentSnapshot | null = null;
+    let matchedData: any = null;
+
+    // Query parent cotisation invoices under this establishment
+    try {
+      const invoicesSnapshot = await getAdminDb()
+        .collection("invoices")
+        .where("parentId", "==", schoolId.trim())
+        .get();
+
+      for (const docSnap of invoicesSnapshot.docs) {
+        const data = docSnap.data();
+        if (data.studentId !== "apee_ces_ekali_1") continue;
+
+        const titleNorm = normalizeText(data.title);
+        const phoneSan = sanitizePhone(data.phone);
+        const docEmail = String(data.email || "").trim().toLowerCase();
+
+        const phoneMatches = searchPhoneSan.length >= 8 && phoneSan === searchPhoneSan;
+        const nameMatches = searchNameNorm.length >= 3 && (titleNorm.includes(searchNameNorm) || searchNameNorm.includes(titleNorm));
+        const emailMatches = Boolean(docEmail && email && docEmail === email);
+
+        if (phoneMatches || (nameMatches && phoneMatches) || (nameMatches && emailMatches)) {
+          matchedDoc = docSnap;
+          matchedData = data;
+          break;
+        }
+      }
+    } catch (invErr) {
+      console.warn("[Portal] Error querying invoices for verify-parent:", invErr);
+    }
+
+    // Demo school fallback presets ONLY for anonymous demo mode users without account!
+    if (!matchedDoc && isAnonymousGuest && isDemoSchool) {
+      if (isDemoSchool || searchNameNorm.includes("martin") || searchPhoneSan.includes("677112233") || searchPhoneSan.endsWith("112233") ||
+          searchNameNorm.includes("diallo") || searchPhoneSan.includes("699445566") || searchPhoneSan.endsWith("445566") ||
+          searchNameNorm.includes("bene") || searchNameNorm.includes("jacques") || searchPhoneSan.includes("687463313") || searchPhoneSan.endsWith("463313")) {
+        if (searchNameNorm.includes("martin") || searchPhoneSan.includes("677112233") || searchPhoneSan.endsWith("112233")) {
+          matchedData = {
+            id: `inv_martin_${schoolId.slice(-6)}`,
+            parentId: schoolId,
+            title: "Jean Martin",
+            phone: "677112233",
+            email: email || "martin@demo.com",
+            amount: 25000,
+            amountPaid: 15000,
+            studentsList: JSON.stringify([{ name: "Lucas Martin", classRoom: "CM2-A" }, { name: "Chloé Martin", classRoom: "CE2-B" }])
+          };
+        } else if (searchNameNorm.includes("diallo") || searchPhoneSan.includes("699445566") || searchPhoneSan.endsWith("445566")) {
+          matchedData = {
+            id: `inv_diallo_${schoolId.slice(-6)}`,
+            parentId: schoolId,
+            title: "Mariam Diallo",
+            phone: "699445566",
+            email: email || "diallo@demo.com",
+            amount: 25000,
+            amountPaid: 0,
+            studentsList: JSON.stringify([{ name: "Amadou Diallo", classRoom: "CM1-A" }])
+          };
+        } else if (searchNameNorm.includes("bene") || searchNameNorm.includes("jacques") || searchPhoneSan.includes("687463313") || searchPhoneSan.endsWith("463313")) {
+          matchedData = {
+            id: `apee_par_bene_jacques_${schoolId.slice(-6)}`,
+            parentId: schoolId,
+            title: "Bene Jacques",
+            phone: "687463313",
+            email: "jacquesbene301@gmail.com",
+            amount: 25000,
+            amountPaid: 15000,
+            studentsList: JSON.stringify([{ name: "Marc Bene", classRoom: "CM2-A" }, { name: "Elise Bene", classRoom: "CE2-B" }]),
+            paymentsHistory: JSON.stringify([{ id: "p_bene_1", amount: 15000, date: "2026-05-10", note: "Versement initial par Mobile Money", method: "Orange Money" }])
+          };
+        }
+      }
+    }
+
+    if (!matchedData) {
+      return res.status(404).json({
+        success: false,
+        error: `Aucun parent enregistré ne correspond à "${parentName}" (${parentPhone}) dans cet établissement. Veuillez vérifier vos données ou contacter l'établissement scolaire.`
+      });
+    }
+
+    // Associate authenticated email with the establishment's parentEmails for secure Firestore rules authorization
+    try {
+      if (establishmentDoc && establishmentDoc.exists) {
+        const estData = establishmentDoc.data() || {};
+        const existingParentEmails = Array.isArray(estData.parentEmails)
+          ? estData.parentEmails.map((e: unknown) => String(e).trim().toLowerCase())
+          : [];
+        if (email && !existingParentEmails.includes(email)) {
+          await establishmentDoc.ref.update({
+            parentEmails: [...new Set([...existingParentEmails, email])]
+          });
+        }
+      }
+    } catch (estErr) {
+      console.warn("[Portal] Could not update parentEmails on establishment:", estErr);
+    }
+
+    // If matched Firestore document exists and email was not set or differed, bind the authenticated email
+    if (matchedDoc && (!matchedData.email || matchedData.email.trim().toLowerCase() !== email)) {
+      try {
+        await matchedDoc.ref.update({ email });
+      } catch (docErr) {
+        console.warn("[Portal] Could not update email on matched invoice:", docErr);
+      }
+    }
+
+    let studentSubsetNames: string[] = [];
+    try {
+      if (matchedData.studentsList) {
+        const parsed = JSON.parse(matchedData.studentsList);
+        if (Array.isArray(parsed)) {
+          studentSubsetNames = parsed.map((s: any) => s.name || "").filter(Boolean);
+        }
+      }
+    } catch (e) {
+      console.warn("[Portal] Error parsing studentsList:", e);
+    }
+
+    return res.json({
+      success: true,
+      matchedParent: {
+        id: matchedDoc ? matchedDoc.id : (matchedData.id || `inv_${Date.now()}`),
+        invoiceId: matchedDoc ? matchedDoc.id : (matchedData.id || `inv_${Date.now()}`),
+        title: matchedData.title || parentName,
+        name: matchedData.title || parentName,
+        phone: matchedData.phone || parentPhone,
+        email: matchedData.email || email,
+        studentSubsetNames,
+        studentsList: matchedData.studentsList || "[]",
+        amount: matchedData.amount || 0,
+        amountPaid: matchedData.amountPaid || 0,
+        status: matchedData.status || "Unpaid",
+      }
+    });
+
+  } catch (error) {
+    console.error("[Portal] Error verifying parent in establishment:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Une erreur serveur est survenue lors de la vérification du dossier parent."
     });
   }
 });

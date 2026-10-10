@@ -9,7 +9,8 @@ const DEMO_ESTABLISHMENT_IDS = new Set([
 ]);
 
 export function isDemoEstablishment(id: string): boolean {
-  return DEMO_ESTABLISHMENT_IDS.has(id);
+  if (!id) return false;
+  return DEMO_ESTABLISHMENT_IDS.has(id) || id.startsWith('demo_school_');
 }
 
 export function sanitizeFirestoreId(id: string): string {

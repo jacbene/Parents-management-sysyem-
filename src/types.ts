@@ -411,6 +411,7 @@ export interface Establishment {
   pedManagerEmail?: string;
   managerEmails?: string[];
   teacherEmails?: string[];
+  parentEmails?: string[];
   status?: 'active' | 'suspended';
   portalFeesPaid?: number;
   lastPortalPaymentDate?: string;

@@ -3,7 +3,6 @@ import { Landmark, TrendingUp, Users, GraduationCap, Percent, AlertCircle, Coins
 import { ComposedChart, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend, Cell, Line, ReferenceLine, PieChart, Pie } from 'recharts';
 import { ApeeParent, ApeeExpense, ApeeSettings, ApeeActivityLog, ApeeOtherRevenue } from '../../types';
 import ApeeFinancialOverview from './ApeeFinancialOverview';
-import ApeeBackendDiagnostics from './ApeeBackendDiagnostics';
 import { useLanguage } from '../../utils/TranslationContext';
 
 interface ApeeDashboardProps {
@@ -381,9 +380,6 @@ export default function ApeeDashboard({ parents, expenses, settings, onNavigate,
           </div>
         </div>
       </div>
-
-      {/* Real-time Render Backend Diagnostics & Connection Verifier */}
-      <ApeeBackendDiagnostics />
 
       {/* Grid of Key Numerical Metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">

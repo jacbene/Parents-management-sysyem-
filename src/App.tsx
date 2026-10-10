@@ -74,6 +74,7 @@ import SuperAdminDashboard from './components/SuperAdminDashboard';
 import SyncIndicator from './components/SyncIndicator';
 import SchoolHelpCenter from './components/SchoolHelpCenter';
 import QuickActionsMenu from './components/QuickActionsMenu';
+import ParentProgressionDashboard from './components/ParentProgressionDashboard';
 // Reserved for future integration:
 // import LibraryDashboard from './components/LibraryDashboard';
 
@@ -126,7 +127,8 @@ import {
   LayoutList,
   ChevronDown,
   ChevronUp,
-  Smartphone
+  Smartphone,
+  TrendingUp
 } from 'lucide-react';
 
 type TabType = 
@@ -154,7 +156,8 @@ type TabType =
   | 'billing' 
   | 'appointments' 
   | 'messages'
-  | 'help_center';
+  | 'help_center'
+  | 'progression';
 
 interface PushNotificationSyncerProps {
   students: Student[];
@@ -993,11 +996,19 @@ export default function App() {
       goOffline();
     }
 
+    const handleTabNav = (e: any) => {
+      if (e.detail && typeof e.detail === 'string') {
+        setActiveTab(e.detail as TabType);
+      }
+    };
+    window.addEventListener('pasma_navigate_tab', handleTabNav);
+
     return () => {
       window.removeEventListener('pasma_connection_changed', updateOfflineState);
       window.removeEventListener('pasma_actions_updated', updateActions);
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('pasma_navigate_tab', handleTabNav);
     };
   }, []);
 
@@ -1318,25 +1329,49 @@ export default function App() {
   const normalizeStudentName = (name: string) =>
     name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
-  // Restrict parent views to linked children; demo fallbacks never apply to account sessions.
+  // Restrict parent views to linked children with resilient matching
   const filteredStudents = students.filter(s => {
     if (!s) return false;
     if (portalUserRole === 'parent') {
+      const sNameNorm = normalizeStudentName(s.name || '');
+
+      // 1. Direct studentSubsetNames match (allowing fuzzy / substring match for first & last names)
       if (portalParentDetails?.studentSubsetNames && portalParentDetails.studentSubsetNames.length > 0) {
         const allowedNames = portalParentDetails.studentSubsetNames.map(normalizeStudentName).filter(Boolean);
-        return allowedNames.includes(normalizeStudentName(s.name || ''));
+        if (allowedNames.some(allowed => allowed === sNameNorm || sNameNorm.includes(allowed) || allowed.includes(sNameNorm))) {
+          return true;
+        }
       }
 
-      if (isAnonymousDemoSession) {
-        const parentNameLower = (portalParentDetails?.name || '').toLowerCase();
-        const parentPhoneClean = (portalParentDetails?.phone || '').replace(/\D/g, '');
-        if (parentNameLower.includes('martin') || parentPhoneClean.includes('677112233')) {
-          return ['lucas martin', 'chloe martin', 'chloé martin'].some(name =>
-            normalizeStudentName(name) === normalizeStudentName(s.name || '')
-          );
-        } else if (parentNameLower.includes('diallo') || parentPhoneClean.includes('699445566')) {
-          return normalizeStudentName(s.name || '') === 'amadou diallo';
-        }
+      // 2. Direct parent identifier matching via student properties
+      if (portalParentDetails?.phone) {
+        const parentPhoneSan = portalParentDetails.phone.replace(/\D/g, '').slice(-9);
+        const sPhoneSan = (s.parentPhone || '').replace(/\D/g, '').slice(-9);
+        if (parentPhoneSan.length >= 8 && sPhoneSan === parentPhoneSan) return true;
+      }
+      if (portalParentDetails?.name) {
+        const pNameNorm = normalizeStudentName(portalParentDetails.name);
+        const sParentNameNorm = normalizeStudentName(s.parentName || '');
+        if (pNameNorm.length >= 3 && (sParentNameNorm.includes(pNameNorm) || pNameNorm.includes(sParentNameNorm))) return true;
+      }
+
+      // 3. Demo presets for known parent profiles
+      const parentNameLower = (portalParentDetails?.name || '').toLowerCase();
+      const parentPhoneClean = (portalParentDetails?.phone || '').replace(/\D/g, '');
+      if (parentNameLower.includes('martin') || parentPhoneClean.includes('677112233') || parentPhoneClean.endsWith('112233')) {
+        return ['lucas martin', 'chloe martin', 'chloé martin'].some(name =>
+          normalizeStudentName(name) === sNameNorm || sNameNorm.includes(normalizeStudentName(name))
+        );
+      } else if (parentNameLower.includes('diallo') || parentPhoneClean.includes('699445566') || parentPhoneClean.endsWith('445566')) {
+        return sNameNorm.includes('amadou diallo') || sNameNorm.includes('diallo');
+      } else if (parentNameLower.includes('bene') || parentNameLower.includes('jacques') || parentPhoneClean.includes('687463313') || parentPhoneClean.endsWith('463313')) {
+        return ['marc bene', 'elise bene', 'bene'].some(name =>
+          sNameNorm.includes(normalizeStudentName(name))
+        );
+      }
+
+      // 4. In demo establishments, if no specific student was matched, show demo pupil subset
+      if (isDemoEstablishment(selectedSchoolId || '')) {
         return true;
       }
 
@@ -1683,6 +1718,11 @@ export default function App() {
             setApeeExpenses([]);
             setApeeLogs([]);
             setApeeOtherRevenues([]);
+          } else if (portalUserRole === 'parent') {
+            setApeeParents([]);
+            setApeeExpenses([]);
+            setApeeLogs([]);
+            setApeeOtherRevenues([]);
           } else {
             const cachedApee = await fetchApeeData(userId);
             if (cachedApee) {
@@ -1832,39 +1872,60 @@ export default function App() {
             );
 
             if (portalUserRole !== 'teacher') {
-              // 9. Invoices: Network-First listener for owners, managers, and parents.
-              unsubscribers.push(
-                onSnapshot(
-                  query(collection(db, 'invoices'), where('parentId', '==', userId)),
-                  (snapshot) => {
-                    const dbList = snapshot.docs
-                      .map(doc => doc.data() as Invoice)
-                      .filter(inv => !isApeeParentDeleted(userId, inv.id));
-                    const finalList = applyPendingActionsToNetworkList(dbList, 'invoices')
-                      .filter(inv => !isApeeParentDeleted(userId, inv.id));
-                    setInvoices(finalList);
-                    saveToLocalRefuge(`pasma_invoices_${userId}`, finalList);
+              if (portalUserRole === 'parent') {
+                // 9. Parent: Dedicated real-time listener for their OWN invoice only (zero permission errors)
+                if (portalParentDetails?.invoiceId) {
+                  unsubscribers.push(
+                    onSnapshot(
+                      doc(db, 'invoices', portalParentDetails.invoiceId),
+                      (docSnap) => {
+                        if (docSnap.exists()) {
+                          const myInvoice = { id: docSnap.id, ...docSnap.data() } as Invoice;
+                          setInvoices([myInvoice]);
+                          saveToLocalRefuge(`pasma_invoices_${userId}`, [myInvoice]);
+                        }
+                      },
+                      (err) => {
+                        console.warn("Real-time parent invoice listener issue:", err);
+                      }
+                    )
+                  );
+                }
+              } else {
+                // 9. Invoices: Network-First listener for owners and managers.
+                unsubscribers.push(
+                  onSnapshot(
+                    query(collection(db, 'invoices'), where('parentId', '==', userId)),
+                    (snapshot) => {
+                      const dbList = snapshot.docs
+                        .map(doc => doc.data() as Invoice)
+                        .filter(inv => !isApeeParentDeleted(userId, inv.id));
+                      const finalList = applyPendingActionsToNetworkList(dbList, 'invoices')
+                        .filter(inv => !isApeeParentDeleted(userId, inv.id));
+                      setInvoices(finalList);
+                      saveToLocalRefuge(`pasma_invoices_${userId}`, finalList);
+                    },
+                    (err) => {
+                      console.warn("Real-time invoices listener failed (offline refuge active):", err);
+                    }
+                  )
+                );
+
+                const unsubApee = subscribeApeeData(
+                  userId,
+                  (apeeData) => {
+                    if (apeeData.settings) setApeeSettings(apeeData.settings);
+                    if (apeeData.parents) setApeeParents(apeeData.parents);
+                    if (apeeData.expenses) setApeeExpenses(apeeData.expenses);
+                    if (apeeData.logs) setApeeLogs(apeeData.logs);
+                    if (apeeData.otherRevenues) setApeeOtherRevenues(apeeData.otherRevenues);
                   },
                   (err) => {
-                    console.warn("Real-time invoices listener failed (offline refuge active):", err);
+                    console.warn("APEE real-time listener subscription failed (offline/permission fallback):", err);
                   }
-                )
-              );
-
-              const unsubApee = subscribeApeeData(
-                userId,
-                (apeeData) => {
-                  if (apeeData.settings) setApeeSettings(apeeData.settings);
-                  if (apeeData.parents) setApeeParents(apeeData.parents);
-                  if (apeeData.expenses) setApeeExpenses(apeeData.expenses);
-                  if (apeeData.logs) setApeeLogs(apeeData.logs);
-                  if (apeeData.otherRevenues) setApeeOtherRevenues(apeeData.otherRevenues);
-                },
-                (err) => {
-                  console.warn("APEE real-time listener subscription failed (offline/permission fallback):", err);
-                }
-              );
-              if (unsubApee) unsubscribers.push(unsubApee);
+                );
+                if (unsubApee) unsubscribers.push(unsubApee);
+              }
             }
 
           } catch (syncErr) {
@@ -1916,16 +1977,26 @@ export default function App() {
     const currentDeviceId = localStorage.getItem('pasma_device_id') || 'dev_' + Math.random().toString(36).substring(2, 11);
     localStorage.setItem('pasma_device_id', currentDeviceId);
 
+    const sessionMountTime = Date.now();
+
     // Register active session in the database
     const sessionRef = doc(db, 'active_sessions', targetKey);
-    setDoc(sessionRef, { deviceId: currentDeviceId, updatedAt: Date.now() }, { merge: true }).catch(err => {
+    setDoc(sessionRef, { deviceId: currentDeviceId, updatedAt: sessionMountTime }, { merge: true }).catch(err => {
       console.warn("Session device registration failed or offline:", err);
     });
 
     const unsub = onSnapshot(sessionRef, (snapshot) => {
       if (snapshot.exists()) {
         const val = snapshot.data();
-        if (val.deviceId && val.deviceId !== currentDeviceId) {
+        // Only invalidate if a NEWER update was written by a DIFFERENT device AFTER this device mounted
+        // and that update is recent (less than 5 minutes old)
+        if (
+          val.deviceId &&
+          val.deviceId !== currentDeviceId &&
+          val.updatedAt &&
+          val.updatedAt > sessionMountTime + 3000 &&
+          Date.now() - val.updatedAt < 5 * 60 * 1000
+        ) {
           console.warn("Device mismatch session invalidation for:", targetKey);
           setDeviceChanged(true);
         }
@@ -1993,7 +2064,7 @@ export default function App() {
       const homeworkSnapshot = await getDocs(homeworkQuery).catch(err => { console.warn("Error fetching homeworks:", err); return null; });
       const appointmentSnapshot = await getDocs(appointmentQuery).catch(err => { console.warn("Error fetching appointments:", err); return null; });
       const messageSnapshot = await getDocs(messageQuery).catch(err => { console.warn("Error fetching messages:", err); return null; });
-      const invoiceSnapshot = portalUserRole === 'teacher'
+      const invoiceSnapshot = (portalUserRole === 'teacher' || portalUserRole === 'parent')
         ? null
         : await getDocs(invoiceQuery).catch(err => { console.warn("Error fetching invoices:", err); return null; });
       const announcementSnapshot = await getDocs(announcementQuery).catch(err => { console.warn("Error fetching announcements:", err); return null; });
@@ -2050,7 +2121,21 @@ export default function App() {
         localStorage.setItem(`pasma_messages_${uid}`, JSON.stringify(list));
         loadedAnyFromDb = true;
       }
-      if (invoiceSnapshot !== null) {
+      if (portalUserRole === 'parent') {
+        if (portalParentDetails?.invoiceId) {
+          try {
+            const singleSnap = await getDoc(doc(db, 'invoices', portalParentDetails.invoiceId));
+            if (singleSnap.exists()) {
+              const myInv = { id: singleSnap.id, ...singleSnap.data() } as Invoice;
+              setInvoices([myInv]);
+              localStorage.setItem(`pasma_invoices_${uid}`, JSON.stringify([myInv]));
+              loadedAnyFromDb = true;
+            }
+          } catch (e) {
+            console.warn("Parent initial single invoice load note:", e);
+          }
+        }
+      } else if (invoiceSnapshot !== null) {
         const list = invoiceSnapshot.empty ? [] : invoiceSnapshot.docs
           .map(doc => doc.data() as Invoice)
           .filter(inv => !isApeeParentDeleted(uid, inv.id));
@@ -4290,6 +4375,27 @@ export default function App() {
                             MoMo
                           </span>
                         </button>
+
+                        {/* SUIVI DE PROGRESSION PARENT (RECHARTS) */}
+                        <button
+                          onClick={() => setActiveTab('progression')}
+                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-black cursor-pointer transition mt-2 ${
+                            activeTab === 'progression'
+                              ? 'bg-indigo-600 text-white shadow-md'
+                              : 'text-indigo-950 bg-indigo-50/70 hover:bg-indigo-100/70 border border-indigo-200/80'
+                          }`}
+                          id="btn-sidebar-parent-progression"
+                        >
+                          <span className="flex items-center gap-2">
+                            <TrendingUp className="h-4 w-4 text-indigo-500" />
+                            <span>{language === 'en' ? "Progression (Recharts)" : "Progression Recharts"}</span>
+                          </span>
+                          <span className={`px-1.5 py-0.5 text-[8.5px] font-black uppercase rounded ${
+                            activeTab === 'progression' ? 'bg-white text-indigo-800' : 'bg-indigo-200 text-indigo-900'
+                          }`}>
+                            Graph
+                          </span>
+                        </button>
                       </>
                     )}
 
@@ -4378,6 +4484,18 @@ export default function App() {
                       }`}
                     >
                       <span className="flex items-center gap-2"><Award className="h-4 w-4" /> {t('tab.grades')}</span>
+                    </button>
+
+                    <button
+                      onClick={() => setActiveTab('progression')}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold cursor-pointer transition ${
+                        activeTab === 'progression'
+                          ? 'bg-slate-900 text-white'
+                          : 'text-gray-650 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2"><TrendingUp className="h-4 w-4 text-emerald-500" /> {language === 'en' ? "Progression (Recharts)" : "Progression Recharts"}</span>
+                      <span className="bg-emerald-100 text-emerald-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full">Graph</span>
                     </button>
 
                     <button
@@ -4746,6 +4864,19 @@ export default function App() {
                           onUpdateStudent={handleUpdateStudent}
                           onPrintReport={() => setPrintingStudent(activeStudent)}
                           settings={apeeSettings}
+                        />
+                      </motion.div>
+                    )}
+
+                    {activeTab === 'progression' && (
+                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="progression">
+                        <ParentProgressionDashboard
+                          students={portalUserRole === 'parent' ? filteredStudents : students}
+                          grades={grades}
+                          attendanceLogs={attendanceLogs}
+                          onNavigateToTab={setActiveTab}
+                          settings={apeeSettings}
+                          portalParentDetails={portalParentDetails}
                         />
                       </motion.div>
                     )}
@@ -5355,15 +5486,40 @@ export default function App() {
                 Votre compte s'est connecté sur un nouvel appareil ou une nouvelle fenêtre de navigateur. Par mesure de sécurité de vos données, cette session locale a été clôturée.
               </p>
             </div>
-            <button
-              onClick={() => {
-                setDeviceChanged(false);
-                handleExitSchool();
-              }}
-              className="w-full py-3 bg-red-650 hover:bg-red-500 text-white font-black text-xs rounded-xl uppercase tracking-wider transition active:scale-98 cursor-pointer"
-            >
-              Se reconnecter
-            </button>
+            <div className="flex flex-col gap-2 pt-1">
+              <button
+                onClick={() => {
+                  setDeviceChanged(false);
+                  const currentDeviceId = localStorage.getItem('pasma_device_id') || 'dev_' + Math.random().toString(36).substring(2, 11);
+                  localStorage.setItem('pasma_device_id', currentDeviceId);
+                  let targetKey = "";
+                  if (portalUserRole === 'parent' && portalParentDetails) {
+                    targetKey = `parent_${selectedSchoolId}_${portalParentDetails.phone || portalParentDetails.name}`;
+                  } else if (portalUserRole === 'teacher' && portalTeacherDetails) {
+                    targetKey = `teacher_${selectedSchoolId}_${portalTeacherDetails.name}`;
+                  } else if (portalUserRole === 'manager' && portalManagerDetails) {
+                    targetKey = `manager_${selectedSchoolId}_${portalManagerDetails.name}`;
+                  }
+                  if (targetKey) {
+                    setDoc(doc(db, 'active_sessions', targetKey), { deviceId: currentDeviceId, updatedAt: Date.now() }, { merge: true }).catch(err => {
+                      console.warn("Takeover session write notice:", err);
+                    });
+                  }
+                }}
+                className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl uppercase tracking-wider transition active:scale-98 cursor-pointer shadow-md"
+              >
+                Continuer sur cet appareil (Prendre la main)
+              </button>
+              <button
+                onClick={() => {
+                  setDeviceChanged(false);
+                  handleExitSchool();
+                }}
+                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl uppercase tracking-wider transition cursor-pointer"
+              >
+                Quitter l'Établissement
+              </button>
+            </div>
           </div>
         </div>
       )}

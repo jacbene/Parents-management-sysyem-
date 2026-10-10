@@ -717,6 +717,28 @@ export function getOfflineMockData(userId: string) {
       teacherName: 'Mme Sophie Laurent',
       teacherEmail: 's.laurent@ecole-pasma.fr',
       dob: '2018-09-21'
+    },
+    {
+      id: `stu_marc_${userId.slice(0, 6)}`,
+      parentId: userId,
+      name: 'Marc Bene',
+      grade: 'CM2 (5ème Année)',
+      classRoom: 'Classe de M. Picard (CM2-A)',
+      avatar: '👦',
+      teacherName: 'M. Jean Picard',
+      teacherEmail: 'j.picard@ecole-pasma.fr',
+      dob: '2016-03-14'
+    },
+    {
+      id: `stu_elise_${userId.slice(0, 6)}`,
+      parentId: userId,
+      name: 'Elise Bene',
+      grade: 'CE2 (3ème Année)',
+      classRoom: 'Classe de Mme Laurent (CE2-B)',
+      avatar: '👧',
+      teacherName: 'Mme Sophie Laurent',
+      teacherEmail: 's.laurent@ecole-pasma.fr',
+      dob: '2018-07-29'
     }
   ];
 
@@ -797,6 +819,61 @@ export function getOfflineMockData(userId: string) {
       maxScore: 20,
       teacherRemarks: 'Très créative. Chloé s\'est beaucoup investie dans cet atelier artistique.',
       date: '2026-05-08'
+    },
+    {
+      id: `grd_marc_1_${userId.slice(0, 6)}`,
+      studentId: `stu_marc_${userId.slice(0, 6)}`,
+      parentId: userId,
+      subject: 'Mathématiques',
+      examName: 'Évaluation - Fractions et Décimaux',
+      score: 18,
+      maxScore: 20,
+      teacherRemarks: 'Raisonnement rigoureux et très bonne logique.',
+      date: '2026-05-18'
+    },
+    {
+      id: `grd_marc_2_${userId.slice(0, 6)}`,
+      studentId: `stu_marc_${userId.slice(0, 6)}`,
+      parentId: userId,
+      subject: 'Sciences & SVT',
+      examName: 'Contrôle - Le Corps Humain',
+      score: 19,
+      maxScore: 20,
+      teacherRemarks: 'Excellente maîtrise du schéma anatomique.',
+      date: '2026-05-12'
+    },
+    {
+      id: `grd_marc_3_${userId.slice(0, 6)}`,
+      studentId: `stu_marc_${userId.slice(0, 6)}`,
+      parentId: userId,
+      subject: 'Français',
+      examName: 'Dictée & Grammaire - Accord du Participe Passé',
+      score: 15,
+      maxScore: 20,
+      teacherRemarks: 'Bonne compréhension générale, poursuivre les lectures.',
+      date: '2026-05-05'
+    },
+    {
+      id: `grd_elise_1_${userId.slice(0, 6)}`,
+      studentId: `stu_elise_${userId.slice(0, 6)}`,
+      parentId: userId,
+      subject: 'Mathématiques',
+      examName: 'Évaluation - Tables de Multiplication',
+      score: 17,
+      maxScore: 20,
+      teacherRemarks: 'Chiffres soignés, calcul précis et rapide.',
+      date: '2026-05-19'
+    },
+    {
+      id: `grd_elise_2_${userId.slice(0, 6)}`,
+      studentId: `stu_elise_${userId.slice(0, 6)}`,
+      parentId: userId,
+      subject: 'Français',
+      examName: 'Rédaction - Raconter ses vacances',
+      score: 16.5,
+      maxScore: 20,
+      teacherRemarks: 'Un très joli style, agréable à lire.',
+      date: '2026-05-14'
     }
   ];
 

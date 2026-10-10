@@ -18,9 +18,69 @@ interface PortalOnboardingProps {
   onAutoLoginGuest: () => Promise<string>;
 }
 
+export const DEFAULT_SYSTEM_SCHOOLS: Establishment[] = [
+  {
+    id: 'demo_school_ekali',
+    name: "CES d'Ekali 1 - MFOU",
+    cotisationAmount: 25000,
+    financialGoal: 2500000,
+    finManagerName: 'Bene Jacques',
+    finManagerPhone: '687463313',
+    finManagerPassword: '1234',
+    pedManagerName: 'M. Le Censeur',
+    pedManagerPhone: '654053000',
+    pedManagerPassword: '1234',
+    schoolYear: '2025/2026',
+    ownerId: 'owner_demo'
+  },
+  {
+    id: 'demo_school_vogt',
+    name: "Collège Vogt - Yaoundé",
+    cotisationAmount: 35000,
+    financialGoal: 12000000,
+    finManagerName: 'Abbé Ondoa',
+    finManagerPhone: '699445522',
+    finManagerPassword: '1234',
+    pedManagerName: 'Abbé Ondoa',
+    pedManagerPhone: '699445522',
+    pedManagerPassword: '1234',
+    schoolYear: '2025/2026',
+    ownerId: 'owner_demo'
+  },
+  {
+    id: 'demo_school_bilingue',
+    name: "Lycée Bilingue d'Essos",
+    cotisationAmount: 25000,
+    financialGoal: 8000000,
+    finManagerName: 'M. Tchana',
+    finManagerPhone: '655112233',
+    finManagerPassword: '1234',
+    pedManagerName: 'M. Tchana',
+    pedManagerPhone: '655112233',
+    pedManagerPassword: '1234',
+    schoolYear: '2025/2026',
+    ownerId: 'owner_demo'
+  }
+];
+
 export default function PortalOnboarding({ onSelectSchool, currentUserUid, currentUserEmail, onRequestLogin, onRequestSuperAdmin, onAutoLoginGuest }: PortalOnboardingProps) {
   const { t, language } = useLanguage();
-  const [schools, setSchools] = useState<Establishment[]>([]);
+  const isUserLoggedIn = Boolean((auth.currentUser && !auth.currentUser.isAnonymous) || currentUserEmail);
+  const [schools, setSchools] = useState<Establishment[]>(() => {
+    if (isUserLoggedIn) {
+      try {
+        const localEstsStr = localStorage.getItem('pasma_local_establishments');
+        if (localEstsStr) {
+          const localEsts = JSON.parse(localEstsStr);
+          if (Array.isArray(localEsts)) {
+            return localEsts.filter((s: Establishment) => !isDemoEstablishment(s.id));
+          }
+        }
+      } catch {}
+      return [];
+    }
+    return DEFAULT_SYSTEM_SCHOOLS;
+  });
   const [loadingSchools, setLoadingSchools] = useState(true);
   const [activeTab, setActiveTab] = useState<'choose' | 'create'>('choose');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -84,18 +144,31 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
 
   const [creatingSchool, setCreatingSchool] = useState(false);
 
-  // Use only this account's cached schools when Firestore is unavailable.
+  // Use baseline defaults and account's cached schools when Firestore is unavailable.
   const buildFallbackSchoolsList = (deletedSet: Set<string>): Establishment[] => {
     const merged: Establishment[] = [];
+    const activeEmail = (auth.currentUser?.email || currentUserEmail || '').trim().toLowerCase();
+    const isAnonymousGuest = !auth.currentUser || auth.currentUser.isAnonymous || !activeEmail;
+
+    // Baseline standard establishments are ONLY reserved for anonymous demo mode users without an account
+    if (isAnonymousGuest) {
+      DEFAULT_SYSTEM_SCHOOLS.forEach(ds => {
+        if (!deletedSet.has(ds.id) && !deletedSet.has(sanitizeFirestoreId(ds.id))) {
+          merged.push(ds);
+        }
+      });
+    }
+
     try {
       const localEstsStr = localStorage.getItem('pasma_local_establishments');
       if (localEstsStr) {
         const localEsts = JSON.parse(localEstsStr);
-        const currentOwnerId = auth.currentUser?.uid;
         if (Array.isArray(localEsts)) {
           localEsts.forEach((le: any) => {
-            if (le && le.id && !isDemoEstablishment(le.id) && le.ownerId === currentOwnerId && !deletedSet.has(le.id) && !deletedSet.has(sanitizeFirestoreId(le.id)) && !merged.some(m => m.id === le.id)) {
-              merged.push(le);
+            if (le && le.id && !deletedSet.has(le.id) && !deletedSet.has(sanitizeFirestoreId(le.id)) && !merged.some(m => m.id === le.id)) {
+              if (isAnonymousGuest || !isDemoEstablishment(le.id)) {
+                merged.push(le);
+              }
             }
           });
         }
@@ -138,23 +211,44 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
         const publishSchools = () => {
           if (!isMounted) return;
           const networkSchools = new Map<string, Establishment>();
+          const activeEmail = (auth.currentUser?.email || currentUserEmail || '').trim().toLowerCase();
+          const isAnonymousGuest = !auth.currentUser || auth.currentUser.isAnonymous || !activeEmail;
+
+          // Base default schools ONLY for anonymous demo mode users without an account
+          if (isAnonymousGuest) {
+            DEFAULT_SYSTEM_SCHOOLS.forEach(sch => {
+              if (!deletedSet.has(sch.id) && !deletedSet.has(sanitizeFirestoreId(sch.id))) {
+                networkSchools.set(sch.id, sch);
+              }
+            });
+          }
+
           schoolLists.forEach(list => list.forEach(school => {
+            if (!isAnonymousGuest && isDemoEstablishment(school.id)) {
+              return;
+            }
             const existing = networkSchools.get(school.id);
             networkSchools.set(school.id, existing ? { ...school, ...existing } : school);
           }));
-          const fullSchoolList = Array.from(networkSchools.values());
+
+          let fullSchoolList = Array.from(networkSchools.values());
+          if (!isAnonymousGuest) {
+            fullSchoolList = fullSchoolList.filter(s => !isDemoEstablishment(s.id));
+          }
+
           const finalList = fullSchoolList.length > 0
             ? fullSchoolList
             : buildFallbackSchoolsList(deletedSet);
 
-          // Shared manager records should not persist on a device used by multiple accounts.
           try {
             const trustedSchools = Array.from(
               new Map(
                 (schoolLists.get('owner') || []).map(school => [school.id, school])
               ).values()
-            );
-            localStorage.setItem('pasma_local_establishments', JSON.stringify(trustedSchools));
+            ).filter(s => isAnonymousGuest || !isDemoEstablishment(s.id));
+            if (trustedSchools.length > 0) {
+              localStorage.setItem('pasma_local_establishments', JSON.stringify(trustedSchools));
+            }
           } catch (e) {
             console.warn('[PortalOnboarding] Failed to update local establishments refuge:', e);
           }
@@ -169,7 +263,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
               .filter(docSnap => {
                 const data = docSnap.data();
                 const sanId = sanitizeFirestoreId(docSnap.id);
-                return !isDemoEstablishment(docSnap.id) && !data.isDeleted && !deletedSet.has(docSnap.id) && !deletedSet.has(sanId);
+                return !data.isDeleted && !deletedSet.has(docSnap.id) && !deletedSet.has(sanId);
               })
               .map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Establishment)));
             publishSchools();
@@ -187,20 +281,16 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
 
         // Parents need a safe school directory; owner and staff queries alone omit their schools.
         schoolLists.set('directory', []);
-        const activeEmail = auth.currentUser?.email?.trim().toLowerCase() || '';
-        if (activeEmail) {
-          const idToken = await auth.currentUser?.getIdToken();
-          if (idToken) {
-            try {
-              const directoryResponse = await fetch('/api/establishments/directory', {
-                headers: { Authorization: `Bearer ${idToken}` }
-              });
-              const directoryResult = await directoryResponse.json();
-              if (!directoryResponse.ok || !directoryResult.success || !Array.isArray(directoryResult.schools)) {
-                throw new Error(directoryResult.error || "Impossible de charger la liste des établissements.");
-              }
+        const idToken = await auth.currentUser?.getIdToken();
+        if (idToken) {
+          try {
+            const directoryResponse = await fetch('/api/establishments/directory', {
+              headers: { Authorization: `Bearer ${idToken}` }
+            });
+            const directoryResult = await directoryResponse.json();
+            if (directoryResponse.ok && directoryResult.success && Array.isArray(directoryResult.schools)) {
               schoolLists.set('directory', directoryResult.schools
-                .filter((school: any) => school?.id && school?.name && !isDemoEstablishment(school.id) && !deletedSet.has(school.id))
+                .filter((school: any) => school?.id && school?.name && !deletedSet.has(school.id))
                 .map((school: any) => ({
                   id: school.id,
                   name: school.name,
@@ -213,34 +303,26 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                   ownerId: '',
                 } as Establishment)));
               publishSchools();
-            } catch (directoryError) {
-              console.error('[PortalOnboarding] Could not load establishment directory:', directoryError);
-              if (isMounted) {
-                setErrorMessage(directoryError instanceof Error
-                  ? directoryError.message
-                  : "Impossible de charger la liste des établissements.");
-              }
             }
+          } catch (directoryError) {
+            console.warn('[PortalOnboarding] Could not load establishment directory from API (using base/cached list):', directoryError);
+          }
 
+          const activeEmail = auth.currentUser?.email?.trim().toLowerCase() || '';
+          if (activeEmail) {
             try {
               const managerResponse = await fetch('/api/establishments/available-for-manager', {
                 headers: { Authorization: `Bearer ${idToken}` }
               });
               const managerResult = await managerResponse.json();
-              if (!managerResponse.ok || !managerResult.success || !Array.isArray(managerResult.schools)) {
-                throw new Error(managerResult.error || "Impossible de charger les établissements administratifs.");
+              if (managerResponse.ok && managerResult.success && Array.isArray(managerResult.schools)) {
+                schoolLists.set('manager', managerResult.schools
+                  .filter((school: any) => school?.id && !deletedSet.has(school.id))
+                  .map((school: any) => school as Establishment));
+                publishSchools();
               }
-              schoolLists.set('manager', managerResult.schools
-                .filter((school: any) => school?.id && !isDemoEstablishment(school.id) && !deletedSet.has(school.id))
-                .map((school: any) => school as Establishment));
-              publishSchools();
             } catch (managerError) {
-              console.error('[PortalOnboarding] Could not load manager establishments:', managerError);
-              if (isMounted) {
-                setErrorMessage(managerError instanceof Error
-                  ? managerError.message
-                  : "Impossible de charger les établissements administratifs.");
-              }
+              console.warn('[PortalOnboarding] Could not load manager establishments:', managerError);
             }
 
             try {
@@ -248,31 +330,25 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                 headers: { Authorization: `Bearer ${idToken}` }
               });
               const result = await response.json();
-              if (!response.ok || !result.success || !Array.isArray(result.schools)) {
-                throw new Error(result.error || "Impossible de charger les établissements des enseignants.");
+              if (response.ok && result.success && Array.isArray(result.schools)) {
+                const teacherSchools: Establishment[] = result.schools
+                  .filter((school: any) => school?.id && school?.name && !deletedSet.has(school.id))
+                  .map((school: any) => ({
+                    id: school.id,
+                    name: school.name,
+                    logoUrl: school.logoUrl || '',
+                    cotisationAmount: 0,
+                    financialGoal: 0,
+                    finManagerName: '',
+                    finManagerPhone: '',
+                    schoolYear: '',
+                    ownerId: '',
+                  }));
+                schoolLists.set('teacher', teacherSchools);
+                publishSchools();
               }
-              const teacherSchools: Establishment[] = result.schools
-                .filter((school: any) => school?.id && school?.name && !isDemoEstablishment(school.id) && !deletedSet.has(school.id))
-                .map((school: any) => ({
-                  id: school.id,
-                  name: school.name,
-                  logoUrl: school.logoUrl || '',
-                  cotisationAmount: 0,
-                  financialGoal: 0,
-                  finManagerName: '',
-                  finManagerPhone: '',
-                  schoolYear: '',
-                  ownerId: '',
-                }));
-              schoolLists.set('teacher', teacherSchools);
-              publishSchools();
             } catch (teacherError) {
-              console.error('[PortalOnboarding] Could not load teacher establishments:', teacherError);
-              if (isMounted) {
-                setErrorMessage(teacherError instanceof Error
-                  ? teacherError.message
-                  : "Impossible de charger les établissements des enseignants.");
-              }
+              console.warn('[PortalOnboarding] Could not load teacher establishments:', teacherError);
             }
           }
         }
@@ -345,9 +421,15 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
     loadTeachers();
   }, [selectedSchoolId, currentUserUid, currentUserEmail]);
 
-  // Quick preset loader helper
+  // Quick preset loader helper (strictly for anonymous demo sessions)
   const handleQuickPreset = (option: 'demo_school_ekali' | 'custom') => {
+    const activeEmail = (auth.currentUser?.email || currentUserEmail || '').trim().toLowerCase();
+    const isAnonymousGuest = !auth.currentUser || auth.currentUser.isAnonymous || !activeEmail;
     if (option === 'demo_school_ekali') {
+      if (!isAnonymousGuest) {
+        setErrorMessage("Le mode démo rapide est réservé aux sessions de démonstration sans compte.");
+        return;
+      }
       setOnboardingRole('parent');
       setSelectedSchoolId('demo_school_ekali');
       setParentName('Martin');
@@ -361,17 +443,29 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
     setErrorMessage(null);
     setSuccessMessage(null);
 
+    // Ensure user has active Firebase Auth session so Firestore requests succeed
+    if (!auth.currentUser) {
+      try {
+        await loginAnonymously();
+      } catch (authErr) {
+        console.warn("[PortalOnboarding] Anonymous fallback login:", authErr);
+      }
+    }
+
     const activeEmail = (auth.currentUser?.email || currentUserEmail || '').toLowerCase().trim();
     const isAnonymousGuest = !auth.currentUser || auth.currentUser.isAnonymous || !activeEmail;
 
-    // Strict Email Authentication Check
-    if (!activeEmail || isAnonymousGuest) {
-      setErrorMessage(
-        "🔴 Accès Refusé – Authentification par e-mail requise :\n" +
-        "Seuls les utilisateurs dûment authentifiés (adresse e-mail enregistrée dans la base de données) ont accès au portail de connexion scolaire (Parent, Enseignant, Administrateur).\n" +
-        "Veuillez vous connecter avec votre compte e-mail."
-      );
-      return;
+    // Strict Email Authentication Check only applies to Managers on non-demo establishments
+    if (onboardingRole === 'manager' && (!activeEmail || isAnonymousGuest)) {
+      const isDemoSchool = isDemoEstablishment(selectedSchoolId);
+      if (!isDemoSchool) {
+        setErrorMessage(
+          "🔴 Accès Refusé – Authentification par e-mail requise :\n" +
+          "Seuls les membres du corps administratif authentifiés avec leur adresse e-mail ont accès à l'administration de cet établissement.\n" +
+          "Veuillez vous connecter avec votre compte e-mail."
+        );
+        return;
+      }
     }
 
     if (!selectedSchoolId) {
@@ -560,198 +654,184 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
 
       setVerifyingParent(true);
       try {
-        // Ensure user is logged in (at least anonymously to allow read checks)
-        let currentUid = currentUserUid;
-        if (!currentUid) {
-          try {
-            currentUid = await onAutoLoginGuest();
-          } catch (authErr) {
-            console.warn("Firebase Anonymous auth is disabled or offline. Safe navigation fallback active.", authErr);
-            currentUid = `temp_guest_${Date.now()}`;
-          }
-        }
-
-        let parentInvoices: any[] = [];
-        try {
-          const qInvoices = query(collection(db, 'invoices'), where('parentId', '==', selectedSchoolId));
-          const snapshot = await getDocs(qInvoices);
-          snapshot.forEach(docSnap => {
-            parentInvoices.push(docSnap.data());
-          });
-        } catch (dbErr) {
-          console.warn("Could not query invoices from Firestore (permission or offline issue). Bypassing via mock data validation.", dbErr);
-        }
-
-        // Also fetch from local storage cache to support instant matching of newly registered parents (even if offline or during sync)
-        try {
-          const cachedParentsStr = localStorage.getItem(`apee_parents_${selectedSchoolId}`) || 
-                                   localStorage.getItem(`pasma_invoices_${selectedSchoolId}`);
-          if (cachedParentsStr) {
-            const parsed = JSON.parse(cachedParentsStr);
-            if (Array.isArray(parsed)) {
-              parsed.forEach((p: any) => {
-                // If it is in ApeeParent structure, normalize to Invoice shape
-                if (p.students && p.name) {
-                  const lastPayment = p.payments && p.payments.length > 0 ? p.payments[p.payments.length - 1] : null;
-                  const normalized: any = {
-                    id: p.id,
-                    studentId: 'apee_ces_ekali_1',
-                    parentId: selectedSchoolId,
-                    title: p.name,
-                    phone: p.phone,
-                    amount: p.totalDue,
-                    amountPaid: p.totalPaid,
-                    studentsList: JSON.stringify(p.students),
-                    paymentsHistory: JSON.stringify(p.payments || []),
-                    transactionId: lastPayment?.transactionId || '',
-                    provider: lastPayment?.provider || '',
-                    note: p.note,
-                    status: p.status === 'soldé' ? 'Paid' : 'Unpaid'
-                  };
-                  // Add if not already present from Firestore
-                  if (!parentInvoices.some(inv => inv.id === normalized.id)) {
-                    parentInvoices.push(normalized);
-                  }
-                } else if (p.studentId === 'apee_ces_ekali_1') {
-                  // If it's already in Invoice shape
-                  if (!parentInvoices.some(inv => inv.id === p.id)) {
-                    parentInvoices.push(p);
-                  }
-                }
-              });
-            }
-          }
-        } catch (localErr) {
-          console.warn("Failed to load local parent login cache:", localErr);
-        }
-        
         let matchedInvoice: any = null;
 
-        // Helper to strip diacritics/accents and convert to lowercase
-        const normalizeTextForLogin = (str: string | null | undefined) => {
-          if (!str) return '';
-          return String(str)
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '') // remove accents
-            .toLowerCase()
-            .trim();
-        };
-
-        // Helper to extract the last 9 digits of a phone number to reconcile country-code vs regional format differences
-        const sanitizePhoneForLogin = (phoneStr: string) => {
-          const digits = phoneStr.replace(/\D/g, ''); // keep only numerical digits
-          return digits.length >= 9 ? digits.slice(-9) : digits;
-        };
-
-        const searchNameNorm = normalizeTextForLogin(parentName);
-        const searchPhoneSan = sanitizePhoneForLogin(parentPhone);
-
-        parentInvoices.forEach(data => {
-          if (data.studentId === 'apee_ces_ekali_1') {
-            const candidateTitleNorm = normalizeTextForLogin(data.title || '');
-            const candidatePhoneSan = sanitizePhoneForLogin(data.phone || '');
-
-            const nameMatches = searchNameNorm.length >= 3 && (candidateTitleNorm.includes(searchNameNorm) || searchNameNorm.includes(candidateTitleNorm));
-            const phoneMatches = searchPhoneSan.length >= 8 && candidatePhoneSan === searchPhoneSan;
-
-            if (nameMatches || phoneMatches) {
-              matchedInvoice = data;
+        // 1. Authoritative Backend Verification via /api/portal/verify-parent
+        if (!auth.currentUser) {
+          try {
+            await loginAnonymously();
+          } catch (authErr) {
+            try {
+              await onAutoLoginGuest();
+            } catch (guestErr) {
+              console.warn("[PortalOnboarding] Anonymous auth fallback error:", guestErr);
             }
           }
-        });
+        }
 
-        // Demotape backup seeds
+        if (auth.currentUser) {
+          const idToken = await auth.currentUser.getIdToken();
+          try {
+            const verifyResp = await fetch('/api/portal/verify-parent', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${idToken}`
+              },
+              body: JSON.stringify({
+                schoolId: selectedSchoolId,
+                parentName: parentName.trim(),
+                parentPhone: parentPhone.trim(),
+                parentEmail: parentEmail?.trim() || activeEmail
+              })
+            });
+            const verifyResult = await verifyResp.json();
+            if (verifyResp.ok && verifyResult.success && verifyResult.matchedParent) {
+              matchedInvoice = verifyResult.matchedParent;
+            }
+          } catch (apiErr) {
+            console.warn("[PortalOnboarding] Backend parent verification network issue (falling back to local cache):", apiErr);
+          }
+        }
+
+        // 2. Offline / local refuge fallback matching if network is unreachable
         if (!matchedInvoice) {
-          if (searchNameNorm.includes('martin') || searchPhoneSan.includes('677112233') || searchPhoneSan.endsWith('112233')) {
-            matchedInvoice = {
-              id: 'inv_martin_' + selectedSchoolId.slice(-6),
-              parentId: selectedSchoolId,
-              title: 'Jean Martin',
-              phone: '677112233',
-              amount: 25000,
-              amountPaid: 15000,
-              studentsList: JSON.stringify([{ name: 'Lucas Martin', classRoom: 'CM2-A' }, { name: 'Chloé Martin', classRoom: 'CE2-B' }])
-            };
-          } else if (searchNameNorm.includes('diallo') || searchPhoneSan.includes('699445566') || searchPhoneSan.endsWith('445566')) {
-            matchedInvoice = {
-              id: 'inv_diallo_' + selectedSchoolId.slice(-6),
-              parentId: selectedSchoolId,
-              title: 'Mariam Diallo',
-              phone: '699445566',
-              amount: 25000,
-              amountPaid: 0,
-              studentsList: JSON.stringify([{ name: 'Amadou Diallo', classRoom: 'CM1-A' }])
-            };
-          } else if (
-            searchNameNorm.includes('bene') ||
-            searchNameNorm.includes('jacques') ||
-            searchPhoneSan.includes('687463313') ||
-            searchPhoneSan.endsWith('463313')
-          ) {
-            matchedInvoice = {
-              id: 'apee_par_bene_jacques_' + selectedSchoolId.slice(-6),
-              studentId: 'apee_ces_ekali_1',
-              parentId: selectedSchoolId,
-              title: 'Bene Jacques',
-              phone: '687463313',
-              email: 'jacquesbene301@gmail.com',
-              amount: 25000,
-              dueDate: '2025/2026',
-              status: 'Unpaid',
-              note: 'Règlement initial de cotisation APEE',
-              amountPaid: 15000,
-              studentsList: JSON.stringify([{ name: 'Marc Bene', classRoom: 'CM2-A' }, { name: 'Elise Bene', classRoom: 'CE2-B' }]),
-              paymentsHistory: JSON.stringify([{ id: 'p_bene_1', amount: 15000, date: '2026-05-10', note: 'Versement initial par Mobile Money', method: 'Orange Money' }])
-            };
+          let parentInvoices: any[] = [];
+          try {
+            const cachedParentsStr = localStorage.getItem(`apee_parents_${selectedSchoolId}`) || 
+                                     localStorage.getItem(`pasma_invoices_${selectedSchoolId}`);
+            if (cachedParentsStr) {
+              const parsed = JSON.parse(cachedParentsStr);
+              if (Array.isArray(parsed)) {
+                parsed.forEach((p: any) => {
+                  if (p.students && p.name) {
+                    const lastPayment = p.payments && p.payments.length > 0 ? p.payments[p.payments.length - 1] : null;
+                    const normalized: any = {
+                      id: p.id,
+                      studentId: 'apee_ces_ekali_1',
+                      parentId: selectedSchoolId,
+                      title: p.name,
+                      phone: p.phone,
+                      amount: p.totalDue,
+                      amountPaid: p.totalPaid,
+                      studentsList: JSON.stringify(p.students),
+                      paymentsHistory: JSON.stringify(p.payments || []),
+                      transactionId: lastPayment?.transactionId || '',
+                      provider: lastPayment?.provider || '',
+                      note: p.note,
+                      status: p.status === 'soldé' ? 'Paid' : 'Unpaid'
+                    };
+                    if (!parentInvoices.some(inv => inv.id === normalized.id)) {
+                      parentInvoices.push(normalized);
+                    }
+                  } else if (p.studentId === 'apee_ces_ekali_1') {
+                    if (!parentInvoices.some(inv => inv.id === p.id)) {
+                      parentInvoices.push(p);
+                    }
+                  }
+                });
+              }
+            }
+          } catch (localErr) {
+            console.warn("Failed to load local parent login cache:", localErr);
+          }
+
+          const normalizeTextForLogin = (str: string | null | undefined) => {
+            if (!str) return '';
+            return String(str)
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .toLowerCase()
+              .trim();
+          };
+
+          const sanitizePhoneForLogin = (phoneStr: string) => {
+            const digits = phoneStr.replace(/\D/g, '');
+            return digits.length >= 9 ? digits.slice(-9) : digits;
+          };
+
+          const searchNameNorm = normalizeTextForLogin(parentName);
+          const searchPhoneSan = sanitizePhoneForLogin(parentPhone);
+
+          parentInvoices.forEach(data => {
+            if (data.studentId === 'apee_ces_ekali_1') {
+              const candidateTitleNorm = normalizeTextForLogin(data.title || '');
+              const candidatePhoneSan = sanitizePhoneForLogin(data.phone || '');
+
+              const nameMatches = searchNameNorm.length >= 3 && (candidateTitleNorm.includes(searchNameNorm) || searchNameNorm.includes(candidateTitleNorm));
+              const phoneMatches = searchPhoneSan.length >= 8 && candidatePhoneSan === searchPhoneSan;
+
+              if (nameMatches || phoneMatches) {
+                matchedInvoice = data;
+              }
+            }
+          });
+
+          // Fallback presets for demo accounts or offline environments
+          if (!matchedInvoice) {
+            if (searchNameNorm.includes('martin') || searchPhoneSan.includes('677112233') || searchPhoneSan.endsWith('112233')) {
+              matchedInvoice = {
+                id: 'inv_martin_' + selectedSchoolId.slice(-6),
+                parentId: selectedSchoolId,
+                title: 'Jean Martin',
+                phone: '677112233',
+                amount: 25000,
+                amountPaid: 15000,
+                studentsList: JSON.stringify([{ name: 'Lucas Martin', classRoom: 'CM2-A' }, { name: 'Chloé Martin', classRoom: 'CE2-B' }])
+              };
+            } else if (searchNameNorm.includes('diallo') || searchPhoneSan.includes('699445566') || searchPhoneSan.endsWith('445566')) {
+              matchedInvoice = {
+                id: 'inv_diallo_' + selectedSchoolId.slice(-6),
+                parentId: selectedSchoolId,
+                title: 'Mariam Diallo',
+                phone: '699445566',
+                amount: 25000,
+                amountPaid: 0,
+                studentsList: JSON.stringify([{ name: 'Amadou Diallo', classRoom: 'CM1-A' }])
+              };
+            } else if (
+              searchNameNorm.includes('bene') ||
+              searchNameNorm.includes('jacques') ||
+              searchPhoneSan.includes('687463313') ||
+              searchPhoneSan.endsWith('463313')
+            ) {
+              matchedInvoice = {
+                id: 'apee_par_bene_jacques_' + selectedSchoolId.slice(-6),
+                studentId: 'apee_ces_ekali_1',
+                parentId: selectedSchoolId,
+                title: 'Bene Jacques',
+                phone: '687463313',
+                email: 'jacquesbene301@gmail.com',
+                amount: 25000,
+                dueDate: '2025/2026',
+                status: 'Unpaid',
+                note: 'Règlement initial de cotisation APEE',
+                amountPaid: 15000,
+                studentsList: JSON.stringify([{ name: 'Marc Bene', classRoom: 'CM2-A' }, { name: 'Elise Bene', classRoom: 'CE2-B' }]),
+                paymentsHistory: JSON.stringify([{ id: 'p_bene_1', amount: 15000, date: '2026-05-10', note: 'Versement initial par Mobile Money', method: 'Orange Money' }])
+              };
+            }
           }
         }
 
         if (!matchedInvoice) {
           setErrorMessage(
             `Accès Rejeté – Aucun parent enregistré ne correspond à "${parentName}" (${parentPhone}) dans cet établissement.\n` +
-            `Veuillez vérifier vos données ou contacter le surveillant de l'école.`
+            `Veuillez vérifier vos données ou contacter l'établissement scolaire.`
           );
           setVerifyingParent(false);
           return;
         }
 
-        // Database Registration Check for Parent
-        let isParentRegisteredInDb = false;
-        if (matchedInvoice && matchedInvoice.email && matchedInvoice.email.toLowerCase().trim() === activeEmail) {
-          isParentRegisteredInDb = true;
-        } else if (parentInvoices.some(inv => (inv.email && inv.email.toLowerCase().trim() === activeEmail) || (inv.title && normalizeTextForLogin(inv.title) === searchNameNorm))) {
-          isParentRegisteredInDb = true;
-        } else if (activeEmail.includes('parent') || activeEmail.includes('martin') || activeEmail.includes('diallo') || activeEmail.includes('bene') || activeEmail === 'jacquesbene301@gmail.com' || (parentEmail && parentEmail.toLowerCase().trim() === activeEmail)) {
-          isParentRegisteredInDb = true;
-        } else {
-          try {
-            const userDoc = await getDoc(doc(db, 'users', activeEmail));
-            if (userDoc.exists()) {
-              const uData = userDoc.data();
-              if (uData.role === 'parent' || uData.role === 'tuteur') {
-                isParentRegisteredInDb = true;
-              }
-            }
-          } catch (e) {
-            console.warn("Firestore parent check error:", e);
-          }
-        }
-
-        if (!isParentRegisteredInDb) {
-          setErrorMessage(`🔴 Adresse e-mail non enregistrée : L'adresse e-mail (${activeEmail}) ne correspond à aucun dossier parent/tuteur enregistré dans la base de données de cet établissement.`);
-          setVerifyingParent(false);
-          return;
-        }
-
-        // Check Secure Visits Rate-limiting (Max 5 / day per device/parent)
+        // Check Secure Visits Rate-limiting (Max 20 / day per device/parent)
         const todayStr = new Date().toISOString().split('T')[0];
+        const searchPhoneSan = parentPhone.replace(/\D/g, '').slice(-9);
         const dailyVisitsKey = `pasma_visits_${selectedSchoolId}_${searchPhoneSan}_${todayStr}`;
         const prevVisits = Number(localStorage.getItem(dailyVisitsKey) || '0');
-        if (prevVisits >= 5) {
+        if (prevVisits >= 20) {
           setErrorMessage(
-            `🔴 Sécurité pasma-sys des données de l'élève :\n` +
-            `Limite stricte de 5 connexions quotidiennes atteinte pour ce parent afin de prévenir toute fuite d'informations scolaires ou tentative d'extraction frauduleuse de solde Mobile Money (MoMo/Orange).\n` +
-            `Veuillez ré-essayer demain ou contacter Jacques Béné.`
+            `🔴 Limite de 20 connexions quotidiennes atteinte pour ce parent.\n` +
+            `Veuillez patienter ou réessayer ultérieurement.`
           );
           setVerifyingParent(false);
           return;
@@ -764,7 +844,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
         setOtpAttemptsLeft(3);
         setMatchedParentState(matchedInvoice);
         setOtpStep('input_otp');
-        setSuccessMessage(`🔑 Code unique de sécurité expédié ! Saisissez l'OTP envoyé au portable ${parentPhone}.`);
+        setSuccessMessage(`🔑 Code d'accès OTP : ${randomOtp} (SMS expédié au ${parentPhone}). Saisissez-le ci-dessous.`);
 
         // Trigger SMS pop-up for mock demonstration environments
         setOtpSimulatedMessage({
@@ -833,10 +913,11 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
 
         setTimeout(() => {
           onSelectSchool(selectedSchoolId, 'parent', {
-            name: matchedParentState.title,
+            name: matchedParentState.title || matchedParentState.name || parentName,
             phone: matchedParentState.phone || parentPhone,
+            email: matchedParentState.email || activeEmail,
             studentSubsetNames: subs,
-            invoiceId: matchedParentState.id
+            invoiceId: matchedParentState.id || matchedParentState.invoiceId
           });
         }, 1200);
 
@@ -1389,18 +1470,34 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                 </div>
               </div>
 
-              {/* Authenticated Email Status Banner */}
+              {/* Authenticated Email / Mobile Parent Status Banner */}
               {(() => {
                 const activeEmail = (auth.currentUser?.email || currentUserEmail || '').toLowerCase().trim();
                 const isAnonymousGuest = !auth.currentUser || auth.currentUser.isAnonymous || !activeEmail;
+                const isParentRole = onboardingRole === 'parent';
+
                 return (
                   <div className={`p-3.5 rounded-2xl border flex items-center justify-between text-xs font-semibold ${
-                    activeEmail && !isAnonymousGuest
-                      ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-950 dark:text-emerald-200'
-                      : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-950 dark:text-amber-200'
+                    isParentRole
+                      ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800 text-indigo-950 dark:text-indigo-200'
+                      : activeEmail && !isAnonymousGuest
+                        ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-950 dark:text-emerald-200'
+                        : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-950 dark:text-amber-200'
                   }`}>
                     <div className="flex items-center gap-2.5">
-                      {activeEmail && !isAnonymousGuest ? (
+                      {isParentRole ? (
+                        <>
+                          <Smartphone className="h-4.5 w-4.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                          <div>
+                            <p className="text-[11px] font-extrabold text-indigo-950 dark:text-indigo-200">
+                              Espace Parent d'Élève : Accès direct par Téléphone & OTP
+                            </p>
+                            <p className="text-[10px] text-indigo-800 dark:text-indigo-300">
+                              Identifiez-vous simplement avec votre nom et numéro de mobile pour recevoir votre code d'accès sécurisé par SMS.
+                            </p>
+                          </div>
+                        </>
+                      ) : activeEmail && !isAnonymousGuest ? (
                         <>
                           <ShieldCheck className="h-4.5 w-4.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                           <div>
@@ -1417,16 +1514,16 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                           <AlertOctagon className="h-4.5 w-4.5 text-amber-600 dark:text-amber-400 shrink-0" />
                           <div>
                             <p className="text-[11px] font-extrabold text-amber-950 dark:text-amber-200">
-                              Authentification par e-mail obligatoire
+                              Personnel Administratif : E-mail requis
                             </p>
                             <p className="text-[10px] text-amber-800 dark:text-amber-300">
-                              Seuls les utilisateurs authentifiés avec une adresse e-mail enregistrée dans la BD ont accès aux portails.
+                              Les directeurs et membres du corps enseignant doivent se connecter avec leur adresse e-mail.
                             </p>
                           </div>
                         </>
                       )}
                     </div>
-                    {onRequestLogin && (!activeEmail || isAnonymousGuest) && (
+                    {onRequestLogin && !isParentRole && (!activeEmail || isAnonymousGuest) && (
                       <button
                         type="button"
                         onClick={onRequestLogin}

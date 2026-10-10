@@ -759,6 +759,27 @@ export async function saveApeeParent(parentId: string, parent: ApeeParent) {
 
   try {
     await setDoc(doc(db, 'invoices', scopedId), invoiceData);
+
+    // Sync parent email to establishment authorized list if present
+    if (parent.email && parent.email.trim()) {
+      try {
+        const estDocRef = doc(db, 'establishments', sanitizeFirestoreId(parentId));
+        const estSnap = await getDoc(estDocRef);
+        if (estSnap.exists()) {
+          const estData = estSnap.data();
+          const existingEmails = Array.isArray(estData.parentEmails) ? estData.parentEmails : [];
+          const cleanEmail = parent.email.trim().toLowerCase();
+          if (!existingEmails.includes(cleanEmail)) {
+            await updateDoc(estDocRef, {
+              parentEmails: [...new Set([...existingEmails, cleanEmail])]
+            });
+          }
+        }
+      } catch (estErr) {
+        // non-blocking for offline or restricted cases
+      }
+    }
+
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('pasma_save_success', { detail: { title: `Enregistrer le parent : ${parent.name}` } }));
     }

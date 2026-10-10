@@ -53,8 +53,16 @@ service cloud.firestore {
         );
     }
 
+    function isSchoolParent(schoolId) {
+      return exists(/databases/$(database)/documents/establishments/$(schoolId)) &&
+        hasSchoolEmail(
+          get(/databases/$(database)/documents/establishments/$(schoolId)).data,
+          'parentEmails'
+        );
+    }
+
     function canAccessSchoolData(schoolId) {
-      return isSuperAdmin() || isSchoolManager(schoolId) || isSchoolTeacher(schoolId);
+      return isSuperAdmin() || isSchoolManager(schoolId) || isSchoolTeacher(schoolId) || isSchoolParent(schoolId);
     }
 
     function canAccessParentRecord(data) {
@@ -124,7 +132,7 @@ service cloud.firestore {
           ]) &&
           (isSchoolOwner(schoolId) ||
             request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-              'directorEmail', 'managerEmails', 'teacherEmails',
+              'directorEmail', 'managerEmails', 'teacherEmails', 'parentEmails',
               'cotisationAmount', 'financialGoal', 'lastManagerDeviceId'
             ])));
       allow delete: if isSuperAdmin();
@@ -204,7 +212,9 @@ service cloud.firestore {
     }
 
     match /invoices/{recordId} {
-      allow read: if canAccessManagerRecord(resource.data);
+      allow read: if canAccessManagerRecord(resource.data) ||
+        (isSignedIn() && request.auth.token.get('email', '') != '' &&
+          resource.data.get('email', '') == request.auth.token.get('email', ''));
       allow create: if canAccessManagerRecord(request.resource.data);
       allow update: if canAccessManagerRecord(resource.data) &&
         (isSuperAdmin() || request.resource.data.parentId == resource.data.parentId);

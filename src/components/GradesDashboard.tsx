@@ -1971,7 +1971,18 @@ export default function GradesDashboard({
                   </div>
 
                   {/* Tab Switchers */}
-                  <div className="flex flex-wrap bg-slate-50 p-1 rounded-xl border border-slate-100 gap-1 self-start xl:self-auto">
+                  <div className="flex flex-wrap bg-slate-50 p-1 rounded-xl border border-slate-100 gap-1 self-start xl:self-auto items-center">
+                    {portalUserRole === 'parent' && (
+                      <button
+                        onClick={() => window.dispatchEvent(new CustomEvent('pasma_navigate_tab', { detail: 'progression' }))}
+                        className="px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer flex items-center gap-1.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white shadow-xs transition mr-1"
+                        title={language === 'fr' ? "Consulter la progression annuelle complète Recharts" : "View full Recharts annual progression"}
+                      >
+                        <TrendingUp className="h-3.5 w-3.5 text-emerald-300" />
+                        <span>{language === 'fr' ? 'Progression Annuelle Recharts' : 'Recharts Progression'}</span>
+                        <span className="bg-emerald-400 text-slate-950 text-[9px] font-black px-1 rounded">PRO</span>
+                      </button>
+                    )}
                     {visualTabs.map((tab) => {
                       const Icon = tab.icon;
                       const isActive = activeVisualTab === tab.id;

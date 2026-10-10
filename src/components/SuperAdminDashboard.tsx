@@ -5,6 +5,7 @@ import { logAuthError } from '../utils/authLogger';
 import AuthLogsViewer from './system/AuthLogsViewer';
 import EmailInfrastructure from './system/EmailInfrastructure';
 import PaymentWebhookHandler from './PaymentWebhookHandler';
+import ApeeBackendDiagnostics from './apee/ApeeBackendDiagnostics';
 import { Establishment, Student, Invoice, SystemLog } from '../types';
 import { DEFAULT_SCHOOL_LOGO } from '../constants';
 import { syncLocalSchoolsToFirestore, saveAndSyncEstablishment, deleteAndPurgeSchool, getDeletedSchoolIds, fetchAndSyncDeletedSchoolIds, sanitizeFirestoreId, cleanPayload } from '../utils/schoolSync';
@@ -65,7 +66,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
   );
   
   // Custom states
-  const [activeSubTab, setActiveSubTab] = useState<'schools' | 'admins' | 'campay_webhook' | 'email_infrastructure' | 'auth_logs'>('schools');
+  const [activeSubTab, setActiveSubTab] = useState<'schools' | 'admins' | 'campay_webhook' | 'email_infrastructure' | 'auth_logs' | 'backend_diagnostics'>('schools');
   const [secondaryAdmins, setSecondaryAdmins] = useState<any[]>([]);
   
   const activeOperatorEmail = auth.currentUser?.email?.toLowerCase().trim() || localStorage.getItem('pasma_active_user_email')?.toLowerCase().trim() || '';
@@ -1488,6 +1489,17 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                     >
                       🚨 Diagnostic & Logs d'Accès
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveSubTab('backend_diagnostics')}
+                      className={`px-4 py-1.5 text-xs font-black rounded-lg transition cursor-pointer border flex items-center gap-1.5 ${
+                        activeSubTab === 'backend_diagnostics'
+                          ? 'bg-blue-600 text-white border-blue-700 shadow-xs'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      ⚡ Diagnostic Backend Render (Direct)
+                    </button>
                   </div>
                   <p className="text-xs text-slate-500 font-medium">
                     {activeSubTab === 'schools'
@@ -1498,7 +1510,9 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                           ? "Simulez, testez et synchronisez en temps réel les webhooks de paiements Campay"
                           : activeSubTab === 'email_infrastructure'
                             ? "Contrôlez les enregistrements DNS (DKIM, CNAME, DMARC) et testez l'expédition d'e-mails"
-                            : "Consultez les rapports détaillés des permissions refusées et incidents de sécurité"}
+                            : activeSubTab === 'backend_diagnostics'
+                              ? "Testez et vérifiez la connectivité en temps réel avec le serveur Render (API Health & Latence)"
+                              : "Consultez les rapports détaillés des permissions refusées et incidents de sécurité"}
                   </p>
                 </div>
 
@@ -1987,6 +2001,10 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
               ) : activeSubTab === 'email_infrastructure' ? (
                 <div className="p-6">
                   <EmailInfrastructure />
+                </div>
+              ) : activeSubTab === 'backend_diagnostics' ? (
+                <div className="p-6">
+                  <ApeeBackendDiagnostics />
                 </div>
               ) : (
                 <div className="p-6">
