@@ -397,7 +397,7 @@ export function isEmailVerifiedLocally(email?: string | null): boolean {
   if (!email) return false;
   try {
     const clean = email.toLowerCase().trim();
-    if (clean === 'jacquesbene301@gmail.com' || clean === 'adjoint@pasma.sys' || clean.endsWith('@pasma.sys')) {
+    if (clean === 'pasmasys@gmail.com' || clean === 'adjoint@pasma.sys' || clean.endsWith('@pasma.sys')) {
       return true;
     }
     const existingStr = localStorage.getItem('pasma_verified_emails');

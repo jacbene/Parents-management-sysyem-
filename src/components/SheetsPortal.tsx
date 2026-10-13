@@ -307,7 +307,7 @@ export default function SheetsPortal({ parents, invoices, students, onSaveParent
       return [
         ['ID Parent', 'Nom Complet', 'Téléphone', 'E-mail', 'Statut Cotisation', 'Cotisation Annuelle Exigible (FCFA)', 'Total Versé (FCFA)', 'Reste à Payer (FCFA)', 'Élèves Associés'],
         ['parent_demo_1', 'Mme Bella Christine', '699112233', 'christine.bella@gmail.com', 'Solfé', '25000', '25000', '0', 'Bella Jean (6ème A)'],
-        ['parent_demo_2', 'M. Mbama Jacques', '656454053', 'jacquesbene301@gmail.com', 'Partiel', '25000', '15000', '10000', 'Mbama Marie (3ème B)']
+        ['parent_demo_2', 'M. Mbama Jacques', '656454053', 'pasmasys@gmail.com', 'Partiel', '25000', '15000', '10000', 'Mbama Marie (3ème B)']
       ];
     }
   };

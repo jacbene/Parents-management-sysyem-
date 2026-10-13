@@ -67,6 +67,7 @@ export const DEFAULT_SYSTEM_SCHOOLS: Establishment[] = [
 export default function PortalOnboarding({ onSelectSchool, currentUserUid, currentUserEmail, onRequestLogin, onRequestSuperAdmin, onAutoLoginGuest }: PortalOnboardingProps) {
   const { t, language } = useLanguage();
   const isUserLoggedIn = Boolean((auth.currentUser && !auth.currentUser.isAnonymous) || currentUserEmail);
+  const activeEmail = (auth.currentUser?.email || currentUserEmail || '').trim().toLowerCase();
   const [schools, setSchools] = useState<Establishment[]>(() => {
     if (isUserLoggedIn) {
       try {
@@ -114,20 +115,31 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
   const [parentPhone, setParentPhone] = useState('');
   const [verifyingParent, setVerifyingParent] = useState(false);
 
-  // OTP & Cameroonian Rural Area Connectivity States
-  const [parentEmail, setParentEmail] = useState(''); // Completely optional email
+  // Real Double-Factor OTP Authentication States
+  const [parentEmail, setParentEmail] = useState(''); // Optional email
   const [otpStep, setOtpStep] = useState<'input_phone' | 'input_otp'>('input_phone');
-  const [generatedOtp, setGeneratedOtp] = useState('');
   const [enteredOtp, setEnteredOtp] = useState('');
   const [otpAttemptsLeft, setOtpAttemptsLeft] = useState(3);
   const [matchedParentState, setMatchedParentState] = useState<any | null>(null);
-  const [otpSimulatedMessage, setOtpSimulatedMessage] = useState<{
-    isOpen: boolean;
-    otp: string;
-    phone: string;
-    parentName: string;
-    schoolName: string;
+  const [resendCooldown, setResendCooldown] = useState<number>(0);
+  const [sendingOtp, setSendingOtp] = useState<boolean>(false);
+  const [otpDeliveryDetails, setOtpDeliveryDetails] = useState<{
+    smsDelivered?: boolean;
+    emailDelivered?: boolean;
+    emailPreviewUrl?: string;
+    maskedPhone?: string;
+    maskedEmail?: string;
+    channel?: string;
   } | null>(null);
+
+  // Resend OTP Cooldown countdown
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const interval = setInterval(() => {
+      setResendCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [resendCooldown]);
 
   // Create School Form State
   const [schoolName, setSchoolName] = useState('');
@@ -497,7 +509,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
         // 1. Distinction: Check if active user belongs to Portal System Administration Team (Super-Admin / Deputy Super-Admin)
         let isPortalSuperAdminOrDeputy = false;
         let adminTitle = '';
-        if (activeEmail === 'jacquesbene301@gmail.com') {
+        if (activeEmail === 'pasmasys@gmail.com') {
           isPortalSuperAdminOrDeputy = true;
           adminTitle = 'Super-Admin Principal (Opérateur)';
         } else {
@@ -565,6 +577,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
         }
 
         setSuccessMessage(` ✅ Accès Administrateur validé pour "${schoolObj.name}" (${activeEmail}) ! Redirection...`);
+        localStorage.setItem('portal_selected_school_name', schoolObj.name);
         
         setTimeout(() => {
           onSelectSchool(selectedSchoolId, 'manager', { name: adminName.trim(), phone: adminRole, email: activeEmail });
@@ -805,7 +818,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                 parentId: selectedSchoolId,
                 title: 'Bene Jacques',
                 phone: '687463313',
-                email: 'jacquesbene301@gmail.com',
+                email: 'pasmasys@gmail.com',
                 amount: 25000,
                 dueDate: '2025/2026',
                 status: 'Unpaid',
@@ -841,23 +854,58 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
           return;
         }
 
-        // Generate static secure 6-digit OTP code 
-        const randomOtp = Math.floor(100000 + Math.random() * 900000).toString();
-        
-        setGeneratedOtp(randomOtp);
-        setOtpAttemptsLeft(3);
-        setMatchedParentState(matchedInvoice);
-        setOtpStep('input_otp');
-        setSuccessMessage(`🔑 Code d'accès OTP : ${randomOtp} (SMS expédié au ${parentPhone}). Saisissez-le ci-dessous.`);
+        // Dispatch Real OTP via official backend gateway (SMS Twilio/Campay/Orange & Nodemailer)
+        setSuccessMessage(`🚀 Expédition du code OTP en cours par SMS au ${parentPhone}...`);
+        try {
+          const targetSchoolName = schools.find(s => s.id === selectedSchoolId)?.name || '';
+          const otpSendResp = await fetch('/api/portal/send-otp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              schoolId: selectedSchoolId,
+              schoolName: targetSchoolName,
+              parentPhone: parentPhone.trim(),
+              parentName: matchedInvoice.title || parentName.trim(),
+              parentEmail: parentEmail?.trim() || matchedInvoice.email || activeEmail || ''
+            })
+          });
 
-        // Trigger SMS pop-up for mock demonstration environments
-        setOtpSimulatedMessage({
-          isOpen: true,
-          otp: randomOtp,
-          phone: parentPhone,
-          parentName: matchedInvoice.title,
-          schoolName: schools.find(s => s.id === selectedSchoolId)?.name || "CES d'Ekali 1"
-        });
+          const otpSendData = await otpSendResp.json();
+          if (!otpSendResp.ok || !otpSendData.success) {
+            throw new Error(otpSendData.error || "Impossible d'expédier le code OTP.");
+          }
+
+          setOtpDeliveryDetails({
+            smsDelivered: otpSendData.smsDelivered,
+            emailDelivered: otpSendData.emailDelivered,
+            emailPreviewUrl: otpSendData.emailPreviewUrl,
+            maskedPhone: otpSendData.maskedPhone || parentPhone,
+            maskedEmail: otpSendData.maskedEmail,
+            channel: otpSendData.emailDelivered ? 'SMS & E-mail' : 'SMS'
+          });
+
+          setOtpAttemptsLeft(otpSendData.attemptsLeft || 3);
+          setResendCooldown(45);
+          setMatchedParentState(matchedInvoice);
+          setOtpStep('input_otp');
+          setSuccessMessage(
+            `🔑 Code OTP réel expédié avec succès par SMS au ${parentPhone}` +
+            (otpSendData.maskedEmail ? ` et par e-mail à ${otpSendData.maskedEmail}` : '') +
+            `. Saisissez-le ci-dessous.`
+          );
+        } catch (otpErr: any) {
+          if (isDemoMode) {
+            console.warn("Real OTP dispatch failed, falling back to demo authorization:", otpErr);
+            setMatchedParentState(matchedInvoice);
+            setOtpAttemptsLeft(3);
+            setOtpStep('input_otp');
+            setSuccessMessage(`🔑 Mode démo actif : composez 777777 ou le code SMS reçu.`);
+          } else {
+            setErrorMessage(`❌ Échec d'envoi du code OTP réel : ${otpErr?.message || otpErr}`);
+            setVerifyingParent(false);
+            return;
+          }
+        }
 
       } catch (err) {
         console.error(err);
@@ -868,33 +916,61 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
       }
     } else {
       // Step: input_otp processing
-      if (!enteredOtp.trim()) {
+      const cleanEnteredOtp = enteredOtp.trim();
+      if (!cleanEnteredOtp) {
         setErrorMessage("Saisissez le code d'authentification reçu à 6 chiffres.");
         return;
       }
 
       setVerifyingParent(true);
-      
-      // Match passcode checks
-      const isMatch = enteredOtp.trim() === generatedOtp || enteredOtp.trim() === '777777';
-      if (!isMatch) {
-        const remaining = otpAttemptsLeft - 1;
-        setOtpAttemptsLeft(remaining);
-        
-        if (remaining <= 0) {
-          setOtpStep('input_phone');
-          setEnteredOtp('');
-          setGeneratedOtp('');
-          setErrorMessage("🔴 Sécurité verrouillée après 3 tentatives infructueuses ! Veuillez demander l'expédition d'un nouveau code OTP par SMS.");
-        } else {
-          setErrorMessage(`🔴 Code de sécurité erroné. Il vous reste ${remaining} tentatives de saisie.`);
-        }
-        setVerifyingParent(false);
-        return;
-      }
+      setErrorMessage(null);
 
-      // Successful OTP Authenticated !
       try {
+        let isVerified = false;
+
+        // Authoritative backend verification of the Real OTP
+        try {
+          const verifyResp = await fetch('/api/portal/verify-otp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              schoolId: selectedSchoolId,
+              parentPhone: parentPhone.trim(),
+              otp: cleanEnteredOtp
+            })
+          });
+
+          const verifyData = await verifyResp.json();
+          if (verifyResp.ok && verifyData.success && verifyData.verified) {
+            isVerified = true;
+          } else {
+            if (verifyData.attemptsLeft !== undefined) {
+              setOtpAttemptsLeft(verifyData.attemptsLeft);
+            }
+            if (verifyData.attemptsLeft <= 0) {
+              setOtpStep('input_phone');
+              setEnteredOtp('');
+            }
+            setErrorMessage(verifyData.error || "Code OTP incorrect ou expiré.");
+            setVerifyingParent(false);
+            return;
+          }
+        } catch (apiErr) {
+          console.warn("[Portal verify-otp] Network issue:", apiErr);
+          if (isDemoMode && cleanEnteredOtp === '777777') {
+            isVerified = true;
+          } else {
+            throw apiErr;
+          }
+        }
+
+        if (!isVerified) {
+          setErrorMessage("Code OTP non vérifié. Veuillez réessayer.");
+          setVerifyingParent(false);
+          return;
+        }
+
+        // Successful REAL OTP Authenticated !
         const todayStr = new Date().toISOString().split('T')[0];
         const searchPhoneSan = parentPhone.replace(/\D/g, '').slice(-9);
         const dailyVisitsKey = `pasma_visits_${selectedSchoolId}_${searchPhoneSan}_${todayStr}`;
@@ -903,7 +979,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
         // Save visit to local logs to respect daily limit requirement
         localStorage.setItem(dailyVisitsKey, (prevVisits + 1).toString());
 
-        setSuccessMessage(` ✅ Code unique validé ! Accès tuteur de "${matchedParentState.title}" ouvert. Chargement de l'ENT en cours...`);
+        setSuccessMessage(` ✅ Code OTP validé ! Accès tuteur de "${matchedParentState.title}" accordé. Redirection...`);
         
         let subs: string[] = [];
         try {
@@ -923,11 +999,12 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
             studentSubsetNames: subs,
             invoiceId: matchedParentState.id || matchedParentState.invoiceId
           });
-        }, 1200);
+        }, 1000);
 
-      } catch (e) {
-        console.error(e);
-        setErrorMessage("Un problème lié à l'accès persistant est survenu.");
+      } catch (err) {
+        console.error(err);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        setErrorMessage("Une erreur est survenue lors de la validation OTP : " + errMsg);
       } finally {
         setVerifyingParent(false);
       }
@@ -987,7 +1064,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
       }
 
       const userOwnedSchools = freshSchools.filter(s => s.ownerId === currentUid || s.ownerId === firestoreOwnerId);
-      const isSuperAdminBypass = currentUid === 'sys_admin_jacques' || auth.currentUser?.email === 'jacquesbene301@gmail.com';
+      const isSuperAdminBypass = currentUid === 'sys_admin_jacques' || auth.currentUser?.email === 'pasmasys@gmail.com' || auth.currentUser?.email === 'jacquesbene301@gmail.com';
       if (userOwnedSchools.length >= 3 && !isSuperAdminBypass) {
         throw new Error(`Account quota exceeded : Vous possédez déjà ${userOwnedSchools.length} établissement(s). La création est limitée à 3 établissements scolaires par compte de démonstration.`);
       }
@@ -1260,7 +1337,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
         paymentDate: new Date().toISOString(),
         phone: '687463313',
         address: 'Quartier Ekali',
-        email: 'jacquesbene301@gmail.com',
+        email: 'pasmasys@gmail.com',
         note: 'Règlement initial pour la rentrée scolaire de Marc et Elise',
         amountPaid: 15000,
         studentsList: JSON.stringify([{ name: 'Marc Bene', classRoom: 'CM2-A' }, { name: 'Elise Bene', classRoom: 'CE2-B' }]),
@@ -1691,11 +1768,26 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                         </div>
                         <div>
                           <h4 className="text-xs font-extrabold text-indigo-950 dark:text-indigo-200 uppercase tracking-wide">
-                            🔒 Double Facteur Académique (OTP)
+                            🔒 Double Facteur d'Authentification (OTP Réel)
                           </h4>
                           <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-tight mt-0.5">
-                            Saisissez le code d'authentification à 6 chiffres transmis sur le numéro : <strong className="font-bold font-mono text-slate-850 dark:text-white">{parentPhone}</strong>.
+                            Code d'accès expédié par SMS officiel au : <strong className="font-bold font-mono text-slate-850 dark:text-white">{parentPhone}</strong>.
                           </p>
+                          {otpDeliveryDetails?.maskedEmail && (
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                              ✉️ E-mail de confirmation transmis à : <strong className="font-mono text-indigo-600 dark:text-indigo-400">{otpDeliveryDetails.maskedEmail}</strong>
+                            </p>
+                          )}
+                          {otpDeliveryDetails?.emailPreviewUrl && (
+                            <a
+                              href={otpDeliveryDetails.emailPreviewUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[10px] text-indigo-600 dark:text-indigo-400 hover:underline font-bold mt-1"
+                            >
+                              📨 Consulter l'e-mail de test reçu (Aperçu Webmail) ↗
+                            </a>
+                          )}
                         </div>
                       </div>
 
@@ -1722,22 +1814,49 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                           </span>
                           <button
                             type="button"
-                            onClick={() => {
-                              const randomOtp = Math.floor(100000 + Math.random() * 900000).toString();
-                              setGeneratedOtp(randomOtp);
-                              setOtpAttemptsLeft(3);
-                              setSuccessMessage("🔄 Un nouveau SMS de sécurité contenant un code portail unique (OTP) a été transmis.");
-                              setOtpSimulatedMessage({
-                                isOpen: true,
-                                otp: randomOtp,
-                                phone: parentPhone,
-                                parentName: matchedParentState?.title || "Tuteur",
-                                schoolName: schools.find(s => s.id === selectedSchoolId)?.name || "CES d'Ekali 1"
-                              });
+                            disabled={resendCooldown > 0 || sendingOtp}
+                            onClick={async () => {
+                              if (resendCooldown > 0 || sendingOtp) return;
+                              setSendingOtp(true);
+                              setErrorMessage(null);
+                              try {
+                                const targetSchoolName = schools.find(s => s.id === selectedSchoolId)?.name || '';
+                                const resp = await fetch('/api/portal/send-otp', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    schoolId: selectedSchoolId,
+                                    schoolName: targetSchoolName,
+                                    parentPhone: parentPhone.trim(),
+                                    parentName: matchedParentState?.title || parentName.trim(),
+                                    parentEmail: parentEmail?.trim() || matchedParentState?.email || activeEmail || ''
+                                  })
+                                });
+                                const data = await resp.json();
+                                if (!resp.ok || !data.success) {
+                                  throw new Error(data.error || "Impossible d'expédier le nouveau code OTP.");
+                                }
+                                setOtpAttemptsLeft(3);
+                                setResendCooldown(45);
+                                setOtpDeliveryDetails({
+                                  smsDelivered: data.smsDelivered,
+                                  emailDelivered: data.emailDelivered,
+                                  emailPreviewUrl: data.emailPreviewUrl,
+                                  maskedPhone: data.maskedPhone || parentPhone,
+                                  maskedEmail: data.maskedEmail,
+                                  channel: data.emailDelivered ? 'SMS & E-mail' : 'SMS'
+                                });
+                                setSuccessMessage("🔄 Un nouveau code OTP réel a été expédié par SMS" + (data.maskedEmail ? ` et par e-mail à ${data.maskedEmail}` : '') + ".");
+                              } catch (err: any) {
+                                setErrorMessage("Échec du renvoi du code OTP : " + (err.message || err));
+                              } finally {
+                                setSendingOtp(false);
+                              }
                             }}
-                            className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
+                            className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 disabled:opacity-50 font-bold hover:underline flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed"
                           >
-                            <RotateCw className="h-3 w-3 inline" /> Renvoyer le SMS
+                            <RotateCw className={`h-3 w-3 inline ${sendingOtp ? 'animate-spin' : ''}`} />
+                            {sendingOtp ? "Expédition..." : resendCooldown > 0 ? `Renvoyer le SMS (${resendCooldown}s)` : "Renvoyer le SMS"}
                           </button>
                         </div>
                       </div>
@@ -2237,38 +2356,49 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
         )}
       </div>
 
-      {/* Dynamic Simulated Cameroonian smartphone message panel absolute overlay */}
-      {otpSimulatedMessage && otpSimulatedMessage.isOpen && (
+      {/* Real OTP Carrier Dispatch Confirmation Toast */}
+      {otpDeliveryDetails && otpStep === 'input_otp' && (
         <div className="fixed bottom-4 right-4 z-50 max-w-xs animate-slideUp">
-          <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-2xl border border-slate-700/60 overflow-hidden relative">
-            {/* Header info */}
+          <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-2xl border border-indigo-500/40 overflow-hidden relative">
             <div className="flex items-center justify-between border-b border-slate-800 pb-1.5 mb-2">
-              <div className="flex items-center gap-1 text-[10px] text-indigo-400 font-bold uppercase tracking-wider">
-                <Smartphone className="h-3.5 w-3.5" /> SMS Orange / MTN Cameroun
+              <div className="flex items-center gap-1.5 text-[10px] text-emerald-400 font-bold uppercase tracking-wider">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" /> Passerelle Connectée
               </div>
               <button
                 type="button"
-                onClick={() => setOtpSimulatedMessage(null)}
+                onClick={() => setOtpDeliveryDetails(null)}
                 className="text-slate-400 hover:text-white transition cursor-pointer"
               >
                 <X className="h-3 w-3" />
               </button>
             </div>
             
-            {/* Content info */}
             <div className="space-y-2">
               <div className="flex justify-between items-center text-[10px] text-slate-400">
-                <span className="font-extrabold text-indigo-300">📱 PASMA-SYS SECURE</span>
-                <span>En direct d'Ekali</span>
+                <span className="font-extrabold text-indigo-300">🔐 DOUBLE FACTEUR RÉEL</span>
+                <span>{otpDeliveryDetails.channel || 'SMS GSM'}</span>
               </div>
               
-              <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-[11px] leading-snug text-slate-100 font-medium font-sans">
-                « Code unique temporaire pour <span className="text-white font-extrabold">{otpSimulatedMessage.parentName}</span> ({otpSimulatedMessage.schoolName}) : <strong className="text-indigo-400 text-xs font-black font-mono select-all tracking-wider px-1.5 py-0.5 bg-slate-900 rounded">{otpSimulatedMessage.otp}</strong>. Ne le partagez jamais. »
+              <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-[11px] leading-snug text-slate-100 font-medium">
+                Code officiel expédié par SMS au numéro <strong className="text-white font-mono">{otpDeliveryDetails.maskedPhone}</strong>. Veuillez vérifier vos messages SMS.
               </div>
 
-              <div className="text-[9px] text-amber-500/90 leading-tight bg-amber-500/10 p-1.5 rounded-lg border border-amber-500/20 font-sans">
-                ⚡️ <strong>Simulateur SMS OTP :</strong> En conditions réelles, ce code est acheminé par le réseau GSM local Orange/MTN. Pour la démo, copiez-collez le code ci-dessus ou tapez le code générique <strong>777777</strong> !
-              </div>
+              {otpDeliveryDetails.maskedEmail && (
+                <div className="text-[10px] text-indigo-300 bg-indigo-950/60 p-2 rounded-lg border border-indigo-800/40">
+                  ✉️ Copie de sécurité transmise à : <strong>{otpDeliveryDetails.maskedEmail}</strong>
+                </div>
+              )}
+
+              {otpDeliveryDetails.emailPreviewUrl && (
+                <a
+                  href={otpDeliveryDetails.emailPreviewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block text-center text-[10px] text-indigo-400 hover:text-indigo-300 bg-indigo-900/30 p-1.5 rounded-lg border border-indigo-700/50 underline font-bold"
+                >
+                  Ouvrir l'e-mail de test (Aperçu Webmail) ↗
+                </a>
+              )}
             </div>
           </div>
         </div>

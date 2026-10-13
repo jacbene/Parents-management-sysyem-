@@ -7,6 +7,7 @@ service cloud.firestore {
 
     function isSuperAdmin() {
       return isSignedIn() && (
+        request.auth.token.get('email', '') == 'pasmasys@gmail.com' ||
         request.auth.token.get('email', '') == 'jacquesbene301@gmail.com' ||
         exists(/databases/$(database)/documents/super_admins/$(request.auth.uid)) ||
         (request.auth.token.get('email', '') != '' &&

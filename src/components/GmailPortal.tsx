@@ -44,6 +44,7 @@ interface GmailPortalProps {
   parents: ApeeParent[];
   invoices: Invoice[];
   students: Student[];
+  schoolName?: string;
 }
 
 interface GmailProfile {
@@ -86,7 +87,8 @@ interface GmailMessageItem {
   body?: string;
 }
 
-export default function GmailPortal({ parents, invoices, students }: GmailPortalProps) {
+export default function GmailPortal({ parents, invoices, students, schoolName: propSchoolName }: GmailPortalProps) {
+  const currentSchoolName = propSchoolName || localStorage.getItem('portal_selected_school_name') || "Établissement Enregistré";
   const { language } = useLanguage();
   const [token, setToken] = useState<string | null>(googleAccessToken);
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
@@ -238,7 +240,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
       doc.setTextColor(255, 255, 255);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(13);
-      doc.text('ÉTABLISSEMENT SCOLAIRE & APEE', 15, 12);
+      doc.text((currentSchoolName + ' & APEE').toUpperCase(), 15, 12);
       doc.setFontSize(9);
       doc.setFont('helvetica', 'normal');
       doc.text('Archive Officielle de Communication Scolaire (Portail Gmail)', 15, 19);
@@ -322,7 +324,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
       return saved ? JSON.parse(saved) : [
         {
           id: 'log-demo-1',
-          to: 'M. Mbama Jacques (jacquesbene301@gmail.com)',
+          to: 'M. Mbama Jacques (pasmasys@gmail.com)',
           subject: 'Rappel Cotisation APEE 2026 - 3ème B',
           date: new Date(Date.now() - 3600000 * 5).toLocaleString('fr-FR'),
           status: 'sent',
@@ -537,7 +539,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
           snippet: 'Chers parents, veuillez trouver ci-joint le relevé de notes du 2ème trimestre pour la classe de 3ème B.',
           subject: '📊 Bulletin de Notes Trimestriel - CES Ekali (Classe 3ème B)',
           from: 'Administration CES Ekali <directeur.ekali@gmail.com>',
-          to: 'Jacques Mbama <jacquesbene301@gmail.com>',
+          to: 'Jacques Mbama <pasmasys@gmail.com>',
           date: new Date(Date.now() - 3600000 * 2).toLocaleString('fr-FR'),
           labelIds: ['School', 'INBOX'],
           body: 'Chers parents,\n\nNous avons le plaisir de vous transmettre le relevé de notes provisoire du deuxième trimestre. Veuillez vérifier le cahier de texte et contacter le professeur principal pour toute observation.\n\nCordialement,\nDirection CES Ekali.'
@@ -559,7 +561,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
           snippet: 'Confirmation de votre paiement APEE. Reçu officiel généré avec succès dans Pasma-sys.',
           subject: '💳 Confirmation de Paiement APEE - Reçu N° 2026-084',
           from: 'Comptabilité Pasma-sys <caisse@pasma-sys.org>',
-          to: 'Jacques Mbama <jacquesbene301@gmail.com>',
+          to: 'Jacques Mbama <pasmasys@gmail.com>',
           date: new Date(Date.now() - 3600000 * 48).toLocaleString('fr-FR'),
           labelIds: ['Pasma-sys', 'APEE-Cotisations'],
           body: 'Bonjour Parent,\n\nNous accusons réception de votre versement de 25 000 FCFA au titre de la cotisation APEE 2026.\nVotre solde est désormais entièrement réglé. Vous pouvez télécharger l\'attestation dans votre portail Pasma-sys.'
@@ -570,7 +572,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
           snippet: 'Vos identifiants d accès sécurisés au Portail Parent Pasma-sys ont été mis à jour.',
           subject: '🔐 Sécurité Pasma-sys : Vos Accès Portail Parent',
           from: 'Support Technique Pasma-sys <support@pasma-sys.org>',
-          to: 'jacquesbene301@gmail.com',
+          to: 'pasmasys@gmail.com',
           date: new Date(Date.now() - 3600000 * 72).toLocaleString('fr-FR'),
           labelIds: ['Pasma-sys'],
           body: 'Cher Utilisateur,\n\nVotre compte d\'accès au système Pasma-sys a été vérifié avec succès. Vous pouvez à tout moment vous connecter pour consulter l\'historique des paiements, la présence de vos enfants et communiquer avec l\'établissement.'
@@ -581,7 +583,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
           snippet: 'Appel d offres et travaux d aménagement de la bibliothèque scolaire financés par la cotisation APEE.',
           subject: '📢 Rapport d\'Avancement des Projets APEE 2026',
           from: 'Bureau APEE CES Ekali <apee@ces-ekali.cm>',
-          to: 'Jacques Mbama <jacquesbene301@gmail.com>',
+          to: 'Jacques Mbama <pasmasys@gmail.com>',
           date: new Date(Date.now() - 3600000 * 120).toLocaleString('fr-FR'),
           labelIds: ['APEE-Cotisations', 'School'],
           body: 'Chers membres de l\'APEE,\n\nGrâce aux cotisations collectées, les travaux de réhabilitation de la salle d\'informatique et de la bibliothèque avancent sereinement. Le bilan financier complet sera affiché lors de l\'Assemblée Générale.'
@@ -773,7 +775,7 @@ export default function GmailPortal({ parents, invoices, students }: GmailPortal
         'Le Service Comptable APEE.'
       );
     } else if (templateType === 'absence_notice') {
-      setEmailSubject('Avis d\'Absence / Retard Pédagogique - Établissement Scolaire');
+      setEmailSubject(`Avis d'Absence / Retard Pédagogique - ${currentSchoolName}`);
       setEmailBody(
         'Cher Parent,\n\n' +
         'Nous vous informons de l\'absence ou du retard de votre enfant lors des premiers cours de la journée.\n\n' +

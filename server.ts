@@ -839,7 +839,7 @@ app.post("/api/send-confirmation-email", async (req, res) => {
 // API: Send Security Notification on Secondary Admin Revocation / Deletion
 app.post("/api/send-admin-revocation-alert", async (req, res) => {
   const {
-    primaryAdminEmail = "jacquesbene301@gmail.com",
+    primaryAdminEmail = "pasmasys@gmail.com",
     revokedAdminName,
     revokedAdminEmail,
     revokedAdminRole,
@@ -848,13 +848,13 @@ app.post("/api/send-admin-revocation-alert", async (req, res) => {
     reason
   } = req.body;
 
-  const targetEmail = (primaryAdminEmail || "jacquesbene301@gmail.com").trim().toLowerCase();
+  const targetEmail = (primaryAdminEmail || "pasmasys@gmail.com").trim().toLowerCase();
   const adminName = revokedAdminName || "Administrateur Inconnu";
   const adminEmail = revokedAdminEmail || "Non spécifié";
   const adminRoleLabel = revokedAdminRole === 'deputy' 
     ? 'Superviseur Adjoint (Privilèges Étendus)' 
     : 'Admin Secondaire (Standard)';
-  const initiator = operatorEmail || "jacquesbene301@gmail.com";
+  const initiator = operatorEmail || "pasmasys@gmail.com";
   const formattedDate = timestamp ? new Date(timestamp).toLocaleString('fr-FR', {
     dateStyle: 'full',
     timeStyle: 'medium',
@@ -1674,7 +1674,7 @@ async function getVerifiedFirebaseUser(req: express.Request) {
 }
 
 async function isFirebaseSuperAdmin(uid: string, email?: string) {
-  if (email?.toLowerCase() === "jacquesbene301@gmail.com") return true;
+  if (email?.toLowerCase() === "pasmasys@gmail.com") return true;
   const db = getAdminDb();
   const adminIds = [uid, email].filter((value): value is string => Boolean(value));
   const adminDocs = await Promise.all(adminIds.map(id => db.collection("super_admins").doc(id).get()));
@@ -2010,7 +2010,7 @@ app.post("/api/portal/verify-parent", async (req, res) => {
             parentId: schoolId,
             title: "Bene Jacques",
             phone: "687463313",
-            email: "jacquesbene301@gmail.com",
+            email: "pasmasys@gmail.com",
             amount: 25000,
             amountPaid: 15000,
             studentsList: JSON.stringify([{ name: "Marc Bene", classRoom: "CM2-A" }, { name: "Elise Bene", classRoom: "CE2-B" }]),
@@ -2065,6 +2065,7 @@ app.post("/api/portal/verify-parent", async (req, res) => {
       console.warn("[Portal] Error parsing studentsList:", e);
     }
 
+
     return res.json({
       success: true,
       matchedParent: {
@@ -2087,6 +2088,350 @@ app.post("/api/portal/verify-parent", async (req, res) => {
     return res.status(500).json({
       success: false,
       error: "Une erreur serveur est survenue lors de la vérification du dossier parent."
+    });
+  }
+});
+
+// ==========================================
+// REAL DOUBLE-FACTOR OTP AUTHENTICATION (SMS & EMAIL)
+// ==========================================
+interface PortalOtpRecord {
+  otp: string;
+  phone: string;
+  sanitizedPhone: string;
+  schoolId: string;
+  parentName: string;
+  parentEmail?: string;
+  expiresAt: number;
+  createdAt: number;
+  attemptsLeft: number;
+  verified: boolean;
+}
+
+const portalOtpStore = new Map<string, PortalOtpRecord>();
+
+// API: Send Real OTP via SMS (Twilio/Campay/Orange) and Email (Nodemailer)
+app.post("/api/portal/send-otp", async (req, res) => {
+  try {
+    const { schoolId, schoolName: providedSchoolName, parentPhone, parentName, parentEmail } = req.body || {};
+
+    if (!parentPhone || typeof parentPhone !== "string") {
+      return res.status(400).json({
+        success: false,
+        error: "Numéro de téléphone requis pour l'expédition du code OTP."
+      });
+    }
+
+    const cleanSchoolId = String(schoolId || "").trim();
+    const cleanPhone = String(parentPhone).trim();
+    const sanitizedPhone = cleanPhone.replace(/\D/g, "").slice(-9);
+
+    if (!sanitizedPhone || sanitizedPhone.length < 8) {
+      return res.status(400).json({
+        success: false,
+        error: "Numéro de téléphone invalide."
+      });
+    }
+
+    const otpKey = `${cleanSchoolId}_${sanitizedPhone}`;
+    const now = Date.now();
+
+    // Prevent abuse / cooldown: 30 seconds
+    const existing = portalOtpStore.get(otpKey);
+    if (existing && now - existing.createdAt < 30000) {
+      const waitSec = Math.ceil((30000 - (now - existing.createdAt)) / 1000);
+      return res.status(429).json({
+        success: false,
+        error: `Veuillez patienter ${waitSec} secondes avant de solliciter un nouveau code OTP.`,
+        cooldownSeconds: waitSec
+      });
+    }
+
+    // Retrieve registered school information and SMS configuration
+    let schoolName = providedSchoolName ? String(providedSchoolName).trim() : "";
+    let smsConfig: any = {};
+    try {
+      if (cleanSchoolId) {
+        const estDoc = await getAdminDb().collection("establishments").doc(cleanSchoolId).get();
+        if (estDoc.exists) {
+          const d = estDoc.data() || {};
+          schoolName = d.name || d.establishmentName || schoolName;
+          smsConfig = d.smsConfig || {};
+        }
+      }
+    } catch (dbErr) {
+      console.warn("[Portal OTP] Could not fetch school doc:", dbErr);
+    }
+
+    // If still not resolved, map known establishment IDs or check global settings
+    if (!schoolName) {
+      if (cleanSchoolId.includes("ekali")) {
+        schoolName = "CES d'Ekali 1 - MFOU";
+      } else if (cleanSchoolId.includes("vogt")) {
+        schoolName = "Collège Vogt - Yaoundé";
+      } else if (cleanSchoolId.includes("bilingue") || cleanSchoolId.includes("essos")) {
+        schoolName = "Lycée Bilingue d'Essos";
+      } else {
+        try {
+          const settingsDoc = await getAdminDb().collection("settings").doc("global").get();
+          if (settingsDoc.exists && settingsDoc.data()?.associationName) {
+            schoolName = settingsDoc.data()?.associationName;
+          }
+        } catch (e) {}
+      }
+    }
+    if (!schoolName) {
+      schoolName = "CES d'Ekali 1 - MFOU";
+    }
+
+    // Determine target email (either provided, or lookup in invoice/establishment)
+    let targetEmail = parentEmail ? String(parentEmail).trim().toLowerCase() : "";
+    if (!targetEmail && cleanSchoolId) {
+      try {
+        const invSnap = await getAdminDb()
+          .collection("invoices")
+          .where("parentId", "==", cleanSchoolId)
+          .where("phone", "==", cleanPhone)
+          .limit(1)
+          .get();
+        if (!invSnap.empty) {
+          const invData = invSnap.docs[0].data();
+          if (invData.email) {
+            targetEmail = String(invData.email).trim().toLowerCase();
+          }
+        }
+      } catch (e) {
+        // ignore lookup error
+      }
+    }
+
+    // Generate real cryptographically secure 6-digit OTP
+    const otpCode = crypto.randomInt(100000, 1000000).toString();
+    const expiresAt = now + 10 * 60 * 1000; // 10 minutes
+
+    const otpRecord: PortalOtpRecord = {
+      otp: otpCode,
+      phone: cleanPhone,
+      sanitizedPhone,
+      schoolId: cleanSchoolId,
+      parentName: String(parentName || "Parent d'Élève").trim(),
+      parentEmail: targetEmail || undefined,
+      createdAt: now,
+      expiresAt,
+      attemptsLeft: 3,
+      verified: false
+    };
+
+    portalOtpStore.set(otpKey, otpRecord);
+
+    // Persist in Firestore for durability
+    try {
+      await getAdminDb().collection("portal_otps").doc(otpKey).set({
+        otp: otpCode,
+        phone: cleanPhone,
+        sanitizedPhone,
+        schoolId: cleanSchoolId,
+        schoolName,
+        parentName: otpRecord.parentName,
+        parentEmail: targetEmail || null,
+        createdAt: now,
+        expiresAt,
+        attemptsLeft: 3,
+        verified: false
+      });
+    } catch (fsErr) {
+      console.warn("[Portal OTP] Could not persist in Firestore:", fsErr);
+    }
+
+    // 1. Dispatch Real SMS using short name Pasma-sys and registered establishment name
+    const smsMessage = `[Pasma-sys / ${schoolName}] Votre code d'accès de sécurité OTP est : ${otpCode}. Valable 10 minutes. Ne le communiquez à personne.`;
+    const smsResult = await sendSms(cleanPhone, smsMessage, smsConfig);
+    console.log(`[Portal OTP] SMS dispatched to ${cleanPhone}:`, smsResult.success ? "SUCCESS" : "FAILED");
+
+    // 2. Dispatch Real Email if target email exists
+    let emailDelivered = false;
+    let emailPreviewUrl: string | undefined = undefined;
+    if (targetEmail && targetEmail.includes("@")) {
+      try {
+        const mailer = await getTransporter();
+        if (mailer) {
+          const mailInfo = await mailer.sendMail({
+            from: `"Pasma-sys Sécurité Scolaire" <${process.env.SMTP_FROM || "no-reply@pasma-sys.com"}>`,
+            to: targetEmail,
+            subject: `🔐 [${schoolName}] Code d'authentification unique OTP : ${otpCode}`,
+            html: `
+              <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
+                <div style="text-align: center; margin-bottom: 24px;">
+                  <span style="font-size: 32px;">🏫</span>
+                  <h2 style="color: #1e1b4b; margin: 8px 0 0 0; font-size: 20px;">${schoolName}</h2>
+                  <p style="color: #64748b; font-size: 13px; margin: 4px 0 0 0;">Système d'Authentification Sécurisé Pasma-sys</p>
+                </div>
+                <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; text-align: center; margin: 24px 0;">
+                  <p style="margin: 0; font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700;">Votre Code d'Accès Temporaire (OTP)</p>
+                  <div style="font-size: 36px; font-weight: 900; letter-spacing: 10px; color: #4338ca; font-family: monospace; margin: 12px 0;">${otpCode}</div>
+                  <p style="margin: 0; font-size: 12px; color: #64748b;">Ce code expire dans <strong>10 minutes</strong>.</p>
+                </div>
+                <p style="color: #334155; font-size: 13px; line-height: 1.6;">
+                  Bonjour <strong>${otpRecord.parentName}</strong>,<br/>
+                  Une demande de connexion à l'Espace Parent de l'établissement <strong>${schoolName}</strong> a été initiée pour le numéro <strong>${cleanPhone}</strong>.
+                </p>
+                <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 12px; border-radius: 6px; margin: 20px 0;">
+                  <p style="color: #991b1b; font-size: 12px; margin: 0; font-weight: 600;">
+                    🛡️ Sécurité : Ne partagez ce code avec personne. Aucun agent de l'établissement ne vous le demandera.
+                  </p>
+                </div>
+                <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
+                <p style="color: #94a3b8; font-size: 11px; text-align: center; margin: 0;">
+                  Plateforme Académique Pasma-sys • République du Cameroun • Session sécurisée
+                </p>
+              </div>
+            `
+          });
+          emailDelivered = true;
+          const testUrl = nodemailer.getTestMessageUrl(mailInfo);
+          if (testUrl) {
+            emailPreviewUrl = testUrl as string;
+            console.log(`[Portal OTP] Ethereal email test URL: ${testUrl}`);
+          }
+        }
+      } catch (mailErr) {
+        console.warn("[Portal OTP] Could not send OTP email:", mailErr);
+      }
+    }
+
+    const maskedEmail = targetEmail 
+      ? targetEmail.replace(/^(.{2})(.*)(@.*)$/, (_, a, b, c) => `${a}${'*'.repeat(Math.min(b.length, 5))}${c}`)
+      : undefined;
+
+    return res.json({
+      success: true,
+      message: `Code OTP réel expédié avec succès${smsResult.success ? ' par SMS' : ''}${emailDelivered ? ' et par e-mail' : ''}.`,
+      smsDelivered: smsResult.success,
+      emailDelivered,
+      emailPreviewUrl,
+      maskedPhone: cleanPhone.slice(0, 3) + '••••' + cleanPhone.slice(-2),
+      maskedEmail,
+      attemptsLeft: 3,
+      expiresInSeconds: 600,
+      logs: smsResult.logs || []
+    });
+
+  } catch (error) {
+    console.error("[Portal OTP] Send error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Erreur serveur lors de la transmission du code d'authentification OTP."
+    });
+  }
+});
+
+// API: Verify Real OTP for Portal Login
+app.post("/api/portal/verify-otp", async (req, res) => {
+  try {
+    const { schoolId, parentPhone, otp } = req.body || {};
+
+    const cleanSchoolId = String(schoolId || "").trim();
+    const cleanPhone = String(parentPhone || "").trim();
+    const sanitizedPhone = cleanPhone.replace(/\D/g, "").slice(-9);
+    const candidateOtp = String(otp || "").trim();
+
+    if (!sanitizedPhone || !candidateOtp) {
+      return res.status(400).json({
+        success: false,
+        error: "Numéro de téléphone et code OTP requis."
+      });
+    }
+
+    const otpKey = `${cleanSchoolId}_${sanitizedPhone}`;
+    let record = portalOtpStore.get(otpKey);
+
+    // If not found in memory, query Firestore
+    if (!record) {
+      try {
+        const doc = await getAdminDb().collection("portal_otps").doc(otpKey).get();
+        if (doc.exists) {
+          record = doc.data() as PortalOtpRecord;
+        }
+      } catch (fsErr) {
+        console.warn("[Portal OTP] Could not read from Firestore:", fsErr);
+      }
+    }
+
+    if (!record) {
+      return res.status(404).json({
+        success: false,
+        error: "Aucun code OTP actif trouvé pour ce numéro. Veuillez solliciter un nouveau code."
+      });
+    }
+
+    const now = Date.now();
+    if (now > record.expiresAt) {
+      portalOtpStore.delete(otpKey);
+      try {
+        await getAdminDb().collection("portal_otps").doc(otpKey).delete();
+      } catch (e) {}
+      return res.status(400).json({
+        success: false,
+        error: "Ce code OTP a expiré. Veuillez demander un nouveau code par SMS."
+      });
+    }
+
+    if (record.attemptsLeft <= 0) {
+      portalOtpStore.delete(otpKey);
+      try {
+        await getAdminDb().collection("portal_otps").doc(otpKey).delete();
+      } catch (e) {}
+      return res.status(429).json({
+        success: false,
+        error: "Sécurité verrouillée après 3 tentatives infructueuses. Veuillez demander l'expédition d'un nouveau code OTP."
+      });
+    }
+
+    // Verify code match
+    if (candidateOtp !== record.otp) {
+      record.attemptsLeft -= 1;
+      portalOtpStore.set(otpKey, record);
+      try {
+        await getAdminDb().collection("portal_otps").doc(otpKey).update({
+          attemptsLeft: record.attemptsLeft
+        });
+      } catch (e) {}
+
+      if (record.attemptsLeft <= 0) {
+        return res.status(429).json({
+          success: false,
+          error: "🔴 Code incorrect. Sécurité verrouillée après 3 tentatives infructueuses. Veuillez demander un nouveau code OTP.",
+          attemptsLeft: 0
+        });
+      }
+
+      return res.status(400).json({
+        success: false,
+        error: `🔴 Code de sécurité erroné. Il vous reste ${record.attemptsLeft} tentative(s).`,
+        attemptsLeft: record.attemptsLeft
+      });
+    }
+
+    // Code is valid! Consume immediately to prevent replay attack
+    portalOtpStore.delete(otpKey);
+    try {
+      await getAdminDb().collection("portal_otps").doc(otpKey).update({
+        verified: true,
+        consumedAt: now
+      });
+    } catch (e) {}
+
+    return res.json({
+      success: true,
+      verified: true,
+      message: "Authentification OTP réussie !"
+    });
+
+  } catch (error) {
+    console.error("[Portal OTP] Verify error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Erreur serveur lors de la validation du code OTP."
     });
   }
 });

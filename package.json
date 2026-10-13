@@ -8,7 +8,8 @@
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist-server/server.cjs",
     "start": "node dist-server/server.cjs",
     "clean": "rm -rf dist dist-server server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test:otp": "tsx scripts/test-otp-flow.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

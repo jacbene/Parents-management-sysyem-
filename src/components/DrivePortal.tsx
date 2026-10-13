@@ -1702,7 +1702,7 @@ function GcpConsentGuide({ language }: { language: string }) {
                     }
                     <strong className="text-indigo-650">{isFr ? "+ AJOUTER DES UTILISATEURS" : "+ ADD USERS"}</strong> 
                     {isFr 
-                      ? " et saisissez l'adresse e-mail de connexion (ex: jacquesbene301@gmail.com)." 
+                      ? " et saisissez l'adresse e-mail de connexion (ex: pasmasys@gmail.com)." 
                       : " and enter your administrative Google address."
                     }
                   </span>
@@ -1752,7 +1752,7 @@ function GcpConsentGuide({ language }: { language: string }) {
                     <div className="py-2 flex items-center justify-between text-[11px] font-mono">
                       <div className="flex items-center gap-1.5 text-slate-200">
                         <span className="h-1.5 w-1.5 bg-emerald-500 rounded-full" />
-                        <span>jacquesbene301@gmail.com</span>
+                        <span>pasmasys@gmail.com</span>
                       </div>
                       <span className="text-[9px] text-slate-550 border border-slate-805 px-1 rounded">User 1</span>
                     </div>

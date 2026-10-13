@@ -93,7 +93,7 @@ export default function EmailInfrastructure() {
   const [searchQuery, setSearchQuery] = useState('');
   
   // Test Email state
-  const [testEmailRecipient, setTestEmailRecipient] = useState('jacquesbene301@gmail.com');
+  const [testEmailRecipient, setTestEmailRecipient] = useState('pasmasys@gmail.com');
   const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
   const [testEmailResult, setTestEmailResult] = useState<{ success: boolean; message: string; details?: string } | null>(null);
 

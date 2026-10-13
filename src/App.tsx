@@ -413,7 +413,7 @@ export default function App() {
   });
   const [secondaryAdmins, setSecondaryAdmins] = useState<{ id: string; email: string; name: string; createdAt: string; addedBy: string }[]>([]);
   
-  const isPrimarySuperAdmin = !!user?.email && user.email.toLowerCase().trim() === 'jacquesbene301@gmail.com';
+  const isPrimarySuperAdmin = !!user?.email && (user.email.toLowerCase().trim() === 'pasmasys@gmail.com' || user.email.toLowerCase().trim() === 'jacquesbene301@gmail.com');
   const isSecondarySuperAdmin = !!user?.email && secondaryAdmins.some(admin => {
     const adminEmail = (admin.email || '').toLowerCase().trim();
     const userEmail = (user.email || '').toLowerCase().trim();
@@ -1406,7 +1406,7 @@ export default function App() {
         const simulatedUser = JSON.parse(savedSimulated);
         setUser(simulatedUser);
         const email = (simulatedUser.email || '').toLowerCase().trim();
-        const isPrimary = email === 'jacquesbene301@gmail.com';
+        const isPrimary = email === 'pasmasys@gmail.com' || email === 'jacquesbene301@gmail.com';
         const isDeputy = email === 'adjoint@pasma.sys';
         if (isPrimary || isDeputy) {
           setShowSuperAdmin(true);
@@ -1461,7 +1461,7 @@ export default function App() {
         }
 
         const email = currentUser.email.toLowerCase().trim();
-        const isPrimary = email === 'jacquesbene301@gmail.com';
+        const isPrimary = email === 'pasmasys@gmail.com' || email === 'jacquesbene301@gmail.com';
         
         let isDeputy = false;
         try {
@@ -1518,7 +1518,7 @@ export default function App() {
           setSecondaryAdmins(JSON.parse(cached));
         } else {
           const defaultAdmins = [
-            { id: 'admin_sec_1', email: 'adjoint@pasma.sys', name: 'Alain Ndzie', createdAt: new Date().toISOString(), addedBy: 'jacquesbene301@gmail.com' }
+            { id: 'admin_sec_1', email: 'adjoint@pasma.sys', name: 'Alain Ndzie', createdAt: new Date().toISOString(), addedBy: 'pasmasys@gmail.com' }
           ];
           setSecondaryAdmins(defaultAdmins);
           localStorage.setItem('pasma_secondary_admins', JSON.stringify(defaultAdmins));
@@ -1527,7 +1527,7 @@ export default function App() {
       }
 
       const email = user.email.toLowerCase().trim();
-      const isPrimary = email === 'jacquesbene301@gmail.com';
+      const isPrimary = email === 'pasmasys@gmail.com' || email === 'jacquesbene301@gmail.com';
       const isDefaultAdjoint = email === 'adjoint@pasma.sys';
       
       const cached = localStorage.getItem('pasma_secondary_admins');
@@ -1549,7 +1549,7 @@ export default function App() {
           setSecondaryAdmins(JSON.parse(cached));
         } else {
           const defaultAdmins = [
-            { id: 'admin_sec_1', email: 'adjoint@pasma.sys', name: 'Alain Ndzie', createdAt: new Date().toISOString(), addedBy: 'jacquesbene301@gmail.com' }
+            { id: 'admin_sec_1', email: 'adjoint@pasma.sys', name: 'Alain Ndzie', createdAt: new Date().toISOString(), addedBy: 'pasmasys@gmail.com' }
           ];
           setSecondaryAdmins(defaultAdmins);
           localStorage.setItem('pasma_secondary_admins', JSON.stringify(defaultAdmins));
@@ -1572,7 +1572,7 @@ export default function App() {
             setSecondaryAdmins(JSON.parse(cached));
           } else {
             const defaultAdmins = [
-              { id: 'admin_sec_1', email: 'adjoint@pasma.sys', name: 'Alain Ndzie', createdAt: new Date().toISOString(), addedBy: 'jacquesbene301@gmail.com' }
+              { id: 'admin_sec_1', email: 'adjoint@pasma.sys', name: 'Alain Ndzie', createdAt: new Date().toISOString(), addedBy: 'pasmasys@gmail.com' }
             ];
             setSecondaryAdmins(defaultAdmins);
             localStorage.setItem('pasma_secondary_admins', JSON.stringify(defaultAdmins));
@@ -1584,7 +1584,7 @@ export default function App() {
           setSecondaryAdmins(JSON.parse(cached));
         } else {
           const defaultAdmins = [
-            { id: 'admin_sec_1', email: 'adjoint@pasma.sys', name: 'Alain Ndzie', createdAt: new Date().toISOString(), addedBy: 'jacquesbene301@gmail.com' }
+            { id: 'admin_sec_1', email: 'adjoint@pasma.sys', name: 'Alain Ndzie', createdAt: new Date().toISOString(), addedBy: 'pasmasys@gmail.com' }
           ];
           setSecondaryAdmins(defaultAdmins);
           localStorage.setItem('pasma_secondary_admins', JSON.stringify(defaultAdmins));
@@ -1687,7 +1687,7 @@ export default function App() {
                     parentId: 'demo_school_ekali',
                     title: 'Bene Jacques',
                     phone: '687463313',
-                    email: 'jacquesbene301@gmail.com',
+                    email: 'pasmasys@gmail.com',
                     amount: 25000,
                     dueDate: '2025/2026',
                     status: 'Unpaid',
@@ -3129,7 +3129,7 @@ export default function App() {
       const gUser = await loginWithGoogle();
       if (gUser && gUser.email) {
         const email = gUser.email.toLowerCase().trim();
-        if (email === 'jacquesbene301@gmail.com') {
+        if (email === 'pasmasys@gmail.com' || email === 'jacquesbene301@gmail.com') {
           setShowSuperAdmin(true);
         }
         setShowMainLogin(false);
@@ -3239,7 +3239,7 @@ export default function App() {
       if (authMode === 'login') {
         const userCred = await loginWithEmail(email, passwordInput);
         if (userCred) {
-          if (email.toLowerCase().trim() === 'jacquesbene301@gmail.com') {
+          if (email.toLowerCase().trim() === 'pasmasys@gmail.com' || email.toLowerCase().trim() === 'jacquesbene301@gmail.com') {
             setShowSuperAdmin(true);
           }
           setShowMainLogin(false);
@@ -3247,7 +3247,7 @@ export default function App() {
       } else if (authMode === 'signup') {
         const userCred = await signUpWithEmail(email, passwordInput);
         if (userCred) {
-          if (email.toLowerCase().trim() === 'jacquesbene301@gmail.com') {
+          if (email.toLowerCase().trim() === 'pasmasys@gmail.com' || email.toLowerCase().trim() === 'jacquesbene301@gmail.com') {
             setShowSuperAdmin(true);
           }
           setAuthSuccessMessage("Votre compte a été créé avec succès dans Firebase Auth ! Un e-mail de confirmation contenant un lien de vérification a été transmis à l'adresse " + email + ". Veuillez vérifier votre boîte de réception.");
@@ -3271,7 +3271,7 @@ export default function App() {
     checkRedirectResult()
       .then(redirectUser => {
         if (redirectUser) {
-          if (redirectUser.email?.toLowerCase().trim() === 'jacquesbene301@gmail.com') {
+          if (redirectUser.email?.toLowerCase().trim() === 'pasmasys@gmail.com' || redirectUser.email?.toLowerCase().trim() === 'jacquesbene301@gmail.com') {
             setShowSuperAdmin(true);
           }
           setShowMainLogin(false);
@@ -3444,7 +3444,7 @@ export default function App() {
                       type="email"
                       value={emailInput}
                       onChange={(e) => setEmailInput(e.target.value)}
-                      placeholder="Ex: jacquesbene301@gmail.com"
+                      placeholder="Ex: pasmasys@gmail.com"
                       className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs placeholder:text-slate-400 outline-none focus:border-indigo-600 focus:bg-white transition"
                     />
                   </div>
@@ -3596,7 +3596,7 @@ export default function App() {
                     <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
                     <p className="text-[11px] font-semibold text-slate-200">
                       {isPrimarySuperAdmin ? (
-                        <>Compte Super-Admin Principal : <strong className="text-white">jacquesbene301@gmail.com</strong></>
+                        <>Compte Super-Admin Principal : <strong className="text-white">pasmasys@gmail.com</strong></>
                       ) : (
                         <>Compte Super-Admin Adjoint : <strong className="text-white">{user?.email}</strong></>
                       )}
@@ -3895,7 +3895,7 @@ export default function App() {
                 <span className="h-8 w-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
                 <div className="text-center space-y-1">
                   <p className="font-bold text-sm text-gray-900">
-                    {seeding ? "Création des données de simulation de vos élèves (Pasma)..." : "Synchronisation de votre profil..."}
+                    {seeding ? "Création des données de simulation de vos élèves (Pasma-sys)..." : "Synchronisation de votre profil..."}
                   </p>
                   <p className="text-xs text-gray-500">
                     {seeding ? "La base de données Firestore s'initialise pour votre UID." : "Chargement en cours depuis Google Firebase..."}
@@ -4784,7 +4784,7 @@ export default function App() {
                         <AcademicCalendar
                           schoolId={selectedSchoolId || auth.currentUser?.uid || 'demo_school_ekali'}
                           portalUserRole={portalUserRole}
-                          schoolName={apeeSettings.associationName || 'Complexe Scolaire Ekali Pasma'}
+                          schoolName={apeeSettings.associationName || "CES d'Ekali 1 - MFOU"}
                           schoolYear={apeeSettings.schoolYear || '2026-2027'}
                           language={language}
                         />

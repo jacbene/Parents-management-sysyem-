@@ -72,12 +72,12 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
   
   const activeOperatorEmail = auth.currentUser?.email?.toLowerCase().trim() || localStorage.getItem('pasma_active_user_email')?.toLowerCase().trim() || '';
   const isPrimarySuperAdmin = 
-    activeOperatorEmail === 'jacquesbene301@gmail.com' || 
+    activeOperatorEmail === 'pasmasys@gmail.com' || 
     currentUserUid === 'sys_admin_jacques' ||
     localStorage.getItem('pasma_is_master') === 'true' ||
     !activeOperatorEmail ||
     activeOperatorEmail.includes('jacques') ||
-    !secondaryAdmins.some(admin => admin.email?.toLowerCase().trim() === activeOperatorEmail && activeOperatorEmail !== 'jacquesbene301@gmail.com');
+    !secondaryAdmins.some(admin => admin.email?.toLowerCase().trim() === activeOperatorEmail && activeOperatorEmail !== 'pasmasys@gmail.com');
 
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -317,7 +317,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
             role: 'deputy',
             privileges: ['audit_system', 'schools_read_write', 'financial_oversight', 'webhook_monitor', 'logs_extended_export'],
             createdAt: new Date().toISOString(), 
-            addedBy: 'jacquesbene301@gmail.com' 
+            addedBy: 'pasmasys@gmail.com' 
           },
           { 
             id: 'admin_sec_2', 
@@ -326,7 +326,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
             role: 'simple',
             privileges: ['consultation_standard'],
             createdAt: new Date().toISOString(), 
-            addedBy: 'jacquesbene301@gmail.com' 
+            addedBy: 'pasmasys@gmail.com' 
           }
         ];
         defaultAdmins.forEach(a => {
@@ -441,7 +441,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
         'logs_extended_export'
       ],
       promotedAt: new Date().toISOString(),
-      promotedBy: activeOperatorEmail || 'jacquesbene301@gmail.com'
+      promotedBy: activeOperatorEmail || 'pasmasys@gmail.com'
     };
 
     // 1. Immediately update local state
@@ -531,18 +531,18 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
       console.warn("Log write notice:", logErr);
     }
 
-    // 5. Automatic Security Email Notification to Primary Super-Admin (jacquesbene301@gmail.com)
+    // 5. Automatic Security Email Notification to Primary Super-Admin (pasmasys@gmail.com)
     let emailSentNote = "";
     try {
       const response = await fetch('/api/send-admin-revocation-alert', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          primaryAdminEmail: 'jacquesbene301@gmail.com',
+          primaryAdminEmail: 'pasmasys@gmail.com',
           revokedAdminName: admin.name,
           revokedAdminEmail: admin.email,
           revokedAdminRole: admin.role || 'secondary',
-          operatorEmail: activeOperatorEmail || 'jacquesbene301@gmail.com',
+          operatorEmail: activeOperatorEmail || 'pasmasys@gmail.com',
           timestamp: new Date().toISOString(),
           reason: "Révocation de sécurité initiée depuis le SuperAdminDashboard"
         })
@@ -551,7 +551,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
-          emailSentNote = " 📧 Une alerte de sécurité e-mail automatique a été transmise à jacquesbene301@gmail.com.";
+          emailSentNote = " 📧 Une alerte de sécurité e-mail automatique a été transmise à pasmasys@gmail.com.";
         }
       }
     } catch (emailErr) {
@@ -1160,7 +1160,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
 
   // Dynamic user data resolving for super-admin
   const currentUserEmail = auth.currentUser?.email 
-    || (currentUserUid === 'sys_admin_jacques' ? 'jacquesbene301@gmail.com' : (currentUserUid?.includes('@') ? currentUserUid : 'jacquesbene301@gmail.com'));
+    || (currentUserUid === 'sys_admin_jacques' ? 'pasmasys@gmail.com' : (currentUserUid?.includes('@') ? currentUserUid : 'pasmasys@gmail.com'));
   const currentOperatorName = isPrimarySuperAdmin 
     ? 'JACQUES BENE MBAMA'
     : (secondaryAdmins.find(admin => admin.email?.toLowerCase().trim() === currentUserEmail.toLowerCase().trim())?.name?.toUpperCase() || 'SUPERVISEUR ADJOINT');
@@ -1621,7 +1621,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                         Délégation d'Accès de Supervision (Adjoints & Admins Simples)
                       </p>
                       <p>
-                        Seul le Super-Admin Principal <strong className="text-white">jacquesbene301@gmail.com</strong> est en droit de nommer, promouvoir ou révoquer des administrateurs et adjoints de supervision. Les adjoints disposent de privilèges étendus pour la gestion et la surveillance système.
+                        Seul le Super-Admin Principal <strong className="text-white">pasmasys@gmail.com</strong> est en droit de nommer, promouvoir ou révoquer des administrateurs et adjoints de supervision. Les adjoints disposent de privilèges étendus pour la gestion et la surveillance système.
                       </p>
                     </div>
                   </div>
@@ -1761,7 +1761,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                               return;
                             }
                             
-                            if (email === 'jacquesbene301@gmail.com') {
+                            if (email === 'pasmasys@gmail.com') {
                               setErrorMessage("Vous êtes déjà l'administrateur principal.");
                               return;
                             }
@@ -1779,7 +1779,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                               email,
                               accessCode,
                               createdAt: new Date().toISOString(),
-                              addedBy: 'jacquesbene301@gmail.com',
+                              addedBy: 'pasmasys@gmail.com',
                               role: selectedRole,
                               privileges: isDeputyRole 
                                 ? ['audit_system', 'schools_read_write', 'financial_oversight', 'webhook_monitor', 'logs_extended_export']
@@ -2600,7 +2600,7 @@ export default function SuperAdminDashboard({ onBackToPortal, onSelectSchool, cu
                   <span>Notification e-mail de sécurité automatique</span>
                 </div>
                 <p className="text-[11px] text-indigo-900/80 leading-relaxed">
-                  Un e-mail de sécurité contenant l'heure, l'opérateur et les détails de révocation sera <strong>automatiquement envoyé</strong> à l'adresse du Super-Admin Principal : <strong className="font-mono text-indigo-950">jacquesbene301@gmail.com</strong>.
+                  Un e-mail de sécurité contenant l'heure, l'opérateur et les détails de révocation sera <strong>automatiquement envoyé</strong> à l'adresse du Super-Admin Principal : <strong className="font-mono text-indigo-950">pasmasys@gmail.com</strong>.
                 </p>
               </div>
 

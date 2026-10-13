@@ -113,8 +113,8 @@ export default function ApeeLegal({ initialTab = 'policy' }: ApeeLegalProps = {}
 
           <div className="flex items-center gap-2 text-slate-200">
             <Mail className="h-3.5 w-3.5 text-cyan-405 shrink-0" />
-            <a href="mailto:jacquesbene301@gmail.com" className="hover:underline hover:text-white truncate">
-              jacquesbene301@gmail.com
+            <a href="mailto:pasmasys@gmail.com" className="hover:underline hover:text-white truncate">
+              pasmasys@gmail.com
             </a>
           </div>
         </div>
@@ -179,7 +179,7 @@ export default function ApeeLegal({ initialTab = 'policy' }: ApeeLegalProps = {}
 
               <div>
                 <h4 className="font-bold text-slate-800">1. Responsable de Traitement Unique</h4>
-                <p>Jacques Bene Mbama — téléphone portable professionnel : <strong>+237 656 454 053</strong>, e-mail : <strong>jacquesbene301@gmail.com</strong>.</p>
+                <p>Jacques Bene Mbama — téléphone portable professionnel : <strong>+237 656 454 053</strong>, e-mail : <strong>pasmasys@gmail.com</strong>.</p>
               </div>
 
               <div>
@@ -216,7 +216,7 @@ export default function ApeeLegal({ initialTab = 'policy' }: ApeeLegalProps = {}
               <div className="bg-white border border-slate-200 p-3.5 rounded-xl flex items-start gap-2.5">
                 <Info className="h-4 w-4 text-indigo-500 shrink-0 mt-0.5" />
                 <p className="text-[11px] text-slate-600">
-                  Pour formuler une demande de correction de numéro de téléphone ou de suppression de vos données personnelles, vous pouvez envoyer votre courrier électronique motivé à <strong>jacquesbene301@gmail.com</strong> ou appeler le <strong>+237 656 454 053</strong>.
+                  Pour formuler une demande de correction de numéro de téléphone ou de suppression de vos données personnelles, vous pouvez envoyer votre courrier électronique motivé à <strong>pasmasys@gmail.com</strong> ou appeler le <strong>+237 656 454 053</strong>.
                 </p>
               </div>
             </div>
