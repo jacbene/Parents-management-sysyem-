@@ -52,7 +52,7 @@ export function drawSingleBadge(
   doc.setFont('Helvetica', 'normal');
   doc.setFontSize(5);
   doc.setTextColor(180, 200, 240);
-  doc.text("CARTE D'IDENTITÉ SCOLAIRE • PASMA", x + 4, y + 9.5);
+  doc.text("CARTE D'IDENTITÉ SCOLAIRE • PASMA-SYS", x + 4, y + 9.5);
 
   // Decorative header badge icon representation (small blue circle)
   doc.setFillColor(59, 130, 246);
@@ -141,7 +141,7 @@ export async function generateSingleBadgePDF(student: Student, settings?: ApeeSe
     format: [95, 65] // Custom size for one single badge (95mm x 65mm with 2.5mm bleed)
   });
 
-  const schoolName = settings?.associationName || "ÉTABLISSEMENT SCOLAIRE";
+  const schoolName = settings?.associationName || (typeof localStorage !== 'undefined' ? localStorage.getItem('portal_selected_school_name') : null) || "Établissement Enregistré";
   
   try {
     // Generate QR code base64 URL
@@ -168,7 +168,7 @@ export async function generateBulkBadgesPDF(students: Student[], settings?: Apee
     format: 'a4'
   });
 
-  const schoolName = settings?.associationName || "ÉTABLISSEMENT SCOLAIRE";
+  const schoolName = settings?.associationName || (typeof localStorage !== 'undefined' ? localStorage.getItem('portal_selected_school_name') : null) || "Établissement Enregistré";
   const label = className ? `CLASSE ${className.toUpperCase()}` : "ÉLÈVES";
 
   // Margins & Dimensions
@@ -239,7 +239,7 @@ export default function StudentQRBadge({ student, settings, isFr = true }: Stude
     await generateSingleBadgePDF(student, settings);
   };
 
-  const schoolName = settings?.associationName || "ÉTABLISSEMENT SCOLAIRE";
+  const schoolName = settings?.associationName || (typeof localStorage !== 'undefined' ? localStorage.getItem('portal_selected_school_name') : null) || "Établissement Enregistré";
 
   return (
     <div className="flex flex-col items-center gap-6 p-4">
@@ -259,7 +259,7 @@ export default function StudentQRBadge({ student, settings, isFr = true }: Stude
           </div>
           <div className="flex items-center gap-1 bg-emerald-500/20 text-emerald-400 text-[8px] font-black px-2 py-0.5 rounded-full border border-emerald-500/30">
             <ShieldCheck className="h-3 w-3" />
-            <span>PASMA LIVE</span>
+            <span>PASMA-SYS LIVE</span>
           </div>
         </div>
 

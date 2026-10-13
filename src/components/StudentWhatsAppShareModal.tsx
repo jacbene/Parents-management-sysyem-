@@ -43,7 +43,7 @@ export default function StudentWhatsAppShareModal({
   grades = [],
   attendanceLogs = [],
   teacherName = 'Enseignant principal',
-  schoolName = 'Complexe Scolaire Ekali Pasma',
+  schoolName = (typeof localStorage !== 'undefined' ? localStorage.getItem('portal_selected_school_name') : null) || 'Complexe Scolaire Ekali Pasma-sys',
   targetGoal
 }: StudentWhatsAppShareModalProps) {
   const { language } = useLanguage();
@@ -217,8 +217,8 @@ export default function StudentWhatsAppShareModal({
       : '';
 
     return isFr
-      ? `🎓 *BILAN SCOLAIRE COMPLET (NOTES & ASSIDUITÉ)*\n${schoolHeader}\n👨‍👩‍👦 Destinataire : *${parentName || 'Parent d\'élève'}*\n────────────────────────\n📊 *RÉSULTATS ACADÉMIQUES*\n• Moyenne générale : *${overallAvg}/20*\n• Tendance récente : *${last5Avg}/20*\n${bestSubject ? `• Matière forte : *${bestSubject.subject}* (${bestSubject.avg}/20)\n` : ''}${worstSubject ? `• Matière à renforcer : *${worstSubject.subject}* (${worstSubject.avg}/20)\n` : ''}• Dernières notes : ${recentGradesStr}\n\n⏱️ *ASSIDUITÉ & DISCIPLINE*\n• Taux de présence : *${presenceRate}%* (${presentCount} Présences, ${lateCount} Retards, ${absentCount} Absences)${noteBlock}\n\n📅 Édité le ${currentDateFormatted} • Complexe Scolaire Ekali Pasma\n🔗 Accès ENT : https://pasma.sys/ent`
-      : `🎓 *FULL STUDENT PROGRESS REPORT (GRADES & ATTENDANCE)*\n${schoolHeader}\n👨‍👩‍👦 Recipient: *${parentName || 'Parent / Guardian'}*\n────────────────────────\n📊 *ACADEMIC STANDING*\n• Overall Average: *${overallAvg}/20*\n• Recent Trend: *${last5Avg}/20*\n${bestSubject ? `• Strong subject: *${bestSubject.subject}* (${bestSubject.avg}/20)\n` : ''}${worstSubject ? `• Needs focus: *${worstSubject.subject}* (${worstSubject.avg}/20)\n` : ''}• Recent grades: ${recentGradesStr}\n\n⏱️ *ATTENDANCE STATUS*\n• Attendance Rate: *${presenceRate}%* (${presentCount} Present, ${lateCount} Late, ${absentCount} Absent)${noteBlock}\n\n📅 Generated on ${currentDateFormatted} • Ekali Pasma School\n🔗 School Portal: https://pasma.sys/ent`;
+      ? `🎓 *BILAN SCOLAIRE COMPLET (NOTES & ASSIDUITÉ)*\n${schoolHeader}\n👨‍👩‍👦 Destinataire : *${parentName || 'Parent d\'élève'}*\n────────────────────────\n📊 *RÉSULTATS ACADÉMIQUES*\n• Moyenne générale : *${overallAvg}/20*\n• Tendance récente : *${last5Avg}/20*\n${bestSubject ? `• Matière forte : *${bestSubject.subject}* (${bestSubject.avg}/20)\n` : ''}${worstSubject ? `• Matière à renforcer : *${worstSubject.subject}* (${worstSubject.avg}/20)\n` : ''}• Dernières notes : ${recentGradesStr}\n\n⏱️ *ASSIDUITÉ & DISCIPLINE*\n• Taux de présence : *${presenceRate}%* (${presentCount} Présences, ${lateCount} Retards, ${absentCount} Absences)${noteBlock}\n\n📅 Édité le ${currentDateFormatted} • ${schoolName || 'Pasma-sys'}\n🔗 Accès ENT : https://pasma-sys.web.app`
+      : `🎓 *FULL STUDENT PROGRESS REPORT (GRADES & ATTENDANCE)*\n${schoolHeader}\n👨‍👩‍👦 Recipient: *${parentName || 'Parent / Guardian'}*\n────────────────────────\n📊 *ACADEMIC STANDING*\n• Overall Average: *${overallAvg}/20*\n• Recent Trend: *${last5Avg}/20*\n${bestSubject ? `• Strong subject: *${bestSubject.subject}* (${bestSubject.avg}/20)\n` : ''}${worstSubject ? `• Needs focus: *${worstSubject.subject}* (${worstSubject.avg}/20)\n` : ''}• Recent grades: ${recentGradesStr}\n\n⏱️ *ATTENDANCE STATUS*\n• Attendance Rate: *${presenceRate}%* (${presentCount} Present, ${lateCount} Late, ${absentCount} Absent)${noteBlock}\n\n📅 Generated on ${currentDateFormatted} • ${schoolName || 'Pasma-sys'}\n🔗 School Portal: https://pasma-sys.web.app`;
   }, [
     reportType, 
     student, 

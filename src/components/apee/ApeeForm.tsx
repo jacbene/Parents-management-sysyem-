@@ -152,8 +152,8 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
       doc.setFontSize(7.5);
       doc.setTextColor(148, 163, 184);
       const footerTextLabel = isEn
-        ? `Generated via PASMA-ENT ANALYTICS (Accounting Forms Creation)`
-        : `Édité par PASMA-ENT ANALYTICS (Génération de pièces comptables)`;
+        ? `Generated via PASMA-SYS ANALYTICS (Accounting Forms Creation)`
+        : `Édité par PASMA-SYS ANALYTICS (Génération de pièces comptables)`;
       doc.text(footerTextLabel, margin, pageHeight - 8);
       
       const officialReceiptLabel = isEn ? "Miscellaneous Revenue Official Receipt" : "Reçu Officiel Autre Recette";
@@ -852,8 +852,8 @@ export default function ApeeForm({ settings, onSaveParent, activeParentToEdit, o
       doc.setFontSize(7.5);
       doc.setTextColor(148, 163, 184);
       const repDevEdit = isEn
-        ? `Generated via PASMA-ENT ANALYTICS (Accounting Forms Creation System)`
-        : `Édité par PASMA-ENT ANALYTICS (Génération de pièces comptables)`;
+        ? `Generated via PASMA-SYS ANALYTICS (Accounting Forms Creation System)`
+        : `Édité par PASMA-SYS ANALYTICS (Génération de pièces comptables)`;
       doc.text(repDevEdit, margin, pageHeight - 8);
       
       const digitReceiptLabel = isEn ? "Archive Digital PDF Receipt" : "Reçu Numérique d'Archive";

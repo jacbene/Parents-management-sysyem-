@@ -420,9 +420,10 @@ export default function StudentCard({
       ? (isFr ? `\n💬 Note & Réflexion des parents :\n"${goalComment}"` : `\n💬 Parent Note & Reflection:\n"${goalComment}"`)
       : '';
 
+    const activeSchoolName = (typeof localStorage !== 'undefined' ? localStorage.getItem('portal_selected_school_name') : null) || 'Complexe Scolaire Ekali Pasma-sys';
     const footer = isFr
-      ? `\n📅 Édité le ${currentDateStr} • Complexe Scolaire Ekali Pasma`
-      : `\n📅 Generated on ${currentDateStr} • Ekali Pasma School`;
+      ? `\n📅 Édité le ${currentDateStr} • ${activeSchoolName}`
+      : `\n📅 Generated on ${currentDateStr} • ${activeSchoolName}`;
 
     return `${header}\n--------------------------------------------------\n${goalText}\n${avgText}\n${percentText}\n${gapText}${commentBlock}\n${footer}`;
   }, [student.name, student.classRoom, student.grade, goalProgress, goalComment, isFr]);
@@ -1864,7 +1865,7 @@ export default function StudentCard({
           grades={grades}
           attendanceLogs={attendanceLogs}
           teacherName={teacherName}
-          schoolName={settings?.associationName || settings?.shortName || 'Complexe Scolaire Ekali Pasma'}
+          schoolName={settings?.associationName || settings?.shortName || (typeof localStorage !== 'undefined' ? localStorage.getItem('portal_selected_school_name') : null) || 'Complexe Scolaire Ekali Pasma-sys'}
           targetGoal={targetGoal}
         />
       )}

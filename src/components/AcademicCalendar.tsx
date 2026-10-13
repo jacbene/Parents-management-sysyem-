@@ -199,7 +199,7 @@ const getDefaultAcademicEvents = (schoolId: string, schoolYearVal: string): Acad
 export default function AcademicCalendar({
   schoolId,
   portalUserRole = 'parent',
-  schoolName = 'Complexe Scolaire Ekali Pasma',
+  schoolName = (typeof localStorage !== 'undefined' ? localStorage.getItem('portal_selected_school_name') : null) || 'Complexe Scolaire Ekali Pasma-sys',
   schoolYear = '2026-2027',
   language = 'fr'
 }: AcademicCalendarProps) {

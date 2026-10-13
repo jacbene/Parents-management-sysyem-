@@ -366,8 +366,8 @@ export default function ApeeFinancial({
       doc.setFontSize(7.5);
       doc.setTextColor(148, 163, 184);
       const footerTextLabel = isEn 
-        ? `Generated via PASMA-ENT ANALYTICS (Accounting & Audit Forms Creation)` 
-        : `Édité via PASMA-ENT ANALYTICS (Génération de pièces comptables)`;
+        ? `Generated via PASMA-SYS ANALYTICS (Accounting & Audit Forms Creation)` 
+        : `Édité via PASMA-SYS ANALYTICS (Génération de pièces comptables)`;
       doc.text(footerTextLabel, margin, pageHeight - 8);
       doc.text(`Page ${pageNum}`, margin + contentWidth - 10, pageHeight - 8);
     };

@@ -379,7 +379,7 @@ export const DEFAULT_CAMPUS_FACILITIES: CampusFacility[] = [
     building: 'Bloc Sanitaire Sud',
     buildingCode: 'SAN',
     floor: 'Rez-de-chaussée',
-    responsiblePerson: 'Service d\'Entretien Pasma',
+    responsiblePerson: 'Service d\'Entretien Pasma-sys',
     visitingHours: 'Nettoyage continu',
     description: 'Sanitaires modernes séparés Filles / Garçons / Enseignants avec rampes d\'accès PMR et points d\'eau pour le lavage des mains.',
     amenities: ['Cabines PMR', 'Distributeurs de Savon', 'Sèche-mains', 'Accessibilité 100%'],

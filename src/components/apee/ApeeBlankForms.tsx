@@ -538,7 +538,7 @@ export default function ApeeBlankForms({ settings }: ApeeBlankFormsProps) {
     doc.setTextColor(156, 163, 175);
     const certifiedFooterLabel = isEn
       ? `Blank document template generated: ${new Date().toLocaleString('en-US')} • PASMA-SYS PTA Educational Platform • ISO certified`
-      : `Modèle vierge généré le : ${new Date().toLocaleString('fr-FR')} • Système PASMA-ENT pour Association des Parents d'Élèves • Cachet certifié conforme`;
+      : `Modèle vierge généré le : ${new Date().toLocaleString('fr-FR')} • Système PASMA-SYS pour Association des Parents d'Élèves • Cachet certifié conforme`;
     doc.text(certifiedFooterLabel, margin, pageHeight - 8);
 
     const pdfName = `formulaire_vierge_${selectedTemplate}_${referenceNumber || 'standard'}.pdf`.toLowerCase().replace(/[\s\/]/g, '_');

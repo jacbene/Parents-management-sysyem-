@@ -647,6 +647,10 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
           try {
             localStorage.setItem('portal_teacher_details', JSON.stringify(teacherDetails));
             sessionStorage.setItem('portal_teacher_details', JSON.stringify(teacherDetails));
+            const activeSchoolName = schools.find(s => s.id === selectedSchoolId)?.name;
+            if (activeSchoolName) {
+              localStorage.setItem('portal_selected_school_name', activeSchoolName);
+            }
           } catch (e) {}
           onSelectSchool(selectedSchoolId, 'teacher', teacherDetails as any);
         }, 1200);
@@ -992,6 +996,10 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
         }
 
         setTimeout(() => {
+          const activeSchoolName = schools.find(s => s.id === selectedSchoolId)?.name;
+          if (activeSchoolName) {
+            localStorage.setItem('portal_selected_school_name', activeSchoolName);
+          }
           onSelectSchool(selectedSchoolId, 'parent', {
             name: matchedParentState.title || matchedParentState.name || parentName,
             phone: matchedParentState.phone || parentPhone,
@@ -1064,7 +1072,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
       }
 
       const userOwnedSchools = freshSchools.filter(s => s.ownerId === currentUid || s.ownerId === firestoreOwnerId);
-      const isSuperAdminBypass = currentUid === 'sys_admin_jacques' || auth.currentUser?.email === 'pasmasys@gmail.com' || auth.currentUser?.email === 'jacquesbene301@gmail.com';
+      const isSuperAdminBypass = currentUid === 'sys_admin_jacques' || auth.currentUser?.email === 'pasmasys@gmail.com';
       if (userOwnedSchools.length >= 3 && !isSuperAdminBypass) {
         throw new Error(`Account quota exceeded : Vous possédez déjà ${userOwnedSchools.length} établissement(s). La création est limitée à 3 établissements scolaires par compte de démonstration.`);
       }
@@ -1417,6 +1425,7 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
       }
 
       setSuccessMessage("✨ Établissement créé et configuré avec succès. Ajoutez maintenant vos élèves réels.");
+      localStorage.setItem('portal_selected_school_name', schoolName.trim());
 
       // Automatically log inside the new school as Administrator
       setTimeout(() => {

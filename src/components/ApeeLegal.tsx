@@ -262,7 +262,7 @@ export default function ApeeLegal({ initialTab = 'policy' }: ApeeLegalProps = {}
                   <li><strong>Types de messages :</strong> Convocations aux assemblées APEE, rappels d'échéances de scolarité, alertes d'absences/retards et notifications de devoirs.</li>
                   <li><strong>Fréquence :</strong> La fréquence des messages varie selon le calendrier scolaire (en moyenne 1 à 4 SMS par mois).</li>
                   <li><strong>Frais applicables :</strong> Des frais standard de messagerie et de données de votre opérateur mobile peuvent s'appliquer (<em>Message and data rates may apply</em>).</li>
-                  <li><strong>Assistance & Aide :</strong> Pour toute question ou assistance relative aux SMS, répondez <strong>HELP</strong> au SMS reçu ou écrivez à <strong>jacquesbene301@gmail.com</strong> (Tél : +237 656 454 053).</li>
+                  <li><strong>Assistance & Aide :</strong> Pour toute question ou assistance relative aux SMS, répondez <strong>HELP</strong> au SMS reçu ou écrivez à <strong>pasmasys@gmail.com</strong> (Tél : +237 656 454 053).</li>
                   <li><strong>Désabonnement & Retrait du consentement :</strong> Pour ne plus recevoir de messages SMS, répondez <strong>STOP</strong> à tout message ou contactez la direction de votre établissement pour mettre à jour vos préférences de communication.</li>
                 </ul>
               </div>
@@ -299,7 +299,7 @@ export default function ApeeLegal({ initialTab = 'policy' }: ApeeLegalProps = {}
                 <div className="space-y-1 text-amber-950">
                   <h4 className="font-bold">Contactez Jacques Bene Mbama</h4>
                   <p className="text-[11px] leading-relaxed">
-                    Pour toute information relative au registre RGPD ou pour demander l'effacement de vos fiches, contactez le délégué DPO unique au <strong>+237 656 454 053</strong> ou par e-mail en écrivant à <strong>jacquesbene301@gmail.com</strong>.
+                    Pour toute information relative au registre RGPD ou pour demander l'effacement de vos fiches, contactez le délégué DPO unique au <strong>+237 656 454 053</strong> ou par e-mail en écrivant à <strong>pasmasys@gmail.com</strong>.
                   </p>
                 </div>
               </div>

@@ -180,7 +180,7 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
 
   const schoolExtracted = settings?.associationName 
     ? settings.associationName.replace(/^(APEE|A\.P\.E\.E\.|Association des Parents d'élèves de l'|Association des Parents d'élèves du|Association des Parents d'élèves de|Association des Parents d'élèves|Association des Parents du|Association des Parents de|Association des Parents d'|Association des Parents|Association des Parents CES d')\s+/i, '').trim()
-    : (isEn ? "CES d'Ekali 1" : "CES d'Ekali 1");
+    : (typeof localStorage !== 'undefined' ? localStorage.getItem('portal_selected_school_name') : null) || (isEn ? "CES d'Ekali 1" : "CES d'Ekali 1");
 
   // 1. Grade stats computations (using filtered grades)
   const totalTests = filteredGrades.length;
@@ -1154,7 +1154,7 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
                       <div className="bg-slate-100 border border-slate-250 p-1.5 rounded-lg text-center inline-block max-w-[240px]">
                         <GraduationCap className="h-4.5 w-4.5 mx-auto text-indigo-600 mb-0.5" />
                         <span className="text-[7.5px] font-black uppercase text-slate-800 block truncate" title={schoolExtracted}>{schoolExtracted}</span>
-                        <span className="text-[5.5px] font-bold text-slate-400 block uppercase tracking-wider">{isEn ? "School Establishment" : "Établissement Scolaire"}</span>
+                        <span className="text-[5.5px] font-bold text-slate-400 block uppercase tracking-wider">{schoolExtracted}</span>
                       </div>
                     </div>
                     <div className="text-right space-y-0.5">
@@ -1294,7 +1294,7 @@ export default function StudentPrintModal({ student, grades, attendance, isOpen,
                       <span className="font-extrabold text-slate-750 uppercase flex items-center gap-1.5">
                         <TrendingUp className="h-3.5 w-3.5" style={{ color: activeTheme.primaryHex }} /> Bilan Analytique : Moyennes Scolaires par Discipline (sur 20)
                       </span>
-                      <span className="text-[8px] text-slate-400 font-mono tracking-widest uppercase">PASMA ANALYTICS</span>
+                      <span className="text-[8px] text-slate-400 font-mono tracking-widest uppercase">PASMA-SYS ANALYTICS</span>
                     </div>
                     <div className="h-32 w-full text-[9px]">
                       {isMounted ? (

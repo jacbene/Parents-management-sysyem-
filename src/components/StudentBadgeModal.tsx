@@ -14,7 +14,7 @@ export default function StudentBadgeModal({
   student,
   isOpen,
   onClose,
-  schoolName = "COMPLEXE SCOLAIRE PASMA"
+  schoolName = (typeof localStorage !== 'undefined' ? localStorage.getItem('portal_selected_school_name') : null) || "COMPLEXE SCOLAIRE PASMA-SYS"
 }: StudentBadgeModalProps) {
   const badgeRef = useRef<HTMLDivElement>(null);
 
@@ -80,7 +80,7 @@ export default function StudentBadgeModal({
               <QrCode className="h-5 w-5 text-indigo-200" />
               <div>
                 <h3 className="text-sm font-black font-sans">Carte d'Identité Scolaire</h3>
-                <p className="text-[10px] text-indigo-100 font-medium">Badge officiel certifié par PASMA</p>
+                <p className="text-[10px] text-indigo-100 font-medium">Badge officiel certifié par Pasma-sys</p>
               </div>
             </div>
             <button

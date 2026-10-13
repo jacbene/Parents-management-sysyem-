@@ -413,7 +413,7 @@ export default function App() {
   });
   const [secondaryAdmins, setSecondaryAdmins] = useState<{ id: string; email: string; name: string; createdAt: string; addedBy: string }[]>([]);
   
-  const isPrimarySuperAdmin = !!user?.email && (user.email.toLowerCase().trim() === 'pasmasys@gmail.com' || user.email.toLowerCase().trim() === 'jacquesbene301@gmail.com');
+  const isPrimarySuperAdmin = !!user?.email && (user.email.toLowerCase().trim() === 'pasmasys@gmail.com');
   const isSecondarySuperAdmin = !!user?.email && secondaryAdmins.some(admin => {
     const adminEmail = (admin.email || '').toLowerCase().trim();
     const userEmail = (user.email || '').toLowerCase().trim();
@@ -1087,12 +1087,17 @@ export default function App() {
     
     setSelectedSchoolId(schoolId);
     setPortalUserRole(role);
+    const storedSchoolName = localStorage.getItem('portal_selected_school_name');
+    if (storedSchoolName) {
+      setApeeSettings(prev => ({ ...prev, associationName: storedSchoolName }));
+    }
     setActiveTab(role === 'parent' ? 'announcements' : role === 'teacher' ? 'grades' : 'apee_dashboard');
     setShowMainLogin(false);
   };
 
   const handleExitSchool = () => {
     localStorage.removeItem('portal_selected_school_id');
+    localStorage.removeItem('portal_selected_school_name');
     localStorage.removeItem('portal_user_role');
     localStorage.removeItem('portal_parent_details');
     localStorage.removeItem('portal_teacher_details');
@@ -1406,7 +1411,7 @@ export default function App() {
         const simulatedUser = JSON.parse(savedSimulated);
         setUser(simulatedUser);
         const email = (simulatedUser.email || '').toLowerCase().trim();
-        const isPrimary = email === 'pasmasys@gmail.com' || email === 'jacquesbene301@gmail.com';
+        const isPrimary = email === 'pasmasys@gmail.com';
         const isDeputy = email === 'adjoint@pasma.sys';
         if (isPrimary || isDeputy) {
           setShowSuperAdmin(true);
@@ -1461,7 +1466,7 @@ export default function App() {
         }
 
         const email = currentUser.email.toLowerCase().trim();
-        const isPrimary = email === 'pasmasys@gmail.com' || email === 'jacquesbene301@gmail.com';
+        const isPrimary = email === 'pasmasys@gmail.com';
         
         let isDeputy = false;
         try {
@@ -1527,7 +1532,7 @@ export default function App() {
       }
 
       const email = user.email.toLowerCase().trim();
-      const isPrimary = email === 'pasmasys@gmail.com' || email === 'jacquesbene301@gmail.com';
+      const isPrimary = email === 'pasmasys@gmail.com';
       const isDefaultAdjoint = email === 'adjoint@pasma.sys';
       
       const cached = localStorage.getItem('pasma_secondary_admins');
@@ -1648,6 +1653,13 @@ export default function App() {
               return;
             }
             setSchoolStatus(data.status || 'active');
+            if (data.name) {
+              localStorage.setItem('portal_selected_school_name', data.name);
+              setApeeSettings(prev => ({
+                ...prev,
+                associationName: data.name
+              }));
+            }
           }
         }, (err) => {
           console.warn("Real-time school status listener subscription failed (offline fallback):", err);
@@ -3129,7 +3141,7 @@ export default function App() {
       const gUser = await loginWithGoogle();
       if (gUser && gUser.email) {
         const email = gUser.email.toLowerCase().trim();
-        if (email === 'pasmasys@gmail.com' || email === 'jacquesbene301@gmail.com') {
+        if (email === 'pasmasys@gmail.com') {
           setShowSuperAdmin(true);
         }
         setShowMainLogin(false);
@@ -3239,7 +3251,7 @@ export default function App() {
       if (authMode === 'login') {
         const userCred = await loginWithEmail(email, passwordInput);
         if (userCred) {
-          if (email.toLowerCase().trim() === 'pasmasys@gmail.com' || email.toLowerCase().trim() === 'jacquesbene301@gmail.com') {
+          if (email.toLowerCase().trim() === 'pasmasys@gmail.com') {
             setShowSuperAdmin(true);
           }
           setShowMainLogin(false);
@@ -3247,7 +3259,7 @@ export default function App() {
       } else if (authMode === 'signup') {
         const userCred = await signUpWithEmail(email, passwordInput);
         if (userCred) {
-          if (email.toLowerCase().trim() === 'pasmasys@gmail.com' || email.toLowerCase().trim() === 'jacquesbene301@gmail.com') {
+          if (email.toLowerCase().trim() === 'pasmasys@gmail.com') {
             setShowSuperAdmin(true);
           }
           setAuthSuccessMessage("Votre compte a été créé avec succès dans Firebase Auth ! Un e-mail de confirmation contenant un lien de vérification a été transmis à l'adresse " + email + ". Veuillez vérifier votre boîte de réception.");
@@ -3271,7 +3283,7 @@ export default function App() {
     checkRedirectResult()
       .then(redirectUser => {
         if (redirectUser) {
-          if (redirectUser.email?.toLowerCase().trim() === 'pasmasys@gmail.com' || redirectUser.email?.toLowerCase().trim() === 'jacquesbene301@gmail.com') {
+          if (redirectUser.email?.toLowerCase().trim() === 'pasmasys@gmail.com') {
             setShowSuperAdmin(true);
           }
           setShowMainLogin(false);
@@ -3767,7 +3779,7 @@ export default function App() {
                         : `${portalManagerDetails?.phone || 'Administrateur'} : ${portalManagerDetails?.name || 'Responsable'}`}
                   </div>
                   <div className="text-[10px] text-indigo-600 dark:text-slate-400 font-bold flex items-center gap-1 justify-end">
-                    <span className="h-1.5 w-1.5 bg-indigo-500 rounded-full animate-pulse" /> {apeeSettings.associationName || "Établissement Actif"}
+                    <span className="h-1.5 w-1.5 bg-indigo-500 rounded-full animate-pulse" /> {apeeSettings.associationName || localStorage.getItem('portal_selected_school_name') || "Établissement Enregistré"}
                   </div>
                 </div>
                 
@@ -4768,6 +4780,7 @@ export default function App() {
                           parents={apeeParents}
                           invoices={invoices}
                           students={students}
+                          schoolName={apeeSettings.associationName || localStorage.getItem('portal_selected_school_name') || "Établissement Enregistré"}
                         />
                       </motion.div>
                     )}
@@ -4784,7 +4797,7 @@ export default function App() {
                         <AcademicCalendar
                           schoolId={selectedSchoolId || auth.currentUser?.uid || 'demo_school_ekali'}
                           portalUserRole={portalUserRole}
-                          schoolName={apeeSettings.associationName || "CES d'Ekali 1 - MFOU"}
+                          schoolName={apeeSettings.associationName || localStorage.getItem('portal_selected_school_name') || "CES d'Ekali 1 - MFOU"}
                           schoolYear={apeeSettings.schoolYear || '2026-2027'}
                           language={language}
                         />
@@ -4794,7 +4807,7 @@ export default function App() {
                     {activeTab === 'campus_map' && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="campus_map">
                         <SchoolCampusMap
-                          schoolName={apeeSettings.associationName || "CES d'Ekali 1 - MFOU"}
+                          schoolName={apeeSettings.associationName || localStorage.getItem('portal_selected_school_name') || "CES d'Ekali 1 - MFOU"}
                           schoolYear={apeeSettings.schoolYear || '2026-2027'}
                           language={language}
                         />

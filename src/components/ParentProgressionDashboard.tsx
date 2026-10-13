@@ -364,7 +364,8 @@ export default function ParentProgressionDashboard({
       
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
-      doc.text(`${settings?.associationName || "Établissement Scolaire E.N.T."} • Année 2025/2026`, 14, 24);
+      const schoolTitle = settings?.associationName || (typeof localStorage !== 'undefined' ? localStorage.getItem('portal_selected_school_name') : null) || "Établissement Enregistré";
+      doc.text(`${schoolTitle} • Année ${settings?.schoolYear || '2025/2026'}`, 14, 24);
       doc.text(`Généré le ${new Date().toLocaleDateString('fr-FR')}`, 140, 24);
 
       // Student summary box

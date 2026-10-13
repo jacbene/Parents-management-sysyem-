@@ -135,7 +135,7 @@ export default function ApeeSearch({ parents, onEditParentRequest, onDeleteParen
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7.5);
       doc.setTextColor(148, 163, 184);
-      const systemLabel = isEn ? "PASMA-ENT SYSTEM - School Ledger Trésorerie" : "PASMA-ENT SYSTEM - Trésorerie d'Établissement";
+      const systemLabel = isEn ? "PASMA-SYS SYSTEM - School Ledger Trésorerie" : "PASMA-SYS SYSTEM - Trésorerie d'Établissement";
       const certLabel = isEn ? "Certified Conform Receipt Statement" : "Reçu certifié conforme";
       doc.text(systemLabel, margin, pageHeight - 8);
       doc.text(certLabel, margin + contentWidth - 45, pageHeight - 8);

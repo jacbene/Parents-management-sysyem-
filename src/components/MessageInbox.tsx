@@ -1286,7 +1286,7 @@ export default function MessageInbox({
                         </button>
 
                         <a
-                          href={formatWhatsAppUri(matchingParent.phone, `Bonjour, c'est l'établissement scolaire pasma.sys.`)}
+                          href={formatWhatsAppUri(matchingParent.phone, `Bonjour, c'est ${(typeof localStorage !== 'undefined' ? localStorage.getItem('portal_selected_school_name') : null) || "l'établissement scolaire"} (Pasma-sys).`)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="p-1.5 bg-green-50 dark:bg-green-950/60 hover:bg-green-100 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800 rounded-xl transition cursor-pointer flex items-center gap-1 text-[11px] font-bold"

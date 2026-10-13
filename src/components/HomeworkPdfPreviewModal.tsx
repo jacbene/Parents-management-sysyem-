@@ -167,7 +167,7 @@ export function buildHomeworkJsPdfDoc({
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(14.5);
-  const schoolTitle = (settings?.associationName || "PASMA-SYS - ÉTABLISSEMENT SCOLAIRE").toUpperCase();
+  const schoolTitle = (settings?.associationName || (typeof localStorage !== 'undefined' ? localStorage.getItem('portal_selected_school_name') : null) || "Établissement Enregistré").toUpperCase();
   doc.text(schoolTitle, marginX, 13);
 
   doc.setFontSize(9);
@@ -614,8 +614,9 @@ export default function HomeworkPdfPreviewModal({
 
   // Handle copy summary text
   const handleCopyTextSummary = () => {
+    const activeSchoolName = settings?.associationName || (typeof localStorage !== 'undefined' ? localStorage.getItem('portal_selected_school_name') : null) || "Établissement Enregistré";
     const lines = [
-      `📚 ${settings?.associationName || "Établissement Scolaire"} - Synthèse des Devoirs`,
+      `📚 ${activeSchoolName} - Synthèse des Devoirs`,
       `👤 Élève : ${activeStudent?.name || "Tous"} (${activeStudent?.classRoom || "Générale"})`,
       `📅 Édité le : ${new Date().toLocaleDateString('fr-FR')}`,
       `📊 Total : ${totalCount} | À Faire : ${pendingCount} | Terminés : ${completedCount} (${completionRate}%)`,
@@ -668,7 +669,7 @@ export default function HomeworkPdfPreviewModal({
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                {settings?.associationName || "Établissement Scolaire"} • {activeStudent?.name || "Tous les élèves"} ({activeStudent?.classRoom || "Classe Générale"})
+                {settings?.associationName || (typeof localStorage !== 'undefined' ? localStorage.getItem('portal_selected_school_name') : null) || "Établissement Enregistré"} • {activeStudent?.name || "Tous les élèves"} ({activeStudent?.classRoom || "Classe Générale"})
               </p>
             </div>
           </div>
@@ -1027,7 +1028,7 @@ export default function HomeworkPdfPreviewModal({
                   >
                     <div className="flex items-center justify-between">
                       <h4 className="font-black text-sm uppercase tracking-wide">
-                        {settings?.associationName || "PASMA-SYS - ÉTABLISSEMENT SCOLAIRE"}
+                        {settings?.associationName || (typeof localStorage !== 'undefined' ? localStorage.getItem('portal_selected_school_name') : null) || "Établissement Enregistré"}
                       </h4>
                       <span className="text-[10px] font-mono bg-white/20 px-2 py-0.5 rounded">
                         {settings?.schoolYear || "2025/2026"}
