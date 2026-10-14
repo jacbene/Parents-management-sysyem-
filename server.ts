@@ -60,6 +60,20 @@ async function getTransporter() {
   }
 }
 
+function sanitizeForSms(text: string): string {
+  if (!text) return "";
+  return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // strip accents
+    .replace(/[’‘`]/g, " ")
+    .replace(/[']/g, " ")
+    .replace(/["“”«»]/g, '"')
+    .replace(/[—–]/g, "-")
+    .replace(/[^\x20-\x7E\r\n]/g, "") // keep strictly printable 7-bit ASCII
+    .replace(/  +/g, " ")
+    .trim();
+}
+
 async function sendSms(phoneNumber: string, message: string, config: any): Promise<{ success: boolean; messageId?: string; logs: string[] }> {
   const logs: string[] = [];
   const { provider, smsEnabled, smsGatewayUrl, smsApiKey, smsSenderId, smsUsername, smsPassword } = config || {};
@@ -143,7 +157,8 @@ async function sendSms(phoneNumber: string, message: string, config: any): Promi
     const bodyParams = new URLSearchParams();
     bodyParams.append("To", formattedTo);
     bodyParams.append("From", from);
-    bodyParams.append("Body", message);
+    const cleanBody = sanitizeForSms(message);
+    bodyParams.append("Body", cleanBody);
 
     try {
       const response = await fetch(twilioUrl, {
@@ -2243,8 +2258,16 @@ app.post("/api/portal/send-otp", async (req, res) => {
       console.warn("[Portal OTP] Could not persist in Firestore:", fsErr);
     }
 
-    // 1. Dispatch Real SMS using short name Pasma-sys and registered establishment name
-    const smsMessage = `[Pasma-sys / ${schoolName}] Votre code d'accès de sécurité OTP est : ${otpCode}. Valable 10 minutes. Ne le communiquez à personne.`;
+    // 1. Dispatch Real SMS without accents or special characters for optimal GSM-7 single-segment delivery
+    const cleanSchoolTag = (schoolName || "CES Ekali 1")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/['’]/g, " ")
+      .replace(/[^a-zA-Z0-9\s-]/g, "")
+      .replace(/  +/g, " ")
+      .trim();
+
+    const smsMessage = `[Pasma-sys / ${cleanSchoolTag}] Votre code d acces securite OTP est : ${otpCode}. Valable 10 minutes. Ne le communiquez a personne.`;
     const smsResult = await sendSms(cleanPhone, smsMessage, smsConfig);
     console.log(`[Portal OTP] SMS dispatched to ${cleanPhone}:`, smsResult.success ? "SUCCESS" : "FAILED");
 
