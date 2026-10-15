@@ -20,6 +20,7 @@ interface HomeworkBoardProps {
   hasPedPassword?: boolean;
   activeStudent?: Student | null;
   settings?: ApeeSettings;
+  portalUserRole?: 'manager' | 'parent' | 'teacher' | null;
 }
 
 // Helper to compute recurrence dates
@@ -57,6 +58,7 @@ export default function HomeworkBoard({
   hasPedPassword = false,
   activeStudent,
   settings,
+  portalUserRole,
 }: HomeworkBoardProps) {
   const { language } = useLanguage();
   const isEn = language === 'en';
@@ -164,6 +166,7 @@ export default function HomeworkBoard({
 
   // Quick Add for specific calendar date
   const handleQuickAddForDate = (dateStr: string) => {
+    if (portalUserRole === 'parent') return;
     setDueDate(dateStr);
     setShowAddForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -177,13 +180,13 @@ export default function HomeworkBoard({
 
   useEffect(() => {
     const handleQuickAction = (e: any) => {
-      if (e.detail?.actionKey === 'add_homework') {
+      if (e.detail?.actionKey === 'add_homework' && portalUserRole !== 'parent') {
         setShowAddForm(true);
       }
     };
     window.addEventListener('pasma_trigger_quick_action', handleQuickAction);
     return () => window.removeEventListener('pasma_trigger_quick_action', handleQuickAction);
-  }, []);
+  }, [portalUserRole]);
 
   const configuredSubjectsList = useMemo(() => {
     if (settings?.classSubjects && Array.isArray(settings.classSubjects) && settings.classSubjects.length > 0) {
@@ -402,28 +405,32 @@ export default function HomeworkBoard({
           </button>
 
           {/* AI Homework Generator Button */}
-          <button
-            onClick={() => {
-              if (activeStudent) {
-                setShowAiModal(true);
-              } else {
-                handleOpenForm();
-              }
-            }}
-            className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-750 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/50 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
-            type="button"
-          >
-            <Sparkles className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
-            <span>{isEn ? "Generate with AI" : "Générer Devoir IA"}</span>
-          </button>
+          {portalUserRole !== 'parent' && (
+            <button
+              onClick={() => {
+                if (activeStudent) {
+                  setShowAiModal(true);
+                } else {
+                  handleOpenForm();
+                }
+              }}
+              className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-750 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/50 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+              type="button"
+            >
+              <Sparkles className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span>{isEn ? "Generate with AI" : "Générer Devoir IA"}</span>
+            </button>
+          )}
 
           {/* Action Trigger */}
-          <button
-            onClick={handleOpenForm}
-            className="px-4 py-2 bg-slate-900 hover:bg-slate-850 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
-          >
-            <Plus className="h-4 w-4" /> {isEn ? "Add Homework" : "Ajouter un Devoir"}
-          </button>
+          {portalUserRole !== 'parent' && (
+            <button
+              onClick={handleOpenForm}
+              className="px-4 py-2 bg-slate-900 hover:bg-slate-850 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+            >
+              <Plus className="h-4 w-4" /> {isEn ? "Add Homework" : "Ajouter un Devoir"}
+            </button>
+          )}
         </div>
       </div>
 
@@ -948,7 +955,7 @@ export default function HomeworkBoard({
                   </div>
 
                   {/* Delete button option */}
-                  {onDeleteHomework && (
+                  {onDeleteHomework && portalUserRole !== 'parent' && (
                     <button
                       type="button"
                       onClick={() => handleDeletePrompt(hw)}

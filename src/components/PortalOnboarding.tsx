@@ -788,8 +788,8 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
             }
           });
 
-          // Fallback presets are only available in demo mode.
-          if (!matchedInvoice && isDemoMode) {
+          // Fallback presets are available in demo mode or for administrators/deputies testing parent mode.
+          if (!matchedInvoice && (isDemoMode || activeEmail === 'pasmasys@gmail.com' || activeEmail === 'jacquesbene301@gmail.com' || activeEmail === 'adjoint@pasma.sys')) {
             if (searchNameNorm.includes('martin') || searchPhoneSan.includes('677112233') || searchPhoneSan.endsWith('112233')) {
               matchedInvoice = {
                 id: 'inv_martin_' + selectedSchoolId.slice(-6),
@@ -813,15 +813,21 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
             } else if (
               searchNameNorm.includes('bene') ||
               searchNameNorm.includes('jacques') ||
+              searchNameNorm.includes('mbama') ||
               searchPhoneSan.includes('687463313') ||
-              searchPhoneSan.endsWith('463313')
+              searchPhoneSan.endsWith('463313') ||
+              searchPhoneSan.includes('656454053') ||
+              searchPhoneSan.endsWith('454053') ||
+              activeEmail === 'pasmasys@gmail.com' ||
+              activeEmail === 'jacquesbene301@gmail.com' ||
+              (parentEmail && (parentEmail.toLowerCase().trim() === 'pasmasys@gmail.com' || parentEmail.toLowerCase().trim() === 'jacquesbene301@gmail.com'))
             ) {
               matchedInvoice = {
                 id: 'apee_par_bene_jacques_' + selectedSchoolId.slice(-6),
                 studentId: 'apee_ces_ekali_1',
                 parentId: selectedSchoolId,
                 title: 'Bene Jacques',
-                phone: '687463313',
+                phone: parentPhone || '656454053',
                 email: 'pasmasys@gmail.com',
                 amount: 25000,
                 dueDate: '2025/2026',
@@ -830,6 +836,29 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                 amountPaid: 15000,
                 studentsList: JSON.stringify([{ name: 'Marc Bene', classRoom: 'CM2-A' }, { name: 'Elise Bene', classRoom: 'CE2-B' }]),
                 paymentsHistory: JSON.stringify([{ id: 'p_bene_1', amount: 15000, date: '2026-05-10', note: 'Versement initial par Mobile Money', method: 'Orange Money' }])
+              };
+            } else if (
+              searchNameNorm.includes('ndzie') ||
+              searchNameNorm.includes('alain') ||
+              searchPhoneSan.includes('677889900') ||
+              searchPhoneSan.endsWith('889900') ||
+              activeEmail === 'adjoint@pasma.sys' ||
+              (parentEmail && parentEmail.toLowerCase().trim() === 'adjoint@pasma.sys')
+            ) {
+              matchedInvoice = {
+                id: 'apee_par_alain_ndzie_' + selectedSchoolId.slice(-6),
+                studentId: 'apee_ces_ekali_1',
+                parentId: selectedSchoolId,
+                title: 'Alain Ndzie',
+                phone: parentPhone || '677889900',
+                email: 'adjoint@pasma.sys',
+                amount: 25000,
+                dueDate: '2025/2026',
+                status: 'Paid',
+                note: 'Règlement APEE pour Paul Ndzie',
+                amountPaid: 25000,
+                studentsList: JSON.stringify([{ name: 'Paul Ndzie', classRoom: '6ème A' }]),
+                paymentsHistory: JSON.stringify([{ id: 'p_ndzie_1', amount: 25000, date: '2026-05-12', note: 'Paiement APEE reçu', method: 'MTN Mobile Money' }])
               };
             }
           }
@@ -988,8 +1017,15 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
         let subs: string[] = [];
         try {
           if (matchedParentState.studentsList) {
-            const sList = JSON.parse(matchedParentState.studentsList);
-            subs = sList.map((x: any) => x.name);
+            const sList = typeof matchedParentState.studentsList === 'string'
+              ? JSON.parse(matchedParentState.studentsList)
+              : matchedParentState.studentsList;
+            if (Array.isArray(sList)) {
+              subs = sList.map((x: any) => typeof x === 'string' ? x : x?.name || '').filter(Boolean);
+            }
+          }
+          if (subs.length === 0 && matchedParentState.studentName) {
+            subs.push(matchedParentState.studentName);
           }
         } catch (e) {
           console.error(e);

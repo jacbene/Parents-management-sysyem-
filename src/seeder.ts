@@ -33,6 +33,7 @@ export async function seedUserData(userId: string): Promise<void> {
     const student3Id = `stu_amadou_${userId.slice(0, 6)}`;
     const student4Id = `stu_marc_${userId.slice(0, 6)}`;
     const student5Id = `stu_elise_${userId.slice(0, 6)}`;
+    const student6Id = `stu_paul_${userId.slice(0, 6)}`;
 
     const student1: Student = {
       id: student1Id,
@@ -94,6 +95,18 @@ export async function seedUserData(userId: string): Promise<void> {
       dob: '2018-05-10'
     };
 
+    const student6: Student = {
+      id: student6Id,
+      parentId: userId,
+      name: 'Paul Ndzie',
+      grade: '6ème (Collège)',
+      classRoom: 'Classe de 6ème A',
+      avatar: '👦',
+      teacherName: 'M. Thomas Eboa',
+      teacherEmail: 't.eboa@ecole-pasma.cm',
+      dob: '2015-08-14'
+    };
+
     try {
       const studentBatch = writeBatch(db);
       studentBatch.set(doc(db, 'students', student1Id), student1);
@@ -101,6 +114,7 @@ export async function seedUserData(userId: string): Promise<void> {
       studentBatch.set(doc(db, 'students', student3Id), student3);
       studentBatch.set(doc(db, 'students', student4Id), student4);
       studentBatch.set(doc(db, 'students', student5Id), student5);
+      studentBatch.set(doc(db, 'students', student6Id), student6);
       await studentBatch.commit();
       console.log("[Pasma-sys Seeder] Students seeded successfully.");
     } catch (err) {
@@ -257,6 +271,29 @@ export async function seedUserData(userId: string): Promise<void> {
         maxScore: 20,
         teacherRemarks: 'Un très joli style, agréable à lire.',
         date: '2026-05-14'
+      },
+      // Paul Ndzie Grades
+      {
+        id: `grd_paul_1_${userId.slice(0, 6)}`,
+        studentId: student6Id,
+        parentId: userId,
+        subject: 'Mathématiques',
+        examName: 'Contrôle - Nombres relatifs et fractions',
+        score: 17,
+        maxScore: 20,
+        teacherRemarks: 'Très bonne maîtrise des concepts et calculs soignés.',
+        date: '2026-05-17'
+      },
+      {
+        id: `grd_paul_2_${userId.slice(0, 6)}`,
+        studentId: student6Id,
+        parentId: userId,
+        subject: 'Sciences & SVT',
+        examName: 'Devoir - Reproduction des végétaux',
+        score: 16.5,
+        maxScore: 20,
+        teacherRemarks: 'Bonne participation et rigueur dans les explications.',
+        date: '2026-05-13'
       }
     ];
 

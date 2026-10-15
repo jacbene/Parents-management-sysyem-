@@ -1641,21 +1641,23 @@ export default function BillingPortal({
 
                 {inv.status !== 'Paid' && (
                   <>
-                    {/* Quick Mark as Paid Button */}
-                    <button
-                      type="button"
-                      id={`btn-mark-paid-${inv.id}`}
-                      onClick={() => {
-                        setConfirmMarkPaidInvoice(inv);
-                        setManualPaymentNote('');
-                        setManualPaymentMethod('Espèces / Caisse');
-                      }}
-                      className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer"
-                      title={isEn ? "Mark this invoice as paid with captured timestamp" : "Marquer cette facture comme payée avec horodatage"}
-                    >
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      <span>{isEn ? 'Mark as Paid' : 'Marquer payé'}</span>
-                    </button>
+                    {/* Quick Mark as Paid Button (Staff Only) */}
+                    {portalUserRole === 'manager' && (
+                      <button
+                        type="button"
+                        id={`btn-mark-paid-${inv.id}`}
+                        onClick={() => {
+                          setConfirmMarkPaidInvoice(inv);
+                          setManualPaymentNote('');
+                          setManualPaymentMethod('Espèces / Caisse');
+                        }}
+                        className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer"
+                        title={isEn ? "Mark this invoice as paid with captured timestamp" : "Marquer cette facture comme payée avec horodatage"}
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        <span>{isEn ? 'Mark as Paid' : 'Marquer payé'}</span>
+                      </button>
+                    )}
 
                     {portalUserRole === 'manager' && (
                       <button

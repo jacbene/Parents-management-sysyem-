@@ -16,6 +16,7 @@ interface AttendanceTrackerProps {
   onUpdateStudent?: (updated: Student) => Promise<boolean>;
   onPrintReport?: () => void;
   allStudents?: Student[];
+  portalUserRole?: 'manager' | 'parent' | 'teacher' | null;
 }
 
 export default function AttendanceTracker({
@@ -30,6 +31,7 @@ export default function AttendanceTracker({
   onUpdateStudent,
   onPrintReport,
   allStudents = [],
+  portalUserRole,
 }: AttendanceTrackerProps) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [showQRScanner, setShowQRScanner] = useState(false);
@@ -245,7 +247,7 @@ export default function AttendanceTracker({
             </button>
           )}
 
-          {onAddAttendance && (
+          {portalUserRole !== 'parent' && onAddAttendance && (
             <button
               onClick={() => {
                 if (hasPedPassword && !isPedAuthorized && onPromptUnlockPed) {
@@ -269,16 +271,18 @@ export default function AttendanceTracker({
             </button>
           )}
 
-          <button
-            onClick={handleOpenForm}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs ${
-              activeStudent?.attendanceValidated
-                ? 'bg-slate-100 text-slate-400 border border-slate-205 cursor-not-allowed'
-                : 'bg-slate-900 hover:bg-slate-850 text-white'
-            }`}
-          >
-            <Plus className="h-4 w-4" /> Enregistrer Présence
-          </button>
+          {portalUserRole !== 'parent' && (
+            <button
+              onClick={handleOpenForm}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs ${
+                activeStudent?.attendanceValidated
+                  ? 'bg-slate-100 text-slate-400 border border-slate-205 cursor-not-allowed'
+                  : 'bg-slate-900 hover:bg-slate-850 text-white'
+              }`}
+            >
+              <Plus className="h-4 w-4" /> Enregistrer Présence
+            </button>
+          )}
         </div>
       </div>
 
@@ -520,7 +524,7 @@ export default function AttendanceTracker({
                           {config.text}
                         </span>
 
-                        {onDeleteAttendance && (
+                        {onDeleteAttendance && portalUserRole !== 'parent' && (
                           <button
                             type="button"
                             onClick={() => handleDelete(log.id, dateLabel)}

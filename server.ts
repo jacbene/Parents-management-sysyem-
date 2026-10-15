@@ -97,7 +97,7 @@ async function sendSms(phoneNumber: string, message: string, config: any): Promi
   let finalProvider = provider;
   let accountSid = (smsUsername || "").trim() || (smsApiKey || "").trim();
   let authToken = (smsPassword || "").trim() || (smsApiKey || "").trim();
-  let from = (smsSenderId || "").trim();
+  let from = (smsSenderId || process.env.TWILIO_SENDER_ID || "").trim();
 
   // If global Twilio environment variables are configured, fallback to them
   if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
@@ -112,7 +112,7 @@ async function sendSms(phoneNumber: string, message: string, config: any): Promi
         logs.push("ℹ️ [Config] Utilisation du Twilio Auth Token global de la plateforme.");
       }
       if (!from) {
-        from = (process.env.TWILIO_FROM || "").trim();
+        from = (process.env.TWILIO_SENDER_ID || process.env.TWILIO_FROM || "").trim();
         const phoneNameStr = process.env.TWILIO_PHONE_NAME ? ` ("${process.env.TWILIO_PHONE_NAME.trim()}")` : "";
         logs.push(`ℹ️ [Config] Utilisation du numéro expéditeur global : ${from}${phoneNameStr}.`);
       }
@@ -161,7 +161,7 @@ async function sendSms(phoneNumber: string, message: string, config: any): Promi
     bodyParams.append("Body", cleanBody);
 
     try {
-      const response = await fetch(twilioUrl, {
+      let response = await fetch(twilioUrl, {
         method: "POST",
         headers: {
           "Authorization": authHeader,
@@ -170,7 +170,23 @@ async function sendSms(phoneNumber: string, message: string, config: any): Promi
         body: bodyParams.toString()
       });
 
-      const data = await response.json();
+      let data = await response.json();
+
+      // If alphanumeric sender ID failed because of trial account or carrier restrictions (code 21612 / 21606 / 21212), fallback to verified phone number
+      if (!response.ok && (data.code === 21612 || data.code === 21606 || data.code === 21212) && process.env.TWILIO_FROM && from !== process.env.TWILIO_FROM) {
+        logs.push(`⚠️ [Twilio Sender ID] L'entête alphanumérique "${from}" nécessite un compte Twilio complet. Basculement automatique sur le numéro vérifié ${process.env.TWILIO_FROM}...`);
+        bodyParams.set("From", process.env.TWILIO_FROM.trim());
+        response = await fetch(twilioUrl, {
+          method: "POST",
+          headers: {
+            "Authorization": authHeader,
+            "Content-Type": "application/x-www-form-urlencoded; charset=utf-8"
+          },
+          body: bodyParams.toString()
+        });
+        data = await response.json();
+      }
+
       if (response.ok) {
         logs.push(`✔ [Réponse Twilio] Message transmis avec succès ! ID Message (SID) : ${data.sid}`);
         logs.push(`✔ [Statut] Message en file d'attente (Status: ${data.status})`);
@@ -1992,46 +2008,70 @@ app.post("/api/portal/verify-parent", async (req, res) => {
       console.warn("[Portal] Error querying invoices for verify-parent:", invErr);
     }
 
-    // Demo school fallback presets ONLY for anonymous demo mode users without account!
-    if (!matchedDoc && isAnonymousGuest && isDemoSchool) {
-      if (isDemoSchool || searchNameNorm.includes("martin") || searchPhoneSan.includes("677112233") || searchPhoneSan.endsWith("112233") ||
-          searchNameNorm.includes("diallo") || searchPhoneSan.includes("699445566") || searchPhoneSan.endsWith("445566") ||
-          searchNameNorm.includes("bene") || searchNameNorm.includes("jacques") || searchPhoneSan.includes("687463313") || searchPhoneSan.endsWith("463313")) {
-        if (searchNameNorm.includes("martin") || searchPhoneSan.includes("677112233") || searchPhoneSan.endsWith("112233")) {
-          matchedData = {
-            id: `inv_martin_${schoolId.slice(-6)}`,
-            parentId: schoolId,
-            title: "Jean Martin",
-            phone: "677112233",
-            email: email || "martin@demo.com",
-            amount: 25000,
-            amountPaid: 15000,
-            studentsList: JSON.stringify([{ name: "Lucas Martin", classRoom: "CM2-A" }, { name: "Chloé Martin", classRoom: "CE2-B" }])
-          };
-        } else if (searchNameNorm.includes("diallo") || searchPhoneSan.includes("699445566") || searchPhoneSan.endsWith("445566")) {
-          matchedData = {
-            id: `inv_diallo_${schoolId.slice(-6)}`,
-            parentId: schoolId,
-            title: "Mariam Diallo",
-            phone: "699445566",
-            email: email || "diallo@demo.com",
-            amount: 25000,
-            amountPaid: 0,
-            studentsList: JSON.stringify([{ name: "Amadou Diallo", classRoom: "CM1-A" }])
-          };
-        } else if (searchNameNorm.includes("bene") || searchNameNorm.includes("jacques") || searchPhoneSan.includes("687463313") || searchPhoneSan.endsWith("463313")) {
-          matchedData = {
-            id: `apee_par_bene_jacques_${schoolId.slice(-6)}`,
-            parentId: schoolId,
-            title: "Bene Jacques",
-            phone: "687463313",
-            email: "pasmasys@gmail.com",
-            amount: 25000,
-            amountPaid: 15000,
-            studentsList: JSON.stringify([{ name: "Marc Bene", classRoom: "CM2-A" }, { name: "Elise Bene", classRoom: "CE2-B" }]),
-            paymentsHistory: JSON.stringify([{ id: "p_bene_1", amount: 15000, date: "2026-05-10", note: "Versement initial par Mobile Money", method: "Orange Money" }])
-          };
-        }
+    // Demo school fallback presets or known admin/deputy profiles connecting as parent
+    if (!matchedDoc && (isDemoSchool || email === "pasmasys@gmail.com" || email === "jacquesbene301@gmail.com" || email === "adjoint@pasma.sys" || isAnonymousGuest)) {
+      if (searchNameNorm.includes("martin") || searchPhoneSan.includes("677112233") || searchPhoneSan.endsWith("112233")) {
+        matchedData = {
+          id: `inv_martin_${schoolId.slice(-6)}`,
+          parentId: schoolId,
+          title: "Jean Martin",
+          phone: "677112233",
+          email: email || "martin@demo.com",
+          amount: 25000,
+          amountPaid: 15000,
+          studentsList: JSON.stringify([{ name: "Lucas Martin", classRoom: "CM2-A" }, { name: "Chloé Martin", classRoom: "CE2-B" }])
+        };
+      } else if (searchNameNorm.includes("diallo") || searchPhoneSan.includes("699445566") || searchPhoneSan.endsWith("445566")) {
+        matchedData = {
+          id: `inv_diallo_${schoolId.slice(-6)}`,
+          parentId: schoolId,
+          title: "Mariam Diallo",
+          phone: "699445566",
+          email: email || "diallo@demo.com",
+          amount: 25000,
+          amountPaid: 0,
+          studentsList: JSON.stringify([{ name: "Amadou Diallo", classRoom: "CM1-A" }])
+        };
+      } else if (
+        searchNameNorm.includes("bene") ||
+        searchNameNorm.includes("jacques") ||
+        searchNameNorm.includes("mbama") ||
+        searchPhoneSan.includes("687463313") ||
+        searchPhoneSan.endsWith("463313") ||
+        searchPhoneSan.includes("656454053") ||
+        searchPhoneSan.endsWith("454053") ||
+        email === "pasmasys@gmail.com" ||
+        email === "jacquesbene301@gmail.com"
+      ) {
+        matchedData = {
+          id: `apee_par_bene_jacques_${schoolId.slice(-6)}`,
+          parentId: schoolId,
+          title: "Bene Jacques",
+          phone: parentPhone || "656454053",
+          email: "pasmasys@gmail.com",
+          amount: 25000,
+          amountPaid: 15000,
+          studentsList: JSON.stringify([{ name: "Marc Bene", classRoom: "CM2-A" }, { name: "Elise Bene", classRoom: "CE2-B" }]),
+          paymentsHistory: JSON.stringify([{ id: "p_bene_1", amount: 15000, date: "2026-05-10", note: "Versement initial par Mobile Money", method: "Orange Money" }])
+        };
+      } else if (
+        searchNameNorm.includes("ndzie") ||
+        searchNameNorm.includes("alain") ||
+        searchPhoneSan.includes("677889900") ||
+        searchPhoneSan.endsWith("889900") ||
+        email === "adjoint@pasma.sys"
+      ) {
+        matchedData = {
+          id: `apee_par_alain_ndzie_${schoolId.slice(-6)}`,
+          parentId: schoolId,
+          title: "Alain Ndzie",
+          phone: parentPhone || "677889900",
+          email: "adjoint@pasma.sys",
+          amount: 25000,
+          amountPaid: 25000,
+          studentsList: JSON.stringify([{ name: "Paul Ndzie", classRoom: "6ème A" }]),
+          paymentsHistory: JSON.stringify([{ id: "p_ndzie_1", amount: 25000, date: "2026-05-12", note: "Paiement APEE reçu", method: "MTN Mobile Money" }])
+        };
       }
     }
 
@@ -2172,6 +2212,9 @@ app.post("/api/portal/send-otp", async (req, res) => {
           const d = estDoc.data() || {};
           schoolName = d.name || d.establishmentName || schoolName;
           smsConfig = d.smsConfig || {};
+          if (!smsConfig.smsSenderId) {
+            smsConfig.smsSenderId = "Pasma-sys";
+          }
         }
       }
     } catch (dbErr) {
@@ -2259,15 +2302,7 @@ app.post("/api/portal/send-otp", async (req, res) => {
     }
 
     // 1. Dispatch Real SMS without accents or special characters for optimal GSM-7 single-segment delivery
-    const cleanSchoolTag = (schoolName || "CES Ekali 1")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/['’]/g, " ")
-      .replace(/[^a-zA-Z0-9\s-]/g, "")
-      .replace(/  +/g, " ")
-      .trim();
-
-    const smsMessage = `[Pasma-sys / ${cleanSchoolTag}] Votre code d acces securite OTP est : ${otpCode}. Valable 10 minutes. Ne le communiquez a personne.`;
+    const smsMessage = `Votre code OTP est: ${otpCode}. Valable 10 minutes. Ne le partagez pas.`;
     const smsResult = await sendSms(cleanPhone, smsMessage, smsConfig);
     console.log(`[Portal OTP] SMS dispatched to ${cleanPhone}:`, smsResult.success ? "SUCCESS" : "FAILED");
 

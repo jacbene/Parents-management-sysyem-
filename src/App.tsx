@@ -419,7 +419,6 @@ export default function App() {
     const userEmail = (user.email || '').toLowerCase().trim();
     return adminEmail && userEmail && adminEmail === userEmail;
   });
-  const showSuperAdminButton = isPrimarySuperAdmin || isSecondarySuperAdmin;
 
   const [loading, setLoading] = useState(true);
   const [dataLoading, setDataLoading] = useState(false);
@@ -506,6 +505,7 @@ export default function App() {
     if (!savedSchool || isSchoolDeleted(savedSchool)) return null;
     return localStorage.getItem('portal_user_role') as 'manager' | 'parent' | 'teacher' | null;
   });
+  const showSuperAdminButton = (isPrimarySuperAdmin || isSecondarySuperAdmin) && portalUserRole !== 'parent' && portalUserRole !== 'teacher';
   const [portalParentDetails, setPortalParentDetails] = useState<{ name: string; phone: string; studentSubsetNames?: string[] } | null>(() => {
     const s = localStorage.getItem('portal_parent_details');
     return s ? JSON.parse(s) : null;
@@ -730,10 +730,32 @@ export default function App() {
     return role === 'parent' ? 'announcements' : role === 'teacher' ? 'grades' : 'apee_dashboard';
   });
 
-  // Access protection guard: ensure parents cannot stay on students_by_class
+  // Access protection guard: ensure parents and teachers cannot enter unauthorized tabs
   useEffect(() => {
-    if (portalUserRole === 'parent' && activeTab === 'students_by_class') {
-      setActiveTab('announcements');
+    const managerOnlyTabs: TabType[] = [
+      'apee_dashboard',
+      'apee_recording',
+      'apee_search',
+      'apee_reporting',
+      'apee_finance',
+      'apee_archives',
+      'apee_settings',
+      'apee_reminders',
+      'apee_legal',
+      'google_drive',
+      'google_sheets',
+      'gmail_portal',
+      'firebase_console'
+    ];
+
+    if (portalUserRole === 'parent') {
+      if (managerOnlyTabs.includes(activeTab) || activeTab === 'students_by_class') {
+        setActiveTab('announcements');
+      }
+    } else if (portalUserRole === 'teacher') {
+      if (managerOnlyTabs.includes(activeTab) || activeTab === 'billing') {
+        setActiveTab('grades');
+      }
     }
   }, [portalUserRole, activeTab]);
   
@@ -1002,7 +1024,20 @@ export default function App() {
 
     const handleTabNav = (e: any) => {
       if (e.detail && typeof e.detail === 'string') {
-        setActiveTab(e.detail as TabType);
+        const targetTab = e.detail as TabType;
+        const managerOnlyTabs: TabType[] = [
+          'apee_dashboard', 'apee_recording', 'apee_search', 'apee_reporting',
+          'apee_finance', 'apee_archives', 'apee_settings', 'apee_reminders',
+          'apee_legal', 'google_drive', 'google_sheets', 'gmail_portal',
+          'firebase_console'
+        ];
+        if (portalUserRole === 'parent') {
+          if (managerOnlyTabs.includes(targetTab) || targetTab === 'students_by_class') return;
+        }
+        if (portalUserRole === 'teacher') {
+          if (managerOnlyTabs.includes(targetTab) || targetTab === 'billing') return;
+        }
+        setActiveTab(targetTab);
       }
     };
     window.addEventListener('pasma_navigate_tab', handleTabNav);
@@ -1365,26 +1400,51 @@ export default function App() {
         if (pNameNorm.length >= 3 && (sParentNameNorm.includes(pNameNorm) || pNameNorm.includes(sParentNameNorm))) return true;
       }
 
-      // 3. Demo presets for known parent profiles
+      if (portalParentDetails?.email && (s as any).parentEmail) {
+        const pEmail = portalParentDetails.email.toLowerCase().trim();
+        const sParentEmail = ((s as any).parentEmail || '').toLowerCase().trim();
+        if (pEmail && sParentEmail && pEmail === sParentEmail) return true;
+      }
+
+      // 3. Demo presets for known parent profiles (including administrator and deputies connected as parent)
       const parentNameLower = (portalParentDetails?.name || '').toLowerCase();
       const parentPhoneClean = (portalParentDetails?.phone || '').replace(/\D/g, '');
+      const parentEmailClean = (portalParentDetails?.email || '').toLowerCase().trim();
+
       if (parentNameLower.includes('martin') || parentPhoneClean.includes('677112233') || parentPhoneClean.endsWith('112233')) {
         return ['lucas martin', 'chloe martin', 'chloé martin'].some(name =>
           normalizeStudentName(name) === sNameNorm || sNameNorm.includes(normalizeStudentName(name))
         );
       } else if (parentNameLower.includes('diallo') || parentPhoneClean.includes('699445566') || parentPhoneClean.endsWith('445566')) {
         return sNameNorm.includes('amadou diallo') || sNameNorm.includes('diallo');
-      } else if (parentNameLower.includes('bene') || parentNameLower.includes('jacques') || parentPhoneClean.includes('687463313') || parentPhoneClean.endsWith('463313')) {
-        return ['marc bene', 'elise bene', 'bene'].some(name =>
-          sNameNorm.includes(normalizeStudentName(name))
+      } else if (
+        parentNameLower.includes('bene') ||
+        parentNameLower.includes('jacques') ||
+        parentNameLower.includes('mbama') ||
+        parentEmailClean === 'pasmasys@gmail.com' ||
+        parentPhoneClean.includes('687463313') ||
+        parentPhoneClean.endsWith('463313') ||
+        parentPhoneClean.includes('656454053') ||
+        parentPhoneClean.endsWith('454053')
+      ) {
+        // Administrator Jacques Bene Mbama connected as Parent -> strictly his children
+        return ['marc bene', 'elise bene'].some(name =>
+          sNameNorm.includes(normalizeStudentName(name)) || normalizeStudentName(name).includes(sNameNorm)
+        );
+      } else if (
+        parentNameLower.includes('ndzie') ||
+        parentNameLower.includes('alain') ||
+        parentEmailClean === 'adjoint@pasma.sys' ||
+        parentPhoneClean.includes('677889900') ||
+        parentPhoneClean.endsWith('889900')
+      ) {
+        // Deputy Administrator Alain Ndzie connected as Parent -> strictly his child
+        return ['paul ndzie', 'sophie ndzie'].some(name =>
+          sNameNorm.includes(normalizeStudentName(name)) || normalizeStudentName(name).includes(sNameNorm)
         );
       }
 
-      // 4. In demo establishments, if no specific student was matched, show demo pupil subset
-      if (isDemoEstablishment(selectedSchoolId || '')) {
-        return true;
-      }
-
+      // 4. STRICT ISOLATION: A parent must NEVER access unlinked children
       return false;
     }
     if (portalUserRole === 'teacher') {
@@ -3736,7 +3796,7 @@ export default function App() {
 
                 <InstallPWA />
 
-                <NotificationBell portalUserRole={portalUserRole} selectedStudentName={students[0]?.name} />
+                <NotificationBell portalUserRole={portalUserRole} selectedStudentName={portalUserRole === 'parent' ? (activeStudent?.name || filteredStudents[0]?.name) : students[0]?.name} />
 
                 {/* Pending Actions Trigger Icon */}
                 <button
@@ -3922,7 +3982,7 @@ export default function App() {
                 <div className="lg:col-span-1 space-y-5">
                   
                   {/* Supervised Pupils - Left panel - Only display if not in dedicated Apee workspace */}
-                  {!activeTab.startsWith('apee_') ? (
+                  {!(portalUserRole === 'manager' && activeTab.startsWith('apee_')) ? (
                     <div className="space-y-3">
                       <div className="flex items-center justify-between gap-2">
                         <h3 className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-1.5 shrink-0">
@@ -4636,7 +4696,7 @@ export default function App() {
                   <AnimatePresence mode="wait">
                     
                     {/* APEE WORKSPACE REGISTRATION & CALCULATOR */}
-                    {activeTab === 'apee_dashboard' && (
+                    {activeTab === 'apee_dashboard' && portalUserRole === 'manager' && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="apee_dashboard">
                         <ApeeDashboard
                           parents={apeeParents}
@@ -4653,7 +4713,7 @@ export default function App() {
                       </motion.div>
                     )}
 
-                     {activeTab === 'apee_recording' && (
+                     {activeTab === 'apee_recording' && portalUserRole === 'manager' && (
                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="apee_recording">
                          <ApeeForm
                            settings={apeeSettings}
@@ -4666,7 +4726,7 @@ export default function App() {
                        </motion.div>
                      )}
 
-                    {activeTab === 'apee_search' && (
+                    {activeTab === 'apee_search' && portalUserRole === 'manager' && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="apee_search">
                         <ApeeSearch
                           parents={apeeParents}
@@ -4681,7 +4741,7 @@ export default function App() {
                       </motion.div>
                     )}
 
-                    {activeTab === 'apee_reporting' && (
+                    {activeTab === 'apee_reporting' && portalUserRole === 'manager' && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="apee_reporting">
                         <ApeeReporting
                           parents={apeeParents}
@@ -4697,7 +4757,7 @@ export default function App() {
                       </motion.div>
                     )}
 
-                    {activeTab === 'apee_finance' && (
+                    {activeTab === 'apee_finance' && portalUserRole === 'manager' && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="apee_finance">
                         <ApeeFinancial
                           expenses={apeeExpenses}
@@ -4713,7 +4773,7 @@ export default function App() {
                       </motion.div>
                     )}
 
-                    {activeTab === 'apee_archives' && (
+                    {activeTab === 'apee_archives' && portalUserRole === 'manager' && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="apee_archives">
                         <ApeeArchives
                           parents={apeeParents}
@@ -4727,7 +4787,7 @@ export default function App() {
                       </motion.div>
                     )}
 
-                    {activeTab === 'apee_settings' && (
+                    {activeTab === 'apee_settings' && portalUserRole === 'manager' && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="apee_settings">
                         <ApeeSettingsComp
                           settings={apeeSettings}
@@ -4737,7 +4797,7 @@ export default function App() {
                       </motion.div>
                     )}
 
-                    {activeTab === 'apee_reminders' && (
+                    {activeTab === 'apee_reminders' && portalUserRole === 'manager' && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="apee_reminders">
                         <ApeeReminders
                           parents={apeeParents}
@@ -4747,13 +4807,13 @@ export default function App() {
                       </motion.div>
                     )}
 
-                    {activeTab === 'apee_legal' && (
+                    {activeTab === 'apee_legal' && portalUserRole === 'manager' && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="apee_legal">
                         <ApeeLegal />
                       </motion.div>
                     )}
 
-                    {activeTab === 'google_drive' && (
+                    {activeTab === 'google_drive' && portalUserRole === 'manager' && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="google_drive">
                         <DrivePortal 
                           parents={apeeParents}
@@ -4763,7 +4823,7 @@ export default function App() {
                       </motion.div>
                     )}
 
-                    {activeTab === 'google_sheets' && (
+                    {activeTab === 'google_sheets' && portalUserRole === 'manager' && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="google_sheets">
                         <SheetsPortal 
                           parents={apeeParents}
@@ -4774,7 +4834,7 @@ export default function App() {
                       </motion.div>
                     )}
 
-                    {activeTab === 'gmail_portal' && (
+                    {activeTab === 'gmail_portal' && portalUserRole === 'manager' && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="gmail_portal">
                         <GmailPortal 
                           parents={apeeParents}
@@ -4785,7 +4845,7 @@ export default function App() {
                       </motion.div>
                     )}
 
-                    {activeTab === 'firebase_console' && (
+                    {activeTab === 'firebase_console' && portalUserRole === 'manager' && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="firebase_console">
                         <FirebaseConsole />
                       </motion.div>
@@ -4842,6 +4902,7 @@ export default function App() {
                           hasPedPassword={!!apeeSettings.pedManagerPassword}
                           activeStudent={activeStudent}
                           settings={apeeSettings}
+                          portalUserRole={portalUserRole}
                         />
                       </motion.div>
                     )}
@@ -4887,8 +4948,8 @@ export default function App() {
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="grades">
                         <GradesDashboard
                           grades={currentGrades}
-                          allGrades={grades}
-                          allStudents={students}
+                          allGrades={portalUserRole === 'parent' ? grades.filter(g => filteredStudents.some(s => s.id === g.studentId)) : grades}
+                          allStudents={portalUserRole === 'parent' ? filteredStudents : students}
                           onAddGrade={handleAddGrade}
                           onUpdateGrade={handleUpdateGrade}
                           onDeleteGrade={handleDeleteGrade}
@@ -4911,8 +4972,8 @@ export default function App() {
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="progression">
                         <ParentProgressionDashboard
                           students={portalUserRole === 'parent' ? filteredStudents : students}
-                          grades={grades}
-                          attendanceLogs={attendanceLogs}
+                          grades={portalUserRole === 'parent' ? grades.filter(g => filteredStudents.some(s => s.id === g.studentId)) : grades}
+                          attendanceLogs={portalUserRole === 'parent' ? attendanceLogs.filter(a => filteredStudents.some(s => s.id === a.studentId)) : attendanceLogs}
                           onNavigateToTab={setActiveTab}
                           settings={apeeSettings}
                           portalParentDetails={portalParentDetails}
@@ -4933,7 +4994,8 @@ export default function App() {
                           activeStudent={activeStudent}
                           onUpdateStudent={handleUpdateStudent}
                           onPrintReport={() => setPrintingStudent(activeStudent)}
-                          allStudents={students}
+                          allStudents={portalUserRole === 'parent' ? filteredStudents : students}
+                          portalUserRole={portalUserRole}
                         />
                       </motion.div>
                     )}
@@ -4970,7 +5032,7 @@ export default function App() {
                           }
                           onUpdateInvoice={handleUpdateInvoiceInPlace}
                           parentPhone={portalParentDetails?.phone}
-                          students={students}
+                          students={portalUserRole === 'parent' ? filteredStudents : students}
                           portalUserRole={portalUserRole}
                           filteredStudents={filteredStudents}
                         />
@@ -4979,14 +5041,19 @@ export default function App() {
 
                     {activeTab === 'appointments' && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="appointments">
-                        <AppointmentsScheduler appointments={appointments} students={students} onAddAppointment={handleAddAppointmentInPlace} onUpdateAppointment={handleUpdateAppointmentInPlace} />
+                        <AppointmentsScheduler 
+                          appointments={portalUserRole === 'parent' ? appointments.filter(a => filteredStudents.some(s => s.id === a.studentId)) : appointments} 
+                          students={portalUserRole === 'parent' ? filteredStudents : students} 
+                          onAddAppointment={handleAddAppointmentInPlace} 
+                          onUpdateAppointment={handleUpdateAppointmentInPlace} 
+                        />
                       </motion.div>
                     )}
 
                     {activeTab === 'messages' && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="messages">
                         <MessageInbox 
-                          messages={messages} 
+                          messages={portalUserRole === 'parent' ? messages.filter(m => filteredStudents.some(s => s.id === m.studentId) || (portalParentDetails?.invoiceId && m.parentId === portalParentDetails.invoiceId)) : messages} 
                           students={filteredStudents} 
                           onAddMessage={handleAddMessageInPlace} 
                           apeeParents={apeeParents} 

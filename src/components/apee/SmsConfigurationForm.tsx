@@ -61,7 +61,7 @@ export default function SmsConfigurationForm({
   const [provider, setProvider] = useState<'campay' | 'twilio' | 'orange' | 'generic'>(smsConfig.provider || 'campay');
   const [smsGatewayUrl, setSmsGatewayUrl] = useState(smsConfig.smsGatewayUrl || '');
   const [smsApiKey, setSmsApiKey] = useState(smsConfig.smsApiKey || '');
-  const [smsSenderId, setSmsSenderId] = useState(smsConfig.smsSenderId || 'APEE');
+  const [smsSenderId, setSmsSenderId] = useState(smsConfig.smsSenderId || 'Pasma-sys');
   const [smsUsername, setSmsUsername] = useState(smsConfig.smsUsername || '');
   const [smsPassword, setSmsPassword] = useState(smsConfig.smsPassword || '');
 
@@ -114,7 +114,7 @@ export default function SmsConfigurationForm({
       setProvider(cfg.provider || 'campay');
       setSmsGatewayUrl(cfg.smsGatewayUrl || '');
       setSmsApiKey(cfg.smsApiKey || '');
-      setSmsSenderId(cfg.smsSenderId || 'APEE');
+      setSmsSenderId(cfg.smsSenderId || 'Pasma-sys');
       setSmsUsername(cfg.smsUsername || '');
       setSmsPassword(cfg.smsPassword || '');
       if (cfg.customTemplate) {
@@ -910,7 +910,7 @@ export default function SmsConfigurationForm({
                 {language === 'en' ? 'Live Mobile SMS Simulation (Parent Phone)' : 'Aperçu Réel sur le Téléphone du Parent'}
               </span>
               <span className="font-mono text-slate-400">
-                De : <strong className="text-white">{smsSenderId || 'APEE'}</strong>
+                De : <strong className="text-white">{smsSenderId || 'Pasma-sys'}</strong>
               </span>
             </div>
 
@@ -1140,7 +1140,7 @@ export default function SmsConfigurationForm({
 
                   <div className="p-4 bg-slate-950 text-slate-100 rounded-2xl space-y-3 shadow-inner border border-slate-800">
                     <div className="flex items-center justify-between text-[10px] text-slate-400 border-b border-slate-800 pb-2">
-                      <span className="font-mono">De : <strong className="text-white">{smsSenderId || 'APEE'}</strong></span>
+                      <span className="font-mono">De : <strong className="text-white">{smsSenderId || 'Pasma-sys'}</strong></span>
                       <span className="font-mono">Destinataire : <strong className="text-white">{previewTestData.parentName}</strong></span>
                     </div>
 

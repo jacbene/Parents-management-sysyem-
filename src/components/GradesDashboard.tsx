@@ -1567,47 +1567,51 @@ export default function GradesDashboard({
             </button>
           )}
 
-          <button
-            onClick={handleOpenForm}
-            disabled={!!activeStudent?.gradesValidated}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs ${
-              activeStudent?.gradesValidated
-                ? 'bg-slate-100 text-slate-400 border border-slate-205 cursor-not-allowed'
-                : 'bg-slate-900 hover:bg-slate-850 text-white'
-            }`}
-          >
-            <Plus className="h-4 w-4" /> Introduire Note
-          </button>
+          {portalUserRole !== 'parent' && (
+            <button
+              onClick={handleOpenForm}
+              disabled={!!activeStudent?.gradesValidated}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs ${
+                activeStudent?.gradesValidated
+                  ? 'bg-slate-100 text-slate-400 border border-slate-205 cursor-not-allowed'
+                  : 'bg-slate-900 hover:bg-slate-850 text-white'
+              }`}
+            >
+              <Plus className="h-4 w-4" /> Introduire Note
+            </button>
+          )}
         </div>
       </div>
 
       {/* View Switcher: Individual Student vs Classroom Analysis */}
-      <div className="flex bg-slate-100 p-1 rounded-xl self-start gap-1 max-w-md border border-slate-200/40 select-none" id="grades-view-switcher">
-        <button
-          type="button"
-          onClick={() => setDashboardMode('individual')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer transition-all duration-200 ${
-            dashboardMode === 'individual'
-              ? 'bg-white text-indigo-700 shadow-xs border border-indigo-100/80'
-              : 'text-slate-500 hover:text-slate-950'
-          }`}
-        >
-          <Award className="h-4 w-4 text-indigo-600" />
-          {language === 'fr' ? 'Suivi Individuel (Bulletin)' : 'Individual Tracking (Report)'}
-        </button>
-        <button
-          type="button"
-          onClick={() => setDashboardMode('classroom')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer transition-all duration-200 ${
-            dashboardMode === 'classroom'
-              ? 'bg-white text-indigo-700 shadow-xs border border-indigo-100/80'
-              : 'text-slate-500 hover:text-slate-950'
-          }`}
-        >
-          <Activity className="h-4 w-4 text-emerald-600 animate-pulse" />
-          {language === 'fr' ? 'Analyse Collective Classe' : 'Classroom View (Collective)'}
-        </button>
-      </div>
+      {portalUserRole !== 'parent' && (
+        <div className="flex bg-slate-100 p-1 rounded-xl self-start gap-1 max-w-md border border-slate-200/40 select-none" id="grades-view-switcher">
+          <button
+            type="button"
+            onClick={() => setDashboardMode('individual')}
+            className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer transition-all duration-200 ${
+              dashboardMode === 'individual'
+                ? 'bg-white text-indigo-700 shadow-xs border border-indigo-100/80'
+                : 'text-slate-500 hover:text-slate-950'
+            }`}
+          >
+            <Award className="h-4 w-4 text-indigo-600" />
+            {language === 'fr' ? 'Suivi Individuel (Bulletin)' : 'Individual Tracking (Report)'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setDashboardMode('classroom')}
+            className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer transition-all duration-200 ${
+              dashboardMode === 'classroom'
+                ? 'bg-white text-indigo-700 shadow-xs border border-indigo-100/80'
+                : 'text-slate-500 hover:text-slate-950'
+            }`}
+          >
+            <Activity className="h-4 w-4 text-emerald-600 animate-pulse" />
+            {language === 'fr' ? 'Analyse Collective Classe' : 'Classroom View (Collective)'}
+          </button>
+        </div>
+      )}
 
       {dashboardMode === 'classroom' ? (
         <ClassroomViewD3
@@ -2668,7 +2672,7 @@ export default function GradesDashboard({
                         )}
 
                         {/* Delete Grade Button */}
-                        {onDeleteGrade && (
+                        {onDeleteGrade && portalUserRole !== 'parent' && (
                           <button
                             type="button"
                             onClick={() => handleDeletePrompt(g)}
