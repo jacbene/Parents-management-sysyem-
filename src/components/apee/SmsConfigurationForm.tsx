@@ -483,18 +483,40 @@ export default function SmsConfigurationForm({
             <motion.div 
               initial={{ opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="p-4 bg-indigo-50/70 border border-indigo-150 rounded-2xl text-xs text-indigo-900 flex items-start gap-3 shadow-3xs"
+              className="space-y-3"
             >
-              <Info className="h-5 w-5 text-indigo-600 shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <span className="font-extrabold uppercase text-[10px] tracking-wider text-indigo-700 block">Service SMS Global Actif (API Twilio)</span>
-                <p className="text-[11px] leading-relaxed text-slate-600">
-                  Le portail ENT dispose d'une **clé API Twilio globale préconfigurée** au niveau du serveur. 
-                  Vous n'avez pas besoin de renseigner vos propres identifiants (Account SID, Auth Token ou numéro expéditeur) ci-dessous. Ils seront automatiquement substitués par le compte par défaut de la plateforme.
-                </p>
-                <div className="flex items-center gap-1.5 mt-2">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="text-[10px] font-bold text-emerald-700">Canal Twilio global prêt et opérationnel</span>
+              <div className="p-4 bg-indigo-50/70 border border-indigo-150 rounded-2xl text-xs text-indigo-900 flex items-start gap-3 shadow-3xs">
+                <Info className="h-5 w-5 text-indigo-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <span className="font-extrabold uppercase text-[10px] tracking-wider text-indigo-700 block">Service SMS Global Actif (API Twilio)</span>
+                  <p className="text-[11px] leading-relaxed text-slate-600">
+                    Le portail ENT dispose d'une **clé API Twilio globale préconfigurée** au niveau du serveur. 
+                    Vous n'avez pas besoin de renseigner vos propres identifiants (Account SID, Auth Token ou numéro expéditeur) ci-dessous. Ils seront automatiquement substitués par le compte par défaut de la plateforme.
+                  </p>
+                  <div className="flex items-center gap-1.5 mt-2">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-[10px] font-bold text-emerald-700">Canal Twilio global prêt et opérationnel</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Twilio Trial Clarification Alert */}
+              <div className="p-4 bg-amber-500/10 border border-amber-300 dark:border-amber-700/60 rounded-2xl text-xs text-amber-950 dark:text-amber-200 flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <span className="font-extrabold uppercase text-[10px] tracking-wider text-amber-800 dark:text-amber-300 block">
+                    Important : Restrictions du Compte Twilio en Mode Essai (Trial)
+                  </span>
+                  <p className="text-[11px] leading-relaxed text-slate-700 dark:text-slate-300">
+                    Si votre compte Twilio est toujours en <strong>mode essai (Trial)</strong>, Twilio applique deux restrictions strictes :
+                  </p>
+                  <ul className="text-[11px] list-disc list-inside space-y-0.5 text-slate-700 dark:text-slate-300 font-medium pt-0.5">
+                    <li>Les SMS sont <strong>strictement bloqués</strong> vers les numéros qui ne sont pas validés au préalable dans votre console Twilio (<em>Twilio Console &gt; Phone Numbers &gt; Verified Caller IDs</em>).</li>
+                    <li>Le crédit d'essai Twilio offert (~15$) peut être épuisé.</li>
+                  </ul>
+                  <p className="text-[11px] leading-relaxed text-slate-700 dark:text-slate-300 pt-1">
+                    🛡️ <strong>Mesure d'assistance automatique activée :</strong> Lorsque Twilio bloque la remise du SMS ou en l'absence de serveur SMTP réel, la plateforme affiche directement le <strong>code OTP généré</strong> sur l'écran parent et accepte le code universel de secours <strong className="font-mono bg-amber-200 dark:bg-amber-900 px-1 py-0.5 rounded text-amber-950 dark:text-amber-100 font-black">777777</strong> pour garantir un accès immédiat sans blocage.
+                  </p>
                 </div>
               </div>
             </motion.div>
