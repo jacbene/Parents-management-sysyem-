@@ -226,22 +226,20 @@ export async function loginWithGoogle(requireDriveScopes: boolean = false) {
     }
     return null;
   } catch (error: any) {
-    console.warn("Google Auth Error during signInWithPopup:", error);
-    const isInIframe = typeof window !== 'undefined' && window.self !== window.top;
+    console.warn("Google Auth Notice during signInWithPopup:", error);
     
-    // Only attempt redirect fallback if NOT in a sandboxed iframe (redirecting inside an iframe gets blocked by X-Frame-Options)
-    if (!isInIframe && (error?.code === 'auth/popup-blocked' || error?.code === 'auth/cancelled-popup-request')) {
-      console.info("Popup blocked outside iframe, attempting signInWithRedirect fallback...");
-      try {
-        if (typeof sessionStorage !== 'undefined') {
-          sessionStorage.setItem('pasma_redirect_pending', 'true');
-        }
-      } catch (e) {
-        // ignore
+    // Clean up any stale redirect query parameters from previous failed redirects
+    try {
+      if (typeof window !== 'undefined' && window.location && (window.location.search.includes('apiKey') || window.location.search.includes('state'))) {
+        const cleanUrl = window.location.origin + window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
       }
-      await signInWithRedirect(auth, providerToUse);
-      return null;
-    }
+    } catch (e) {}
+
+    // In modern browsers with storage partitioning (Chrome, Safari, Firefox), signInWithRedirect
+    // loses sessionStorage state when returning from accounts.google.com, causing
+    // "Unable to process request due to missing initial state".
+    // Therefore, signInWithPopup is the reliable method.
     throw error;
   }
 }
@@ -253,15 +251,12 @@ export async function checkRedirectResult() {
     return null;
   }
 
-  // Check if a redirect sign-in was actually initiated before invoking getRedirectResult
-  // Calling getRedirectResult() unconditionally when no redirect took place causes @firebase/auth (v12.x)
-  // to trigger an unhandled assertion "INTERNAL ASSERTION FAILED: Pending promise was never set"
+  // Check if redirect query parameters or flags are present
   let hasPendingRedirect = false;
   try {
     if (typeof sessionStorage !== 'undefined') {
       if (sessionStorage.getItem('pasma_redirect_pending') === 'true') {
         hasPendingRedirect = true;
-        sessionStorage.removeItem('pasma_redirect_pending');
       } else {
         for (let i = 0; i < sessionStorage.length; i++) {
           const key = sessionStorage.key(i);
@@ -289,6 +284,17 @@ export async function checkRedirectResult() {
 
   try {
     const result = await getRedirectResult(auth);
+    // Clean redirect flags and URL after success
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.removeItem('pasma_redirect_pending');
+      }
+      if (typeof window !== 'undefined' && window.location && (window.location.search.includes('apiKey') || window.location.search.includes('state'))) {
+        const cleanUrl = window.location.origin + window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+      }
+    } catch (e) {}
+
     if (result) {
       const credential = GoogleAuthProvider.credentialFromResult(result);
       if (credential?.accessToken) {
@@ -297,7 +303,23 @@ export async function checkRedirectResult() {
       return result.user;
     }
   } catch (error: any) {
-    if (error?.message?.includes('Pending promise was never set')) {
+    // Gracefully catch partitioned storage and missing initial state errors, and clean the browser URL
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.removeItem('pasma_redirect_pending');
+      }
+      if (typeof window !== 'undefined' && window.location && (window.location.search || window.location.hash)) {
+        const cleanUrl = window.location.origin + window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+      }
+    } catch (e) {}
+
+    if (
+      error?.message?.includes('Pending promise was never set') ||
+      error?.message?.includes('missing initial state') ||
+      error?.code === 'auth/missing-or-invalid-nonce'
+    ) {
+      console.info("Notice: Handled partitioned redirect state cleanly. Ready for standard login.");
       return null;
     }
     console.warn("Error checking redirect result:", error);

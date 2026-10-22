@@ -590,6 +590,9 @@ export default function App() {
               console.warn("User reload failed on verifyEmail mode:", e);
             }
           }
+        } else if (params.has('apiKey') || params.has('state') || params.has('code') || window.location.hash.includes('access_token')) {
+          const cleanUrl = window.location.origin + window.location.pathname;
+          window.history.replaceState({}, document.title, cleanUrl);
         }
       } catch (err) {
         console.warn("Error parsing verification URL params:", err);
@@ -3316,9 +3319,11 @@ export default function App() {
       console.warn("Google authentication warning:", e);
       let errorMsg = "La connexion Google n'a pas pu aboutir. Si vous êtes dans l'iframe d'aperçu d'AI Studio, veuillez ouvrir l'application dans un nouvel onglet (bouton ↗️ en haut à droite) pour autoriser la fenêtre surgissante de Google.";
       if (e?.code === 'auth/popup-closed-by-user') {
-        errorMsg = "La fenêtre d'authentification Google a été fermée avant la validation. Veuillez reessayer.";
+        errorMsg = "La fenêtre d'authentification Google a été fermée avant la validation. Veuillez réessayer.";
       } else if (e?.code === 'auth/popup-blocked') {
-        errorMsg = "Le popup Google est bloqué par votre navigateur dans cet iframe. Veuillez ouvrir l'application dans un nouvel onglet (icône ↗️ en haut à droite) pour autoriser la connexion Google.";
+        errorMsg = "Le navigateur a bloqué la fenêtre pop-up Google. Veuillez cliquer sur l'icône de blocage dans la barre d'adresse pour autoriser les pop-ups, ou connectez-vous par e-mail ci-dessous.";
+      } else if (e?.message?.includes('missing initial state') || e?.code === 'auth/missing-or-invalid-nonce') {
+        errorMsg = "Le cloisonnement de session de votre navigateur (Storage Partitioning Chrome/Safari) a réinitialisé la redirection. Veuillez utiliser la fenêtre pop-up Google ou vous connecter par e-mail ci-dessous.";
       } else if (e?.code === 'auth/unauthorized-domain') {
         errorMsg = "Le domaine de prévisualisation actuel n'est pas encore enregistré dans la console Firebase Auth -> Domaines autorisés.";
       } else if (e?.code === 'auth/operation-not-allowed') {
@@ -3586,6 +3591,26 @@ export default function App() {
                       </svg>
                       <span>Continuer avec Google</span>
                     </button>
+
+                    {authError && (
+                      <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs rounded-xl font-medium space-y-1.5 text-left animate-in fade-in duration-200">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="font-bold flex items-center gap-1.5">
+                            ⚠️ Note de connexion Google
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setAuthError(null)}
+                            className="text-amber-700 dark:text-amber-400 hover:text-amber-950 text-[10px] font-bold cursor-pointer"
+                          >
+                            Masquer
+                          </button>
+                        </div>
+                        <p className="text-[11px] leading-relaxed text-amber-800 dark:text-amber-300">
+                          {authError}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
