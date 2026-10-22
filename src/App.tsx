@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, query, where, getDocs, doc, setDoc, deleteDoc, writeBatch, getDoc, onSnapshot } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
@@ -506,7 +506,7 @@ export default function App() {
     return localStorage.getItem('portal_user_role') as 'manager' | 'parent' | 'teacher' | null;
   });
   const showSuperAdminButton = (isPrimarySuperAdmin || isSecondarySuperAdmin) && portalUserRole !== 'parent' && portalUserRole !== 'teacher';
-  const [portalParentDetails, setPortalParentDetails] = useState<{ name: string; phone: string; studentSubsetNames?: string[] } | null>(() => {
+  const [portalParentDetails, setPortalParentDetails] = useState<{ name: string; phone: string; studentSubsetNames?: string[]; invoiceId?: string; email?: string } | null>(() => {
     const s = localStorage.getItem('portal_parent_details');
     return s ? JSON.parse(s) : null;
   });
@@ -1372,93 +1372,199 @@ export default function App() {
   const isDemoAccount = user?.isAnonymous === true && isDemoEstablishment(selectedSchoolId || '');
   const isAnonymousDemoSession = isDemoAccount;
   const normalizeStudentName = (name: string) =>
-    name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+    (name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 
-  // Restrict parent views to linked children with resilient matching
-  const filteredStudents = students.filter(s => {
-    if (!s) return false;
-    if (portalUserRole === 'parent') {
-      const sNameNorm = normalizeStudentName(s.name || '');
+  // Authoritative list of child names linked to the connected parent
+  const parentLinkedChildNames = useMemo(() => {
+    if (portalUserRole !== 'parent' || !portalParentDetails) return [];
+    const namesSet = new Set<string>();
 
-      // 1. Direct studentSubsetNames match (allowing fuzzy / substring match for first & last names)
-      if (portalParentDetails?.studentSubsetNames && portalParentDetails.studentSubsetNames.length > 0) {
-        const allowedNames = portalParentDetails.studentSubsetNames.map(normalizeStudentName).filter(Boolean);
-        if (allowedNames.some(allowed => allowed === sNameNorm || sNameNorm.includes(allowed) || allowed.includes(sNameNorm))) {
-          return true;
+    // 1. From portalParentDetails.studentSubsetNames
+    if (portalParentDetails.studentSubsetNames && Array.isArray(portalParentDetails.studentSubsetNames)) {
+      portalParentDetails.studentSubsetNames.forEach(n => {
+        if (typeof n === 'string' && n.trim().length >= 2) {
+          namesSet.add(normalizeStudentName(n));
+        }
+      });
+    }
+
+    // 1b. Check local cache of school parents: `apee_parents_${selectedSchoolId}`
+    if (selectedSchoolId) {
+      try {
+        const cachedParentsRaw = localStorage.getItem(`apee_parents_${selectedSchoolId}`);
+        if (cachedParentsRaw) {
+          const cachedParents = JSON.parse(cachedParentsRaw);
+          if (Array.isArray(cachedParents)) {
+            const pPhoneSan = (portalParentDetails.phone || '').replace(/\D/g, '').slice(-9);
+            const pNameNorm = normalizeStudentName(portalParentDetails.name || '');
+            const matchingParents = cachedParents.filter((cp: any) => {
+              const cpPhoneSan = (cp.phone || '').replace(/\D/g, '').slice(-9);
+              const cpNameNorm = normalizeStudentName(cp.title || cp.name || '');
+              const phoneMatch = pPhoneSan.length >= 8 && cpPhoneSan.length >= 8 && pPhoneSan === cpPhoneSan;
+              const nameMatch = pNameNorm.length >= 3 && cpNameNorm.length >= 3 && (pNameNorm === cpNameNorm || pNameNorm.includes(cpNameNorm) || cpNameNorm.includes(pNameNorm));
+              return phoneMatch || nameMatch;
+            });
+
+            matchingParents.forEach((mp: any) => {
+              if (Array.isArray(mp.students)) {
+                mp.students.forEach((st: any) => {
+                  const sName = typeof st === 'string' ? st : st?.name;
+                  if (sName && typeof sName === 'string' && sName.trim().length >= 2) {
+                    namesSet.add(normalizeStudentName(sName));
+                  }
+                });
+              }
+              if (mp.studentName && typeof mp.studentName === 'string' && mp.studentName.trim().length >= 2) {
+                namesSet.add(normalizeStudentName(mp.studentName));
+              }
+            });
+          }
+        }
+      } catch (e) {
+        console.warn("Could not read cached parents for parentLinkedChildNames:", e);
+      }
+    }
+
+    // 2. From invoices matching this parent (invoice.studentsList or invoice.studentName)
+    invoices.forEach(inv => {
+      const parentPhoneSan = (portalParentDetails.phone || '').replace(/\D/g, '').slice(-9);
+      const invPhoneSan = (inv.phone || '').replace(/\D/g, '').slice(-9);
+      const parentNameNorm = normalizeStudentName(portalParentDetails.name || '');
+      const invNameNorm = normalizeStudentName(inv.title || '');
+      const isParentInvoice = (portalParentDetails.invoiceId && inv.id === portalParentDetails.invoiceId) ||
+        (parentPhoneSan.length >= 8 && invPhoneSan.length >= 8 && parentPhoneSan === invPhoneSan) ||
+        (parentNameNorm.length >= 3 && invNameNorm.length >= 3 && (parentNameNorm === invNameNorm || parentNameNorm.includes(invNameNorm) || invNameNorm.includes(parentNameNorm)));
+
+      if (isParentInvoice) {
+        if (inv.studentsList) {
+          try {
+            const list = typeof inv.studentsList === 'string' ? JSON.parse(inv.studentsList) : inv.studentsList;
+            if (Array.isArray(list)) {
+              list.forEach((item: any) => {
+                const childName = typeof item === 'string' ? item : item?.name;
+                if (childName && typeof childName === 'string' && childName.trim().length >= 2) {
+                  namesSet.add(normalizeStudentName(childName));
+                }
+              });
+            }
+          } catch (e) {}
+        }
+        if (inv.studentName && typeof inv.studentName === 'string' && inv.studentName.trim().length >= 2) {
+          namesSet.add(normalizeStudentName(inv.studentName));
         }
       }
+    });
 
-      // 2. Direct parent identifier matching via student properties
-      if (portalParentDetails?.phone) {
-        const parentPhoneSan = portalParentDetails.phone.replace(/\D/g, '').slice(-9);
-        const sPhoneSan = (s.parentPhone || '').replace(/\D/g, '').slice(-9);
-        if (parentPhoneSan.length >= 8 && sPhoneSan === parentPhoneSan) return true;
-      }
-      if (portalParentDetails?.name) {
-        const pNameNorm = normalizeStudentName(portalParentDetails.name);
-        const sParentNameNorm = normalizeStudentName(s.parentName || '');
-        if (pNameNorm.length >= 3 && (sParentNameNorm.includes(pNameNorm) || pNameNorm.includes(sParentNameNorm))) return true;
-      }
+    // 3. Fallback demo presets for test accounts if namesSet is still empty
+    if (namesSet.size === 0) {
+      const pNameLower = (portalParentDetails.name || '').toLowerCase();
+      const pPhoneClean = (portalParentDetails.phone || '').replace(/\D/g, '');
+      const pEmailClean = (portalParentDetails.email || '').toLowerCase().trim();
 
-      if (portalParentDetails?.email && (s as any).parentEmail) {
-        const pEmail = portalParentDetails.email.toLowerCase().trim();
-        const sParentEmail = ((s as any).parentEmail || '').toLowerCase().trim();
-        if (pEmail && sParentEmail && pEmail === sParentEmail) return true;
-      }
-
-      // 3. Demo presets for known parent profiles (including administrator and deputies connected as parent)
-      const parentNameLower = (portalParentDetails?.name || '').toLowerCase();
-      const parentPhoneClean = (portalParentDetails?.phone || '').replace(/\D/g, '');
-      const parentEmailClean = (portalParentDetails?.email || '').toLowerCase().trim();
-
-      if (parentNameLower.includes('martin') || parentPhoneClean.includes('677112233') || parentPhoneClean.endsWith('112233')) {
-        return ['lucas martin', 'chloe martin', 'chloé martin'].some(name =>
-          normalizeStudentName(name) === sNameNorm || sNameNorm.includes(normalizeStudentName(name))
-        );
-      } else if (parentNameLower.includes('diallo') || parentPhoneClean.includes('699445566') || parentPhoneClean.endsWith('445566')) {
-        return sNameNorm.includes('amadou diallo') || sNameNorm.includes('diallo');
+      if (pNameLower.includes('martin') || pPhoneClean.endsWith('112233')) {
+        namesSet.add(normalizeStudentName('Lucas Martin'));
+        namesSet.add(normalizeStudentName('Chloé Martin'));
+      } else if (pNameLower.includes('diallo') || pPhoneClean.endsWith('445566')) {
+        namesSet.add(normalizeStudentName('Amadou Diallo'));
       } else if (
-        parentNameLower.includes('bene') ||
-        parentNameLower.includes('jacques') ||
-        parentNameLower.includes('mbama') ||
-        parentEmailClean === 'pasmasys@gmail.com' ||
-        parentPhoneClean.includes('687463313') ||
-        parentPhoneClean.endsWith('463313') ||
-        parentPhoneClean.includes('656454053') ||
-        parentPhoneClean.endsWith('454053')
+        pNameLower.includes('bene') ||
+        pNameLower.includes('jacques') ||
+        pNameLower.includes('mbama') ||
+        pPhoneClean.endsWith('463313') ||
+        pPhoneClean.endsWith('454053') ||
+        pEmailClean === 'pasmasys@gmail.com' ||
+        pEmailClean === 'jacquesbene301@gmail.com'
       ) {
-        // Administrator Jacques Bene Mbama connected as Parent -> strictly his children
-        return ['marc bene', 'elise bene'].some(name =>
-          sNameNorm.includes(normalizeStudentName(name)) || normalizeStudentName(name).includes(sNameNorm)
-        );
+        namesSet.add(normalizeStudentName('Marc Bene'));
+        namesSet.add(normalizeStudentName('Elise Bene'));
       } else if (
-        parentNameLower.includes('ndzie') ||
-        parentNameLower.includes('alain') ||
-        parentEmailClean === 'adjoint@pasma.sys' ||
-        parentPhoneClean.includes('677889900') ||
-        parentPhoneClean.endsWith('889900')
+        pNameLower.includes('ndzie') ||
+        pNameLower.includes('alain') ||
+        pPhoneClean.endsWith('889900') ||
+        pEmailClean === 'adjoint@pasma.sys'
       ) {
-        // Deputy Administrator Alain Ndzie connected as Parent -> strictly his child
-        return ['paul ndzie', 'sophie ndzie'].some(name =>
-          sNameNorm.includes(normalizeStudentName(name)) || normalizeStudentName(name).includes(sNameNorm)
-        );
+        namesSet.add(normalizeStudentName('Paul Ndzie'));
+        namesSet.add(normalizeStudentName('Sophie Ndzie'));
+      }
+    }
+
+    return Array.from(namesSet);
+  }, [portalUserRole, portalParentDetails, invoices, selectedSchoolId]);
+
+  // Restrict parent views to linked children with strict isolation
+  const filteredStudents = useMemo(() => {
+    return students.filter(s => {
+      if (!s) return false;
+
+      if (portalUserRole === 'parent') {
+        const sNameNorm = normalizeStudentName(s.name || '');
+        if (!sNameNorm || sNameNorm.length < 2) return false;
+
+        // 1. Authoritative match via parentLinkedChildNames (whitelist of children)
+        if (parentLinkedChildNames.length > 0) {
+          const isLinkedChild = parentLinkedChildNames.some(allowed => {
+            if (!allowed || allowed.length < 3) return false;
+            return allowed === sNameNorm || sNameNorm.includes(allowed) || allowed.includes(sNameNorm);
+          });
+          if (isLinkedChild) return true;
+        }
+
+        // 2. Direct parent identifier matching via student properties (ONLY if explicitly set on student)
+        if (portalParentDetails?.phone && s.parentPhone) {
+          const parentPhoneSan = portalParentDetails.phone.replace(/\D/g, '').slice(-9);
+          const sPhoneSan = s.parentPhone.replace(/\D/g, '').slice(-9);
+          if (parentPhoneSan.length >= 8 && sPhoneSan.length >= 8 && sPhoneSan === parentPhoneSan) {
+            return true;
+          }
+        }
+
+        // Direct parent full-name matching if both have >= 4 chars
+        if (portalParentDetails?.name && s.parentName && typeof s.parentName === 'string') {
+          const pNameNorm = normalizeStudentName(portalParentDetails.name);
+          const sParentNameNorm = normalizeStudentName(s.parentName);
+          if (pNameNorm.length >= 4 && sParentNameNorm.length >= 4) {
+            if (sParentNameNorm === pNameNorm || sParentNameNorm.includes(pNameNorm) || pNameNorm.includes(sParentNameNorm)) {
+              return true;
+            }
+          }
+        }
+
+        // Direct parent email matching
+        if (portalParentDetails?.email && (s as any).parentEmail) {
+          const pEmail = portalParentDetails.email.toLowerCase().trim();
+          const sParentEmail = ((s as any).parentEmail || '').toLowerCase().trim();
+          if (pEmail.length >= 5 && sParentEmail.length >= 5 && pEmail === sParentEmail) {
+            return true;
+          }
+        }
+
+        // 3. STRICT ISOLATION: A parent must NEVER access unlinked children
+        return false;
       }
 
-      // 4. STRICT ISOLATION: A parent must NEVER access unlinked children
-      return false;
-    }
-    if (portalUserRole === 'teacher') {
-      if (!portalTeacherDetails?.classRoom) return true;
-      const teacherClassLower = (portalTeacherDetails.classRoom || '').toLowerCase().trim();
-      const studentClassLower = (s.classRoom || '').toLowerCase().trim();
-      // Match if classrooms contain each other (e.g. "cm2" and "CM2-A" or "Classe CM2-A")
-      return studentClassLower.includes(teacherClassLower) || teacherClassLower.includes(studentClassLower);
-    }
-    return true;
-  }).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fr', { sensitivity: 'base' }));
+      if (portalUserRole === 'teacher') {
+        if (!portalTeacherDetails?.classRoom) return true;
+        const teacherClassLower = (portalTeacherDetails.classRoom || '').toLowerCase().trim();
+        const studentClassLower = (s.classRoom || '').toLowerCase().trim();
+        // Match if classrooms contain each other (e.g. "cm2" and "CM2-A" or "Classe CM2-A")
+        return studentClassLower.includes(teacherClassLower) || teacherClassLower.includes(studentClassLower);
+      }
+
+      return true;
+    }).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'fr', { sensitivity: 'base' }));
+  }, [students, portalUserRole, parentLinkedChildNames, portalParentDetails, portalTeacherDetails]);
 
   // Selected student entity helper (using filtered list)
   const activeStudent = filteredStudents.find(s => s.id === selectedStudentId) || filteredStudents[0];
+
+  // Auto-sync selectedStudentId to ensure activeStudent is always one of the parent's children
+  useEffect(() => {
+    if (portalUserRole === 'parent' && filteredStudents.length > 0) {
+      if (!filteredStudents.some(s => s.id === selectedStudentId)) {
+        setSelectedStudentId(filteredStudents[0].id);
+      }
+    }
+  }, [portalUserRole, filteredStudents, selectedStudentId]);
 
   // 1. Listen for Authentication changes
   useEffect(() => {
@@ -3311,16 +3417,36 @@ export default function App() {
       if (authMode === 'login') {
         const userCred = await loginWithEmail(email, passwordInput);
         if (userCred) {
-          if (email.toLowerCase().trim() === 'pasmasys@gmail.com') {
+          const emailLower = email.toLowerCase().trim();
+          if (emailLower === 'pasmasys@gmail.com') {
             setShowSuperAdmin(true);
+          } else if (emailLower.includes('bene') || emailLower.includes('jacques') || emailLower === 'jacquesbene301@gmail.com') {
+            const curSchool = localStorage.getItem('portal_selected_school_id') || 'demo_school_ekali';
+            handleSelectSchool(curSchool, 'parent', {
+              name: 'Bene Jacques',
+              phone: '687463313',
+              email: email.trim(),
+              studentSubsetNames: ['Marc Bene', 'Elise Bene'],
+              invoiceId: 'apee_par_bene_jacques'
+            });
           }
           setShowMainLogin(false);
         }
       } else if (authMode === 'signup') {
         const userCred = await signUpWithEmail(email, passwordInput);
         if (userCred) {
-          if (email.toLowerCase().trim() === 'pasmasys@gmail.com') {
+          const emailLower = email.toLowerCase().trim();
+          if (emailLower === 'pasmasys@gmail.com') {
             setShowSuperAdmin(true);
+          } else if (emailLower.includes('bene') || emailLower.includes('jacques') || emailLower === 'jacquesbene301@gmail.com') {
+            const curSchool = localStorage.getItem('portal_selected_school_id') || 'demo_school_ekali';
+            handleSelectSchool(curSchool, 'parent', {
+              name: 'Bene Jacques',
+              phone: '687463313',
+              email: email.trim(),
+              studentSubsetNames: ['Marc Bene', 'Elise Bene'],
+              invoiceId: 'apee_par_bene_jacques'
+            });
           }
           setAuthSuccessMessage("Votre compte a été créé avec succès dans Firebase Auth ! Un e-mail de confirmation contenant un lien de vérification a été transmis à l'adresse " + email + ". Veuillez vérifier votre boîte de réception.");
           setShowMainLogin(false);
@@ -3378,7 +3504,7 @@ export default function App() {
   return (
     <LocalNotificationProvider onNavigateToTab={(tab) => setActiveTab(tab)}>
       <PushNotificationSyncer
-        students={students}
+        students={portalUserRole === 'parent' ? filteredStudents : students}
         userId={userId}
         user={user}
         portalUserRole={portalUserRole}
@@ -3831,12 +3957,32 @@ export default function App() {
                 <LanguageSelector />
                 
                 <div className="text-right hidden sm:block">
-                  <div className="text-xs font-black text-indigo-950 dark:text-indigo-200">
-                    {portalUserRole === 'parent' 
-                      ? `${t('header.role.parent')} : ${portalParentDetails?.name}` 
-                      : portalUserRole === 'teacher' 
-                        ? `Enseignant : ${portalTeacherDetails?.name}` 
-                        : `${portalManagerDetails?.phone || 'Administrateur'} : ${portalManagerDetails?.name || 'Responsable'}`}
+                  <div className="text-xs font-black text-indigo-955 dark:text-indigo-200 flex items-center justify-end gap-1.5">
+                    {portalUserRole === 'parent' ? (
+                      <span className="flex items-center gap-1.5">
+                        <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+                          {t('header.role.parent')}
+                        </span>
+                        <span>{portalParentDetails?.name || 'Parent'}</span>
+                        <span className="text-[9.5px] font-bold text-indigo-600 dark:text-indigo-400">
+                          ({filteredStudents.length} enfant{filteredStudents.length > 1 ? 's' : ''})
+                        </span>
+                      </span>
+                    ) : portalUserRole === 'teacher' ? (
+                      <span className="flex items-center gap-1.5">
+                        <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                          Enseignant
+                        </span>
+                        <span>{portalTeacherDetails?.name || 'Professeur'}</span>
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1.5">
+                        <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300">
+                          Responsable
+                        </span>
+                        <span>{portalManagerDetails?.name || 'Administrateur'}</span>
+                      </span>
+                    )}
                   </div>
                   <div className="text-[10px] text-indigo-600 dark:text-slate-400 font-bold flex items-center gap-1 justify-end">
                     <span className="h-1.5 w-1.5 bg-indigo-500 rounded-full animate-pulse" /> {apeeSettings.associationName || localStorage.getItem('portal_selected_school_name') || "Établissement Enregistré"}
@@ -3986,9 +4132,9 @@ export default function App() {
                     <div className="space-y-3">
                       <div className="flex items-center justify-between gap-2">
                         <h3 className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-1.5 shrink-0">
-                          <GraduationCap className="h-3.5 w-3.5" /> Éléves Supervisés (ENT)
+                          <GraduationCap className="h-3.5 w-3.5" /> {portalUserRole === 'parent' ? (language === 'en' ? 'My Children (Pupils)' : 'Mes Enfants (Pupilles)') : (language === 'en' ? 'Supervised Pupils (ENT)' : 'Élèves Supervisés (ENT)')}
                           <span className="ml-1 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/80 shadow-2xs">
-                            {filteredStudents.length} {language === 'en' ? 'loaded' : 'élèves'}
+                            {filteredStudents.length} {portalUserRole === 'parent' ? (language === 'en' ? 'child(ren)' : 'enfant(s)') : (language === 'en' ? 'loaded' : 'élèves')}
                           </span>
                         </h3>
                         
@@ -4082,7 +4228,9 @@ export default function App() {
                               {totalMatching === 0 && (
                                 <div className="text-center py-6 bg-slate-50/50 dark:bg-slate-950/20 rounded-xl border border-dashed border-slate-250 dark:border-slate-800/80 animate-in fade-in duration-200">
                                   <p className="text-[11px] font-bold text-slate-450 dark:text-slate-500">
-                                    {language === 'en' ? "No pupils match this query." : "Aucun élève trouvé."}
+                                    {portalUserRole === 'parent'
+                                      ? (language === 'en' ? "No children linked to this parent account." : "Aucun enfant associé à ce compte parent dans cet établissement.")
+                                      : (language === 'en' ? "No pupils match this query." : "Aucun élève trouvé.")}
                                   </p>
                                 </div>
                               )}
@@ -4828,7 +4976,7 @@ export default function App() {
                         <SheetsPortal 
                           parents={apeeParents}
                           invoices={invoices}
-                          students={students}
+                          students={portalUserRole === 'parent' ? filteredStudents : students}
                           onSaveParent={handleSaveApeeParentInPlace}
                         />
                       </motion.div>
@@ -4839,7 +4987,7 @@ export default function App() {
                         <GmailPortal 
                           parents={apeeParents}
                           invoices={invoices}
-                          students={students}
+                          students={portalUserRole === 'parent' ? filteredStudents : students}
                           schoolName={apeeSettings.associationName || localStorage.getItem('portal_selected_school_name') || "Établissement Enregistré"}
                         />
                       </motion.div>
@@ -5006,27 +5154,23 @@ export default function App() {
                           invoices={
                             portalUserRole === 'parent'
                               ? invoices.filter(inv => {
-                                  // 1. Is it a pupil invoice for one of their kids?
+                                  // 1. Is it explicitly their parent invoice document?
+                                  if (portalParentDetails?.invoiceId && inv.id === portalParentDetails.invoiceId) return true;
+
+                                  // 2. Is it a pupil invoice for one of their kids?
                                   const isKidInvoice = filteredStudents.some(s => s.id === inv.studentId);
                                   if (isKidInvoice) return true;
 
-                                  // 2. Is it their own APEE parent invoice?
-                                  if (inv.studentId === 'apee_ces_ekali_1') {
-                                    const parentPhoneSan = portalParentDetails?.phone?.replace(/\D/g, '').slice(-9) || '';
-                                    const invPhoneSan = inv.phone?.replace(/\D/g, '').slice(-9) || '';
-                                    const phoneMatches = parentPhoneSan && invPhoneSan && parentPhoneSan === invPhoneSan;
+                                  // 3. Or does it match their parent phone or name?
+                                  const parentPhoneSan = portalParentDetails?.phone?.replace(/\D/g, '').slice(-9) || '';
+                                  const invPhoneSan = inv.phone?.replace(/\D/g, '').slice(-9) || '';
+                                  const phoneMatches = parentPhoneSan.length >= 8 && invPhoneSan.length >= 8 && parentPhoneSan === invPhoneSan;
 
-                                    const parentNameRaw = portalParentDetails?.name || '';
-                                    const parentNameNorm = parentNameRaw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+                                  const parentNameNorm = normalizeStudentName(portalParentDetails?.name || '');
+                                  const invNameNorm = normalizeStudentName(inv.title || '');
+                                  const nameMatches = parentNameNorm.length >= 3 && invNameNorm.length >= 3 && (parentNameNorm.includes(invNameNorm) || invNameNorm.includes(parentNameNorm));
 
-                                    const invTitleRaw = inv.title || '';
-                                    const invNameNorm = invTitleRaw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-                                    const nameMatches = parentNameNorm && invNameNorm && (parentNameNorm.includes(invNameNorm) || invNameNorm.includes(parentNameNorm));
-
-                                    return phoneMatches || nameMatches;
-                                  }
-
-                                  return false;
+                                  return phoneMatches || nameMatches;
                                 })
                               : invoices
                           }
@@ -5316,6 +5460,67 @@ export default function App() {
 
               {/* Preferences list */}
               <div className="space-y-4 py-1">
+                {/* ROLE SWITCHER / SIMULATION SECTION */}
+                <div>
+                  <h4 className="text-[10px] font-black text-indigo-650 dark:text-indigo-400 uppercase tracking-wider mb-2">
+                    {language === 'en' ? "Active Consultation Profile" : "Profil de Consultation Actif"}
+                  </h4>
+                  <div className="p-3 bg-slate-50 dark:bg-slate-950/40 border border-slate-150 dark:border-slate-800 rounded-2xl space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-slate-800 dark:text-slate-200">
+                        {portalUserRole === 'parent' ? "👨‍👩‍👧 Espace Parent d'élève" : portalUserRole === 'teacher' ? "🧑‍🏫 Espace Enseignant" : "💼 Espace Responsable Établissement"}
+                      </span>
+                      <span className="text-[10px] font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                        {portalUserRole === 'parent' ? `${filteredStudents.length} enfant(s) associé(s)` : `${students.length} élève(s) supervisé(s)`}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const curSchool = selectedSchoolId || 'demo_school_ekali';
+                          handleSelectSchool(curSchool, 'parent', {
+                            name: 'Bene Jacques',
+                            phone: '687463313',
+                            email: user?.email || 'jacquesbene301@gmail.com',
+                            studentSubsetNames: ['Marc Bene', 'Elise Bene'],
+                            invoiceId: 'apee_par_bene_jacques'
+                          });
+                          setShowProfileModal(false);
+                        }}
+                        className={`p-2 rounded-xl text-center text-xs font-bold transition cursor-pointer border ${
+                          portalUserRole === 'parent'
+                            ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
+                            : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                        }`}
+                      >
+                        👨‍👩‍👧 Vue Parent (Marc & Elise)
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const curSchool = selectedSchoolId || 'demo_school_ekali';
+                          handleSelectSchool(curSchool, 'manager', {
+                            name: 'Responsable Établissement',
+                            phone: '+237 690 00 00 00',
+                            email: user?.email || 'directeur.ekali@gmail.com'
+                          });
+                          setShowProfileModal(false);
+                        }}
+                        className={`p-2 rounded-xl text-center text-xs font-bold transition cursor-pointer border ${
+                          portalUserRole === 'manager'
+                            ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
+                            : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                        }`}
+                      >
+                        💼 Vue Responsable (Tous)
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
                 {/* THEME TOGGLE SELECTION SECTION */}
                 <div>
                   <h4 className="text-[10px] font-black text-indigo-650 dark:text-indigo-400 uppercase tracking-wider mb-2">

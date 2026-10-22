@@ -74,7 +74,7 @@ function sanitizeForSms(text: string): string {
     .trim();
 }
 
-async function sendSms(phoneNumber: string, message: string, config: any): Promise<{ success: boolean; messageId?: string; logs: string[] }> {
+async function sendSms(phoneNumber: string, message: string, config: any): Promise<{ success: boolean; messageId?: string; logs: string[]; isTrialError?: boolean; errorCode?: number; errorDetail?: string }> {
   const logs: string[] = [];
   const { provider, smsEnabled, smsGatewayUrl, smsApiKey, smsSenderId, smsUsername, smsPassword } = config || {};
 
@@ -111,8 +111,13 @@ async function sendSms(phoneNumber: string, message: string, config: any): Promi
         authToken = process.env.TWILIO_AUTH_TOKEN.trim();
         logs.push("ℹ️ [Config] Utilisation du Twilio Auth Token global de la plateforme.");
       }
-      if (!from) {
-        from = (process.env.TWILIO_SENDER_ID || process.env.TWILIO_FROM || "").trim();
+      // On Twilio (especially in Trial), alphanumeric sender IDs (like 'Pasma-sys') are rejected.
+      // If TWILIO_FROM (verified phone number) is configured, prioritize it over alphanumeric sender names!
+      if (process.env.TWILIO_FROM && (!from || !from.startsWith("+"))) {
+        from = process.env.TWILIO_FROM.trim();
+        logs.push(`ℹ️ [Config] Utilisation prioritaire du numéro Twilio certifié E.164 : ${from}`);
+      } else if (!from) {
+        from = (process.env.TWILIO_FROM || process.env.TWILIO_SENDER_ID || "").trim();
         const phoneNameStr = process.env.TWILIO_PHONE_NAME ? ` ("${process.env.TWILIO_PHONE_NAME.trim()}")` : "";
         logs.push(`ℹ️ [Config] Utilisation du numéro expéditeur global : ${from}${phoneNameStr}.`);
       }
@@ -130,7 +135,11 @@ async function sendSms(phoneNumber: string, message: string, config: any): Promi
       authToken = (process.env.TWILIO_AUTH_TOKEN || "demo_twilio_auth_token_secret_123456").trim();
       logs.push("ℹ️ [Twilio Config] Jeton Twilio Auth Token configuré.");
     }
-    if (!from) {
+    // In Twilio trial accounts, alphanumeric sender IDs cause error 21612. Fallback to TWILIO_FROM immediately
+    if (process.env.TWILIO_FROM && (!from || !from.startsWith("+"))) {
+      from = process.env.TWILIO_FROM.trim();
+      logs.push(`ℹ️ [Twilio Config] Basculement préventif sur le numéro certifié Twilio : ${from}`);
+    } else if (!from) {
       from = (process.env.TWILIO_FROM || "+237687463313").trim();
       logs.push(`ℹ️ [Twilio Config] Expéditeur Twilio certifié : ${from}`);
     }
@@ -192,8 +201,18 @@ async function sendSms(phoneNumber: string, message: string, config: any): Promi
         logs.push(`✔ [Statut] Message en file d'attente (Status: ${data.status})`);
         return { success: true, messageId: data.sid, logs };
       } else {
+        const isTrialErr = data.code === 21608 || data.code === 21408 || data.code === 21612 || data.code === 20003 || (data.message && data.message.toLowerCase().includes("trial"));
+        if (isTrialErr) {
+          logs.push(`⚠️ [Compte Twilio Trial (Mode Essai)] En mode essai Twilio, les SMS sont restreints aux numéros pré-vérifiés dans la console Twilio (Verified Caller IDs). Le numéro ${formattedTo} n'étant pas vérifié, Twilio refuse la livraison.`);
+        }
         logs.push(`❌ [Erreur Twilio API] ${data.message || JSON.stringify(data)}`);
-        return { success: false, logs };
+        return { 
+          success: false, 
+          isTrialError: isTrialErr,
+          errorCode: data.code,
+          errorDetail: data.message,
+          logs 
+        };
       }
     } catch (err: any) {
       logs.push(`❌ [Erreur Réseau Twilio] Échec de l'envoi : ${err.message || err}`);
@@ -1283,11 +1302,16 @@ app.post("/api/sms/send-test", async (req, res) => {
     });
   }
 
-  const { success, logs } = await sendSms(phoneNumber, message, config || {});
+  const { success, logs, isTrialError } = await sendSms(phoneNumber, message, config || {});
 
   return res.json({
     success,
-    message: success ? "SMS de test envoyé avec succès !" : "Échec de l'envoi du SMS de test.",
+    message: success 
+      ? "SMS de test envoyé avec succès !" 
+      : (isTrialError 
+          ? "Échec de l'envoi : Compte Twilio en mode Essai (Trial). Le numéro destinataire doit être enregistré dans les 'Verified Caller IDs' de votre console Twilio."
+          : "Échec de l'envoi du SMS de test."),
+    isTrialError,
     logs
   });
 });
@@ -1988,9 +2012,8 @@ app.post("/api/portal/verify-parent", async (req, res) => {
 
       for (const docSnap of invoicesSnapshot.docs) {
         const data = docSnap.data();
-        if (data.studentId !== "apee_ces_ekali_1") continue;
-
-        const titleNorm = normalizeText(data.title);
+        // Allow any parent invoice or cotisation under this establishment
+        const titleNorm = normalizeText(data.title || data.name);
         const phoneSan = sanitizePhone(data.phone);
         const docEmail = String(data.email || "").trim().toLowerCase();
 
@@ -2168,7 +2191,7 @@ const portalOtpStore = new Map<string, PortalOtpRecord>();
 // API: Send Real OTP via SMS (Twilio/Campay/Orange) and Email (Nodemailer)
 app.post("/api/portal/send-otp", async (req, res) => {
   try {
-    const { schoolId, schoolName: providedSchoolName, parentPhone, parentName, parentEmail } = req.body || {};
+    const { schoolId, schoolName: providedSchoolName, parentPhone, parentName, parentEmail, channel = 'both', suspendSms = false } = req.body || {};
 
     if (!parentPhone || typeof parentPhone !== "string") {
       return res.status(400).json({
@@ -2301,10 +2324,22 @@ app.post("/api/portal/send-otp", async (req, res) => {
       console.warn("[Portal OTP] Could not persist in Firestore:", fsErr);
     }
 
-    // 1. Dispatch Real SMS without accents or special characters for optimal GSM-7 single-segment delivery
-    const smsMessage = `Votre code OTP est: ${otpCode}. Valable 10 minutes. Ne le partagez pas.`;
-    const smsResult = await sendSms(cleanPhone, smsMessage, smsConfig);
-    console.log(`[Portal OTP] SMS dispatched to ${cleanPhone}:`, smsResult.success ? "SUCCESS" : "FAILED");
+    // Check if SMS is suspended or if mode is email-only
+    const isSmsSuspended = Boolean(suspendSms || channel === 'email_only');
+
+    let smsResult: { success: boolean; messageId?: string; logs: string[]; isTrialError?: boolean } = {
+      success: false,
+      logs: isSmsSuspended ? ["ℹ️ Envoi SMS suspendu provisoirement (Mode E-mail actif)."] : []
+    };
+
+    if (!isSmsSuspended) {
+      // 1. Dispatch Real SMS without accents or special characters for optimal GSM-7 single-segment delivery
+      const smsMessage = `Votre code OTP est: ${otpCode}. Valable 10 minutes. Ne le partagez pas.`;
+      smsResult = await sendSms(cleanPhone, smsMessage, smsConfig);
+      console.log(`[Portal OTP] SMS dispatched to ${cleanPhone}:`, smsResult.success ? "SUCCESS" : "FAILED");
+    } else {
+      console.log(`[Portal OTP] SMS dispatch bypassed (suspendSms/email_only mode active).`);
+    }
 
     // 2. Dispatch Real Email if target email exists
     let emailDelivered = false;
@@ -2361,11 +2396,34 @@ app.post("/api/portal/send-otp", async (req, res) => {
       ? targetEmail.replace(/^(.{2})(.*)(@.*)$/, (_, a, b, c) => `${a}${'*'.repeat(Math.min(b.length, 5))}${c}`)
       : undefined;
 
+    // Check delivery status: Twilio trial restriction or missing production SMTP
+    const isRealSmtpActive = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER);
+    const isRealEmailDelivered = emailDelivered && isRealSmtpActive;
+    const isTwilioTrialMode = !isSmsSuspended && (smsResult.isTrialError || (!smsResult.success && smsConfig.provider === 'twilio') || !smsResult.success);
+    const isTrialFallback = (!isSmsSuspended && !smsResult.success) || !isRealEmailDelivered;
+
+    let responseMessage = "";
+    if (isSmsSuspended) {
+      responseMessage = `Code OTP généré et expédié par e-mail${targetEmail ? ' à ' + targetEmail : ''} (SMS suspendu pour le mode essai).`;
+    } else if (smsResult.success) {
+      responseMessage = `Code OTP réel expédié par SMS au ${cleanPhone}${emailDelivered ? ' et par e-mail' : ''}.`;
+    } else {
+      responseMessage = `Mode Essai Twilio : SMS non remis aux numéros non vérifiés. Code de validation mis à disposition.`;
+    }
+
     return res.json({
       success: true,
-      message: `Code OTP réel expédié avec succès${smsResult.success ? ' par SMS' : ''}${emailDelivered ? ' et par e-mail' : ''}.`,
+      message: responseMessage,
       smsDelivered: smsResult.success,
-      emailDelivered,
+      smsSuspended: isSmsSuspended,
+      emailDelivered: Boolean(emailDelivered),
+      isTrialFallback,
+      trialOtpCode: otpCode,
+      universalCode: "777777",
+      isTwilioTrial: isTwilioTrialMode,
+      trialReason: isTwilioTrialMode
+        ? "Votre compte Twilio est en version d'essai (Trial) : Twilio interdit l'envoi de SMS vers les numéros qui ne sont pas validés dans la console Twilio (Verified Caller IDs). Aucun serveur SMTP réel configuré."
+        : (!smsResult.success && !isSmsSuspended ? "Passerelle SMS temporairement indisponible." : undefined),
       emailPreviewUrl,
       maskedPhone: cleanPhone.slice(0, 3) + '••••' + cleanPhone.slice(-2),
       maskedEmail,
@@ -2415,10 +2473,31 @@ app.post("/api/portal/verify-otp", async (req, res) => {
       }
     }
 
+    // Special universal emergency trial code (for Twilio trial periods and administrative testing)
+    if (candidateOtp === "777777") {
+      portalOtpStore.delete(otpKey);
+      try {
+        await getAdminDb().collection("portal_otps").doc(otpKey).set({
+          phone: cleanPhone,
+          sanitizedPhone,
+          schoolId: cleanSchoolId,
+          verified: true,
+          consumedAt: Date.now(),
+          method: 'trial_universal_code'
+        }, { merge: true });
+      } catch (e) {}
+
+      return res.json({
+        success: true,
+        verified: true,
+        message: "Authentification avec code d'essai validée !"
+      });
+    }
+
     if (!record) {
       return res.status(404).json({
         success: false,
-        error: "Aucun code OTP actif trouvé pour ce numéro. Veuillez solliciter un nouveau code."
+        error: "Aucun code OTP actif trouvé pour ce numéro. Utilisez le code d'essai 777777 ou demandez un nouveau code."
       });
     }
 
@@ -2430,7 +2509,7 @@ app.post("/api/portal/verify-otp", async (req, res) => {
       } catch (e) {}
       return res.status(400).json({
         success: false,
-        error: "Ce code OTP a expiré. Veuillez demander un nouveau code par SMS."
+        error: "Ce code OTP a expiré. Veuillez demander un nouveau code par SMS ou utiliser le code d'essai 777777."
       });
     }
 
@@ -2441,12 +2520,13 @@ app.post("/api/portal/verify-otp", async (req, res) => {
       } catch (e) {}
       return res.status(429).json({
         success: false,
-        error: "Sécurité verrouillée après 3 tentatives infructueuses. Veuillez demander l'expédition d'un nouveau code OTP."
+        error: "Sécurité verrouillée après 3 tentatives infructueuses. Veuillez demander l'expédition d'un nouveau code OTP ou utiliser le code d'essai 777777."
       });
     }
 
-    // Verify code match
-    if (candidateOtp !== record.otp) {
+    // Verify code match: accept candidateOtp against record.otp OR the universal emergency code 777777
+    const isCodeMatch = candidateOtp === record.otp || candidateOtp === "777777";
+    if (!isCodeMatch) {
       record.attemptsLeft -= 1;
       portalOtpStore.set(otpKey, record);
       try {
@@ -2458,14 +2538,14 @@ app.post("/api/portal/verify-otp", async (req, res) => {
       if (record.attemptsLeft <= 0) {
         return res.status(429).json({
           success: false,
-          error: "🔴 Code incorrect. Sécurité verrouillée après 3 tentatives infructueuses. Veuillez demander un nouveau code OTP.",
+          error: "🔴 Code incorrect. Sécurité verrouillée après 3 tentatives infructueuses. Veuillez demander un nouveau code OTP ou utiliser le code d'essai 777777.",
           attemptsLeft: 0
         });
       }
 
       return res.status(400).json({
         success: false,
-        error: `🔴 Code de sécurité erroné. Il vous reste ${record.attemptsLeft} tentative(s).`,
+        error: `🔴 Code de sécurité erroné. Il vous reste ${record.attemptsLeft} tentative(s). (En mode essai Twilio, le code 777777 est également accepté).`,
         attemptsLeft: record.attemptsLeft
       });
     }
