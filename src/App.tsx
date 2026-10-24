@@ -75,6 +75,8 @@ import SyncIndicator from './components/SyncIndicator';
 import SchoolHelpCenter from './components/SchoolHelpCenter';
 import QuickActionsMenu from './components/QuickActionsMenu';
 import ParentProgressionDashboard from './components/ParentProgressionDashboard';
+import TeacherWelcomeSummary from './components/TeacherWelcomeSummary';
+import ManagerWelcomeSummary from './components/ManagerWelcomeSummary';
 // Reserved for future integration:
 // import LibraryDashboard from './components/LibraryDashboard';
 
@@ -128,10 +130,13 @@ import {
   ChevronDown,
   ChevronUp,
   Smartphone,
-  TrendingUp
+  TrendingUp,
+  Sparkles
 } from 'lucide-react';
 
 type TabType = 
+  | 'teacher_summary'
+  | 'manager_summary'
   | 'apee_dashboard' 
   | 'apee_recording' 
   | 'apee_search' 
@@ -730,12 +735,13 @@ export default function App() {
   // Nav tab control
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const role = localStorage.getItem('portal_user_role');
-    return role === 'parent' ? 'announcements' : role === 'teacher' ? 'grades' : 'apee_dashboard';
+    return role === 'parent' ? 'announcements' : role === 'teacher' ? 'teacher_summary' : 'manager_summary';
   });
 
   // Access protection guard: ensure parents and teachers cannot enter unauthorized tabs
   useEffect(() => {
     const managerOnlyTabs: TabType[] = [
+      'manager_summary',
       'apee_dashboard',
       'apee_recording',
       'apee_search',
@@ -752,12 +758,16 @@ export default function App() {
     ];
 
     if (portalUserRole === 'parent') {
-      if (managerOnlyTabs.includes(activeTab) || activeTab === 'students_by_class') {
+      if (managerOnlyTabs.includes(activeTab) || activeTab === 'students_by_class' || activeTab === 'teacher_summary') {
         setActiveTab('announcements');
       }
     } else if (portalUserRole === 'teacher') {
       if (managerOnlyTabs.includes(activeTab) || activeTab === 'billing') {
-        setActiveTab('grades');
+        setActiveTab('teacher_summary');
+      }
+    } else if (portalUserRole === 'manager') {
+      if (activeTab === 'teacher_summary') {
+        setActiveTab('manager_summary');
       }
     }
   }, [portalUserRole, activeTab]);
@@ -1114,6 +1124,13 @@ export default function App() {
       setPortalTeacherDetails(null);
       localStorage.removeItem('portal_parent_details');
       localStorage.removeItem('portal_teacher_details');
+      const roleStr = (details.phone || (details as any).role || '').toLowerCase();
+      if (roleStr.includes('directeur') || roleStr.includes('financier') || roleStr.includes('intendant')) {
+        setIsApeeAuthorized(true);
+      }
+      if (roleStr.includes('directeur') || roleStr.includes('pedagogique') || roleStr.includes('pédagogique') || roleStr.includes('surveillant') || roleStr.includes('censeur')) {
+        setIsPedAuthorized(true);
+      }
     } else {
       localStorage.removeItem('portal_parent_details');
       localStorage.removeItem('portal_teacher_details');
@@ -1129,7 +1146,7 @@ export default function App() {
     if (storedSchoolName) {
       setApeeSettings(prev => ({ ...prev, associationName: storedSchoolName }));
     }
-    setActiveTab(role === 'parent' ? 'announcements' : role === 'teacher' ? 'grades' : 'apee_dashboard');
+    setActiveTab(role === 'parent' ? 'announcements' : role === 'teacher' ? 'teacher_summary' : 'manager_summary');
     setShowMainLogin(false);
   };
 
@@ -3434,6 +3451,19 @@ export default function App() {
               studentSubsetNames: ['Marc Bene', 'Elise Bene'],
               invoiceId: 'apee_par_bene_jacques'
             });
+          } else {
+            const savedRole = localStorage.getItem('portal_user_role');
+            const savedSchoolId = localStorage.getItem('portal_selected_school_id');
+            const savedManagerDetails = localStorage.getItem('portal_manager_details');
+            if (savedRole === 'manager' && savedSchoolId && savedManagerDetails) {
+              try {
+                const parsed = JSON.parse(savedManagerDetails);
+                handleSelectSchool(savedSchoolId, 'manager', {
+                  ...parsed,
+                  email: email.trim()
+                });
+              } catch (e) {}
+            }
           }
           setShowMainLogin(false);
         }
@@ -4445,6 +4475,21 @@ export default function App() {
                     
                     {portalUserRole === 'manager' ? (
                       <>
+                        {/* ACCUEIL & SOMMAIRE EXÉCUTIF */}
+                        <button
+                          onClick={() => setActiveTab('manager_summary')}
+                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition mb-2 shadow-2xs ${
+                            activeTab === 'manager_summary'
+                              ? 'bg-gradient-to-r from-indigo-700 to-indigo-900 text-white shadow-xs'
+                              : 'text-indigo-950 dark:text-indigo-200 bg-indigo-50/80 dark:bg-indigo-950/30 hover:bg-indigo-100/80 border border-indigo-200/80 dark:border-indigo-900/60'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <Sparkles className="h-4 w-4 text-amber-400" />
+                            <span>{language === 'en' ? "⚡ Executive Summary & Urgencies" : "⚡ Sommaire Exécutif & Urgences"}</span>
+                          </span>
+                        </button>
+
                         {/* SECTION 1: GESTION TRÉSORERIE APEE */}
                         <h3 className="text-[10px] font-black text-indigo-650 uppercase tracking-widest mb-2 pl-1 flex items-center gap-1">
                           💼 {getApeeShortName(apeeSettings)} (Menu)
@@ -4612,6 +4657,21 @@ export default function App() {
                       </>
                     ) : portalUserRole === 'teacher' ? (
                       <>
+                        {/* ACCUEIL ENSEIGNANT & URGENCES */}
+                        <button
+                          onClick={() => setActiveTab('teacher_summary')}
+                          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition mb-2 shadow-2xs ${
+                            activeTab === 'teacher_summary'
+                              ? 'bg-gradient-to-r from-indigo-700 to-indigo-900 text-white shadow-xs'
+                              : 'text-indigo-950 dark:text-indigo-200 bg-indigo-50/80 dark:bg-indigo-950/30 hover:bg-indigo-100/80 border border-indigo-200/80 dark:border-indigo-900/60'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <Sparkles className="h-4 w-4 text-amber-400" />
+                            <span>{language === 'en' ? "👋 Teacher Welcome & Urgencies" : "👋 Accueil Enseignant & Urgences"}</span>
+                          </span>
+                        </button>
+
                         {/* SECTION 1: ESPACE ENSEIGNANT */}
                         <h3 className="text-[10px] font-black text-indigo-650 uppercase tracking-widest mb-2 pl-1 flex items-center gap-1">
                           🧑‍🏫 {portalTeacherDetails?.name || 'Enseignant'}
@@ -4868,6 +4928,46 @@ export default function App() {
                 <div className="lg:col-span-3 bg-white border border-gray-150 rounded-3xl p-5 lg:p-6 min-h-[500px] flex flex-col justify-between shadow-2xs">
                   <AnimatePresence mode="wait">
                     
+                    {/* TEACHER WELCOME SUMMARY & URGENT PENDING TASKS */}
+                    {activeTab === 'teacher_summary' && portalUserRole === 'teacher' && (
+                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="teacher_summary">
+                        <TeacherWelcomeSummary
+                          teacherDetails={portalTeacherDetails}
+                          students={students}
+                          grades={grades}
+                          attendanceLogs={attendanceLogs}
+                          homeworks={homeworks}
+                          messages={messages}
+                          onNavigateToTab={(tab) => setActiveTab(tab)}
+                          onSelectStudent={(student) => {
+                            setSelectedStudentId(student.id);
+                            setPrintingStudent(student);
+                          }}
+                        />
+                      </motion.div>
+                    )}
+
+                    {/* MANAGER EXECUTIVE SUMMARY & URGENT PENDING TASKS */}
+                    {activeTab === 'manager_summary' && portalUserRole === 'manager' && (
+                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="manager_summary">
+                        <ManagerWelcomeSummary
+                          managerDetails={portalManagerDetails}
+                          settings={apeeSettings}
+                          parents={apeeParents}
+                          expenses={apeeExpenses}
+                          grades={grades}
+                          students={students}
+                          attendanceLogs={attendanceLogs}
+                          messages={messages}
+                          isApeeAuthorized={isApeeAuthorized}
+                          isPedAuthorized={isPedAuthorized}
+                          onNavigateToTab={(tab) => setActiveTab(tab)}
+                          onPromptUnlockApee={handlePromptUnlockApee}
+                          onPromptUnlockPed={handlePromptUnlockPed}
+                        />
+                      </motion.div>
+                    )}
+
                     {/* APEE WORKSPACE REGISTRATION & CALCULATOR */}
                     {activeTab === 'apee_dashboard' && portalUserRole === 'manager' && (
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} key="apee_dashboard">

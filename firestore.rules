@@ -35,6 +35,8 @@ service cloud.firestore {
             establishment.get('directorEmail', '') == request.auth.token.get('email', '') ||
             establishment.get('finManagerEmail', '') == request.auth.token.get('email', '') ||
             establishment.get('pedManagerEmail', '') == request.auth.token.get('email', '') ||
+            establishment.get('surveillantEmail', '') == request.auth.token.get('email', '') ||
+            establishment.get('censeurEmail', '') == request.auth.token.get('email', '') ||
             hasSchoolEmail(establishment, 'managerEmails')
           ))
       );

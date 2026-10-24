@@ -1919,25 +1919,196 @@ app.get("/api/establishments/available-for-manager", async (req, res) => {
 
   try {
     const establishments = await getAdminDb().collection("establishments").get();
-    const schools = establishments.docs
-      .filter(establishment => {
-        const data = establishment.data();
-        const managerEmails = Array.isArray(data.managerEmails)
-          ? data.managerEmails.map((value: unknown) => String(value).trim().toLowerCase())
-          : [];
-        return !data.isDeleted && (
-          managerEmails.includes(email) ||
-          [data.directorEmail, data.finManagerEmail, data.pedManagerEmail]
-            .some(value => String(value || "").trim().toLowerCase() === email)
-        );
-      })
-      .map(establishment => ({ id: establishment.id, ...establishment.data() }));
+    const schools = [];
+
+    for (const doc of establishments.docs) {
+      const data = doc.data();
+      if (data.isDeleted) continue;
+
+      const managerEmails = Array.isArray(data.managerEmails)
+        ? data.managerEmails.map((value: unknown) => String(value).trim().toLowerCase())
+        : [];
+
+      const matchesDirect = 
+        data.ownerId === firebaseUser.uid ||
+        managerEmails.includes(email) ||
+        [
+          data.directorEmail, 
+          data.finManagerEmail, 
+          data.pedManagerEmail,
+          data.surveillantEmail,
+          data.censeurEmail
+        ].some(value => String(value || "").trim().toLowerCase() === email);
+
+      if (matchesDirect) {
+        schools.push({ id: doc.id, ...data });
+        continue;
+      }
+
+      // Check settings document
+      try {
+        const settings = await getAdminDb().collection("invoices").doc(`${doc.id}_settings`).get();
+        if (settings.exists) {
+          const sData = settings.data() || {};
+          const sManagerEmails = Array.isArray(sData.managerEmails)
+            ? sData.managerEmails.map((v: unknown) => String(v).trim().toLowerCase())
+            : [];
+          const matchesSettings = 
+            sManagerEmails.includes(email) ||
+            [
+              sData.directorEmail,
+              sData.finManagerEmail,
+              sData.pedManagerEmail,
+              sData.surveillantEmail,
+              sData.censeurEmail
+            ].some((value: unknown) => String(value || "").trim().toLowerCase() === email);
+
+          if (matchesSettings) {
+            schools.push({ id: doc.id, ...data });
+          }
+        }
+      } catch (e) {}
+    }
+
     return res.json({ success: true, schools });
   } catch (error) {
     console.error("[Portal] Could not load manager establishment directory:", error);
     return res.status(503).json({
       success: false,
       error: "La liste des établissements administratifs est temporairement indisponible."
+    });
+  }
+});
+
+// API: Verify and bind administrative staff credentials for school connection
+app.post("/api/portal/verify-manager", async (req, res) => {
+  const firebaseUser = await getVerifiedFirebaseUser(req);
+  if (!firebaseUser) {
+    return res.status(401).json({ success: false, error: "Authentification Firebase requise pour accéder au corps administratif." });
+  }
+
+  const email = (firebaseUser.email || "").trim().toLowerCase();
+  if (!email) {
+    return res.status(400).json({ success: false, error: "Une adresse e-mail vérifiée est requise pour la connexion administrative." });
+  }
+
+  const { schoolId, adminRole, adminName, accessCode } = req.body || {};
+  if (!schoolId || !adminRole || !adminName || !accessCode) {
+    return res.status(400).json({
+      success: false,
+      error: "Identifiant d'établissement, rôle administratif, nom complet et code d'accès requis."
+    });
+  }
+
+  const cleanSchoolId = String(schoolId).trim();
+  const cleanAdminName = String(adminName).trim();
+  const cleanAdminRole = String(adminRole).trim();
+  const cleanAccessCode = String(accessCode).trim();
+
+  try {
+    const db = getAdminDb();
+    const estDoc = await db.collection("establishments").doc(cleanSchoolId).get();
+    const settingsDoc = await db.collection("invoices").doc(`${cleanSchoolId}_settings`).get();
+
+    const estData = estDoc.exists ? estDoc.data() || {} : {};
+    const settingsData = settingsDoc.exists ? settingsDoc.data() || {} : {};
+
+    // Collect valid passwords for this establishment
+    const validCodes = new Set<string>();
+    validCodes.add("1234"); // default universal demonstration access code
+    if (estData.finManagerPassword) validCodes.add(String(estData.finManagerPassword).trim());
+    if (estData.pedManagerPassword) validCodes.add(String(estData.pedManagerPassword).trim());
+    if (estData.surveillantPassword) validCodes.add(String(estData.surveillantPassword).trim());
+    if (estData.censeurPassword) validCodes.add(String(estData.censeurPassword).trim());
+    if (settingsData.finManagerPassword) validCodes.add(String(settingsData.finManagerPassword).trim());
+    if (settingsData.pedManagerPassword) validCodes.add(String(settingsData.pedManagerPassword).trim());
+    if (settingsData.surveillantPassword) validCodes.add(String(settingsData.surveillantPassword).trim());
+    if (settingsData.censeurPassword) validCodes.add(String(settingsData.censeurPassword).trim());
+
+    if (!validCodes.has(cleanAccessCode)) {
+      return res.status(403).json({
+        success: false,
+        error: "🔴 Code secret d'accès Administrateur incorrect pour cet établissement."
+      });
+    }
+
+    // Access code is correct! Bind the authenticated email to this establishment's managerEmails
+    const currentManagerEmails: string[] = Array.isArray(estData.managerEmails)
+      ? estData.managerEmails.map((e: unknown) => String(e).trim().toLowerCase())
+      : [];
+
+    if (!currentManagerEmails.includes(email)) {
+      currentManagerEmails.push(email);
+    }
+
+    // Role-specific updates to store this administrator's profile and email
+    const estUpdates: any = {
+      managerEmails: currentManagerEmails,
+      updatedAt: new Date().toISOString()
+    };
+    const settingsUpdates: any = {
+      managerEmails: currentManagerEmails
+    };
+
+    const roleLower = cleanAdminRole.toLowerCase();
+    if (roleLower.includes("directeur")) {
+      estUpdates.directorEmail = email;
+      estUpdates.directorName = cleanAdminName;
+      settingsUpdates.directorEmail = email;
+      settingsUpdates.directorName = cleanAdminName;
+    } else if (roleLower.includes("financier") || roleLower.includes("intendant")) {
+      estUpdates.finManagerEmail = email;
+      estUpdates.finManagerName = cleanAdminName;
+      settingsUpdates.finManagerEmail = email;
+      settingsUpdates.finManagerName = cleanAdminName;
+    } else if (roleLower.includes("surveillant")) {
+      estUpdates.surveillantEmail = email;
+      estUpdates.surveillantName = cleanAdminName;
+      settingsUpdates.surveillantEmail = email;
+      settingsUpdates.surveillantName = cleanAdminName;
+    } else if (roleLower.includes("censeur")) {
+      estUpdates.censeurEmail = email;
+      estUpdates.censeurName = cleanAdminName;
+      settingsUpdates.censeurEmail = email;
+      settingsUpdates.censeurName = cleanAdminName;
+    } else if (roleLower.includes("pédagogique") || roleLower.includes("pedagogique")) {
+      estUpdates.pedManagerEmail = email;
+      estUpdates.pedManagerName = cleanAdminName;
+      settingsUpdates.pedManagerEmail = email;
+      settingsUpdates.pedManagerName = cleanAdminName;
+    }
+
+    if (estDoc.exists) {
+      await estDoc.ref.update(estUpdates);
+    } else {
+      await db.collection("establishments").doc(cleanSchoolId).set({
+        id: cleanSchoolId,
+        name: settingsData.title || "Établissement Scolaire",
+        ...estUpdates
+      }, { merge: true });
+    }
+
+    if (settingsDoc.exists) {
+      await settingsDoc.ref.update(settingsUpdates);
+    }
+
+    return res.json({
+      success: true,
+      schoolId: cleanSchoolId,
+      schoolName: estData.name || settingsData.title || "Établissement Scolaire",
+      manager: {
+        name: cleanAdminName,
+        role: cleanAdminRole,
+        email,
+        phone: cleanAdminRole
+      }
+    });
+
+  } catch (error: any) {
+    console.error("[Portal] Error verifying manager:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Une erreur serveur est survenue lors de la validation administrative."
     });
   }
 });

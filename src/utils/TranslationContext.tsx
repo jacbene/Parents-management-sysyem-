@@ -31,6 +31,8 @@ const translations: Record<LanguageType, Record<string, string>> = {
     'portal.header_subtitle': 'Plateforme numérique de suivi des élèves, gestion des frais scolaires, cahier de textes et bulletins de notes.',
     'portal.login_title': '🔐 Portail de Connexion Scolaire',
     // Nav Tabs & General labels
+    'tab.teacher_summary': 'Accueil Enseignant & Urgences',
+    'tab.manager_summary': 'Sommaire Exécutif & Urgences',
     'tab.apee_dashboard': 'Tableau de bord',
     'tab.apee_recording': 'Saisie Cotisation',
     'form.parents_payments': 'Paiements des Parents',
@@ -342,6 +344,8 @@ const translations: Record<LanguageType, Record<string, string>> = {
     'portal.header_subtitle': 'Digital platform for student tracking, school fee management, digital logbook, and report cards.',
     'portal.login_title': '🔐 School Login Portal',
     // Nav Tabs & General labels
+    'tab.teacher_summary': 'Teacher Welcome & Urgencies',
+    'tab.manager_summary': 'Executive Summary & Urgencies',
     'tab.apee_dashboard': 'Dashboard',
     'tab.apee_recording': 'Record Payment',
     'form.parents_payments': 'Parent Payments',

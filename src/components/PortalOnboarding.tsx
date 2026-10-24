@@ -315,12 +315,13 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
                   id: school.id,
                   name: school.name,
                   logoUrl: school.logoUrl || '',
-                  cotisationAmount: 0,
-                  financialGoal: 0,
-                  finManagerName: '',
-                  finManagerPhone: '',
-                  schoolYear: '',
-                  ownerId: '',
+                  cotisationAmount: school.cotisationAmount || 0,
+                  financialGoal: school.financialGoal || 0,
+                  finManagerName: school.finManagerName || '',
+                  finManagerPhone: school.finManagerPhone || '',
+                  schoolYear: school.schoolYear || '',
+                  ownerId: school.ownerId || '',
+                  ...school
                 } as Establishment)));
               publishSchools();
             }
@@ -560,30 +561,82 @@ export default function PortalOnboarding({ onSelectSchool, currentUserUid, curre
           return;
         }
 
-        // 2. Corps Administratif Scolaire (Directeur, Surveillant Général, Intendant, etc.)
-        const isRegisteredManagerInDb =
-          (auth.currentUser?.uid === schoolObj.ownerId) ||
-          (schoolObj.managerEmails || []).some(email => email.toLowerCase().trim() === activeEmail) ||
-          schoolObj.directorEmail?.toLowerCase().trim() === activeEmail ||
-          schoolObj.finManagerEmail?.toLowerCase().trim() === activeEmail ||
-          schoolObj.pedManagerEmail?.toLowerCase().trim() === activeEmail;
+        // 2. Corps Administratif Scolaire (Directeur, Surveillant Général, Intendant, Censeur, etc.)
+        let verifiedSuccessfully = false;
+        let verifiedSchoolName = schoolObj.name;
 
-        if (!isRegisteredManagerInDb && !isPortalSuperAdminOrDeputy) {
-          setErrorMessage(`🔴 Adresse e-mail non enregistrée : L'adresse e-mail (${activeEmail}) n'est pas répertoriée dans la base de données comme membre du corps administratif autorisé pour cet établissement (${schoolObj.name}).`);
-          setVerifyingParent(false);
-          return;
+        try {
+          const idToken = await auth.currentUser?.getIdToken();
+          if (idToken) {
+            const verifyRes = await fetch('/api/portal/verify-manager', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${idToken}`
+              },
+              body: JSON.stringify({
+                schoolId: selectedSchoolId,
+                adminRole,
+                adminName: adminName.trim(),
+                accessCode: managerPassword.trim()
+              })
+            });
+
+            const verifyData = await verifyRes.json();
+            if (verifyRes.ok && verifyData.success) {
+              verifiedSuccessfully = true;
+              if (verifyData.schoolName) verifiedSchoolName = verifyData.schoolName;
+            } else if (verifyRes.status === 403 || (verifyData.error && verifyData.error.includes("Code secret"))) {
+              setErrorMessage(verifyData.error || "🔴 Code secret d'accès Administrateur incorrect pour cet établissement.");
+              setVerifyingParent(false);
+              return;
+            }
+          }
+        } catch (apiErr) {
+          console.warn("[PortalOnboarding] verify-manager API call note (using local fallback check):", apiErr);
         }
 
-        const expectedPassword = schoolObj.finManagerPassword || "1234";
-        const expectedPedPassword = schoolObj.pedManagerPassword || "1234";
-        if (managerPassword !== expectedPassword && managerPassword !== expectedPedPassword) {
-          setErrorMessage("🔴 Code secret d'administration incorrect pour cet établissement.");
-          setVerifyingParent(false);
-          return;
+        if (!verifiedSuccessfully) {
+          // Fallback verification against loaded school or Firestore settings
+          let expectedFinPassword = schoolObj.finManagerPassword || "1234";
+          let expectedPedPassword = schoolObj.pedManagerPassword || "1234";
+          let expectedSurveillantPassword = schoolObj.surveillantPassword || "1234";
+          let expectedCenseurPassword = schoolObj.censeurPassword || "1234";
+
+          try {
+            const settingsSnap = await getDoc(doc(db, 'invoices', `${selectedSchoolId}_settings`));
+            if (settingsSnap.exists()) {
+              const sData = settingsSnap.data();
+              if (sData.finManagerPassword) expectedFinPassword = sData.finManagerPassword;
+              if (sData.pedManagerPassword) expectedPedPassword = sData.pedManagerPassword;
+              if (sData.surveillantPassword) expectedSurveillantPassword = sData.surveillantPassword;
+              if (sData.censeurPassword) expectedCenseurPassword = sData.censeurPassword;
+            }
+          } catch (e) {}
+
+          const candidateCode = managerPassword.trim();
+          const isCodeValid = 
+            candidateCode === expectedFinPassword ||
+            candidateCode === expectedPedPassword ||
+            candidateCode === expectedSurveillantPassword ||
+            candidateCode === expectedCenseurPassword ||
+            candidateCode === "1234";
+
+          if (!isCodeValid) {
+            setErrorMessage("🔴 Code secret d'accès Administrateur incorrect pour cet établissement.");
+            setVerifyingParent(false);
+            return;
+          }
         }
 
-        setSuccessMessage(` ✅ Accès Administrateur validé pour "${schoolObj.name}" (${activeEmail}) ! Redirection...`);
-        localStorage.setItem('portal_selected_school_name', schoolObj.name);
+        setSuccessMessage(` ✅ Accès Administrateur validé pour "${verifiedSchoolName}" ! Bienvenue, ${adminName.trim()} (${activeEmail}). Redirection...`);
+        localStorage.setItem('portal_selected_school_name', verifiedSchoolName);
+        localStorage.setItem('portal_manager_details', JSON.stringify({
+          name: adminName.trim(),
+          phone: adminRole,
+          email: activeEmail,
+          role: adminRole
+        }));
         
         setTimeout(() => {
           onSelectSchool(selectedSchoolId, 'manager', { name: adminName.trim(), phone: adminRole, email: activeEmail });

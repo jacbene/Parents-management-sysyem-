@@ -86,12 +86,14 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
   // Financial Manager credentials states
   const [finManagerName, setFinManagerName] = useState(settings.finManagerName || '');
   const [finManagerPhone, setFinManagerPhone] = useState(settings.finManagerPhone || '');
+  const [finManagerEmail, setFinManagerEmail] = useState(settings.finManagerEmail || '');
   const [finManagerPassword, setFinManagerPassword] = useState(settings.finManagerPassword || '');
   const [showPassword, setShowPassword] = useState(false);
 
   // Pedagogical Manager credentials states
   const [pedManagerName, setPedManagerName] = useState(settings.pedManagerName || '');
   const [pedManagerPhone, setPedManagerPhone] = useState(settings.pedManagerPhone || '');
+  const [pedManagerEmail, setPedManagerEmail] = useState(settings.pedManagerEmail || '');
   const [pedManagerPassword, setPedManagerPassword] = useState(settings.pedManagerPassword || '');
   const [showPedPassword, setShowPedPassword] = useState(false);
 
@@ -102,9 +104,11 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
 
   const [surveillantName, setSurveillantName] = useState(settings.surveillantName || '');
   const [surveillantPhone, setSurveillantPhone] = useState(settings.surveillantPhone || '');
+  const [surveillantEmail, setSurveillantEmail] = useState(settings.surveillantEmail || '');
 
   const [censeurName, setCenseurName] = useState(settings.censeurName || '');
   const [censeurPhone, setCenseurPhone] = useState(settings.censeurPhone || '');
+  const [censeurEmail, setCenseurEmail] = useState(settings.censeurEmail || '');
 
   // Class Teachers (teachers mapping list)
   const [classTeachers, setClassTeachers] = useState(() => {
@@ -162,17 +166,21 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
       setActualSubventionsAndAids(settings.actualSubventionsAndAids || 0);
       setFinManagerName(settings.finManagerName || '');
       setFinManagerPhone(settings.finManagerPhone || '');
+      setFinManagerEmail(settings.finManagerEmail || '');
       setFinManagerPassword(settings.finManagerPassword || '');
       setPedManagerName(settings.pedManagerName || '');
       setPedManagerPhone(settings.pedManagerPhone || '');
+      setPedManagerEmail(settings.pedManagerEmail || '');
       setPedManagerPassword(settings.pedManagerPassword || '');
       setDirectorName(settings.directorName || '');
       setDirectorPhone(settings.directorPhone || '');
       setDirectorEmail(settings.directorEmail || '');
       setSurveillantName(settings.surveillantName || '');
       setSurveillantPhone(settings.surveillantPhone || '');
+      setSurveillantEmail(settings.surveillantEmail || '');
       setCenseurName(settings.censeurName || '');
       setCenseurPhone(settings.censeurPhone || '');
+      setCenseurEmail(settings.censeurEmail || '');
       if (settings.classTeachers && settings.classTeachers.length > 0) {
         const defaultClassrooms = [
           { classRoom: '6ème', teacherName: '', teacherPhone: '', teacherEmail: '' },
@@ -252,18 +260,22 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
         budgetLines: settings.budgetLines || [],
         finManagerName: (finManagerName || '').trim(),
         finManagerPhone: (finManagerPhone || '').trim(),
+        finManagerEmail: (finManagerEmail || '').trim().toLowerCase(),
         finManagerPassword: (finManagerPassword || '').trim(),
         pedManagerName: (pedManagerName || '').trim(),
         pedManagerPhone: (pedManagerPhone || '').trim(),
+        pedManagerEmail: (pedManagerEmail || '').trim().toLowerCase(),
         pedManagerPassword: (pedManagerPassword || '').trim(),
         logoUrl: logoUrl || '',
         directorName: (directorName || '').trim(),
         directorPhone: (directorPhone || '').trim(),
-        directorEmail: (directorEmail || '').trim(),
+        directorEmail: (directorEmail || '').trim().toLowerCase(),
         surveillantName: (surveillantName || '').trim(),
         surveillantPhone: (surveillantPhone || '').trim(),
+        surveillantEmail: (surveillantEmail || '').trim().toLowerCase(),
         censeurName: (censeurName || '').trim(),
         censeurPhone: (censeurPhone || '').trim(),
+        censeurEmail: (censeurEmail || '').trim().toLowerCase(),
         classTeachers: classTeachers || [],
         classSubjects: extra.classSubjects !== undefined ? extra.classSubjects : (classSubjects || []),
         honoraryContributions: honoraryContributions || 0,
@@ -975,6 +987,21 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
               </div>
 
               <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-600 uppercase">E-mail de connexion du Responsable Financier</label>
+                <div className="relative">
+                  <span className="absolute left-2.5 top-2 text-slate-400">✉️</span>
+                  <input
+                    type="email"
+                    value={finManagerEmail}
+                    onChange={(e) => setFinManagerEmail(e.target.value)}
+                    placeholder="Ex: intendant@etablissement.com"
+                    className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-indigo-500 text-slate-800 font-medium"
+                  />
+                </div>
+                <p className="text-[9px] text-slate-400 leading-tight">Autorise ce membre du corps administratif à se connecter par son e-mail personnel.</p>
+              </div>
+
+              <div className="space-y-1">
                 <label className="text-[10px] font-bold text-slate-600 uppercase">Mot de passe de contrôle <span className="text-red-500">*</span></label>
                 <div className="relative">
                   <span className="absolute left-2.5 top-2 text-slate-400">🔑</span>
@@ -1033,6 +1060,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
                   handleSaveWithExtra({
                     finManagerName: finManagerName.trim(),
                     finManagerPhone: finManagerPhone.trim(),
+                    finManagerEmail: finManagerEmail.trim().toLowerCase(),
                     finManagerPassword: finManagerPassword.trim(),
                   }, "Accès du Responsable Financier enregistrés avec succès !");
                 }}
@@ -1082,6 +1110,21 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
                     className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-emerald-500 font-mono text-slate-800"
                   />
                 </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-600 uppercase">E-mail de connexion du Responsable Académique</label>
+                <div className="relative">
+                  <span className="absolute left-2.5 top-2 text-slate-400">✉️</span>
+                  <input
+                    type="email"
+                    value={pedManagerEmail}
+                    onChange={(e) => setPedManagerEmail(e.target.value)}
+                    placeholder="Ex: censeur@etablissement.com"
+                    className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-emerald-500 text-slate-800 font-medium"
+                  />
+                </div>
+                <p className="text-[9px] text-slate-400 leading-tight">Autorise ce membre du corps administratif à se connecter par son e-mail personnel.</p>
               </div>
 
               <div className="space-y-1">
@@ -1143,6 +1186,7 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
                   handleSaveWithExtra({
                     pedManagerName: pedManagerName.trim(),
                     pedManagerPhone: pedManagerPhone.trim(),
+                    pedManagerEmail: pedManagerEmail.trim().toLowerCase(),
                     pedManagerPassword: pedManagerPassword.trim(),
                   }, "Accès du Responsable Pédagogique enregistrés avec succès !");
                 }}
@@ -1221,30 +1265,45 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
             {/* Surveillant Général */}
             <div className="p-3 bg-slate-50/50 border border-slate-100 rounded-xl space-y-2.5">
               <span className="font-bold text-slate-800 text-[11px] block">Surveillance Générale (Le Surveillant)</span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[9px] font-bold text-slate-550 uppercase">Nom du Surveillant</label>
-                  <div className="relative mt-0.5">
-                    <User className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-                    <input
-                      type="text"
-                      className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-indigo-500 bg-white"
-                      placeholder="Nom complet"
-                      value={surveillantName}
-                      onChange={(e) => setSurveillantName(e.target.value)}
-                    />
+              <div className="space-y-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-550 uppercase">Nom du Surveillant</label>
+                    <div className="relative mt-0.5">
+                      <User className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                      <input
+                        type="text"
+                        className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-indigo-500 bg-white"
+                        placeholder="Nom complet"
+                        value={surveillantName}
+                        onChange={(e) => setSurveillantName(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-550 uppercase">Téléphone</label>
+                    <div className="relative mt-0.5">
+                      <Phone className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                      <input
+                        type="text"
+                        className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-indigo-500 bg-white"
+                        placeholder="Numéro de téléphone"
+                        value={surveillantPhone}
+                        onChange={(e) => setSurveillantPhone(e.target.value)}
+                      />
+                    </div>
                   </div>
                 </div>
                 <div>
-                  <label className="text-[9px] font-bold text-slate-550 uppercase">Téléphone</label>
+                  <label className="text-[9px] font-bold text-slate-550 uppercase">E-mail de connexion du Surveillant Général</label>
                   <div className="relative mt-0.5">
-                    <Phone className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                    <Mail className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
                     <input
-                      type="text"
+                      type="email"
                       className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-indigo-500 bg-white"
-                      placeholder="Numéro de téléphone"
-                      value={surveillantPhone}
-                      onChange={(e) => setSurveillantPhone(e.target.value)}
+                      placeholder="Ex: sg@ecole..."
+                      value={surveillantEmail}
+                      onChange={(e) => setSurveillantEmail(e.target.value)}
                     />
                   </div>
                 </div>
@@ -1254,30 +1313,45 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
             {/* Censeur */}
             <div className="p-3 bg-slate-50/50 border border-slate-100 rounded-xl space-y-2.5">
               <span className="font-bold text-slate-800 text-[11px] block">Censeur Principal (L'Inspecteur/Censeur)</span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[9px] font-bold text-slate-550 uppercase">Nom du Censeur</label>
-                  <div className="relative mt-0.5">
-                    <User className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-                    <input
-                      type="text"
-                      className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-indigo-500 bg-white"
-                      placeholder="Nom complet"
-                      value={censeurName}
-                      onChange={(e) => setCenseurName(e.target.value)}
-                    />
+              <div className="space-y-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-550 uppercase">Nom du Censeur</label>
+                    <div className="relative mt-0.5">
+                      <User className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                      <input
+                        type="text"
+                        className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-indigo-500 bg-white"
+                        placeholder="Nom complet"
+                        value={censeurName}
+                        onChange={(e) => setCenseurName(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold text-slate-550 uppercase">Téléphone</label>
+                    <div className="relative mt-0.5">
+                      <Phone className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                      <input
+                        type="text"
+                        className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-indigo-500 bg-white"
+                        placeholder="Numéro de téléphone"
+                        value={censeurPhone}
+                        onChange={(e) => setCenseurPhone(e.target.value)}
+                      />
+                    </div>
                   </div>
                 </div>
                 <div>
-                  <label className="text-[9px] font-bold text-slate-550 uppercase">Téléphone</label>
+                  <label className="text-[9px] font-bold text-slate-550 uppercase">E-mail de connexion du Censeur</label>
                   <div className="relative mt-0.5">
-                    <Phone className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                    <Mail className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
                     <input
-                      type="text"
+                      type="email"
                       className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-indigo-500 bg-white"
-                      placeholder="Numéro de téléphone"
-                      value={censeurPhone}
-                      onChange={(e) => setCenseurPhone(e.target.value)}
+                      placeholder="Ex: censeur@ecole..."
+                      value={censeurEmail}
+                      onChange={(e) => setCenseurEmail(e.target.value)}
                     />
                   </div>
                 </div>
@@ -1293,8 +1367,10 @@ export default function ApeeSettingsComp({ settings, onSaveSettings, parents = [
                   directorEmail: directorEmail.trim(),
                   surveillantName: surveillantName.trim(),
                   surveillantPhone: surveillantPhone.trim(),
+                  surveillantEmail: surveillantEmail.trim(),
                   censeurName: censeurName.trim(),
                   censeurPhone: censeurPhone.trim(),
+                  censeurEmail: censeurEmail.trim(),
                 }, "Responsables administratifs enregistrés avec succès !");
               }}
               className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-1.5 cursor-pointer transition shadow-2xs mt-2"
